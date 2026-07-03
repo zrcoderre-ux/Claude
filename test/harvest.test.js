@@ -272,6 +272,31 @@ test("context tokens do NOT leak into the rate-limit quota fields", () => {
   assert.equal(out.remaining, undefined);
 });
 
+// ---- Unrelated JSON must not leak a reset/limit (the "28d" bug) ---------
+test("expires_in on an auth/session response is NOT read as the usage reset", () => {
+  // A token-refresh style body: expires_in is a 28-day TTL in seconds.
+  const body = JSON.stringify({ access_token: "x", token_type: "bearer", expires_in: 2419200 });
+  const out = H.parseBody(body, opts);
+  assert.equal(out, null, "no reset/limit harvested from an unrelated body");
+});
+
+test("a generic body with reset/expires/limit fields yields nothing", () => {
+  const body = JSON.stringify({
+    session: { expires_at: "2026-08-01T00:00:00Z", reset_token: "abc" },
+    seat_limit: 5,
+    used_seats: 2,
+  });
+  const out = H.parseBody(body, opts);
+  assert.equal(out, null);
+});
+
+test("the structured /usage reset is still parsed", () => {
+  const resetIso = new Date(NOW + 2 * 3600_000).toISOString();
+  const body = JSON.stringify({ five_hour: { utilization: 48, resets_at: resetIso } });
+  const out = H.parseBody(body, opts);
+  assert.equal(out.resetAt, Date.parse(resetIso));
+});
+
 // ---- Context estimate from the conversation payload --------------------
 test("parseConversation estimates context tokens from message text (~4 chars/token)", () => {
   const body = {
