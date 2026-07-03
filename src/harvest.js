@@ -327,10 +327,14 @@
         const overage = parseOverage(obj);
         const conv = parseConversation(obj);
         if (usage || overage || conv) return Object.assign({}, usage, overage, conv);
-        const generic = harvest(obj, opts, {});
+        // Do NOT generically scan arbitrary JSON bodies for reset/limit/used:
+        // unrelated endpoints (auth/session/billing) carry fields like
+        // `expires_in` that were being misread as the usage reset (e.g. a token
+        // TTL of 2419200s → "resets in 28d"). Reset/limit come only from the
+        // structured /usage parser and rate-limit headers. Context is safe (it
+        // reads only usage.input_tokens).
         const context = finalizeContext(harvestContext(obj, {}));
-        if (context) generic.context = context;
-        return generic;
+        return context ? { context } : null;
       } catch (e) {
         /* fall through to SSE */
       }
