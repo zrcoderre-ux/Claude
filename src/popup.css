@@ -59,6 +59,15 @@ h1 {
   font-weight: 600;
 }
 
+.row.meta {
+  font-size: 11px;
+  padding: 1px 0 6px;
+}
+
+.row.meta span {
+  color: #9a9a9a;
+}
+
 .row.sub {
   justify-content: flex-start;
   color: #9a9a9a;

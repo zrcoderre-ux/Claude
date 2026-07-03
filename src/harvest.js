@@ -41,6 +41,10 @@
     return false;
   }
 
+  function clamp01(x) {
+    return Math.max(0, Math.min(1, x));
+  }
+
   // Convert seconds / ms / ISO-8601 / HTTP-date into epoch-ms.
   function toEpochMs(value, now) {
     now = now || Date.now();
@@ -145,6 +149,50 @@
     return out;
   }
 
+  // Parse the claude.ai Settings → Usage response:
+  //   GET /api/organizations/{uuid}/usage
+  // Shape: { five_hour:{utilization,resets_at}, seven_day:{utilization,resets_at},
+  //          limits:[{kind,percent,resets_at,is_active,...}], spend:{...} }
+  // `utilization`/`percent` are 0–100. We surface the 5-hour window as the
+  // "session" and the 7-day window as "weekly".
+  function parseClaudeUsage(obj, opts) {
+    if (!obj || typeof obj !== "object") return null;
+    const now = (opts && opts.now) || Date.now();
+    const out = {};
+
+    function windowOf(w) {
+      if (!w || typeof w !== "object" || typeof w.utilization !== "number")
+        return null;
+      const r = toEpochMs(w.resets_at, now);
+      return { percent: clamp01(w.utilization / 100), resetAt: r || null };
+    }
+
+    const fh = windowOf(obj.five_hour);
+    if (fh) {
+      out.percent = fh.percent;
+      if (fh.resetAt) out.resetAt = fh.resetAt;
+    }
+    const sd = windowOf(obj.seven_day);
+    if (sd) {
+      out.weeklyPercent = sd.percent;
+      if (sd.resetAt) out.weeklyResetAt = sd.resetAt;
+    }
+
+    // Fallback to the active entry in limits[] if the named windows are absent.
+    if (out.percent == null && Array.isArray(obj.limits)) {
+      const active =
+        obj.limits.find((l) => l && l.is_active && typeof l.percent === "number") ||
+        obj.limits.find((l) => l && typeof l.percent === "number");
+      if (active) {
+        out.percent = clamp01(active.percent / 100);
+        const r = toEpochMs(active.resets_at, now);
+        if (r) out.resetAt = r;
+      }
+    }
+
+    return out.percent != null || out.weeklyPercent != null ? out : null;
+  }
+
   // Parse a response body that may be JSON or Server-Sent Events.
   function parseBody(text, opts) {
     if (!text || typeof text !== "string") return null;
@@ -154,7 +202,9 @@
     // Try whole-body JSON first.
     if (trimmed[0] === "{" || trimmed[0] === "[") {
       try {
-        return harvest(JSON.parse(trimmed), opts, {});
+        const obj = JSON.parse(trimmed);
+        // Prefer the structured Usage endpoint; fall back to generic scanning.
+        return parseClaudeUsage(obj, opts) || harvest(obj, opts, {});
       } catch (e) {
         /* fall through to SSE */
       }
@@ -183,7 +233,9 @@
       (d.resetAt != null ||
         d.remaining != null ||
         d.limit != null ||
-        d.used != null)
+        d.used != null ||
+        d.percent != null ||
+        d.weeklyPercent != null)
     );
   }
 
@@ -191,6 +243,7 @@
     toEpochMs,
     harvest,
     harvestHeaders,
+    parseClaudeUsage,
     parseBody,
     hasData,
     _patterns: { RESET_KEYS, LIMIT_KEYS, REMAIN_KEYS, USED_KEYS, DENY_KEYS },
