@@ -1,0 +1,11 @@
+{
+  "name": "claude-usage-meter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chrome extension showing current Claude session usage and time to reset.",
+  "scripts": {
+    "test": "node --test test/harvest.test.js",
+    "icons": "python3 scripts/make_icons.py"
+  },
+  "license": "MIT"
+}

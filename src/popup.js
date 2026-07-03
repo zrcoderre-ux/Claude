@@ -3,6 +3,7 @@
   "use strict";
 
   const STORAGE_KEY = "cum_state";
+  const MANUAL_URL_KEY = "cum_manual_url";
 
   const el = {
     usage: document.getElementById("usage"),
@@ -10,7 +11,18 @@
     reset: document.getElementById("reset"),
     updated: document.getElementById("updated"),
     clear: document.getElementById("clear"),
+    endpoint: document.getElementById("endpoint"),
+    save: document.getElementById("save"),
+    status: document.getElementById("status"),
   };
+
+  function flash(text) {
+    el.status.textContent = text;
+    el.status.hidden = false;
+    setTimeout(() => {
+      el.status.hidden = true;
+    }, 1800);
+  }
 
   function fmtCountdown(ms) {
     if (ms == null || ms <= 0) return "—";
@@ -47,7 +59,31 @@
       : "No data observed yet";
   }
 
-  chrome.storage.local.get(STORAGE_KEY, (res) => render(res && res[STORAGE_KEY]));
+  chrome.storage.local.get([STORAGE_KEY, MANUAL_URL_KEY], (res) => {
+    render(res && res[STORAGE_KEY]);
+    if (res && res[MANUAL_URL_KEY]) el.endpoint.value = res[MANUAL_URL_KEY];
+  });
+
+  el.save.addEventListener("click", () => {
+    const raw = el.endpoint.value.trim();
+    // Accept a full URL or a same-origin path; normalise to a path.
+    let value = raw;
+    if (raw) {
+      try {
+        if (/^https?:\/\//i.test(raw)) value = new URL(raw).pathname + new URL(raw).search;
+      } catch (e) {
+        flash("Invalid URL");
+        return;
+      }
+      if (!value.includes("/api/")) {
+        flash("Must be an /api/ URL");
+        return;
+      }
+    }
+    chrome.storage.local.set({ [MANUAL_URL_KEY]: value }, () =>
+      flash(value ? "Saved — reload claude.ai" : "Cleared endpoint")
+    );
+  });
 
   el.clear.addEventListener("click", () => {
     const cleared = {
@@ -57,6 +93,9 @@
       used: null,
       updatedAt: null,
     };
-    chrome.storage.local.set({ [STORAGE_KEY]: cleared }, () => render(cleared));
+    chrome.storage.local.set({ [STORAGE_KEY]: cleared }, () => {
+      render(cleared);
+      flash("Cleared");
+    });
   });
 })();

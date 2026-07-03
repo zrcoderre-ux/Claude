@@ -75,8 +75,44 @@ h1 {
   margin: 12px 0;
 }
 
-button#clear {
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b6b6b;
+  margin: 4px 0 4px;
+}
+
+input#endpoint {
   width: 100%;
+  padding: 7px 9px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #fff;
+  color: #1f1f1f;
+}
+
+input#endpoint:focus {
+  outline: none;
+  border-color: #c96442;
+}
+
+.hint {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: #9a9a9a;
+  margin: 6px 0 10px;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-row button {
+  flex: 1;
   padding: 8px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 10px;
@@ -87,8 +123,26 @@ button#clear {
   cursor: pointer;
 }
 
-button#clear:hover {
+.btn-row button:hover {
   background: #ecebe5;
+}
+
+.btn-row button.primary {
+  background: #c96442;
+  border-color: #c96442;
+  color: #fff;
+}
+
+.btn-row button.primary:hover {
+  background: #b85838;
+}
+
+.status {
+  margin-top: 8px;
+  font-size: 11.5px;
+  text-align: center;
+  color: #2e7d32;
+  font-weight: 600;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -109,12 +163,31 @@ button#clear:hover {
   .note {
     color: #a5a29a;
   }
-  button#clear {
+  .field-label {
+    color: #a5a29a;
+  }
+  input#endpoint {
+    background: #1f1e1c;
+    border-color: rgba(255, 255, 255, 0.16);
+    color: #f0efea;
+  }
+  .hint {
+    color: #8a877f;
+  }
+  .btn-row button {
     background: #35342f;
     border-color: rgba(255, 255, 255, 0.14);
     color: #f0efea;
   }
-  button#clear:hover {
+  .btn-row button:hover {
     background: #403f39;
+  }
+  .btn-row button.primary {
+    background: #c96442;
+    border-color: #c96442;
+    color: #fff;
+  }
+  .status {
+    color: #7bc67e;
   }
 }

@@ -12,6 +12,9 @@
 
   const CHANNEL = "CLAUDE_USAGE_METER";
   const STORAGE_KEY = "cum_state";
+  const URL_KEY = "cum_usage_url"; // auto-learned URL that yielded usage data
+  const MANUAL_URL_KEY = "cum_manual_url"; // user-pinned usage endpoint
+  const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   /** @type {{resetAt:number|null, remaining:number|null, limit:number|null, used:number|null, updatedAt:number|null}} */
   let state = {
@@ -22,8 +25,13 @@
     updatedAt: null,
   };
 
+  let learnedUrl = null;
+  let manualUrl = null;
+  let probing = false; // true while a proactive baseline fetch is in flight
   let els = null;
   let tickTimer = null;
+  let pollTimer = null;
+  let probeTimeout = null;
 
   // ---- Persistence -------------------------------------------------------
   function save() {
@@ -37,12 +45,21 @@
   function load() {
     return new Promise((resolve) => {
       try {
-        chrome.storage?.local.get(STORAGE_KEY, (res) => {
-          if (res && res[STORAGE_KEY]) {
-            state = Object.assign(state, res[STORAGE_KEY]);
-          }
+        // Optional chaining short-circuits to undefined when storage is
+        // unavailable — guard explicitly so the promise always resolves and
+        // the UI still builds (e.g. after an extension-context reload).
+        if (chrome && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get([STORAGE_KEY, URL_KEY, MANUAL_URL_KEY], (res) => {
+            if (res && res[STORAGE_KEY]) {
+              state = Object.assign(state, res[STORAGE_KEY]);
+            }
+            if (res && res[URL_KEY]) learnedUrl = res[URL_KEY];
+            if (res && res[MANUAL_URL_KEY]) manualUrl = res[MANUAL_URL_KEY];
+            resolve();
+          });
+        } else {
           resolve();
-        });
+        }
       } catch (e) {
         resolve();
       }
@@ -86,6 +103,50 @@
     }
   }
 
+  // ---- Proactive baseline ------------------------------------------------
+  function sendCommand(command) {
+    try {
+      window.postMessage({ __channel: CHANNEL, command }, window.location.origin);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  // Ask the page-context script to re-fetch a known usage URL (or discover one)
+  // so the meter shows a baseline without the user sending a message.
+  function requestBaseline() {
+    const url = manualUrl || learnedUrl;
+    if (url) {
+      sendCommand({ type: "fetchUsage", url });
+    } else {
+      sendCommand({ type: "discover" });
+    }
+    // Show a "checking" state briefly; clear it if nothing arrives.
+    if (!state.updatedAt) {
+      probing = true;
+      render();
+      clearTimeout(probeTimeout);
+      probeTimeout = setTimeout(() => {
+        probing = false;
+        render();
+      }, 6000);
+    }
+  }
+
+  // Remember a URL that produced usage data so future loads can re-fetch it.
+  function learnUrl(url) {
+    if (!url || url === learnedUrl) return;
+    // Prefer account/limit-shaped URLs; ignore per-message completion streams.
+    if (!/(usage|rate.?limit|limits|bootstrap|subscription|billing)/i.test(url))
+      return;
+    learnedUrl = url;
+    try {
+      chrome.storage?.local.set({ [URL_KEY]: url });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
   // ---- Formatting --------------------------------------------------------
   function fmtCountdown(ms) {
     if (ms == null || ms <= 0) return "—";
@@ -118,7 +179,8 @@
       return `${state.remaining} left`;
     if (state.remaining != null) return `${state.remaining} left`;
     if (state.used != null) return `${state.used} used`;
-    return "No data yet";
+    if (probing) return "Checking usage…";
+    return "Usage unknown";
   }
 
   // ---- UI ----------------------------------------------------------------
@@ -147,7 +209,7 @@
         <div class="cum-panel-row"><span>Remaining</span><b id="cum-p-remaining">—</b></div>
         <div class="cum-panel-row"><span>Resets in</span><b id="cum-p-reset">—</b></div>
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
-        <div class="cum-panel-hint">Send a message on Claude to populate usage data.</div>
+        <div class="cum-panel-hint" id="cum-p-hint">Open <b>Settings → Usage</b> once so the meter can read your baseline; it refreshes automatically after that.</div>
       </div>
     `;
     document.body.appendChild(root);
@@ -231,15 +293,23 @@
     if (tickTimer) clearInterval(tickTimer);
     // Re-render once a second so the countdown stays live.
     tickTimer = setInterval(() => {
-      // If the reset time has passed, clear stale usage so we don't mislead.
+      // Once the reset time has passed, clear stale usage and re-baseline.
       if (state.resetAt != null && state.resetAt <= Date.now()) {
         state.resetAt = null;
         state.used = null;
         state.remaining = null;
         save();
+        requestBaseline();
       }
       render();
     }, 1000);
+  }
+
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    // Periodically refresh the baseline so the meter stays current even if the
+    // user isn't actively sending messages.
+    pollTimer = setInterval(requestBaseline, POLL_MS);
   }
 
   // ---- Wiring ------------------------------------------------------------
@@ -248,18 +318,28 @@
     const msg = event.data;
     if (!msg || msg.__channel !== CHANNEL || !msg.payload) return;
     const p = msg.payload;
-    if (p.data) applyReading(p.data);
+    if (p.data) {
+      probing = false;
+      clearTimeout(probeTimeout);
+      if (p.url) learnUrl(p.url);
+      applyReading(p.data);
+    }
   });
 
-  // React to changes made from the popup (e.g. manual reset).
+  // React to storage changes (manual reset, or a pinned endpoint from the popup).
   try {
     chrome.storage?.onChanged.addListener((changes, area) => {
-      if (area === "local" && changes[STORAGE_KEY]) {
+      if (area !== "local") return;
+      if (changes[STORAGE_KEY]) {
         state = Object.assign(
           { resetAt: null, remaining: null, limit: null, used: null, updatedAt: null },
           changes[STORAGE_KEY].newValue || {}
         );
         render();
+      }
+      if (changes[MANUAL_URL_KEY]) {
+        manualUrl = changes[MANUAL_URL_KEY].newValue || null;
+        requestBaseline();
       }
     });
   } catch (e) {
@@ -272,6 +352,9 @@
       return;
     }
     build();
+    // Kick off a proactive baseline read, then keep it fresh.
+    requestBaseline();
+    startPolling();
   }
 
   load().then(init);
