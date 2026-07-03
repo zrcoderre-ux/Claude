@@ -268,9 +268,11 @@
   }
 
   function primaryLabel() {
+    // The percent signal (from /usage) is authoritative for claude.ai; prefer
+    // it so a stray count can never surface as e.g. "0 / 3000" on the button.
+    if (state.percent != null) return "5-hour usage";
     if (state.limit != null && state.used != null)
       return `${state.used} / ${state.limit}`;
-    if (state.percent != null) return "5-hour usage";
     if (state.remaining != null) return `${state.remaining} left`;
     if (state.used != null) return `${state.used} used`;
     if (probing) return "Checking usage…";

@@ -221,6 +221,34 @@ test("parseOverage ignores unrelated objects", () => {
   assert.equal(H.parseOverage({ five_hour: { utilization: 10 } }), null);
 });
 
+// ---- Billing fields must never leak in as a rate-limit count -----------
+test("credit/spend fields are NOT read as a used/limit quota (the 0/3000 bug)", () => {
+  // A billing-shaped response that is NOT the overage endpoint shape, so it
+  // falls through to the generic scanner.
+  const body = JSON.stringify({
+    subscription: { monthly_credit_limit: 3000, used_credits: 0, currency: "usd" },
+    spend: { used: { amount_minor: 0, exponent: 2 }, limit: null },
+  });
+  const out = H.parseBody(body, opts) || {};
+  assert.equal(out.limit, undefined, "monthly_credit_limit must not become a limit");
+  assert.equal(out.used, undefined, "used_credits must not become used");
+  assert.equal(out.remaining, undefined);
+});
+
+test("the real overage body yields overage only, never used/limit", () => {
+  const body = JSON.stringify({
+    is_enabled: false,
+    monthly_credit_limit: 3000,
+    used_credits: 0,
+    currency: "usd",
+    used_credits_basis: "billing_cycle",
+  });
+  const out = H.parseBody(body, opts);
+  assert.deepEqual(out.overage, { usedMinor: 0, limitMinor: 3000, enabled: false, currency: "usd" });
+  assert.equal(out.used, undefined);
+  assert.equal(out.limit, undefined);
+});
+
 // ---- Context window (from message SSE) ---------------------------------
 test("parseBody extracts context tokens + model from a completion SSE", () => {
   const sse = [
