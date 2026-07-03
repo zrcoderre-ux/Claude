@@ -89,14 +89,8 @@
 }
 
 #cum-primary {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
-  white-space: nowrap;
-}
-
-#cum-secondary {
-  font-size: 11px;
-  color: #6b6b6b;
   white-space: nowrap;
 }
 
@@ -224,7 +218,6 @@
   #cum-ring-label {
     color: #d8d6cf;
   }
-  #cum-secondary,
   .cum-panel-row span {
     color: #a5a29a;
   }
