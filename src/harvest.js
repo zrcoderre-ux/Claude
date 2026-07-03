@@ -244,6 +244,8 @@
         (Number(u.cache_read_input_tokens) || 0) +
         (Number(u.cache_creation_input_tokens) || 0);
       if (inp > 0) ctx.tokens = Math.max(ctx.tokens || 0, inp);
+      const out = Number(u.output_tokens) || 0;
+      if (out > 0) ctx.output = Math.max(ctx.output || 0, out);
     }
     for (const k of Object.keys(obj)) {
       const v = obj[k];
@@ -254,7 +256,11 @@
 
   function finalizeContext(ctx) {
     if (!ctx || ctx.tokens == null) return null;
-    return { tokens: ctx.tokens, model: ctx.model || null, window: contextWindowFor(ctx.model) };
+    const out = { tokens: ctx.tokens, model: ctx.model || null, window: contextWindowFor(ctx.model) };
+    // output_tokens is present only on a real message/completion — its presence
+    // marks this reading as a consumed turn (used for tenths-place calibration).
+    if (ctx.output != null) out.output = ctx.output;
+    return out;
   }
 
   // Parse a response body that may be JSON or Server-Sent Events.

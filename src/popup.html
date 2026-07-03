@@ -32,6 +32,14 @@
     <p class="hint">Off by default. When on, adds your pay-as-you-go spend
       (e.g. <b>$0.00 / $30.00</b>) to the meter's detail panel.</p>
 
+    <label class="toggle">
+      <input id="estimate-decimals" type="checkbox" />
+      <span>Estimate decimals (experimental)</span>
+    </label>
+    <p class="hint">Off by default. Claude reports whole-number percentages;
+      when on, the session meter adds an estimated tenths place
+      (e.g. <b>48.3%</b>) by tracking token use between each 1% step.</p>
+
     <label class="field-label" for="endpoint">Usage endpoint (optional)</label>
     <input
       id="endpoint"

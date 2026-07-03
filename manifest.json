@@ -28,7 +28,7 @@
     },
     {
       "matches": ["https://claude.ai/*"],
-      "js": ["src/content.js"],
+      "js": ["src/estimate.js", "src/content.js"],
       "css": ["src/content.css"],
       "run_at": "document_idle",
       "world": "ISOLATED"
