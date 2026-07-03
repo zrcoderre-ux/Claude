@@ -307,8 +307,7 @@
           <span id="cum-ring-label">–</span>
         </span>
         <span id="cum-text">
-          <span id="cum-primary">Usage</span>
-          <span id="cum-secondary">resets in —</span>
+          <span id="cum-primary">resets in —</span>
         </span>
       </button>
       <div id="cum-panel" hidden>
@@ -345,7 +344,6 @@
       ringFg: root.querySelector(".cum-ring-fg"),
       ringLabel: root.querySelector("#cum-ring-label"),
       primary: root.querySelector("#cum-primary"),
-      secondary: root.querySelector("#cum-secondary"),
       panel: root.querySelector("#cum-panel"),
       pSession: root.querySelector("#cum-p-session"),
       pSessionBar: root.querySelector("#cum-p-session-bar"),
@@ -396,13 +394,13 @@
       els.root.classList.toggle("cum-danger", sdp >= 0.9);
     }
 
-    els.primary.textContent = primaryLabel();
-
     const remainMs = state.resetAt != null ? state.resetAt - Date.now() : null;
-    els.secondary.textContent =
+    // The button's prominent line is now the reset countdown; fall back to a
+    // status string when we have no reset time yet.
+    els.primary.textContent =
       remainMs != null && remainMs > 0
         ? `resets in ${fmtCountdown(remainMs)}`
-        : "resets in —";
+        : primaryLabel();
 
     // Detail panel — session (5-hour) window
     els.pSession.textContent = sdp != null ? fmtPercent(sdp) : "—";
