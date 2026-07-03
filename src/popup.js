@@ -4,6 +4,7 @@
 
   const STORAGE_KEY = "cum_state";
   const MANUAL_URL_KEY = "cum_manual_url";
+  const OVERAGE_KEY = "cum_show_overage";
 
   const el = {
     session: document.getElementById("session"),
@@ -15,6 +16,7 @@
     endpoint: document.getElementById("endpoint"),
     save: document.getElementById("save"),
     status: document.getElementById("status"),
+    showOverage: document.getElementById("show-overage"),
   };
 
   function flash(text) {
@@ -70,9 +72,16 @@
       : "No data observed yet";
   }
 
-  chrome.storage.local.get([STORAGE_KEY, MANUAL_URL_KEY], (res) => {
+  chrome.storage.local.get([STORAGE_KEY, MANUAL_URL_KEY, OVERAGE_KEY], (res) => {
     render(res && res[STORAGE_KEY]);
     if (res && res[MANUAL_URL_KEY]) el.endpoint.value = res[MANUAL_URL_KEY];
+    el.showOverage.checked = !!(res && res[OVERAGE_KEY]);
+  });
+
+  el.showOverage.addEventListener("change", () => {
+    chrome.storage.local.set({ [OVERAGE_KEY]: el.showOverage.checked }, () =>
+      flash(el.showOverage.checked ? "Extra usage on" : "Extra usage off")
+    );
   });
 
   el.save.addEventListener("click", () => {

@@ -84,12 +84,31 @@ h1 {
   margin: 12px 0;
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: #c96442;
+  cursor: pointer;
+}
+
 .field-label {
   display: block;
   font-size: 11px;
   font-weight: 600;
   color: #6b6b6b;
-  margin: 4px 0 4px;
+  margin: 10px 0 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.07);
 }
 
 input#endpoint {

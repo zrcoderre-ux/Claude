@@ -14,6 +14,7 @@
   const STORAGE_KEY = "cum_state";
   const URL_KEY = "cum_usage_url"; // auto-learned URL that yielded usage data
   const MANUAL_URL_KEY = "cum_manual_url"; // user-pinned usage endpoint
+  const OVERAGE_KEY = "cum_show_overage"; // opt-in: show extra-usage spend
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   const EMPTY = {
@@ -24,12 +25,15 @@
     remaining: null, // count-based (rate-limit headers / SSE)
     limit: null,
     used: null,
+    overage: null, // { usedMinor, limitMinor, enabled, currency } — extra usage
+    context: null, // { tokens, model, window } — current conversation context
     updatedAt: null,
   };
   let state = Object.assign({}, EMPTY);
 
   let learnedUrl = null;
   let manualUrl = null;
+  let showOverage = false; // opt-in toggle (default off)
   let probing = false; // true while a proactive baseline fetch is in flight
   let els = null;
   let tickTimer = null;
@@ -52,14 +56,18 @@
         // unavailable — guard explicitly so the promise always resolves and
         // the UI still builds (e.g. after an extension-context reload).
         if (chrome && chrome.storage && chrome.storage.local) {
-          chrome.storage.local.get([STORAGE_KEY, URL_KEY, MANUAL_URL_KEY], (res) => {
-            if (res && res[STORAGE_KEY]) {
-              state = Object.assign(state, res[STORAGE_KEY]);
+          chrome.storage.local.get(
+            [STORAGE_KEY, URL_KEY, MANUAL_URL_KEY, OVERAGE_KEY],
+            (res) => {
+              if (res && res[STORAGE_KEY]) {
+                state = Object.assign(state, res[STORAGE_KEY]);
+              }
+              if (res && res[URL_KEY]) learnedUrl = res[URL_KEY];
+              if (res && res[MANUAL_URL_KEY]) manualUrl = res[MANUAL_URL_KEY];
+              showOverage = !!(res && res[OVERAGE_KEY]);
+              resolve();
             }
-            if (res && res[URL_KEY]) learnedUrl = res[URL_KEY];
-            if (res && res[MANUAL_URL_KEY]) manualUrl = res[MANUAL_URL_KEY];
-            resolve();
-          });
+          );
         } else {
           resolve();
         }
@@ -93,6 +101,14 @@
       data.weeklyResetAt !== state.weeklyResetAt
     ) {
       state.weeklyResetAt = data.weeklyResetAt;
+      changed = true;
+    }
+    if (data.overage != null) {
+      state.overage = data.overage;
+      changed = true;
+    }
+    if (data.context != null && data.context.tokens != null) {
+      state.context = data.context;
       changed = true;
     }
     if (data.limit != null && data.limit > 0 && data.limit !== state.limit) {
@@ -133,10 +149,24 @@
 
   // Ask the page-context script to re-fetch a known usage URL (or discover one)
   // so the meter shows a baseline without the user sending a message.
+  // The overage endpoint lives beside the usage one:
+  //   /api/organizations/{uuid}/usage → …/overage_spend_limit
+  function deriveOverageUrl(usageUrl) {
+    if (!usageUrl) return null;
+    if (/\/usage(\?|$)/.test(usageUrl))
+      return usageUrl.replace(/\/usage(\?|$)/, "/overage_spend_limit$1");
+    return null;
+  }
+
   function requestBaseline() {
     const url = manualUrl || learnedUrl;
     if (url) {
       sendCommand({ type: "fetchUsage", url });
+      // Only reach for the extra-usage endpoint when the user opted in.
+      if (showOverage) {
+        const ov = deriveOverageUrl(url);
+        if (ov) sendCommand({ type: "fetchUsage", url: ov });
+      }
     } else {
       sendCommand({ type: "discover" });
     }
@@ -196,6 +226,16 @@
     return Math.max(0, Math.min(1, x));
   }
 
+  // Render a 0..1 fraction as a percent, showing one decimal only when the
+  // value genuinely has sub-integer precision (e.g. the token-derived context
+  // meter → "64.1%", while the integer rate-limit values stay "48%").
+  function fmtPercent(pct) {
+    const p = clamp01(pct) * 100;
+    const oneDec = Math.round(p * 10) / 10;
+    if (Math.abs(oneDec - Math.round(oneDec)) < 0.05) return `${Math.round(oneDec)}%`;
+    return `${oneDec.toFixed(1)}%`;
+  }
+
   function primaryLabel() {
     if (state.limit != null && state.used != null)
       return `${state.used} / ${state.limit}`;
@@ -238,8 +278,18 @@
           <div class="cum-panel-bar"><i id="cum-p-weekly-bar"></i></div>
           <div class="cum-panel-row cum-panel-meta"><span>resets in</span><b id="cum-p-weekly-reset">—</b></div>
         </div>
+        <div class="cum-panel-group" id="cum-context-group" hidden>
+          <div class="cum-panel-row"><span>Context window</span><b id="cum-p-context">—</b></div>
+          <div class="cum-panel-bar"><i id="cum-p-context-bar"></i></div>
+          <div class="cum-panel-row cum-panel-meta"><span id="cum-p-context-model">tokens</span><b id="cum-p-context-tokens">—</b></div>
+        </div>
+        <div class="cum-panel-group" id="cum-overage-group" hidden>
+          <div class="cum-panel-row"><span>Extra usage</span><b id="cum-p-overage">—</b></div>
+          <div class="cum-panel-bar"><i id="cum-p-overage-bar"></i></div>
+          <div class="cum-panel-row cum-panel-meta"><span>status</span><b id="cum-p-overage-status">—</b></div>
+        </div>
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
-        <div class="cum-panel-hint" id="cum-p-hint">Open <b>Settings → Usage</b> once so the meter can read your baseline; it refreshes automatically after that.</div>
+        <div class="cum-panel-hint" id="cum-p-hint" hidden>Reading your usage — this updates automatically.</div>
       </div>
     `;
     document.body.appendChild(root);
@@ -259,7 +309,17 @@
       pWeekly: root.querySelector("#cum-p-weekly"),
       pWeeklyBar: root.querySelector("#cum-p-weekly-bar"),
       pWeeklyReset: root.querySelector("#cum-p-weekly-reset"),
+      contextGroup: root.querySelector("#cum-context-group"),
+      pContext: root.querySelector("#cum-p-context"),
+      pContextBar: root.querySelector("#cum-p-context-bar"),
+      pContextModel: root.querySelector("#cum-p-context-model"),
+      pContextTokens: root.querySelector("#cum-p-context-tokens"),
+      overageGroup: root.querySelector("#cum-overage-group"),
+      pOverage: root.querySelector("#cum-p-overage"),
+      pOverageBar: root.querySelector("#cum-p-overage-bar"),
+      pOverageStatus: root.querySelector("#cum-p-overage-status"),
       pUpdated: root.querySelector("#cum-p-updated"),
+      pHint: root.querySelector("#cum-p-hint"),
     };
 
     els.btn.addEventListener("click", () => {
@@ -299,7 +359,7 @@
         : "resets in —";
 
     // Detail panel — session (5-hour) window
-    els.pSession.textContent = pct != null ? `${Math.round(pct * 100)}%` : "—";
+    els.pSession.textContent = pct != null ? fmtPercent(pct) : "—";
     els.pSessionBar.style.width = pct != null ? `${Math.round(pct * 100)}%` : "0%";
     setBarSeverity(els.pSessionBar, pct);
     els.pSessionReset.textContent =
@@ -309,7 +369,7 @@
     const wpct = state.weeklyPercent;
     if (wpct != null) {
       els.weeklyGroup.hidden = false;
-      els.pWeekly.textContent = `${Math.round(wpct * 100)}%`;
+      els.pWeekly.textContent = fmtPercent(wpct);
       els.pWeeklyBar.style.width = `${Math.round(wpct * 100)}%`;
       setBarSeverity(els.pWeeklyBar, wpct);
       const wMs = state.weeklyResetAt != null ? state.weeklyResetAt - Date.now() : null;
@@ -319,9 +379,62 @@
       els.weeklyGroup.hidden = true;
     }
 
+    // Detail panel — context window (per-conversation)
+    const ctx = state.context;
+    if (ctx && ctx.tokens != null && ctx.window) {
+      const cpct = clamp01(ctx.tokens / ctx.window);
+      els.contextGroup.hidden = false;
+      els.pContext.textContent = fmtPercent(cpct);
+      els.pContextBar.style.width = `${Math.round(cpct * 100)}%`;
+      setBarSeverity(els.pContextBar, cpct);
+      els.pContextTokens.textContent = `${fmtTokens(ctx.tokens)} / ${fmtTokens(ctx.window)}`;
+      els.pContextModel.textContent = ctx.model ? shortModel(ctx.model) : "tokens";
+    } else {
+      els.contextGroup.hidden = true;
+    }
+
+    // Detail panel — extra usage (opt-in)
+    const ov = state.overage;
+    if (showOverage && ov && ov.limitMinor != null) {
+      els.overageGroup.hidden = false;
+      els.pOverage.textContent = `${money(ov.usedMinor, ov.currency)} / ${money(
+        ov.limitMinor,
+        ov.currency
+      )}`;
+      const opct = ov.limitMinor > 0 ? clamp01((ov.usedMinor || 0) / ov.limitMinor) : 0;
+      els.pOverageBar.style.width = `${Math.round(opct * 100)}%`;
+      setBarSeverity(els.pOverageBar, opct);
+      els.pOverageStatus.textContent = ov.enabled ? "on" : "off";
+    } else {
+      els.overageGroup.hidden = true;
+    }
+
     els.pUpdated.textContent = state.updatedAt
       ? `Updated ${timeAgo(state.updatedAt)}`
+      : probing
+      ? "Reading usage…"
       : "Not observed yet";
+    // Only surface the hint while we genuinely have nothing yet.
+    els.pHint.hidden = state.updatedAt != null;
+  }
+
+  function fmtTokens(n) {
+    if (n == null) return "—";
+    if (n >= 1000) return `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}k`;
+    return `${n}`;
+  }
+
+  function shortModel(m) {
+    // e.g. "claude-opus-4-8-20260101" → "opus-4-8"
+    const s = String(m).replace(/^claude-/, "").replace(/-\d{6,}.*$/, "");
+    return s.length > 16 ? s.slice(0, 16) : s;
+  }
+
+  function money(minor, currency) {
+    if (minor == null) return "—";
+    const v = (minor / 100).toFixed(2);
+    const cur = (currency || "usd").toLowerCase();
+    return cur === "usd" ? `$${v}` : `${v} ${cur.toUpperCase()}`;
   }
 
   function setBarSeverity(bar, pct) {
@@ -398,6 +511,11 @@
       if (changes[MANUAL_URL_KEY]) {
         manualUrl = changes[MANUAL_URL_KEY].newValue || null;
         requestBaseline();
+      }
+      if (changes[OVERAGE_KEY]) {
+        showOverage = !!changes[OVERAGE_KEY].newValue;
+        if (showOverage) requestBaseline(); // fetch the overage endpoint now
+        render();
       }
     });
   } catch (e) {

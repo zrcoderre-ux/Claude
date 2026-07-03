@@ -193,6 +193,70 @@
     return out.percent != null || out.weeklyPercent != null ? out : null;
   }
 
+  // Parse the extra-usage / overage spend cap:
+  //   GET /api/organizations/{uuid}/overage_spend_limit
+  // Shape: { is_enabled, monthly_credit_limit, used_credits, currency, ... }
+  // Credit amounts are minor units (cents), so 3000 => $30.00.
+  function parseOverage(obj) {
+    if (!obj || typeof obj !== "object") return null;
+    const hasShape =
+      "monthly_credit_limit" in obj &&
+      ("used_credits" in obj || "is_enabled" in obj);
+    if (!hasShape) return null;
+    const limit =
+      typeof obj.monthly_credit_limit === "number"
+        ? obj.monthly_credit_limit
+        : null;
+    const used =
+      typeof obj.used_credits === "number"
+        ? obj.used_credits
+        : obj.used_credits == null
+        ? 0
+        : null;
+    if (limit == null && used == null) return null;
+    return {
+      overage: {
+        usedMinor: used,
+        limitMinor: limit,
+        enabled: !!obj.is_enabled,
+        currency: typeof obj.currency === "string" ? obj.currency : "usd",
+      },
+    };
+  }
+
+  // Context-window usage from a message/completion payload. The prompt size
+  // (input_tokens + cached input) is the context consumed on the latest turn.
+  function contextWindowFor(model) {
+    if (!model) return 200000;
+    if (/1m|\[1m\]/i.test(model)) return 1000000; // 1M-context beta variants
+    return 200000; // current Claude models
+  }
+
+  function harvestContext(obj, ctx, depth) {
+    depth = depth || 0;
+    if (!obj || typeof obj !== "object" || depth > 6) return ctx;
+    if (typeof obj.model === "string" && /claude|opus|sonnet|haiku|fable/i.test(obj.model))
+      ctx.model = obj.model;
+    const u = obj.usage;
+    if (u && typeof u === "object") {
+      const inp =
+        (Number(u.input_tokens) || 0) +
+        (Number(u.cache_read_input_tokens) || 0) +
+        (Number(u.cache_creation_input_tokens) || 0);
+      if (inp > 0) ctx.tokens = Math.max(ctx.tokens || 0, inp);
+    }
+    for (const k of Object.keys(obj)) {
+      const v = obj[k];
+      if (v && typeof v === "object") harvestContext(v, ctx, depth + 1);
+    }
+    return ctx;
+  }
+
+  function finalizeContext(ctx) {
+    if (!ctx || ctx.tokens == null) return null;
+    return { tokens: ctx.tokens, model: ctx.model || null, window: contextWindowFor(ctx.model) };
+  }
+
   // Parse a response body that may be JSON or Server-Sent Events.
   function parseBody(text, opts) {
     if (!text || typeof text !== "string") return null;
@@ -203,8 +267,15 @@
     if (trimmed[0] === "{" || trimmed[0] === "[") {
       try {
         const obj = JSON.parse(trimmed);
-        // Prefer the structured Usage endpoint; fall back to generic scanning.
-        return parseClaudeUsage(obj, opts) || harvest(obj, opts, {});
+        // Prefer the structured Usage / overage endpoints; a given response is
+        // one or the other. Fall back to the generic scanner for anything else.
+        const usage = parseClaudeUsage(obj, opts);
+        const overage = parseOverage(obj);
+        if (usage || overage) return Object.assign({}, usage, overage);
+        const generic = harvest(obj, opts, {});
+        const context = finalizeContext(harvestContext(obj, {}));
+        if (context) generic.context = context;
+        return generic;
       } catch (e) {
         /* fall through to SSE */
       }
@@ -212,19 +283,24 @@
 
     // Server-sent events: merge every `data: {...}` line.
     const out = {};
+    const ctx = {};
     let found = false;
     const lines = trimmed.split(/\r?\n/);
     for (const line of lines) {
       const m = line.match(/^data:\s*(\{.*\})\s*$/);
       if (!m) continue;
       try {
-        harvest(JSON.parse(m[1]), opts, out);
+        const obj = JSON.parse(m[1]);
+        harvest(obj, opts, out);
+        harvestContext(obj, ctx);
         found = true;
       } catch (e) {
         /* skip malformed line */
       }
     }
-    return found ? out : null;
+    const context = finalizeContext(ctx);
+    if (context) out.context = context;
+    return found && (hasData(out) || context) ? out : null;
   }
 
   function hasData(d) {
@@ -235,7 +311,9 @@
         d.limit != null ||
         d.used != null ||
         d.percent != null ||
-        d.weeklyPercent != null)
+        d.weeklyPercent != null ||
+        d.overage != null ||
+        d.context != null)
     );
   }
 
@@ -244,6 +322,7 @@
     harvest,
     harvestHeaders,
     parseClaudeUsage,
+    parseOverage,
     parseBody,
     hasData,
     _patterns: { RESET_KEYS, LIMIT_KEYS, REMAIN_KEYS, USED_KEYS, DENY_KEYS },

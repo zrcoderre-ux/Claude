@@ -2,7 +2,7 @@
 
 #cum-root {
   position: fixed;
-  left: 16px;
+  right: 16px;
   bottom: 16px;
   z-index: 2147483646;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
@@ -103,7 +103,7 @@
 /* Detail panel */
 #cum-panel {
   position: absolute;
-  left: 0;
+  right: 0;
   bottom: calc(100% + 10px);
   width: 220px;
   padding: 12px 14px;
