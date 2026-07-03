@@ -266,6 +266,51 @@
     return out;
   }
 
+  // claude.ai's web app does not expose token counts, but the conversation
+  // payload (GET /chat_conversations/{uuid}?...) contains every message's text.
+  // We estimate the context size from total character length (~4 chars/token).
+  const CHARS_PER_TOKEN = 4;
+
+  function messageChars(msg) {
+    if (!msg || typeof msg !== "object") return 0;
+    let textLen = typeof msg.text === "string" ? msg.text.length : 0;
+    let contentLen = 0;
+    if (Array.isArray(msg.content)) {
+      for (const blk of msg.content) {
+        if (!blk || typeof blk !== "object") continue;
+        if (typeof blk.text === "string") contentLen += blk.text.length;
+        else if (typeof blk.content === "string") contentLen += blk.content.length;
+        else if (blk.input && typeof blk.input === "object") {
+          try {
+            contentLen += JSON.stringify(blk.input).length;
+          } catch (e) {
+            /* ignore */
+          }
+        }
+      }
+    }
+    // text and content usually mirror each other — take the larger, not the sum,
+    // to avoid double-counting.
+    return Math.max(textLen, contentLen);
+  }
+
+  function parseConversation(obj) {
+    if (!obj || !Array.isArray(obj.chat_messages)) return null;
+    let chars = 0;
+    for (const m of obj.chat_messages) chars += messageChars(m);
+    if (chars <= 0) return null;
+    const model = typeof obj.model === "string" && obj.model ? obj.model : null;
+    return {
+      context: {
+        tokens: Math.round(chars / CHARS_PER_TOKEN),
+        model,
+        window: contextWindowFor(model),
+        estimated: true,
+        messages: obj.chat_messages.length,
+      },
+    };
+  }
+
   // Parse a response body that may be JSON or Server-Sent Events.
   function parseBody(text, opts) {
     if (!text || typeof text !== "string") return null;
@@ -280,7 +325,8 @@
         // one or the other. Fall back to the generic scanner for anything else.
         const usage = parseClaudeUsage(obj, opts);
         const overage = parseOverage(obj);
-        if (usage || overage) return Object.assign({}, usage, overage);
+        const conv = parseConversation(obj);
+        if (usage || overage || conv) return Object.assign({}, usage, overage, conv);
         const generic = harvest(obj, opts, {});
         const context = finalizeContext(harvestContext(obj, {}));
         if (context) generic.context = context;
@@ -332,6 +378,7 @@
     harvestHeaders,
     parseClaudeUsage,
     parseOverage,
+    parseConversation,
     parseBody,
     hasData,
     _patterns: { RESET_KEYS, LIMIT_KEYS, REMAIN_KEYS, USED_KEYS, DENY_KEYS },

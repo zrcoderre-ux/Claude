@@ -272,6 +272,51 @@ test("context tokens do NOT leak into the rate-limit quota fields", () => {
   assert.equal(out.remaining, undefined);
 });
 
+// ---- Context estimate from the conversation payload --------------------
+test("parseConversation estimates context tokens from message text (~4 chars/token)", () => {
+  const body = {
+    model: "claude-opus-4-8",
+    chat_messages: [
+      { sender: "human", text: "a".repeat(400) },
+      { sender: "assistant", content: [{ type: "text", text: "b".repeat(400) }] },
+    ],
+  };
+  const out = H.parseConversation(body);
+  assert.equal(out.context.tokens, 200, "(400+400)/4");
+  assert.equal(out.context.estimated, true);
+  assert.equal(out.context.model, "claude-opus-4-8");
+  assert.equal(out.context.window, 200000);
+  assert.equal(out.context.messages, 2);
+});
+
+test("parseConversation does not double-count mirrored text + content", () => {
+  const body = {
+    chat_messages: [
+      { text: "x".repeat(100), content: [{ type: "text", text: "x".repeat(100) }] },
+    ],
+  };
+  // max(100, 100) = 100 chars → 25 tokens, not 50.
+  assert.equal(H.parseConversation(body).context.tokens, 25);
+});
+
+test("parseConversation returns null for non-conversation objects", () => {
+  assert.equal(H.parseConversation({ five_hour: { utilization: 5 } }), null);
+  assert.equal(H.parseConversation({ chat_messages: [] }), null);
+});
+
+test("parseBody routes a conversation payload to the estimator", () => {
+  const body = JSON.stringify({
+    model: "claude-sonnet-5",
+    chat_messages: [{ text: "hello world ".repeat(100) }],
+  });
+  const out = H.parseBody(body, opts);
+  assert.ok(out.context.tokens > 0);
+  assert.equal(out.context.estimated, true);
+  // must not masquerade as a rate-limit count
+  assert.equal(out.limit, undefined);
+  assert.equal(out.used, undefined);
+});
+
 // ---- resetAt sanity bounds --------------------------------------------
 test("a reset far in the past is rejected", () => {
   const out = H.harvest({ resets_at: Math.floor((NOW - 3600_000) / 1000) }, opts, {});

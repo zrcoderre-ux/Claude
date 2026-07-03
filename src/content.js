@@ -121,13 +121,25 @@
       changed = true;
     }
     if (data.context != null && data.context.tokens != null) {
+      const prevMsgs = state.context && state.context.messages;
       state.context = data.context;
       changed = true;
-      // A reading with output_tokens is a consumed turn — its cost feeds the
-      // tenths-place calibrator (input + cached input + output).
-      if (calib && data.context.output != null) {
-        calib.addCost((data.context.tokens || 0) + (data.context.output || 0));
-        state.calib = calib.snapshot();
+      // Feed the tenths-place calibrator with this turn's consumption proxy.
+      // Preferred: real output_tokens (if the API ever exposes them). Otherwise,
+      // on a NEW turn (message count grew) each turn reprocesses roughly the
+      // whole context, so the estimated context size is the cost proxy.
+      if (calib) {
+        if (data.context.output != null) {
+          calib.addCost((data.context.tokens || 0) + (data.context.output || 0));
+          state.calib = calib.snapshot();
+        } else if (
+          data.context.estimated &&
+          data.context.messages != null &&
+          (prevMsgs == null || data.context.messages > prevMsgs)
+        ) {
+          calib.addCost(data.context.tokens || 0);
+          state.calib = calib.snapshot();
+        }
       }
     }
     if (data.limit != null && data.limit > 0 && data.limit !== state.limit) {
@@ -312,7 +324,7 @@
           <div class="cum-panel-row cum-panel-meta"><span>resets in</span><b id="cum-p-weekly-reset">—</b></div>
         </div>
         <div class="cum-panel-group" id="cum-context-group" hidden>
-          <div class="cum-panel-row"><span>Context window</span><b id="cum-p-context">—</b></div>
+          <div class="cum-panel-row"><span>Context <span class="cum-est">est.</span></span><b id="cum-p-context">—</b></div>
           <div class="cum-panel-bar"><i id="cum-p-context-bar"></i></div>
           <div class="cum-panel-row cum-panel-meta"><span id="cum-p-context-model">tokens</span><b id="cum-p-context-tokens">—</b></div>
         </div>
@@ -417,12 +429,13 @@
     const ctx = state.context;
     if (ctx && ctx.tokens != null && ctx.window) {
       const cpct = clamp01(ctx.tokens / ctx.window);
+      const pre = ctx.estimated ? "~" : "";
       els.contextGroup.hidden = false;
-      els.pContext.textContent = fmtPercent(cpct);
+      els.pContext.textContent = pre + fmtPercent(cpct);
       els.pContextBar.style.width = `${Math.round(cpct * 100)}%`;
       setBarSeverity(els.pContextBar, cpct);
-      els.pContextTokens.textContent = `${fmtTokens(ctx.tokens)} / ${fmtTokens(ctx.window)}`;
-      els.pContextModel.textContent = ctx.model ? shortModel(ctx.model) : "tokens";
+      els.pContextTokens.textContent = `${pre}${fmtTokens(ctx.tokens)} / ${fmtTokens(ctx.window)}`;
+      els.pContextModel.textContent = ctx.model ? shortModel(ctx.model) : "estimated";
     } else {
       els.contextGroup.hidden = true;
     }
