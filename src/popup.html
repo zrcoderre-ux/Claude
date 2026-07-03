@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Claude Usage Meter</title>
+  </head>
+  <body>
+    <div class="head">
+      <div class="dot"></div>
+      <h1>Claude Usage Meter</h1>
+    </div>
+
+    <div class="card">
+      <div class="row"><span>Usage</span><b id="usage">—</b></div>
+      <div class="row"><span>Remaining</span><b id="remaining">—</b></div>
+      <div class="row"><span>Resets in</span><b id="reset">—</b></div>
+      <div class="row sub" id="updated">No data observed yet</div>
+    </div>
+
+    <p class="note">
+      The floating meter appears on <b>claude.ai</b>. Usage figures are read
+      from Claude's own responses, so they populate after you send a message.
+    </p>
+
+    <button id="clear" type="button">Clear stored data</button>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

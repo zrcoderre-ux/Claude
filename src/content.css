@@ -1,0 +1,184 @@
+/* Claude Usage Meter — floating button styles */
+
+#cum-root {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2147483646;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#cum-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px 7px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  color: #1f1f1f;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  user-select: none;
+}
+
+#cum-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16), 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#cum-btn:active {
+  transform: translateY(0);
+}
+
+#cum-ring {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+#cum-ring svg {
+  width: 34px;
+  height: 34px;
+  transform: rotate(-90deg);
+}
+
+.cum-ring-bg {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.1);
+  stroke-width: 3.2;
+}
+
+.cum-ring-fg {
+  fill: none;
+  stroke: #c96442; /* Claude's accent-ish clay tone */
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-dasharray: 0 100;
+  transition: stroke-dasharray 0.4s ease, stroke 0.3s ease;
+}
+
+#cum-root.cum-warn .cum-ring-fg {
+  stroke: #d99b1f;
+}
+
+#cum-root.cum-danger .cum-ring-fg {
+  stroke: #d23f31;
+}
+
+#cum-ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #444;
+}
+
+#cum-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  text-align: left;
+}
+
+#cum-primary {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#cum-secondary {
+  font-size: 11px;
+  color: #6b6b6b;
+  white-space: nowrap;
+}
+
+/* Detail panel */
+#cum-panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  width: 220px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  color: #1f1f1f;
+}
+
+.cum-panel-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+  padding: 4px 0;
+}
+
+.cum-panel-row span {
+  color: #6b6b6b;
+}
+
+.cum-panel-row b {
+  font-weight: 600;
+}
+
+.cum-panel-title {
+  font-weight: 700;
+  font-size: 13px;
+  justify-content: flex-start;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.cum-panel-sub {
+  justify-content: flex-start;
+  color: #9a9a9a;
+  font-size: 11px;
+  padding-top: 8px;
+}
+
+.cum-panel-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #9a9a9a;
+}
+
+/* Dark mode — claude.ai sets a dark background; adapt via prefers-color-scheme. */
+@media (prefers-color-scheme: dark) {
+  #cum-btn,
+  #cum-panel {
+    background: #2a2a28;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #f0efea;
+  }
+  #cum-btn {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+  .cum-ring-bg {
+    stroke: rgba(255, 255, 255, 0.16);
+  }
+  #cum-ring-label {
+    color: #d8d6cf;
+  }
+  #cum-secondary,
+  .cum-panel-row span {
+    color: #a5a29a;
+  }
+  .cum-panel-title {
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+  .cum-panel-sub,
+  .cum-panel-hint {
+    color: #8a877f;
+  }
+}
