@@ -21,10 +21,16 @@
     </div>
 
     <p class="note">
-      The floating meter appears on <b>claude.ai</b>. It reads your baseline
-      from <b>Settings → Usage</b> automatically after you open that page once,
-      and keeps it fresh in the background.
+      The floating meter appears on <b>claude.ai</b>. It reads your usage
+      automatically and keeps it fresh in the background.
     </p>
+
+    <label class="toggle">
+      <input id="show-overage" type="checkbox" />
+      <span>Show extra-usage spend ($)</span>
+    </label>
+    <p class="hint">Off by default. When on, adds your pay-as-you-go spend
+      (e.g. <b>$0.00 / $30.00</b>) to the meter's detail panel.</p>
 
     <label class="field-label" for="endpoint">Usage endpoint (optional)</label>
     <input

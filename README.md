@@ -2,19 +2,32 @@
 
 A Chrome extension that shows your **current Claude session usage** and a live
 **countdown to the next limit reset** in a floating button pinned to the
-bottom-left corner of [claude.ai](https://claude.ai).
+bottom-right corner of [claude.ai](https://claude.ai).
 
 ![Extension icon](icons/icon128.png)
 
 ## What it does
 
-- Adds a small floating pill in the bottom-left of every claude.ai page.
-- Shows a progress ring (percent of your session limit used), the usage figure
-  (e.g. `12 / 45` or `33 left`), and `resets in 2h 14m`.
-- Click the pill to expand a panel with the full breakdown.
-- The ring turns amber at 75% and red at 90% so you get a heads-up before you
-  hit the wall.
-- A toolbar popup mirrors the same data and lets you clear stored values.
+- Adds a small floating pill in the bottom-right of every claude.ai page.
+- The ring tracks your **5-hour session** usage; the label shows the percent
+  and `resets in 2h 14m`. It turns amber at 75% and red at 90%.
+- Click the pill for a detail panel with up to four meters:
+  - **Session · 5 hr** and **Weekly · 7 day** rate-limit windows, each with its
+    own reset.
+  - **Context window** — how full the current conversation is (from the exact
+    token counts in Claude's streamed responses), e.g. `64.1% · 128k / 200k`.
+  - **Extra usage** — your pay-as-you-go spend (`$0.00 / $30.00`), **opt-in**
+    via the popup toggle (off by default).
+- A toolbar popup mirrors the data, toggles extra usage, and can pin the
+  endpoint or clear stored values.
+
+### A note on precision
+
+The rate-limit windows come back as **whole-number percentages** (the server
+rounds them — there are no `anthropic-ratelimit-*` headers on these calls to
+derive anything finer). The **context meter** is computed from exact token
+counts, so it shows one decimal (`64.1%`) — and the panel will surface a
+decimal for any value that genuinely has one.
 
 ## How it reads usage
 
@@ -44,18 +57,19 @@ for anything else.
 To avoid an empty "no data" state, the extension establishes a **baseline**
 three ways, in order of preference:
 
-1. **Self-learning (primary).** When you open **Settings → Usage**, the app
-   calls the endpoint above — the interceptor harvests it *and remembers that
-   URL*. On every later page load (and every 5 minutes) the extension re-fetches
-   it in the background, so the meter shows a live baseline with no interaction.
-2. **Discovery (best-effort).** On first load, before any URL is learned, it
-   reads `/api/organizations` (and `/api/bootstrap`) to find your org uuid and
-   fetches `/api/organizations/{uuid}/usage` directly.
-3. **Manual pin (optional).** Paste the exact Usage request URL into the
-   toolbar popup to pin it.
+1. **Discovery (primary).** On load it reads `/api/organizations` (and
+   `/api/bootstrap`) to find your org uuid and fetches
+   `/api/organizations/{uuid}/usage` directly — so the meter populates on its
+   own, no interaction required.
+2. **Self-learning.** Any usage URL the app itself calls is remembered and
+   re-fetched on later loads and every 5 minutes, keeping the baseline fresh.
+3. **Manual pin (optional).** Paste the exact usage request URL into the
+   toolbar popup to override discovery.
 
-Passive interception still updates the numbers live as you send messages
-(from `anthropic-ratelimit-*` headers, when present).
+The **context meter** comes from the streamed completion responses
+(`input_tokens` + cached input ÷ the model's context window). The **extra-usage**
+line, when enabled, reads `/api/organizations/{uuid}/overage_spend_limit`
+(credit amounts are minor units, so `3000` → `$30.00`).
 
 > Note: this is a best-effort reader. If Anthropic changes their response
 > shape, the broad harvesting heuristics in `src/harvest.js` are easy to adjust
@@ -79,8 +93,8 @@ rate-limit headers, SSE `resets_at` payloads, and the false-positive guards
 2. Open `chrome://extensions` in Chrome (or any Chromium browser).
 3. Toggle **Developer mode** on (top-right).
 4. Click **Load unpacked** and select this folder.
-5. Open [claude.ai](https://claude.ai) and send a message — the meter appears
-   in the bottom-left corner.
+5. Open [claude.ai](https://claude.ai) — the meter appears in the bottom-right
+   corner and populates within a few seconds.
 
 ## Project layout
 

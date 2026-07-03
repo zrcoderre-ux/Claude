@@ -193,6 +193,57 @@ test("parseClaudeUsage ignores null utilization (unset windows)", () => {
   assert.equal(H.parseClaudeUsage(body, opts), null);
 });
 
+// ---- Extra-usage / overage endpoint ------------------------------------
+test("parseOverage reads the overage spend cap (cents)", () => {
+  const body = {
+    is_enabled: false,
+    monthly_credit_limit: 3000,
+    used_credits: 0,
+    currency: "usd",
+    period: "monthly",
+  };
+  const out = H.parseOverage(body);
+  assert.deepEqual(out.overage, {
+    usedMinor: 0,
+    limitMinor: 3000,
+    enabled: false,
+    currency: "usd",
+  });
+});
+
+test("parseOverage treats null used_credits as 0", () => {
+  const out = H.parseOverage({ monthly_credit_limit: 5000, used_credits: null, is_enabled: true });
+  assert.equal(out.overage.usedMinor, 0);
+  assert.equal(out.overage.enabled, true);
+});
+
+test("parseOverage ignores unrelated objects", () => {
+  assert.equal(H.parseOverage({ five_hour: { utilization: 10 } }), null);
+});
+
+// ---- Context window (from message SSE) ---------------------------------
+test("parseBody extracts context tokens + model from a completion SSE", () => {
+  const sse = [
+    'data: {"type":"message_start","message":{"model":"claude-opus-4-8-20260101","usage":{"input_tokens":50000,"cache_read_input_tokens":28231,"output_tokens":1}}}',
+    'data: {"type":"message_delta","usage":{"output_tokens":420}}',
+    "",
+  ].join("\n");
+  const out = H.parseBody(sse, opts);
+  assert.equal(out.context.tokens, 78231, "input + cache_read");
+  assert.equal(out.context.model, "claude-opus-4-8-20260101");
+  assert.equal(out.context.window, 200000);
+});
+
+test("context tokens do NOT leak into the rate-limit quota fields", () => {
+  const sse =
+    'data: {"message":{"model":"claude-sonnet-5","usage":{"input_tokens":1000}}}\n';
+  const out = H.parseBody(sse, opts);
+  assert.equal(out.context.tokens, 1000);
+  assert.equal(out.limit, undefined);
+  assert.equal(out.used, undefined);
+  assert.equal(out.remaining, undefined);
+});
+
 // ---- resetAt sanity bounds --------------------------------------------
 test("a reset far in the past is rejected", () => {
   const out = H.harvest({ resets_at: Math.floor((NOW - 3600_000) / 1000) }, opts, {});
