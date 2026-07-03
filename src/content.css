@@ -84,7 +84,8 @@
 #cum-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.2;
+  justify-content: center;
+  line-height: 1.05;
   text-align: left;
 }
 
@@ -92,6 +93,19 @@
   font-size: 13.5px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+#cum-sub {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #8a8a8a;
+  white-space: nowrap;
+}
+
+#cum-sub[hidden] {
+  display: none;
 }
 
 /* Detail panel */
@@ -217,6 +231,9 @@
   }
   #cum-ring-label {
     color: #d8d6cf;
+  }
+  #cum-sub {
+    color: #a5a29a;
   }
   .cum-panel-row span {
     color: #a5a29a;

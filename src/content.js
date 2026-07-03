@@ -307,7 +307,8 @@
           <span id="cum-ring-label">–</span>
         </span>
         <span id="cum-text">
-          <span id="cum-primary">resets in —</span>
+          <span id="cum-primary">—</span>
+          <span id="cum-sub">till reset</span>
         </span>
       </button>
       <div id="cum-panel" hidden>
@@ -344,6 +345,7 @@
       ringFg: root.querySelector(".cum-ring-fg"),
       ringLabel: root.querySelector("#cum-ring-label"),
       primary: root.querySelector("#cum-primary"),
+      sub: root.querySelector("#cum-sub"),
       panel: root.querySelector("#cum-panel"),
       pSession: root.querySelector("#cum-p-session"),
       pSessionBar: root.querySelector("#cum-p-session-bar"),
@@ -395,12 +397,16 @@
     }
 
     const remainMs = state.resetAt != null ? state.resetAt - Date.now() : null;
-    // The button's prominent line is now the reset countdown; fall back to a
-    // status string when we have no reset time yet.
-    els.primary.textContent =
-      remainMs != null && remainMs > 0
-        ? `resets in ${fmtCountdown(remainMs)}`
-        : primaryLabel();
+    // The button shows the countdown value stacked over a small "till reset"
+    // label (narrow); when there's no reset time yet, show a status instead and
+    // hide the sub-label.
+    if (remainMs != null && remainMs > 0) {
+      els.primary.textContent = fmtCountdown(remainMs);
+      els.sub.hidden = false;
+    } else {
+      els.primary.textContent = primaryLabel();
+      els.sub.hidden = true;
+    }
 
     // Detail panel — session (5-hour) window
     els.pSession.textContent = sdp != null ? fmtPercent(sdp) : "—";
