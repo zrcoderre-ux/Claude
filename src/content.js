@@ -15,6 +15,7 @@
   const URL_KEY = "cum_usage_url"; // auto-learned URL that yielded usage data
   const MANUAL_URL_KEY = "cum_manual_url"; // user-pinned usage endpoint
   const OVERAGE_KEY = "cum_show_overage"; // opt-in: show extra-usage spend
+  const ESTIMATE_KEY = "cum_estimate_decimals"; // opt-in: estimated tenths
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   const EMPTY = {
@@ -27,6 +28,7 @@
     used: null,
     overage: null, // { usedMinor, limitMinor, enabled, currency } — extra usage
     context: null, // { tokens, model, window } — current conversation context
+    calib: null, // { perPct, accum, baseInt } — tenths-place calibration
     updatedAt: null,
   };
   let state = Object.assign({}, EMPTY);
@@ -34,6 +36,8 @@
   let learnedUrl = null;
   let manualUrl = null;
   let showOverage = false; // opt-in toggle (default off)
+  let estimateDecimals = false; // opt-in toggle (default off)
+  let calib = null; // CUMEstimate calibrator instance
   let probing = false; // true while a proactive baseline fetch is in flight
   let els = null;
   let tickTimer = null;
@@ -57,7 +61,7 @@
         // the UI still builds (e.g. after an extension-context reload).
         if (chrome && chrome.storage && chrome.storage.local) {
           chrome.storage.local.get(
-            [STORAGE_KEY, URL_KEY, MANUAL_URL_KEY, OVERAGE_KEY],
+            [STORAGE_KEY, URL_KEY, MANUAL_URL_KEY, OVERAGE_KEY, ESTIMATE_KEY],
             (res) => {
               if (res && res[STORAGE_KEY]) {
                 state = Object.assign(state, res[STORAGE_KEY]);
@@ -65,6 +69,7 @@
               if (res && res[URL_KEY]) learnedUrl = res[URL_KEY];
               if (res && res[MANUAL_URL_KEY]) manualUrl = res[MANUAL_URL_KEY];
               showOverage = !!(res && res[OVERAGE_KEY]);
+              estimateDecimals = !!(res && res[ESTIMATE_KEY]);
               resolve();
             }
           );
@@ -87,9 +92,17 @@
         changed = true;
       }
     }
-    if (data.percent != null && data.percent !== state.percent) {
-      state.percent = data.percent;
-      changed = true;
+    if (data.percent != null) {
+      // Feed the authoritative integer to the tenths-place calibrator before
+      // updating state (it snaps to and recalibrates on each server tick).
+      if (calib) {
+        calib.observePercent(Math.round(data.percent * 100));
+        state.calib = calib.snapshot();
+      }
+      if (data.percent !== state.percent) {
+        state.percent = data.percent;
+        changed = true;
+      }
     }
     if (data.weeklyPercent != null && data.weeklyPercent !== state.weeklyPercent) {
       state.weeklyPercent = data.weeklyPercent;
@@ -110,6 +123,12 @@
     if (data.context != null && data.context.tokens != null) {
       state.context = data.context;
       changed = true;
+      // A reading with output_tokens is a consumed turn — its cost feeds the
+      // tenths-place calibrator (input + cached input + output).
+      if (calib && data.context.output != null) {
+        calib.addCost((data.context.tokens || 0) + (data.context.output || 0));
+        state.calib = calib.snapshot();
+      }
     }
     if (data.limit != null && data.limit > 0 && data.limit !== state.limit) {
       state.limit = data.limit;
@@ -226,6 +245,18 @@
     return Math.max(0, Math.min(1, x));
   }
 
+  // Session utilization for display: the server integer, plus an estimated
+  // fractional percent when the experimental toggle is on and we've calibrated
+  // within the current (still-open) window.
+  function sessionDisplayPercent() {
+    const pct = usagePercent();
+    if (pct == null) return null;
+    if (!estimateDecimals || !calib || !calib.calibrated()) return pct;
+    if (state.resetAt == null || state.resetAt <= Date.now()) return pct;
+    const baseInt = Math.round(pct * 100);
+    return clamp01((baseInt + calib.fraction()) / 100);
+  }
+
   // Render a 0..1 fraction as a percent, showing one decimal only when the
   // value genuinely has sub-integer precision (e.g. the token-derived context
   // meter → "64.1%", while the integer rate-limit values stay "48%").
@@ -338,16 +369,17 @@
     if (!els) return;
 
     const pct = usagePercent();
+    const sdp = sessionDisplayPercent(); // includes estimated tenths when on
     const circumference = 2 * Math.PI * 15.9155;
-    if (pct == null) {
+    if (sdp == null) {
       els.ringFg.style.strokeDasharray = `0 ${circumference}`;
       els.ringLabel.textContent = "–";
       els.root.classList.remove("cum-warn", "cum-danger");
     } else {
-      els.ringFg.style.strokeDasharray = `${pct * circumference} ${circumference}`;
-      els.ringLabel.textContent = `${Math.round(pct * 100)}%`;
-      els.root.classList.toggle("cum-warn", pct >= 0.75 && pct < 0.9);
-      els.root.classList.toggle("cum-danger", pct >= 0.9);
+      els.ringFg.style.strokeDasharray = `${sdp * circumference} ${circumference}`;
+      els.ringLabel.textContent = fmtPercent(sdp);
+      els.root.classList.toggle("cum-warn", sdp >= 0.75 && sdp < 0.9);
+      els.root.classList.toggle("cum-danger", sdp >= 0.9);
     }
 
     els.primary.textContent = primaryLabel();
@@ -359,9 +391,9 @@
         : "resets in —";
 
     // Detail panel — session (5-hour) window
-    els.pSession.textContent = pct != null ? fmtPercent(pct) : "—";
-    els.pSessionBar.style.width = pct != null ? `${Math.round(pct * 100)}%` : "0%";
-    setBarSeverity(els.pSessionBar, pct);
+    els.pSession.textContent = sdp != null ? fmtPercent(sdp) : "—";
+    els.pSessionBar.style.width = sdp != null ? `${sdp * 100}%` : "0%";
+    setBarSeverity(els.pSessionBar, sdp);
     els.pSessionReset.textContent =
       remainMs != null && remainMs > 0 ? fmtCountdown(remainMs) : "—";
 
@@ -464,6 +496,10 @@
         state.percent = null;
         state.used = null;
         state.remaining = null;
+        if (calib) {
+          calib.reset(); // new window — drop stale calibration
+          state.calib = calib.snapshot();
+        }
         dirty = true;
       }
       if (state.weeklyResetAt != null && state.weeklyResetAt <= Date.now()) {
@@ -506,6 +542,7 @@
       if (area !== "local") return;
       if (changes[STORAGE_KEY]) {
         state = Object.assign({}, EMPTY, changes[STORAGE_KEY].newValue || {});
+        calib = makeCalibrator(); // rebuild from the (possibly cleared) snapshot
         render();
       }
       if (changes[MANUAL_URL_KEY]) {
@@ -517,9 +554,21 @@
         if (showOverage) requestBaseline(); // fetch the overage endpoint now
         render();
       }
+      if (changes[ESTIMATE_KEY]) {
+        estimateDecimals = !!changes[ESTIMATE_KEY].newValue;
+        render();
+      }
     });
   } catch (e) {
     /* ignore */
+  }
+
+  function makeCalibrator() {
+    try {
+      return window.CUMEstimate.createCalibrator(state.calib || undefined);
+    } catch (e) {
+      return null;
+    }
   }
 
   function init() {
@@ -527,6 +576,7 @@
       requestAnimationFrame(init);
       return;
     }
+    calib = makeCalibrator();
     build();
     // Kick off a proactive baseline read, then keep it fresh.
     requestBaseline();

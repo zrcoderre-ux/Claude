@@ -29,6 +29,16 @@ derive anything finer). The **context meter** is computed from exact token
 counts, so it shows one decimal (`64.1%`) — and the panel will surface a
 decimal for any value that genuinely has one.
 
+**Estimate decimals (experimental, opt-in).** With the toggle on, the session
+meter adds an estimated tenths place (`48.3%`). Since usage only climbs within a
+fixed window, it learns "tokens per 1%" from the integer jumps it sees, then
+divides the tokens consumed since the last jump by that rate. It always snaps to
+the authoritative server integer and caps the fraction below the next whole
+number, so it only ever affects the tenths place. It's an estimate — it can't
+see usage from other tabs/devices/the API, and the per-model token weighting
+isn't documented — which is why it's off by default and labelled experimental.
+The calibration lives in `src/estimate.js` and is unit-tested.
+
 ## How it reads usage
 
 Claude.ai does not expose a documented "usage" API, so the extension observes
@@ -101,11 +111,13 @@ rate-limit headers, SSE `resets_at` payloads, and the false-positive guards
 ```
 manifest.json          MV3 manifest
 src/harvest.js         Pure usage-parsing logic (shared by ext + tests)
+src/estimate.js        Pure tenths-place calibrator (shared by ext + tests)
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown
 src/content.css        Floating-button styles (light + dark)
-src/popup.html/js/css  Toolbar popup (status + manual endpoint)
+src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
+test/estimate.test.js  Unit tests for the tenths-place calibrator
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only
 ```
