@@ -139,6 +139,47 @@
   border-bottom: 1px solid rgba(0, 0, 0, 0.07);
 }
 
+.cum-panel-group {
+  padding: 6px 0;
+}
+
+.cum-panel-group + .cum-panel-group {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.cum-panel-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  margin: 4px 0 2px;
+}
+
+.cum-panel-bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: #c96442;
+  transition: width 0.4s ease, background 0.3s ease;
+}
+
+.cum-panel-bar i.cum-bar-warn {
+  background: #d99b1f;
+}
+
+.cum-panel-bar i.cum-bar-danger {
+  background: #d23f31;
+}
+
+.cum-panel-meta {
+  font-size: 11px;
+}
+
+.cum-panel-meta span {
+  color: #9a9a9a;
+}
+
 .cum-panel-sub {
   justify-content: flex-start;
   color: #9a9a9a;
@@ -176,6 +217,15 @@
   }
   .cum-panel-title {
     border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+  .cum-panel-group + .cum-panel-group {
+    border-top-color: rgba(255, 255, 255, 0.08);
+  }
+  .cum-panel-bar {
+    background: rgba(255, 255, 255, 0.14);
+  }
+  .cum-panel-meta span {
+    color: #8a877f;
   }
   .cum-panel-sub,
   .cum-panel-hint {

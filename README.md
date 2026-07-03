@@ -26,21 +26,36 @@ scans response **headers** (`anthropic-ratelimit-*`, `retry-after`) and
 or a reset timestamp (`src/harvest.js`). Findings are forwarded to the content
 script, persisted in `chrome.storage.local`, and rendered.
 
-To avoid an empty "no data" state, it establishes a **baseline** three ways,
-in order of preference:
+The confirmed source is the same endpoint the Usage page itself loads:
+
+```
+GET /api/organizations/{org_uuid}/usage
+→ { five_hour: { utilization: 48, resets_at: "…" },   // the "session"
+    seven_day: { utilization: 43, resets_at: "…" },   // the weekly window
+    limits: [ { kind, percent, resets_at, is_active } … ], spend: {…} }
+```
+
+`utilization`/`percent` are **0–100 percentages**, so the meter is percent-based:
+the ring and the "Session · 5 hr" row track `five_hour`, and the panel also
+shows the `seven_day` weekly window. `src/harvest.js` parses this shape
+directly (`parseClaudeUsage`) and falls back to the generic header/SSE scanner
+for anything else.
+
+To avoid an empty "no data" state, the extension establishes a **baseline**
+three ways, in order of preference:
 
 1. **Self-learning (primary).** When you open **Settings → Usage**, the app
-   fetches your usage — the interceptor harvests it *and remembers that URL*.
-   On every later page load (and every 5 minutes) the extension re-fetches that
-   same URL in the background, so the meter shows a live baseline with no
-   interaction. Open the Usage page once and you're set.
+   calls the endpoint above — the interceptor harvests it *and remembers that
+   URL*. On every later page load (and every 5 minutes) the extension re-fetches
+   it in the background, so the meter shows a live baseline with no interaction.
 2. **Discovery (best-effort).** On first load, before any URL is learned, it
-   probes `/api/bootstrap` to find your organization and tries candidate usage
-   endpoints.
-3. **Manual pin (optional).** Paste the exact Usage request URL (from your
-   browser's Network tab) into the toolbar popup to pin it.
+   reads `/api/organizations` (and `/api/bootstrap`) to find your org uuid and
+   fetches `/api/organizations/{uuid}/usage` directly.
+3. **Manual pin (optional).** Paste the exact Usage request URL into the
+   toolbar popup to pin it.
 
-Passive interception still updates the numbers live as you send messages.
+Passive interception still updates the numbers live as you send messages
+(from `anthropic-ratelimit-*` headers, when present).
 
 > Note: this is a best-effort reader. If Anthropic changes their response
 > shape, the broad harvesting heuristics in `src/harvest.js` are easy to adjust

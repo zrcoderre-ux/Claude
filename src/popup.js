@@ -6,9 +6,10 @@
   const MANUAL_URL_KEY = "cum_manual_url";
 
   const el = {
-    usage: document.getElementById("usage"),
-    remaining: document.getElementById("remaining"),
-    reset: document.getElementById("reset"),
+    session: document.getElementById("session"),
+    sessionReset: document.getElementById("session-reset"),
+    weekly: document.getElementById("weekly"),
+    weeklyReset: document.getElementById("weekly-reset"),
     updated: document.getElementById("updated"),
     clear: document.getElementById("clear"),
     endpoint: document.getElementById("endpoint"),
@@ -27,9 +28,11 @@
   function fmtCountdown(ms) {
     if (ms == null || ms <= 0) return "—";
     const total = Math.floor(ms / 1000);
-    const h = Math.floor(total / 3600);
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
     const m = Math.floor((total % 3600) / 60);
     const s = total % 60;
+    if (d > 0) return `${d}d ${h}h`;
     if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
     if (m > 0) return `${m}m ${String(s).padStart(2, "0")}s`;
     return `${s}s`;
@@ -43,17 +46,25 @@
     return `${Math.floor(m / 60)}h ago`;
   }
 
+  function pctText(p) {
+    return p != null ? `${Math.round(p * 100)}%` : "—";
+  }
+
+  function resetText(ms) {
+    const remain = ms != null ? ms - Date.now() : null;
+    return remain != null && remain > 0 ? fmtCountdown(remain) : "—";
+  }
+
   function render(state) {
     state = state || {};
-    el.usage.textContent =
-      state.limit != null && state.used != null
-        ? `${state.used} / ${state.limit}`
-        : state.used != null
-        ? `${state.used}`
-        : "—";
-    el.remaining.textContent = state.remaining != null ? `${state.remaining}` : "—";
-    const remainMs = state.resetAt != null ? state.resetAt - Date.now() : null;
-    el.reset.textContent = remainMs != null && remainMs > 0 ? fmtCountdown(remainMs) : "—";
+    // Session: prefer the utilization percent; fall back to a count ratio.
+    let session = state.percent;
+    if (session == null && state.limit && state.used != null)
+      session = state.used / state.limit;
+    el.session.textContent = pctText(session);
+    el.sessionReset.textContent = resetText(state.resetAt);
+    el.weekly.textContent = pctText(state.weeklyPercent);
+    el.weeklyReset.textContent = resetText(state.weeklyResetAt);
     el.updated.textContent = state.updatedAt
       ? `Updated ${timeAgo(state.updatedAt)}`
       : "No data observed yet";
@@ -87,7 +98,10 @@
 
   el.clear.addEventListener("click", () => {
     const cleared = {
+      percent: null,
       resetAt: null,
+      weeklyPercent: null,
+      weeklyResetAt: null,
       remaining: null,
       limit: null,
       used: null,

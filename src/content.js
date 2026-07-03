@@ -16,14 +16,17 @@
   const MANUAL_URL_KEY = "cum_manual_url"; // user-pinned usage endpoint
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
-  /** @type {{resetAt:number|null, remaining:number|null, limit:number|null, used:number|null, updatedAt:number|null}} */
-  let state = {
-    resetAt: null,
-    remaining: null,
+  const EMPTY = {
+    percent: null, // 0..1 utilization of the 5-hour session window
+    resetAt: null, // ms epoch — session reset
+    weeklyPercent: null, // 0..1 utilization of the 7-day window
+    weeklyResetAt: null, // ms epoch — weekly reset
+    remaining: null, // count-based (rate-limit headers / SSE)
     limit: null,
     used: null,
     updatedAt: null,
   };
+  let state = Object.assign({}, EMPTY);
 
   let learnedUrl = null;
   let manualUrl = null;
@@ -75,6 +78,22 @@
         state.resetAt = data.resetAt;
         changed = true;
       }
+    }
+    if (data.percent != null && data.percent !== state.percent) {
+      state.percent = data.percent;
+      changed = true;
+    }
+    if (data.weeklyPercent != null && data.weeklyPercent !== state.weeklyPercent) {
+      state.weeklyPercent = data.weeklyPercent;
+      changed = true;
+    }
+    if (
+      data.weeklyResetAt != null &&
+      data.weeklyResetAt > Date.now() &&
+      data.weeklyResetAt !== state.weeklyResetAt
+    ) {
+      state.weeklyResetAt = data.weeklyResetAt;
+      changed = true;
     }
     if (data.limit != null && data.limit > 0 && data.limit !== state.limit) {
       state.limit = data.limit;
@@ -151,15 +170,20 @@
   function fmtCountdown(ms) {
     if (ms == null || ms <= 0) return "—";
     const totalSec = Math.floor(ms / 1000);
-    const h = Math.floor(totalSec / 3600);
+    const d = Math.floor(totalSec / 86400);
+    const h = Math.floor((totalSec % 86400) / 3600);
     const m = Math.floor((totalSec % 3600) / 60);
     const s = totalSec % 60;
+    if (d > 0) return `${d}d ${h}h`;
     if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
     if (m > 0) return `${m}m ${String(s).padStart(2, "0")}s`;
     return `${s}s`;
   }
 
+  // Session utilization as 0..1 — the percent from the Usage endpoint takes
+  // precedence; otherwise derive from count-based rate-limit data.
   function usagePercent() {
+    if (state.percent != null) return clamp01(state.percent);
     if (state.limit != null && state.limit > 0) {
       if (state.used != null) return clamp01(state.used / state.limit);
       if (state.remaining != null)
@@ -172,11 +196,10 @@
     return Math.max(0, Math.min(1, x));
   }
 
-  function usageLabel() {
+  function primaryLabel() {
     if (state.limit != null && state.used != null)
       return `${state.used} / ${state.limit}`;
-    if (state.remaining != null && state.limit != null)
-      return `${state.remaining} left`;
+    if (state.percent != null) return "5-hour usage";
     if (state.remaining != null) return `${state.remaining} left`;
     if (state.used != null) return `${state.used} used`;
     if (probing) return "Checking usage…";
@@ -204,10 +227,17 @@
         </span>
       </button>
       <div id="cum-panel" hidden>
-        <div class="cum-panel-row cum-panel-title">Claude session</div>
-        <div class="cum-panel-row"><span>Usage</span><b id="cum-p-usage">—</b></div>
-        <div class="cum-panel-row"><span>Remaining</span><b id="cum-p-remaining">—</b></div>
-        <div class="cum-panel-row"><span>Resets in</span><b id="cum-p-reset">—</b></div>
+        <div class="cum-panel-row cum-panel-title">Claude usage</div>
+        <div class="cum-panel-group">
+          <div class="cum-panel-row"><span>Session · 5 hr</span><b id="cum-p-session">—</b></div>
+          <div class="cum-panel-bar"><i id="cum-p-session-bar"></i></div>
+          <div class="cum-panel-row cum-panel-meta"><span>resets in</span><b id="cum-p-session-reset">—</b></div>
+        </div>
+        <div class="cum-panel-group" id="cum-weekly-group" hidden>
+          <div class="cum-panel-row"><span>Weekly · 7 day</span><b id="cum-p-weekly">—</b></div>
+          <div class="cum-panel-bar"><i id="cum-p-weekly-bar"></i></div>
+          <div class="cum-panel-row cum-panel-meta"><span>resets in</span><b id="cum-p-weekly-reset">—</b></div>
+        </div>
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
         <div class="cum-panel-hint" id="cum-p-hint">Open <b>Settings → Usage</b> once so the meter can read your baseline; it refreshes automatically after that.</div>
       </div>
@@ -222,9 +252,13 @@
       primary: root.querySelector("#cum-primary"),
       secondary: root.querySelector("#cum-secondary"),
       panel: root.querySelector("#cum-panel"),
-      pUsage: root.querySelector("#cum-p-usage"),
-      pRemaining: root.querySelector("#cum-p-remaining"),
-      pReset: root.querySelector("#cum-p-reset"),
+      pSession: root.querySelector("#cum-p-session"),
+      pSessionBar: root.querySelector("#cum-p-session-bar"),
+      pSessionReset: root.querySelector("#cum-p-session-reset"),
+      weeklyGroup: root.querySelector("#cum-weekly-group"),
+      pWeekly: root.querySelector("#cum-p-weekly"),
+      pWeeklyBar: root.querySelector("#cum-p-weekly-bar"),
+      pWeeklyReset: root.querySelector("#cum-p-weekly-reset"),
       pUpdated: root.querySelector("#cum-p-updated"),
     };
 
@@ -256,7 +290,7 @@
       els.root.classList.toggle("cum-danger", pct >= 0.9);
     }
 
-    els.primary.textContent = usageLabel();
+    els.primary.textContent = primaryLabel();
 
     const remainMs = state.resetAt != null ? state.resetAt - Date.now() : null;
     els.secondary.textContent =
@@ -264,20 +298,37 @@
         ? `resets in ${fmtCountdown(remainMs)}`
         : "resets in —";
 
-    // Detail panel
-    els.pUsage.textContent =
-      state.limit != null && state.used != null
-        ? `${state.used} / ${state.limit}`
-        : state.used != null
-        ? `${state.used}`
-        : "—";
-    els.pRemaining.textContent =
-      state.remaining != null ? `${state.remaining}` : "—";
-    els.pReset.textContent =
+    // Detail panel — session (5-hour) window
+    els.pSession.textContent = pct != null ? `${Math.round(pct * 100)}%` : "—";
+    els.pSessionBar.style.width = pct != null ? `${Math.round(pct * 100)}%` : "0%";
+    setBarSeverity(els.pSessionBar, pct);
+    els.pSessionReset.textContent =
       remainMs != null && remainMs > 0 ? fmtCountdown(remainMs) : "—";
+
+    // Detail panel — weekly (7-day) window
+    const wpct = state.weeklyPercent;
+    if (wpct != null) {
+      els.weeklyGroup.hidden = false;
+      els.pWeekly.textContent = `${Math.round(wpct * 100)}%`;
+      els.pWeeklyBar.style.width = `${Math.round(wpct * 100)}%`;
+      setBarSeverity(els.pWeeklyBar, wpct);
+      const wMs = state.weeklyResetAt != null ? state.weeklyResetAt - Date.now() : null;
+      els.pWeeklyReset.textContent =
+        wMs != null && wMs > 0 ? fmtCountdown(wMs) : "—";
+    } else {
+      els.weeklyGroup.hidden = true;
+    }
+
     els.pUpdated.textContent = state.updatedAt
       ? `Updated ${timeAgo(state.updatedAt)}`
       : "Not observed yet";
+  }
+
+  function setBarSeverity(bar, pct) {
+    bar.classList.remove("cum-bar-warn", "cum-bar-danger");
+    if (pct == null) return;
+    if (pct >= 0.9) bar.classList.add("cum-bar-danger");
+    else if (pct >= 0.75) bar.classList.add("cum-bar-warn");
   }
 
   function timeAgo(ts) {
@@ -294,10 +345,20 @@
     // Re-render once a second so the countdown stays live.
     tickTimer = setInterval(() => {
       // Once the reset time has passed, clear stale usage and re-baseline.
+      let dirty = false;
       if (state.resetAt != null && state.resetAt <= Date.now()) {
         state.resetAt = null;
+        state.percent = null;
         state.used = null;
         state.remaining = null;
+        dirty = true;
+      }
+      if (state.weeklyResetAt != null && state.weeklyResetAt <= Date.now()) {
+        state.weeklyResetAt = null;
+        state.weeklyPercent = null;
+        dirty = true;
+      }
+      if (dirty) {
         save();
         requestBaseline();
       }
@@ -331,10 +392,7 @@
     chrome.storage?.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
       if (changes[STORAGE_KEY]) {
-        state = Object.assign(
-          { resetAt: null, remaining: null, limit: null, used: null, updatedAt: null },
-          changes[STORAGE_KEY].newValue || {}
-        );
+        state = Object.assign({}, EMPTY, changes[STORAGE_KEY].newValue || {});
         render();
       }
       if (changes[MANUAL_URL_KEY]) {

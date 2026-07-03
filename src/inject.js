@@ -149,37 +149,37 @@
       .catch(() => {});
   }
 
-  // Best-effort discovery for the very first run (no learned URL yet).
+  // Best-effort discovery for the very first run (no learned URL yet). The
+  // confirmed usage endpoint is GET /api/organizations/{uuid}/usage, so we just
+  // need an organization uuid — read it from /api/organizations (or /bootstrap).
+  const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+
+  function probeOrgIds(text, ids) {
+    if (!text) return;
+    // Prefer uuids sitting next to a "uuid"/"organization" key; fall back to any.
+    const near = /"(?:uuid|organization[^"]*|org[^"]*)"\s*:\s*"([0-9a-f-]{36})"/gi;
+    let m;
+    while ((m = near.exec(text)) && ids.size < 4) ids.add(m[1]);
+    if (ids.size === 0) {
+      const all = text.match(UUID_RE) || [];
+      all.slice(0, 3).forEach((u) => ids.add(u));
+    }
+  }
+
   function discover() {
     if (!origFetch) return;
-    // Try bootstrap to find organization ids, then candidate usage endpoints.
-    origFetch("/api/bootstrap", { credentials: "include" })
-      .then((r) => (r.ok ? r.clone().text() : ""))
-      .then((text) => {
-        const ids = new Set();
-        if (text) {
-          // Collect uuids that appear near an "organization"/"membership" key.
-          const re =
-            /"(?:organization|org|membership)[^"]*"\s*:\s*(\{[^}]*\}|"[0-9a-f-]{36}")/gi;
-          let m;
-          while ((m = re.exec(text)) && ids.size < 4) {
-            const uuid = (m[1].match(/[0-9a-f-]{36}/) || [])[0];
-            if (uuid) ids.add(uuid);
-          }
-          // Fallback: any uuid at all (bounded).
-          if (ids.size === 0) {
-            const all = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) || [];
-            all.slice(0, 2).forEach((u) => ids.add(u));
-          }
-        }
-        const candidates = [];
-        ids.forEach((id) => {
-          candidates.push(`/api/organizations/${id}/usage`);
-          candidates.push(`/api/organizations/${id}/rate_limit`);
-        });
-        candidates.forEach(fetchUsage);
-      })
-      .catch(() => {});
+    const ids = new Set();
+    const sources = ["/api/organizations", "/api/bootstrap"];
+    Promise.all(
+      sources.map((u) =>
+        origFetch(u, { credentials: "include" })
+          .then((r) => (r.ok ? r.clone().text() : ""))
+          .then((t) => probeOrgIds(t, ids))
+          .catch(() => {})
+      )
+    ).then(() => {
+      ids.forEach((id) => fetchUsage(`/api/organizations/${id}/usage`));
+    });
   }
 
   // ---- Commands from the content script ---------------------------------
