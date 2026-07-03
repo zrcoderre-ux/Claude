@@ -31,9 +31,12 @@
   const USED_KEYS =
     /(^|[_-])(used|consumed|usage_count|messages?_used|utilization)([_-]|$)/i;
 
-  // Keys whose values must never be interpreted as a numeric quota, even if the
-  // name would otherwise match (guards against model params leaking in).
-  const DENY_KEYS = /(token|temperature|top_[pk]|index|width|height|timeout_)/i;
+  // Keys whose values must never be interpreted as a numeric rate-limit quota,
+  // even if the name would otherwise match. Guards against model params AND
+  // billing/spend fields (e.g. monthly_credit_limit, used_credits, amount_minor)
+  // leaking in as a bogus "0 / 3000" usage count.
+  const DENY_KEYS =
+    /(token|temperature|top_[pk]|index|width|height|timeout_|credit|dollar|spend|seat|balance|amount|price|charge|invoice|payment|overage|monthly|weekly|daily|discount|currency|exponent)/i;
 
   function isPlainNumberLike(v) {
     if (typeof v === "number") return Number.isFinite(v);
