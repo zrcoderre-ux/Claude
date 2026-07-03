@@ -172,6 +172,19 @@
   background: #d23f31;
 }
 
+.cum-est {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: #9a9a9a;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
 .cum-panel-meta {
   font-size: 11px;
 }

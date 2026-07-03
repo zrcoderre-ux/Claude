@@ -14,8 +14,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
 - Click the pill for a detail panel with up to four meters:
   - **Session · 5 hr** and **Weekly · 7 day** rate-limit windows, each with its
     own reset.
-  - **Context window** — how full the current conversation is (from the exact
-    token counts in Claude's streamed responses), e.g. `64.1% · 128k / 200k`.
+  - **Context window** — an **estimate** of how full the current conversation
+    is, e.g. `~64% · ~128k / 200k` (marked `est.`). claude.ai's web app does not
+    expose token counts, so this is derived from the conversation's text length
+    (≈4 chars/token) — approximate, and it can't see system prompt / tools /
+    attachments.
   - **Extra usage** — your pay-as-you-go spend (`$0.00 / $30.00`), **opt-in**
     via the popup toggle (off by default).
 - A toolbar popup mirrors the data, toggles extra usage, and can pin the
@@ -25,19 +28,20 @@ bottom-right corner of [claude.ai](https://claude.ai).
 
 The rate-limit windows come back as **whole-number percentages** (the server
 rounds them — there are no `anthropic-ratelimit-*` headers on these calls to
-derive anything finer). The **context meter** is computed from exact token
-counts, so it shows one decimal (`64.1%`) — and the panel will surface a
-decimal for any value that genuinely has one.
+derive anything finer). claude.ai's web app does **not** expose token counts
+anywhere, so the **context meter is an estimate** (text length ÷ ~4), shown with
+a `~` and an `est.` badge.
 
 **Estimate decimals (experimental, opt-in).** With the toggle on, the session
 meter adds an estimated tenths place (`48.3%`). Since usage only climbs within a
 fixed window, it learns "tokens per 1%" from the integer jumps it sees, then
 divides the tokens consumed since the last jump by that rate. It always snaps to
 the authoritative server integer and caps the fraction below the next whole
-number, so it only ever affects the tenths place. It's an estimate — it can't
-see usage from other tabs/devices/the API, and the per-model token weighting
-isn't documented — which is why it's off by default and labelled experimental.
-The calibration lives in `src/estimate.js` and is unit-tested.
+number, so it only ever affects the tenths place. It's an estimate — the
+per-turn cost is itself the text-length estimate (claude.ai exposes no token
+counts), it can't see usage from other tabs/devices/the API, and the per-model
+weighting isn't documented — which is why it's off by default and labelled
+experimental. The calibration lives in `src/estimate.js` and is unit-tested.
 
 ## How it reads usage
 
@@ -76,10 +80,12 @@ three ways, in order of preference:
 3. **Manual pin (optional).** Paste the exact usage request URL into the
    toolbar popup to override discovery.
 
-The **context meter** comes from the streamed completion responses
-(`input_tokens` + cached input ÷ the model's context window). The **extra-usage**
-line, when enabled, reads `/api/organizations/{uuid}/overage_spend_limit`
-(credit amounts are minor units, so `3000` → `$30.00`).
+The **context meter** is estimated from the conversation payload
+(`GET /api/organizations/{uuid}/chat_conversations/{uuid}?…`), which contains
+each message's text but no token counts — so it approximates tokens as
+characters ÷ 4. The **extra-usage** line, when enabled, reads
+`/api/organizations/{uuid}/overage_spend_limit` (credit amounts are minor units,
+so `3000` → `$30.00`).
 
 > Note: this is a best-effort reader. If Anthropic changes their response
 > shape, the broad harvesting heuristics in `src/harvest.js` are easy to adjust
