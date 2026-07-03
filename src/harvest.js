@@ -1,0 +1,201 @@
+/**
+ * Claude Usage Meter — pure usage-harvesting logic.
+ *
+ * This file is deliberately free of DOM / chrome APIs so it can be:
+ *   - loaded first in the MAIN world (before inject.js) and used via
+ *     `globalThis.CUMHarvest`, and
+ *   - required directly from Node in the test suite.
+ *
+ * The heuristics are intentionally broad — Claude.ai exposes no documented
+ * usage API — but tuned to avoid the obvious false positives (e.g. treating a
+ * request's `max_tokens` as the session limit).
+ */
+(function (root) {
+  "use strict";
+
+  // A reset timestamp: header names like `*-reset`, JSON `resets_at`, etc.
+  const RESET_KEYS =
+    /(^|[_-])(reset|resets_at|resetsat|reset_at|resets|expires|expires_at|retry.?after)([_-]|$)/i;
+
+  // A quota/limit. NOTE: must NOT match `max_tokens`, `max_length`, etc. — only
+  // limit-shaped names and explicit *_limit fields.
+  const LIMIT_KEYS =
+    /(^|[_-])(limit|quota|allowance|cap)([_-]|$)|(rate.?limit|message.?limit|usage.?limit|session.?limit)/i;
+
+  // How much is left.
+  const REMAIN_KEYS =
+    /(^|[_-])(remaining|remainder|left|available|avail)([_-]|$)/i;
+
+  // How much is used. Avoid bare `count` (matches unrelated counters) and token
+  // fields (input_tokens / output_tokens are not session usage).
+  const USED_KEYS =
+    /(^|[_-])(used|consumed|usage_count|messages?_used|utilization)([_-]|$)/i;
+
+  // Keys whose values must never be interpreted as a numeric quota, even if the
+  // name would otherwise match (guards against model params leaking in).
+  const DENY_KEYS = /(token|temperature|top_[pk]|index|width|height|timeout_)/i;
+
+  function isPlainNumberLike(v) {
+    if (typeof v === "number") return Number.isFinite(v);
+    if (typeof v === "string" && v.trim() !== "") return !Number.isNaN(Number(v));
+    return false;
+  }
+
+  // Convert seconds / ms / ISO-8601 / HTTP-date into epoch-ms.
+  function toEpochMs(value, now) {
+    now = now || Date.now();
+    if (value == null) return null;
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) return null;
+      if (value > 1e18) return null; // nanoseconds — out of range
+      if (value > 1e15) return Math.round(value / 1000); // microseconds → ms
+      if (value > 1e12) return value; // already ms
+      if (value > 1e9) return value * 1000; // seconds since epoch → ms
+      if (value >= 0) return now + value * 1000; // small: seconds-from-now
+      return null;
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed === "") return null;
+      const num = Number(trimmed);
+      if (!Number.isNaN(num)) return toEpochMs(num, now);
+      const parsed = Date.parse(trimmed); // ISO-8601 or HTTP-date
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+    return null;
+  }
+
+  // Recursively collect usage-shaped values from an arbitrary object.
+  function harvest(obj, opts, out, depth) {
+    opts = opts || {};
+    out = out || {};
+    depth = depth || 0;
+    const now = opts.now || Date.now();
+    if (obj == null || depth > 8 || typeof obj !== "object") return out;
+
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val != null && typeof val === "object") {
+        harvest(val, opts, out, depth + 1);
+        continue;
+      }
+      if (DENY_KEYS.test(key)) continue;
+
+      if (RESET_KEYS.test(key)) {
+        const ms = toEpochMs(val, now);
+        // Only accept a plausible near-future reset (allow small clock skew).
+        if (ms && ms > now - 60000 && ms < now + 40 * 24 * 3600 * 1000) {
+          if (out.resetAt == null || ms < out.resetAt) out.resetAt = ms;
+        }
+      } else if (REMAIN_KEYS.test(key) && isPlainNumberLike(val)) {
+        out.remaining = Number(val);
+      } else if (USED_KEYS.test(key) && isPlainNumberLike(val)) {
+        out.used = Number(val);
+      } else if (LIMIT_KEYS.test(key) && isPlainNumberLike(val)) {
+        const n = Number(val);
+        if (n > 0) out.limit = n;
+      }
+    }
+    return out;
+  }
+
+  // Harvest from HTTP response headers. `iter` calls back (value, name).
+  function harvestHeaders(iterable, opts) {
+    opts = opts || {};
+    const now = opts.now || Date.now();
+    const out = {};
+    let unifiedReset = null;
+    const resetCandidates = [];
+
+    const forEach =
+      iterable && typeof iterable.forEach === "function"
+        ? iterable.forEach.bind(iterable)
+        : null;
+    if (!forEach) return out;
+
+    forEach((value, name) => {
+      const lower = String(name).toLowerCase();
+      const isRl = lower.includes("ratelimit") || lower.includes("rate-limit");
+      if (!isRl && lower !== "retry-after") return;
+
+      if (lower.includes("reset") || lower === "retry-after") {
+        const ms = toEpochMs(value, now);
+        if (ms && ms > now - 60000) {
+          if (lower.includes("unified")) unifiedReset = ms;
+          resetCandidates.push(ms);
+        }
+      } else if (lower.includes("remaining")) {
+        const n = Number(value);
+        if (!Number.isNaN(n)) {
+          // Prefer the unified/overall bucket; otherwise keep the smallest.
+          if (lower.includes("unified") || out.remaining == null)
+            out.remaining = n;
+          else out.remaining = Math.min(out.remaining, n);
+        }
+      } else if (lower.includes("limit")) {
+        const n = Number(value);
+        if (!Number.isNaN(n) && n > 0) {
+          if (lower.includes("unified") || out.limit == null) out.limit = n;
+        }
+      }
+    });
+
+    if (unifiedReset != null) out.resetAt = unifiedReset;
+    else if (resetCandidates.length) out.resetAt = Math.min(...resetCandidates);
+    return out;
+  }
+
+  // Parse a response body that may be JSON or Server-Sent Events.
+  function parseBody(text, opts) {
+    if (!text || typeof text !== "string") return null;
+    const trimmed = text.trim();
+    if (trimmed === "") return null;
+
+    // Try whole-body JSON first.
+    if (trimmed[0] === "{" || trimmed[0] === "[") {
+      try {
+        return harvest(JSON.parse(trimmed), opts, {});
+      } catch (e) {
+        /* fall through to SSE */
+      }
+    }
+
+    // Server-sent events: merge every `data: {...}` line.
+    const out = {};
+    let found = false;
+    const lines = trimmed.split(/\r?\n/);
+    for (const line of lines) {
+      const m = line.match(/^data:\s*(\{.*\})\s*$/);
+      if (!m) continue;
+      try {
+        harvest(JSON.parse(m[1]), opts, out);
+        found = true;
+      } catch (e) {
+        /* skip malformed line */
+      }
+    }
+    return found ? out : null;
+  }
+
+  function hasData(d) {
+    return (
+      !!d &&
+      (d.resetAt != null ||
+        d.remaining != null ||
+        d.limit != null ||
+        d.used != null)
+    );
+  }
+
+  const api = {
+    toEpochMs,
+    harvest,
+    harvestHeaders,
+    parseBody,
+    hasData,
+    _patterns: { RESET_KEYS, LIMIT_KEYS, REMAIN_KEYS, USED_KEYS, DENY_KEYS },
+  };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  root.CUMHarvest = api;
+})(typeof globalThis !== "undefined" ? globalThis : this);

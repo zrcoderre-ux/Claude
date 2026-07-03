@@ -20,11 +20,28 @@
     </div>
 
     <p class="note">
-      The floating meter appears on <b>claude.ai</b>. Usage figures are read
-      from Claude's own responses, so they populate after you send a message.
+      The floating meter appears on <b>claude.ai</b>. It reads your baseline
+      from <b>Settings → Usage</b> automatically after you open that page once,
+      and keeps it fresh in the background.
     </p>
 
-    <button id="clear" type="button">Clear stored data</button>
+    <label class="field-label" for="endpoint">Usage endpoint (optional)</label>
+    <input
+      id="endpoint"
+      type="text"
+      placeholder="/api/organizations/…/usage"
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <p class="hint">
+      Advanced: paste the exact request URL the Usage page loads (from your
+      browser's Network tab) to pin it. Leave blank to auto-detect.
+    </p>
+    <div class="btn-row">
+      <button id="save" type="button" class="primary">Save endpoint</button>
+      <button id="clear" type="button">Clear data</button>
+    </div>
+    <div id="status" class="status" hidden></div>
 
     <script src="popup.js"></script>
   </body>

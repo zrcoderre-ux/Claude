@@ -1,180 +1,82 @@
 /**
  * Claude Usage Meter — page-context interceptor (MAIN world).
  *
- * Runs inside claude.ai's own JS context so it can observe the network
- * requests the web app makes. It monkeypatches fetch() and XMLHttpRequest,
- * inspects responses for rate-limit / usage information, and forwards any
- * findings to the isolated content script via window.postMessage.
+ * Runs inside claude.ai's own JS context so it can observe (and replay) the
+ * network the web app makes. It:
+ *   - monkeypatches fetch() / XMLHttpRequest and harvests rate-limit / usage
+ *     info from responses (via CUMHarvest, loaded first),
+ *   - remembers which URL produced usage data so the content script can ask us
+ *     to re-fetch it later for a proactive baseline, and
+ *   - on first load, best-effort probes /api/bootstrap + candidate usage
+ *     endpoints so the meter can show a baseline before the user does anything.
  *
- * It never consumes the real response body — responses are cloned first — so
- * the Claude web app keeps working exactly as before.
+ * Responses are always cloned before reading, so the web app is unaffected.
  */
 (function () {
   "use strict";
 
   const CHANNEL = "CLAUDE_USAGE_METER";
-
-  // Keys we treat as interesting when scanning JSON payloads/headers.
-  const RESET_KEYS = /(reset|resets_at|resetsAt|reset_at|retry.?after|expires|until)/i;
-  const LIMIT_KEYS = /(limit|max|cap|quota)/i;
-  const REMAIN_KEYS = /(remaining|left|available)/i;
-  const USED_KEYS = /(used|count|consumed|usage)/i;
+  const H = window.CUMHarvest;
+  const origFetch =
+    typeof window.fetch === "function" ? window.fetch.bind(window) : null;
 
   function post(payload) {
     try {
-      window.postMessage({ __channel: CHANNEL, payload }, "https://claude.ai");
+      window.postMessage({ __channel: CHANNEL, payload }, window.location.origin);
     } catch (e) {
       /* ignore */
     }
   }
 
-  // Convert a value that might be seconds, ms, or an ISO string into an epoch-ms.
-  function toEpochMs(value) {
-    if (value == null) return null;
-    if (typeof value === "number") {
-      // Heuristic: seconds (< 1e12) vs milliseconds.
-      if (value > 1e18) return null; // nanoseconds — too large, ignore
-      if (value > 1e15) return Math.round(value / 1000); // microseconds
-      if (value > 1e12) return value; // milliseconds
-      if (value > 1e9) return value * 1000; // seconds since epoch
-      // Small number => interpret as "seconds from now" (e.g. retry-after)
-      return Date.now() + value * 1000;
-    }
-    if (typeof value === "string") {
-      const num = Number(value);
-      if (!Number.isNaN(num) && value.trim() !== "") return toEpochMs(num);
-      const parsed = Date.parse(value);
-      if (!Number.isNaN(parsed)) return parsed;
-    }
-    return null;
-  }
-
-  // Recursively walk an object collecting anything that smells like usage/limit info.
-  function harvest(obj, depth, out) {
-    if (obj == null || depth > 6) return out;
-    if (typeof obj !== "object") return out;
-
-    for (const key of Object.keys(obj)) {
-      const val = obj[key];
-      if (val != null && typeof val === "object") {
-        harvest(val, depth + 1, out);
-        continue;
-      }
-      if (RESET_KEYS.test(key)) {
-        const ms = toEpochMs(val);
-        if (ms && ms > Date.now() - 60000) out.resetAt = ms;
-      } else if (REMAIN_KEYS.test(key) && typeof val !== "boolean") {
-        const n = Number(val);
-        if (!Number.isNaN(n)) out.remaining = n;
-      } else if (USED_KEYS.test(key) && typeof val !== "boolean") {
-        const n = Number(val);
-        if (!Number.isNaN(n)) out.used = n;
-      } else if (LIMIT_KEYS.test(key) && typeof val !== "boolean") {
-        const n = Number(val);
-        if (!Number.isNaN(n)) out.limit = n;
-      }
-    }
-    return out;
-  }
-
-  function harvestHeaders(headers) {
-    const out = {};
-    if (!headers || typeof headers.forEach !== "function") return out;
-    headers.forEach((value, name) => {
-      const lower = name.toLowerCase();
-      if (!lower.includes("ratelimit") && lower !== "retry-after") return;
-      if (lower.includes("reset") || lower === "retry-after") {
-        const ms = toEpochMs(value);
-        if (ms) out.resetAt = ms;
-      } else if (lower.includes("remaining")) {
-        const n = Number(value);
-        if (!Number.isNaN(n)) out.remaining = n;
-      } else if (lower.includes("limit")) {
-        const n = Number(value);
-        if (!Number.isNaN(n)) out.limit = n;
-      }
-    });
-    return out;
-  }
-
-  function emit(source, data) {
-    if (!data) return;
-    const hasSomething =
-      data.resetAt != null ||
-      data.remaining != null ||
-      data.limit != null ||
-      data.used != null;
-    if (!hasSomething) return;
-    post({ source, data, at: Date.now() });
-  }
-
-  function tryParse(text) {
-    if (!text) return null;
-    // Plain JSON
-    try {
-      return JSON.parse(text);
-    } catch (e) {
-      /* not plain JSON — maybe SSE */
-    }
-    // Server-sent events: pull `data: {...}` lines and merge harvested values.
-    const merged = {};
-    let found = false;
-    const lines = text.split(/\r?\n/);
-    for (const line of lines) {
-      const m = line.match(/^data:\s*(\{.*\})\s*$/);
-      if (!m) continue;
-      try {
-        const obj = JSON.parse(m[1]);
-        harvest(obj, 0, merged);
-        found = true;
-      } catch (e) {
-        /* skip malformed */
-      }
-    }
-    return found ? { __sseMerged: merged } : null;
-  }
-
-  function inspectText(source, headers, text) {
-    const headerData = harvestHeaders(headers);
-    if (Object.keys(headerData).length) emit(source + ":headers", headerData);
-
-    const parsed = tryParse(text);
-    if (!parsed) return;
-    if (parsed.__sseMerged) {
-      emit(source + ":sse", parsed.__sseMerged);
-    } else {
-      emit(source + ":json", harvest(parsed, 0, {}));
-    }
+  function emit(source, data, url) {
+    if (!H || !H.hasData(data)) return;
+    post({ source, data, url: url || null, at: Date.now() });
   }
 
   function isInteresting(url) {
     return typeof url === "string" && url.includes("/api/");
   }
 
+  // A URL is a good "usage baseline" candidate if it looks account/limit shaped
+  // rather than a per-message completion stream.
+  function looksLikeUsageUrl(url) {
+    return (
+      typeof url === "string" &&
+      /(usage|rate.?limit|limits|bootstrap|subscription|billing)/i.test(url)
+    );
+  }
+
+  function inspect(source, headers, text, url) {
+    if (!H) return;
+    try {
+      const headerData = H.harvestHeaders(headers);
+      if (H.hasData(headerData)) emit(source + ":headers", headerData, url);
+      const bodyData = H.parseBody(text);
+      if (H.hasData(bodyData)) emit(source + ":body", bodyData, url);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
   // ---- Patch fetch -------------------------------------------------------
-  const origFetch = window.fetch;
-  if (typeof origFetch === "function") {
+  if (origFetch) {
     window.fetch = function (input, init) {
       const url =
-        typeof input === "string"
-          ? input
-          : input && input.url
-          ? input.url
-          : "";
+        typeof input === "string" ? input : input && input.url ? input.url : "";
       const promise = origFetch.apply(this, arguments);
       if (isInteresting(url)) {
         promise
           .then((response) => {
             try {
-              const clone = response.clone();
-              // Emit header-based info immediately.
-              const headerData = harvestHeaders(response.headers);
-              if (Object.keys(headerData).length)
-                emit("fetch:headers", headerData);
-              // Body may be a stream — read the clone fully in the background.
-              clone
+              const headerData = H && H.harvestHeaders(response.headers);
+              if (H && H.hasData(headerData)) emit("fetch:headers", headerData, url);
+              response
+                .clone()
                 .text()
-                .then((text) => inspectText("fetch", response.headers, text))
+                .then((text) => {
+                  const bodyData = H && H.parseBody(text);
+                  if (H && H.hasData(bodyData)) emit("fetch:body", bodyData, url);
+                })
                 .catch(() => {});
             } catch (e) {
               /* ignore */
@@ -195,11 +97,11 @@
   };
   XMLHttpRequest.prototype.send = function () {
     if (isInteresting(this.__cum_url)) {
+      const self = this;
       this.addEventListener("load", function () {
         try {
-          const headerText = this.getAllResponseHeaders() || "";
           const headers = new Map();
-          headerText
+          (self.getAllResponseHeaders() || "")
             .trim()
             .split(/\r?\n/)
             .forEach((line) => {
@@ -209,17 +111,18 @@
                   line.slice(0, idx).trim().toLowerCase(),
                   line.slice(idx + 1).trim()
                 );
-          });
-          const fakeHeaders = { forEach: (cb) => headers.forEach((v, k) => cb(v, k)) };
+            });
+          const fakeHeaders = {
+            forEach: (cb) => headers.forEach((v, k) => cb(v, k)),
+          };
           let text = "";
           try {
-            text = this.responseType === "" || this.responseType === "text"
-              ? this.responseText
-              : "";
+            const rt = self.responseType;
+            if (rt === "" || rt === "text") text = self.responseText;
           } catch (e) {
             text = "";
           }
-          inspectText("xhr", fakeHeaders, text);
+          inspect("xhr", fakeHeaders, text, self.__cum_url);
         } catch (e) {
           /* ignore */
         }
@@ -227,6 +130,70 @@
     }
     return origSend.apply(this, arguments);
   };
+
+  // ---- Proactive fetch (baseline) ---------------------------------------
+  // GET a same-origin API URL with the user's session and harvest it. Uses the
+  // original fetch so we control credentials and can read the body directly.
+  function fetchUsage(url) {
+    if (!origFetch || !isInteresting(url)) return;
+    origFetch(url, { credentials: "include", headers: { accept: "*/*" } })
+      .then((res) => {
+        if (!res.ok) return;
+        const headerData = H && H.harvestHeaders(res.headers);
+        if (H && H.hasData(headerData)) emit("baseline:headers", headerData, url);
+        return res
+          .clone()
+          .text()
+          .then((text) => inspect("baseline", res.headers, text, url));
+      })
+      .catch(() => {});
+  }
+
+  // Best-effort discovery for the very first run (no learned URL yet).
+  function discover() {
+    if (!origFetch) return;
+    // Try bootstrap to find organization ids, then candidate usage endpoints.
+    origFetch("/api/bootstrap", { credentials: "include" })
+      .then((r) => (r.ok ? r.clone().text() : ""))
+      .then((text) => {
+        const ids = new Set();
+        if (text) {
+          // Collect uuids that appear near an "organization"/"membership" key.
+          const re =
+            /"(?:organization|org|membership)[^"]*"\s*:\s*(\{[^}]*\}|"[0-9a-f-]{36}")/gi;
+          let m;
+          while ((m = re.exec(text)) && ids.size < 4) {
+            const uuid = (m[1].match(/[0-9a-f-]{36}/) || [])[0];
+            if (uuid) ids.add(uuid);
+          }
+          // Fallback: any uuid at all (bounded).
+          if (ids.size === 0) {
+            const all = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) || [];
+            all.slice(0, 2).forEach((u) => ids.add(u));
+          }
+        }
+        const candidates = [];
+        ids.forEach((id) => {
+          candidates.push(`/api/organizations/${id}/usage`);
+          candidates.push(`/api/organizations/${id}/rate_limit`);
+        });
+        candidates.forEach(fetchUsage);
+      })
+      .catch(() => {});
+  }
+
+  // ---- Commands from the content script ---------------------------------
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) return;
+    const msg = event.data;
+    if (!msg || msg.__channel !== CHANNEL || !msg.command) return;
+    const c = msg.command;
+    if (c.type === "fetchUsage" && typeof c.url === "string") {
+      fetchUsage(c.url);
+    } else if (c.type === "discover") {
+      discover();
+    }
+  });
 
   post({ ready: true });
 })();

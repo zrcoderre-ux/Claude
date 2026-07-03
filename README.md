@@ -19,19 +19,44 @@ bottom-left corner of [claude.ai](https://claude.ai).
 ## How it reads usage
 
 Claude.ai does not expose a documented "usage" API, so the extension observes
-the network responses the web app already receives. A page-context script
-(`src/inject.js`) wraps `fetch`/`XMLHttpRequest`, and for requests to Claude's
-`/api/` endpoints it scans the response **headers** (`anthropic-ratelimit-*`,
-`retry-after`) and **JSON/SSE bodies** for any fields that look like a limit,
-a remaining/used count, or a reset timestamp. Whatever it finds is forwarded to
-the content script, persisted in `chrome.storage.local`, and rendered.
+(and replays) the network the web app already uses. A page-context script
+(`src/inject.js`) wraps `fetch`/`XMLHttpRequest`, and for `/api/` requests it
+scans response **headers** (`anthropic-ratelimit-*`, `retry-after`) and
+**JSON/SSE bodies** for anything shaped like a limit, a remaining/used count,
+or a reset timestamp (`src/harvest.js`). Findings are forwarded to the content
+script, persisted in `chrome.storage.local`, and rendered.
 
-Because the numbers come from Claude's own responses, **the meter populates
-after you send a message** in a session. Until then it shows `No data yet`.
+To avoid an empty "no data" state, it establishes a **baseline** three ways,
+in order of preference:
+
+1. **Self-learning (primary).** When you open **Settings → Usage**, the app
+   fetches your usage — the interceptor harvests it *and remembers that URL*.
+   On every later page load (and every 5 minutes) the extension re-fetches that
+   same URL in the background, so the meter shows a live baseline with no
+   interaction. Open the Usage page once and you're set.
+2. **Discovery (best-effort).** On first load, before any URL is learned, it
+   probes `/api/bootstrap` to find your organization and tries candidate usage
+   endpoints.
+3. **Manual pin (optional).** Paste the exact Usage request URL (from your
+   browser's Network tab) into the toolbar popup to pin it.
+
+Passive interception still updates the numbers live as you send messages.
 
 > Note: this is a best-effort reader. If Anthropic changes their response
-> shape, the harvesting heuristics in `src/inject.js` may need updating — they
-> are deliberately broad and easy to adjust.
+> shape, the broad harvesting heuristics in `src/harvest.js` are easy to adjust
+> and are covered by the test suite.
+
+## Development / tests
+
+```bash
+npm test        # unit tests for the usage-parsing heuristics (src/harvest.js)
+npm run icons   # regenerate the PNG icons
+```
+
+The parsing logic lives in `src/harvest.js` (no DOM/chrome deps) so it can be
+unit-tested directly under Node. `test/harvest.test.js` covers Anthropic-style
+rate-limit headers, SSE `resets_at` payloads, and the false-positive guards
+(e.g. `max_tokens` and `input_tokens` must **not** be read as session quota).
 
 ## Install (developer / unpacked)
 
@@ -46,10 +71,12 @@ after you send a message** in a session. Until then it shows `No data yet`.
 
 ```
 manifest.json          MV3 manifest
-src/inject.js          MAIN-world interceptor (harvests usage from responses)
+src/harvest.js         Pure usage-parsing logic (shared by ext + tests)
+src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown
 src/content.css        Floating-button styles (light + dark)
-src/popup.html/js/css  Toolbar popup
+src/popup.html/js/css  Toolbar popup (status + manual endpoint)
+test/harvest.test.js   Unit tests for the parsing heuristics
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only
 ```
