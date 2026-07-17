@@ -223,6 +223,100 @@
   color: #9a9a9a;
 }
 
+/* Schedule-a-send button in the panel */
+#cum-schedule-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  border: 1px solid #c96442;
+  border-radius: 9px;
+  background: #c96442;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#cum-schedule-btn:hover {
+  background: #b85838;
+}
+
+/* Schedule-a-send modal */
+#cum-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+}
+
+#cum-modal {
+  width: 460px;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #ffffff;
+  color: #1f1f1f;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  padding: 18px 20px 20px;
+}
+
+#cum-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+#cum-modal-close {
+  border: none;
+  background: none;
+  font-size: 16px;
+  color: #9a9a9a;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+#cum-modal-close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #d23f31;
+}
+
+#cum-modal-foot {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 12.5px;
+}
+
+#cum-modal-foot a {
+  color: #c96442;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+#cum-modal-foot a:hover {
+  text-decoration: underline;
+}
+
+@media (prefers-color-scheme: dark) {
+  #cum-modal {
+    background: #262624;
+    color: #f0efea;
+  }
+  #cum-modal-foot {
+    border-top-color: rgba(255, 255, 255, 0.12);
+  }
+}
+
 /* Auto-continue toast */
 #cum-ac-toast {
   position: fixed;

@@ -264,6 +264,65 @@
     }
   }
 
+  // ---- Schedule-a-send modal --------------------------------------------
+  // Detect whether we're viewing an existing conversation, so the form can
+  // offer "This chat" as a target.
+  function currentChatContext() {
+    const path = location.pathname;
+    const looksLikeChat =
+      /\/chat\//.test(path) ||
+      (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(path) &&
+        !/\/projects?(\/|$)/.test(path));
+    if (!looksLikeChat) return null;
+    let title = document.title.replace(/\s*[-–|]\s*Claude.*$/i, "").trim();
+    return { url: location.href, title: title || null };
+  }
+
+  let scheduleModal = null;
+  function openScheduleModal() {
+    if (scheduleModal || !window.CUMJobForm) return;
+    const overlay = document.createElement("div");
+    overlay.id = "cum-modal-overlay";
+    overlay.innerHTML =
+      `<div id="cum-modal" role="dialog" aria-label="Schedule a send">` +
+      `<div id="cum-modal-head"><b>Schedule a send</b>` +
+      `<button id="cum-modal-close" type="button" aria-label="Close">✕</button></div>` +
+      `<div id="cum-modal-body"></div>` +
+      `<div id="cum-modal-foot"><a id="cum-modal-options" href="#">Manage all scheduled sends →</a></div>` +
+      `</div>`;
+    document.body.appendChild(overlay);
+    scheduleModal = overlay;
+
+    const close = () => {
+      if (!scheduleModal) return;
+      scheduleModal.remove();
+      scheduleModal = null;
+    };
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    overlay.querySelector("#cum-modal-close").addEventListener("click", close);
+    overlay.querySelector("#cum-modal-options").addEventListener("click", (e) => {
+      e.preventDefault();
+      try {
+        chrome.runtime?.sendMessage({ type: "cum-open-options" });
+      } catch (err) {
+        /* ignore */
+      }
+    });
+    document.addEventListener("keydown", function onKey(e) {
+      if (e.key === "Escape") {
+        close();
+        document.removeEventListener("keydown", onKey);
+      }
+    });
+
+    window.CUMJobForm.create(overlay.querySelector("#cum-modal-body"), {
+      chatContext: currentChatContext(),
+      onSubmitted: () => setTimeout(close, 900),
+    });
+  }
+
   // ---- Proactive baseline ------------------------------------------------
   function sendCommand(command) {
     try {
@@ -429,6 +488,7 @@
         </div>
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
         <div class="cum-panel-hint" id="cum-p-hint" hidden>Reading your usage — this updates automatically.</div>
+        <button id="cum-schedule-btn" type="button">＋ Schedule a send</button>
       </div>
     `;
     document.body.appendChild(root);
@@ -458,6 +518,7 @@
       pOverageStatus: root.querySelector("#cum-p-overage-status"),
       pUpdated: root.querySelector("#cum-p-updated"),
       pHint: root.querySelector("#cum-p-hint"),
+      scheduleBtn: root.querySelector("#cum-schedule-btn"),
     };
 
     els.btn.addEventListener("click", () => {
@@ -467,6 +528,12 @@
       }
       els.panel.hidden = !els.panel.hidden;
       if (!els.panel.hidden) placePanel();
+    });
+
+    els.scheduleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      els.panel.hidden = true;
+      openScheduleModal();
     });
 
     document.addEventListener("click", (e) => {

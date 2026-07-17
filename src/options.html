@@ -60,44 +60,7 @@
         Files are stored in the extension until they go out.
       </p>
 
-      <div class="job-form">
-        <label class="jf-label" for="job-name">Label (optional)</label>
-        <input id="job-name" type="text" placeholder="e.g. Weekly report run" />
-
-        <label class="jf-label">Files</label>
-        <div id="job-dropzone" class="jf-dropzone">
-          <p class="jf-dz-text">Drag files or a folder here, or</p>
-          <div class="jf-row">
-            <button id="pick-files" type="button" class="ghost">Choose files…</button>
-            <button id="pick-folder" type="button" class="ghost">Choose folder…</button>
-          </div>
-        </div>
-        <input id="job-files" type="file" multiple hidden />
-        <input id="job-folder" type="file" webkitdirectory hidden />
-        <div id="job-file-chips" class="jf-chips"></div>
-        <div id="job-file-summary" class="jf-summary" hidden></div>
-
-        <label class="jf-label" for="job-prompt">Prompt (optional)</label>
-        <textarea id="job-prompt" rows="3" placeholder="What should Claude do with these files?"></textarea>
-
-        <label class="jf-label" for="job-project">Project</label>
-        <div class="jf-row">
-          <select id="job-project"><option value="">New chat — no project</option></select>
-          <button id="refresh-projects" type="button" class="ghost">Refresh</button>
-        </div>
-
-        <label class="jf-label">When to send</label>
-        <div class="jf-when">
-          <label class="jf-radio"><input type="radio" name="jf-trigger" value="reset" checked /> When usage resets</label>
-          <label class="jf-radio"><input type="radio" name="jf-trigger" value="time" /> At a set time</label>
-          <input id="job-time" type="datetime-local" disabled />
-        </div>
-
-        <div class="jf-actions">
-          <button id="add-job" type="button" class="primary">Queue send</button>
-          <span id="job-status" class="jf-status" hidden></span>
-        </div>
-      </div>
+      <div id="job-form-mount" class="job-form"></div>
 
       <div id="job-list" class="job-list"></div>
       <p id="job-empty" class="empty" hidden>No scheduled sends queued.</p>
@@ -111,6 +74,7 @@
 
     <script src="log.js"></script>
     <script src="jobstore.js"></script>
+    <script src="jobform.js"></script>
     <script src="options.js"></script>
   </body>
 </html>
