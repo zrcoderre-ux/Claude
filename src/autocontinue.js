@@ -26,6 +26,7 @@
   let clickCount = 0; // continues performed this page load
   let lastClickAt = 0;
   let paused = false; // set true once the cap is reached (until re-enabled)
+  let armed = true; // click once per appearance; re-arm only when the button is gone
 
   // ---- pure helpers (exposed for unit tests) ----------------------------
   function normText(s) {
@@ -59,6 +60,15 @@
     return null;
   }
 
+  // Claude is actively generating when a "Stop" control is present — don't
+  // interrupt it with a Continue click.
+  function isGenerating() {
+    const stop =
+      document.querySelector('button[aria-label*="Stop" i]') ||
+      document.querySelector('[data-testid="stop-button"]');
+    return !!(stop && isClickable(stop));
+  }
+
   function tick() {
     if (!cfg.enabled || paused) return;
     if (cfg.max && cfg.max > 0 && clickCount >= cfg.max) {
@@ -66,10 +76,18 @@
       toast(`Auto-continue paused — reached ${cfg.max}. Toggle it off/on to resume.`);
       return;
     }
+    const btn = findContinueButton();
+    // No Continue button visible → re-arm for the NEXT time it appears.
+    if (!btn) {
+      armed = true;
+      return;
+    }
+    // Already clicked this appearance (button lingers while Claude resumes), or
+    // Claude is generating right now — don't click again until it's truly gone.
+    if (!armed || isGenerating()) return;
     const now = Date.now();
     if (now - lastClickAt < COOLDOWN_MS) return;
-    const btn = findContinueButton();
-    if (!btn) return;
+    armed = false; // one click per appearance
     lastClickAt = now;
     clickCount++;
     try {
