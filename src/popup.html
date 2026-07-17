@@ -40,6 +40,16 @@
       when on, the session meter adds an estimated tenths place
       (e.g. <b>48.3%</b>) by tracking token use between each 1% step.</p>
 
+    <label class="toggle">
+      <input id="auto-continue" type="checkbox" />
+      <span>Auto-click "Continue"</span>
+    </label>
+    <p class="hint">Off by default. When a long turn hits the tool-use / length
+      limit, automatically clicks Claude's <b>Continue</b> button — even in
+      background tabs. Stops after
+      <input id="ac-max" type="number" min="1" max="999" class="inline-num" /> continues
+      (per page load); toggle off/on to resume after that.</p>
+
     <label class="field-label" for="endpoint">Usage endpoint (optional)</label>
     <input
       id="endpoint"
