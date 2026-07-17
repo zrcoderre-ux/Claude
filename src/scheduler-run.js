@@ -19,30 +19,85 @@
 
   const CHANNEL = "CLAUDE_USAGE_METER";
   const JOBS_KEY = "cum_jobs";
+  // Regular claude.ai chat markup. Claude Code on the web uses different markup
+  // (a bare tiptap/ProseMirror editor, untagged file inputs, aria-label="Send"),
+  // so the find* helpers below fall back to it.
   const SEL = {
     fileInput: 'input[data-testid="file-upload"]',
     editor: 'div[data-testid="chat-input"]',
   };
 
-  // The send control (resilient to minor label/attribute changes).
+  function isVisible(el) {
+    return !!el && el.offsetParent !== null;
+  }
+  // Skip elements that belong to our own injected scheduling form/UI so we never
+  // drive them by accident.
+  function isOurs(el) {
+    if (!el) return false;
+    if (el.closest && el.closest(".cumjf-form")) return true;
+    const cls = el.className ? String(el.className) : "";
+    if (cls.indexOf("cumjf") === 0 || cls.indexOf(" cumjf") !== -1) return true;
+    const id = el.id || "";
+    return id.indexOf("cum-") === 0;
+  }
+  function pick(nodeList) {
+    for (const el of nodeList) if (!isOurs(el)) return el;
+    return null;
+  }
+
+  // The prompt editor. Regular chat tags it data-testid="chat-input"; Claude
+  // Code uses a bare tiptap/ProseMirror div (placeholder "Prompt").
+  function findEditor() {
+    const tagged = document.querySelector(SEL.editor);
+    if (tagged) return tagged;
+    const cands = document.querySelectorAll(
+      'div.ProseMirror[contenteditable="true"], .tiptap[contenteditable="true"]'
+    );
+    for (const el of cands) if (isVisible(el) && !isOurs(el)) return el;
+    return null;
+  }
+
+  // The composer file input. Regular chat tags it data-testid="file-upload";
+  // Claude Code uses an untagged hidden multiple file input.
+  function findFileInput() {
+    const tagged = document.querySelector(SEL.fileInput);
+    if (tagged) return tagged;
+    return (
+      pick(document.querySelectorAll('input[type="file"][multiple]')) ||
+      pick(document.querySelectorAll('input[type="file"]'))
+    );
+  }
+
+  // The send control (resilient to label differences: "Send message" on regular
+  // chat, "Send" on Claude Code).
   function findSend() {
     return (
-      document.querySelector('button[aria-label="Send message"]') ||
-      document.querySelector('button[aria-label="Send Message"]') ||
-      document.querySelector('button[aria-label*="Send message" i]') ||
-      document.querySelector('[data-testid="send-button"]') ||
-      document.querySelector('button[type="submit"][aria-label*="send" i]') ||
+      pick(document.querySelectorAll('button[aria-label="Send message"]')) ||
+      pick(document.querySelectorAll('button[aria-label="Send Message"]')) ||
+      pick(document.querySelectorAll('button[aria-label*="Send message" i]')) ||
+      pick(document.querySelectorAll('[data-testid="send-button"]')) ||
+      pick(document.querySelectorAll('button[aria-label="Send"]')) ||
+      pick(document.querySelectorAll('button[type="submit"][aria-label*="send" i]')) ||
       null
     );
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  function waitFor(selector, timeoutMs) {
+  function waitFor(finder, timeoutMs) {
+    const get =
+      typeof finder === "function"
+        ? finder
+        : () => document.querySelector(finder);
     return new Promise((resolve) => {
       const deadline = Date.now() + (timeoutMs || 20000);
       (function poll() {
-        const el = document.querySelector(selector);
+        let el = null;
+        try {
+          el = get();
+        } catch (e) {
+          el = null;
+        }
         if (el) return resolve(el);
         if (Date.now() > deadline) return resolve(null);
         setTimeout(poll, 200);
@@ -128,7 +183,7 @@
     for (let i = 0; i < 20; i++) {
       await sleep(300);
       const btn = findSend();
-      const ed = document.querySelector(SEL.editor);
+      const ed = findEditor();
       const edText = ed ? (ed.textContent || "").trim() : "";
       if (!btn || sendDisabled(btn)) return true;
       if (editorTextBefore && edText === "") return true;
@@ -210,8 +265,8 @@
     }
 
     // 2. Wait for the composer to render.
-    const input = files.length ? await waitFor(SEL.fileInput) : null;
-    const editor = await waitFor(SEL.editor);
+    const input = files.length ? await waitFor(findFileInput) : null;
+    const editor = await waitFor(findEditor);
     if (files.length && !input) return { ok: false, error: "file input not found" };
     if (!editor) return { ok: false, error: "prompt editor not found" };
 
