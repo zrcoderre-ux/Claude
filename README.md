@@ -23,6 +23,8 @@ bottom-right corner of [claude.ai](https://claude.ai).
     via the popup toggle (off by default).
 - A toolbar popup mirrors the data, toggles extra usage, and can pin the
   endpoint or clear stored values.
+- **Drag the pill** anywhere on the page — its position is remembered, and the
+  detail panel opens toward whichever side has room.
 
 ### A note on precision
 
