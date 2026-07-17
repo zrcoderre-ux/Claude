@@ -269,12 +269,19 @@
   // offer "This chat" as a target.
   function currentChatContext() {
     const path = location.pathname;
-    const looksLikeChat =
-      /\/chat\//.test(path) ||
-      (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(path) &&
-        !/\/projects?(\/|$)/.test(path));
-    if (!looksLikeChat) return null;
-    let title = document.title.replace(/\s*[-–|]\s*Claude.*$/i, "").trim();
+    // Not an existing conversation: a fresh composer, the projects list, or a
+    // project overview (those use the New-chat / Project targets instead).
+    if (/\/new(\/|$)/.test(path)) return null;
+    if (/\/projects?(\/|$)/.test(path)) return null;
+    if (/\/project\//.test(path)) return null;
+    // Otherwise, if there's a composer AND a conversation id in the URL, treat
+    // it as "this chat" — robust to the exact URL shape (claude.ai or Claude
+    // Code, /chat/… or /cowork/…).
+    const hasComposer = !!document.querySelector('div[data-testid="chat-input"]');
+    const hasUuid =
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(location.href);
+    if (!hasComposer || !hasUuid) return null;
+    const title = document.title.replace(/\s*[-–|]\s*Claude.*$/i, "").trim();
     return { url: location.href, title: title || null };
   }
 
