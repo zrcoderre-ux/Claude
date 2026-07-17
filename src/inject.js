@@ -37,6 +37,47 @@
     return typeof url === "string" && url.includes("/api/");
   }
 
+  // ---- Projects capture --------------------------------------------------
+  // claude.ai loads the full project list from a JSON API (e.g.
+  // /api/organizations/{uuid}/projects). Harvesting that response gives us
+  // every project reliably — far better than scraping a virtualized grid.
+  function looksLikeProjectsUrl(url) {
+    return (
+      typeof url === "string" &&
+      /\/projects(?:[/?]|$)/.test(url) &&
+      !/\/projects\/[0-9a-f-]{36}/i.test(url) // not a single-project sub-resource
+    );
+  }
+  function extractProjects(json) {
+    const arr = Array.isArray(json)
+      ? json
+      : json && Array.isArray(json.projects)
+      ? json.projects
+      : null;
+    if (!arr) return null;
+    const out = [];
+    for (const it of arr) {
+      if (!it || typeof it !== "object") continue;
+      const uuid = it.uuid || it.id;
+      if (!uuid || !/^[0-9a-f-]{36}$/i.test(String(uuid))) continue;
+      if (it.is_archived || it.archived_at) continue;
+      const name = String(it.name || it.title || "").trim();
+      out.push({ uuid: String(uuid), name, href: "/cowork/project/" + uuid });
+    }
+    return out.length ? out : null;
+  }
+  function maybeEmitProjects(url, text) {
+    if (!looksLikeProjectsUrl(url) || !text) return;
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      return;
+    }
+    const projects = extractProjects(json);
+    if (projects) post({ projects });
+  }
+
   // A URL is a good "usage baseline" candidate if it looks account/limit shaped
   // rather than a per-message completion stream.
   function looksLikeUsageUrl(url) {
@@ -53,6 +94,7 @@
       if (H.hasData(headerData)) emit(source + ":headers", headerData, url);
       const bodyData = H.parseBody(text);
       if (H.hasData(bodyData)) emit(source + ":body", bodyData, url);
+      maybeEmitProjects(url, text);
     } catch (e) {
       /* ignore */
     }
@@ -76,6 +118,7 @@
                 .then((text) => {
                   const bodyData = H && H.parseBody(text);
                   if (H && H.hasData(bodyData)) emit("fetch:body", bodyData, url);
+                  maybeEmitProjects(url, text);
                 })
                 .catch(() => {});
               // Scheduled-send: report file-upload completion so the executor
@@ -194,8 +237,21 @@
           .catch(() => {})
       )
     ).then(() => {
-      ids.forEach((id) => fetchUsage(`/api/organizations/${id}/usage`));
+      ids.forEach((id) => {
+        fetchUsage(`/api/organizations/${id}/usage`);
+        fetchProjects(`/api/organizations/${id}/projects`);
+      });
     });
+  }
+
+  // Proactively pull the project list so the picker fills in without the user
+  // having to visit the Projects page.
+  function fetchProjects(url) {
+    if (!origFetch) return;
+    origFetch(url, { credentials: "include", headers: { accept: "*/*" } })
+      .then((res) => (res.ok ? res.clone().text() : ""))
+      .then((text) => maybeEmitProjects(url, text))
+      .catch(() => {});
   }
 
   // ---- Commands from the content script ---------------------------------
@@ -208,8 +264,23 @@
       fetchUsage(c.url);
     } else if (c.type === "discover") {
       discover();
+    } else if (c.type === "discoverProjects") {
+      discoverProjects();
     }
   });
+
+  // Probe org ids, then pull each org's project list from the API.
+  function discoverProjects() {
+    if (!origFetch) return;
+    const ids = new Set();
+    origFetch("/api/organizations", { credentials: "include" })
+      .then((r) => (r.ok ? r.clone().text() : ""))
+      .then((t) => {
+        probeOrgIds(t, ids);
+        ids.forEach((id) => fetchProjects(`/api/organizations/${id}/projects`));
+      })
+      .catch(() => {});
+  }
 
   post({ ready: true });
 })();
