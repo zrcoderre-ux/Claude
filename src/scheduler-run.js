@@ -270,6 +270,33 @@
     return out;
   }
 
+  // Zero-friction: whenever the user is naturally on claude.ai and project links
+  // are present (the Projects page, or the sidebar), merge them into the cached
+  // list so the options picker fills in without an explicit refresh.
+  function autoScrapeProjects() {
+    let found;
+    try {
+      found = scrapeProjects();
+    } catch (e) {
+      return;
+    }
+    if (!found.length) return;
+    try {
+      chrome.storage.local.get("cum_projects", (res) => {
+        const existing = (res && res.cum_projects) || [];
+        const byId = new Map(existing.map((p) => [p.uuid, p]));
+        for (const p of found) byId.set(p.uuid, p);
+        chrome.storage.local.set({ cum_projects: Array.from(byId.values()) });
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  // SPA renders late; sample a few times after load.
+  setTimeout(autoScrapeProjects, 2500);
+  setTimeout(autoScrapeProjects, 6000);
+  setTimeout(autoScrapeProjects, 15000);
+
   chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;
     if (msg.type === "cum-run-job") {

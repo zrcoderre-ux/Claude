@@ -307,11 +307,13 @@
     chrome.runtime.sendMessage({ type: "cum-refresh-projects" }, (res) => {
       jf.refresh.disabled = false;
       jf.refresh.textContent = "Refresh";
-      if (res && res.projects) {
+      if (res && res.projects && res.projects.length) {
         fillProjects(res.projects);
         jfFlash(`Found ${res.projects.length} project${res.projects.length === 1 ? "" : "s"}`);
+      } else if (res && res.error) {
+        jfFlash(res.error, true);
       } else {
-        jfFlash((res && res.error) || "Couldn't load projects — is a claude.ai tab logged in?", true);
+        jfFlash("No projects found — make sure you're logged into claude.ai", true);
       }
     });
   });
