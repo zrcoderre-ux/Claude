@@ -276,11 +276,17 @@
     if (/\/project\//.test(path)) return null;
     // Otherwise, if there's a composer AND a conversation id in the URL, treat
     // it as "this chat" — robust to the exact URL shape (claude.ai or Claude
-    // Code, /chat/… or /cowork/…).
-    const hasComposer = !!document.querySelector('div[data-testid="chat-input"]');
+    // Code, /chat/… or /cowork/… or /code/session_…).
+    const hasComposer =
+      !!document.querySelector('div[data-testid="chat-input"]') ||
+      !!document.querySelector(
+        '.ProseMirror[contenteditable="true"], .tiptap[contenteditable="true"]'
+      );
     const hasUuid =
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(location.href);
-    if (!hasComposer || !hasUuid) return null;
+    // Claude Code sessions live at /code/<id> (no dashed uuid).
+    const isCodeSession = /\/code\/[^/]+/.test(path);
+    if (!hasComposer || (!hasUuid && !isCodeSession)) return null;
     const title = document.title.replace(/\s*[-–|]\s*Claude.*$/i, "").trim();
     return { url: location.href, title: title || null };
   }
