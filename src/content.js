@@ -16,6 +16,7 @@
   const MANUAL_URL_KEY = "cum_manual_url"; // user-pinned usage endpoint
   const OVERAGE_KEY = "cum_show_overage"; // opt-in: show extra-usage spend
   const ESTIMATE_KEY = "cum_estimate_decimals"; // opt-in: estimated tenths
+  const POS_KEY = "cum_pos"; // user-dragged position { left, top }
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   const EMPTY = {
@@ -38,6 +39,7 @@
   let showOverage = false; // opt-in toggle (default off)
   let estimateDecimals = false; // opt-in toggle (default off)
   let calib = null; // CUMEstimate calibrator instance
+  let pos = null; // { left, top } once the user drags the pill
   let probing = false; // true while a proactive baseline fetch is in flight
   let els = null;
   let tickTimer = null;
@@ -61,7 +63,7 @@
         // the UI still builds (e.g. after an extension-context reload).
         if (chrome && chrome.storage && chrome.storage.local) {
           chrome.storage.local.get(
-            [STORAGE_KEY, URL_KEY, MANUAL_URL_KEY, OVERAGE_KEY, ESTIMATE_KEY],
+            [STORAGE_KEY, URL_KEY, MANUAL_URL_KEY, OVERAGE_KEY, ESTIMATE_KEY, POS_KEY],
             (res) => {
               if (res && res[STORAGE_KEY]) {
                 state = Object.assign(state, res[STORAGE_KEY]);
@@ -70,6 +72,7 @@
               if (res && res[MANUAL_URL_KEY]) manualUrl = res[MANUAL_URL_KEY];
               showOverage = !!(res && res[OVERAGE_KEY]);
               estimateDecimals = !!(res && res[ESTIMATE_KEY]);
+              if (res && res[POS_KEY]) pos = res[POS_KEY];
               resolve();
             }
           );
@@ -366,15 +369,116 @@
     };
 
     els.btn.addEventListener("click", () => {
+      if (suppressClick) {
+        suppressClick = false;
+        return;
+      }
       els.panel.hidden = !els.panel.hidden;
+      if (!els.panel.hidden) placePanel();
     });
 
     document.addEventListener("click", (e) => {
       if (!els.root.contains(e.target)) els.panel.hidden = true;
     });
 
+    if (pos) applyPosition(pos, false);
+    setupDrag();
+    window.addEventListener("resize", () => {
+      if (pos) applyPosition(pos, false);
+    });
+
     render();
     startTicking();
+  }
+
+  // ---- Drag to reposition ------------------------------------------------
+  let suppressClick = false; // set true right after a drag so it doesn't toggle
+
+  function clampPos(left, top) {
+    const r = els.root.getBoundingClientRect();
+    const maxLeft = Math.max(0, window.innerWidth - r.width);
+    const maxTop = Math.max(0, window.innerHeight - r.height);
+    return {
+      left: Math.min(Math.max(0, left), maxLeft),
+      top: Math.min(Math.max(0, top), maxTop),
+    };
+  }
+
+  // Switch #cum-root from its default right/bottom anchoring to explicit
+  // left/top, clamped to the viewport.
+  function applyPosition(p, persist) {
+    const c = clampPos(p.left, p.top);
+    els.root.style.left = `${c.left}px`;
+    els.root.style.top = `${c.top}px`;
+    els.root.style.right = "auto";
+    els.root.style.bottom = "auto";
+    pos = c;
+    if (persist) {
+      try {
+        chrome.storage?.local.set({ [POS_KEY]: c });
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }
+
+  // Open the panel toward whatever space is available around the pill.
+  function placePanel() {
+    const r = els.root.getBoundingClientRect();
+    els.root.classList.toggle("cum-below", r.top < 300);
+    els.root.classList.toggle(
+      "cum-align-left",
+      r.left + r.width / 2 < window.innerWidth / 2
+    );
+  }
+
+  function setupDrag() {
+    const btn = els.btn;
+    let startX = 0, startY = 0, originLeft = 0, originTop = 0, moved = false, dragging = false;
+
+    btn.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      const r = els.root.getBoundingClientRect();
+      originLeft = r.left;
+      originTop = r.top;
+      try {
+        btn.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* ignore */
+      }
+    });
+
+    btn.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < 4) return; // ignore tiny jitters
+      moved = true;
+      els.root.classList.add("cum-dragging");
+      els.panel.hidden = true;
+      applyPosition({ left: originLeft + dx, top: originTop + dy }, false);
+    });
+
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      els.root.classList.remove("cum-dragging");
+      try {
+        btn.releasePointerCapture(e.pointerId);
+      } catch (err) {
+        /* ignore */
+      }
+      if (moved) {
+        suppressClick = true; // the click that follows this drag is not a tap
+        if (pos) applyPosition(pos, true); // persist final position
+      }
+    }
+    btn.addEventListener("pointerup", end);
+    btn.addEventListener("pointercancel", end);
   }
 
   function render() {
