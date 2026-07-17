@@ -234,6 +234,68 @@ td .approx {
   padding: 2px 2px 0;
 }
 
+.jf-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  border: 1.5px dashed rgba(0, 0, 0, 0.22);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.jf-dropzone.drag {
+  border-color: #c96442;
+  background: rgba(201, 100, 66, 0.06);
+}
+
+.jf-dz-text {
+  margin: 0;
+  font-size: 12.5px;
+  color: #8a8a8a;
+}
+
+.jf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.jf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 3px 6px 3px 9px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  background: #f5f4f0;
+  font-size: 12px;
+}
+
+.jf-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jf-chip-x {
+  border: none;
+  background: none;
+  color: #9a9a9a;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  border-radius: 4px;
+}
+
+.jf-chip-x:hover {
+  color: #d23f31;
+}
+
 .jf-row select {
   flex: 1;
 }
@@ -370,6 +432,9 @@ td .approx {
   .ghost { background: none; border-color: rgba(255, 255, 255, 0.18); }
   .job-meta { color: #8a877f; }
   .job-badge { color: #a5a29a; background: rgba(255, 255, 255, 0.08); }
+  .jf-dropzone { border-color: rgba(255, 255, 255, 0.22); }
+  .jf-dropzone.drag { background: rgba(201, 100, 66, 0.12); }
+  .jf-chip { background: #35342f; border-color: rgba(255, 255, 255, 0.14); }
 }
 
 @media (prefers-color-scheme: dark) {

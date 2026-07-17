@@ -126,7 +126,10 @@
     name: document.getElementById("job-name"),
     files: document.getElementById("job-files"),
     folder: document.getElementById("job-folder"),
+    pickFiles: document.getElementById("pick-files"),
     pickFolder: document.getElementById("pick-folder"),
+    dropzone: document.getElementById("job-dropzone"),
+    chips: document.getElementById("job-file-chips"),
     summary: document.getElementById("job-file-summary"),
     prompt: document.getElementById("job-prompt"),
     project: document.getElementById("job-project"),
@@ -161,17 +164,29 @@
     });
   }
 
-  // Combine files chosen individually and via the folder picker, de-duped.
+  // Selected files live in memory so drag-dropped files (which aren't in an
+  // <input>) can be tracked alongside picker selections.
+  let selectedFiles = [];
+  const fileKey = (f) => (f.webkitRelativePath || f.name) + ":" + f.size;
+
   function collectFiles() {
-    const seen = new Set();
-    const out = [];
-    for (const f of [...(jf.files.files || []), ...(jf.folder.files || [])]) {
-      const key = (f.webkitRelativePath || f.name) + ":" + f.size;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(f);
+    return selectedFiles;
+  }
+
+  function addFiles(files) {
+    const have = new Set(selectedFiles.map(fileKey));
+    for (const f of files || []) {
+      const k = fileKey(f);
+      if (have.has(k)) continue;
+      have.add(k);
+      selectedFiles.push(f);
     }
-    return out;
+    renderFiles();
+  }
+
+  function removeFile(key) {
+    selectedFiles = selectedFiles.filter((f) => fileKey(f) !== key);
+    renderFiles();
   }
 
   function fmtSize(bytes) {
@@ -180,23 +195,92 @@
     return bytes + " B";
   }
 
-  function updateFileSummary() {
-    const files = collectFiles();
-    if (!files.length) {
-      jf.summary.hidden = true;
-      return;
+  function renderFiles() {
+    jf.chips.innerHTML = "";
+    for (const f of selectedFiles) {
+      const chip = document.createElement("span");
+      chip.className = "jf-chip";
+      chip.innerHTML =
+        `<span class="jf-chip-name">${escapeHtml(f.name)}</span>` +
+        `<button class="jf-chip-x" type="button" title="Remove">✕</button>`;
+      chip.querySelector(".jf-chip-x").addEventListener("click", () => removeFile(fileKey(f)));
+      jf.chips.appendChild(chip);
     }
-    const total = files.reduce((s, f) => s + (f.size || 0), 0);
-    let txt = `${files.length} file${files.length === 1 ? "" : "s"} · ${fmtSize(total)}`;
-    if (files.length > 100) txt += " — that's a lot; consider narrowing the folder";
-    else if (total > 60 * 1024 * 1024) txt += " — large; storing may be slow";
-    jf.summary.textContent = txt;
-    jf.summary.hidden = false;
+    const total = selectedFiles.reduce((s, f) => s + (f.size || 0), 0);
+    if (!selectedFiles.length) {
+      jf.summary.hidden = true;
+    } else {
+      let txt = `${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"} · ${fmtSize(total)}`;
+      if (selectedFiles.length > 100) txt += " — that's a lot; consider narrowing the folder";
+      else if (total > 60 * 1024 * 1024) txt += " — large; storing may be slow";
+      jf.summary.textContent = txt;
+      jf.summary.hidden = false;
+    }
   }
 
+  // ---- drag & drop (files and folders) ----------------------------------
+  function walkEntry(entry, out) {
+    return new Promise((resolve) => {
+      if (!entry) return resolve();
+      if (entry.isFile) {
+        entry.file(
+          (f) => {
+            out.push(f);
+            resolve();
+          },
+          () => resolve()
+        );
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const readBatch = () =>
+          reader.readEntries(
+            async (batch) => {
+              if (!batch.length) return resolve();
+              for (const e of batch) await walkEntry(e, out);
+              readBatch(); // readEntries yields in chunks
+            },
+            () => resolve()
+          );
+        readBatch();
+      } else {
+        resolve();
+      }
+    });
+  }
+
+  jf.dropzone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    jf.dropzone.classList.add("drag");
+  });
+  jf.dropzone.addEventListener("dragleave", () => jf.dropzone.classList.remove("drag"));
+  jf.dropzone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    jf.dropzone.classList.remove("drag");
+    const dt = e.dataTransfer;
+    // webkitGetAsEntry() must be called synchronously during the drop event.
+    const entries = dt && dt.items
+      ? Array.from(dt.items)
+          .map((it) => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null))
+          .filter(Boolean)
+      : [];
+    if (entries.length) {
+      const out = [];
+      Promise.all(entries.map((en) => walkEntry(en, out))).then(() => addFiles(out));
+    } else if (dt && dt.files) {
+      addFiles(Array.from(dt.files));
+    }
+  });
+
+  jf.pickFiles.addEventListener("click", () => jf.files.click());
   jf.pickFolder.addEventListener("click", () => jf.folder.click());
-  jf.files.addEventListener("change", updateFileSummary);
-  jf.folder.addEventListener("change", updateFileSummary);
+  jf.files.addEventListener("change", () => {
+    addFiles(Array.from(jf.files.files || []));
+    jf.files.value = "";
+  });
+  jf.folder.addEventListener("change", () => {
+    addFiles(Array.from(jf.folder.files || []));
+    jf.folder.value = "";
+  });
 
   function fillProjects(projects) {
     const list = projects || [];
@@ -273,10 +357,9 @@
       writes[JOBS_KEY] = J.upsertJob(cur, job);
       await new Promise((r) => chrome.storage.local.set(writes, r));
       jf.name.value = "";
-      jf.files.value = "";
-      jf.folder.value = "";
       jf.prompt.value = "";
-      updateFileSummary();
+      selectedFiles = [];
+      renderFiles();
       jfFlash("Queued.");
       renderJobs();
     } catch (e) {
