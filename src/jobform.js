@@ -95,6 +95,20 @@
       }
     });
   }
+  // True while this page still belongs to the live extension. After the
+  // extension is reloaded/updated, older pages are orphaned and every chrome.*
+  // call throws "Extension context invalidated".
+  function contextValid() {
+    try {
+      return !!(chrome && chrome.runtime && chrome.runtime.id);
+    } catch (e) {
+      return false;
+    }
+  }
+  function isContextError(e) {
+    const m = (e && e.message) || String(e || "");
+    return /context invalidated|context invalid|Extension context/i.test(m);
+  }
 
   function create(container, opts) {
     opts = opts || {};
@@ -290,6 +304,8 @@
 
     // ---- submit ----
     ui.add.addEventListener("click", async () => {
+      if (!contextValid())
+        return flash("Extension was updated — reload this page, then try again.", true);
       const prompt = ui.prompt.value;
       if (!files.length && !prompt.trim()) return flash("Add a file, folder, or prompt.", true);
       const trigType = el.querySelector('input[name="cumjf-trig"]:checked').value;
@@ -331,7 +347,9 @@
         flash("Queued.");
         if (typeof opts.onSubmitted === "function") opts.onSubmitted(job);
       } catch (e) {
-        flash("Failed: " + ((e && e.message) || e), true);
+        if (isContextError(e) || !contextValid())
+          flash("Extension was updated — reload this page, then try again.", true);
+        else flash("Failed: " + ((e && e.message) || e), true);
       } finally {
         ui.add.disabled = false;
       }
