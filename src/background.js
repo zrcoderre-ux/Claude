@@ -225,16 +225,16 @@ async function refreshProjects() {
     return { error: "could not open a claude.ai tab" };
   }
   await waitTabComplete(tab.id, 30000);
-  await sleep(2500);
+  await sleep(3500);
   let projects = [];
-  for (let attempt = 0; attempt < 3 && !projects.length; attempt++) {
+  for (let attempt = 0; attempt < 8 && !projects.length; attempt++) {
     try {
       const res = await chrome.tabs.sendMessage(tab.id, { type: "cum-scrape-projects" });
-      if (res && res.projects) projects = res.projects;
+      if (res && res.projects && res.projects.length) projects = res.projects;
     } catch (e) {
-      /* not ready */
+      /* content script not ready yet */
     }
-    if (!projects.length) await sleep(1500);
+    if (!projects.length) await sleep(2000);
   }
   try {
     chrome.tabs.remove(tab.id);
