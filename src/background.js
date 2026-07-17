@@ -216,48 +216,65 @@ async function reschedule() {
   } catch (e) {}
 }
 
-// Open the projects page VISIBLY (claude.ai defers rendering in hidden tabs, so
-// a background scrape returns nothing), scrape it, close it, and return focus
-// to the tab that asked (the options page).
-async function refreshProjects(returnTabId) {
+// Refresh the cached project list. Rather than scrape the (virtualized) grid,
+// drive the page's own project API: open/reuse a claude.ai tab, ask its content
+// script to trigger an API pull, and wait for the harvested list to land in
+// storage. This is hidden-tab friendly — no DOM rendering needed — and returns
+// every project, not just the ones that happened to paint.
+async function readProjects() {
+  return (await get("cum_projects")).cum_projects || [];
+}
+
+async function refreshProjects() {
+  const before = await readProjects();
   let tab;
+  let createdTab = false;
   try {
-    tab = await chrome.tabs.create({ url: "https://claude.ai/cowork/projects", active: true });
+    const tabs = await new Promise((res) =>
+      chrome.tabs.query({ url: "https://claude.ai/*" }, (t) => res(t || []))
+    );
+    if (tabs.length) {
+      tab = tabs[0]; // reuse an already-open claude.ai tab
+    } else {
+      tab = await chrome.tabs.create({ url: "https://claude.ai/new", active: false });
+      createdTab = true;
+      await waitTabComplete(tab.id, 30000);
+      await sleep(1500); // let the content scripts attach
+    }
   } catch (e) {
     return { error: "could not open a claude.ai tab" };
   }
-  await waitTabComplete(tab.id, 30000);
-  // Scrape repeatedly and UNION the results by uuid — the project grid renders
-  // progressively and can virtualize (each scrape scrolls the page a little, so
-  // cards that were off-screen render while earlier ones may unmount).
-  const byId = new Map();
-  for (let attempt = 0; attempt < 10; attempt++) {
-    await sleep(attempt === 0 ? 2500 : 1000);
+
+  // Kick off API-based discovery (retry in case the content script isn't ready).
+  for (let i = 0; i < 3; i++) {
     try {
-      const res = await chrome.tabs.sendMessage(tab.id, { type: "cum-scrape-projects" });
-      for (const p of (res && res.projects) || []) {
-        if (p && p.uuid) byId.set(p.uuid, p);
-      }
+      await chrome.tabs.sendMessage(tab.id, { type: "cum-discover-projects" });
+      break;
     } catch (e) {
-      /* content script not ready yet */
+      await sleep(1200);
     }
   }
-  const projects = Array.from(byId.values());
-  try {
-    chrome.tabs.remove(tab.id);
-  } catch (e) {}
-  if (returnTabId != null) {
+
+  // Wait for the harvested list to arrive/grow, up to ~15s.
+  let projects = before;
+  for (let i = 0; i < 15; i++) {
+    await sleep(1000);
+    const now = await readProjects();
+    if (now.length > projects.length) projects = now;
+    if (now.length > before.length) break;
+  }
+
+  if (createdTab) {
     try {
-      chrome.tabs.update(returnTabId, { active: true });
+      chrome.tabs.remove(tab.id);
     } catch (e) {}
   }
-  if (projects.length) await set({ cum_projects: projects });
   return { projects };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === "cum-refresh-projects") {
-    refreshProjects(sender && sender.tab && sender.tab.id)
+    refreshProjects()
       .then(sendResponse)
       .catch((e) => sendResponse({ error: String(e) }));
     return true;

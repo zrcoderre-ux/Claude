@@ -305,6 +305,19 @@
         .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
       return true; // async response
     }
+    if (msg.type === "cum-discover-projects") {
+      // Ask the MAIN-world interceptor to pull the project list from the API.
+      try {
+        window.postMessage(
+          { __channel: CHANNEL, command: { type: "discoverProjects" } },
+          window.location.origin
+        );
+      } catch (e) {
+        /* ignore */
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
     if (msg.type === "cum-scrape-projects") {
       const projects = scrapeProjects();
       // The grid can virtualize (only visible cards live in the DOM), so nudge

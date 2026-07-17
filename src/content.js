@@ -817,7 +817,30 @@
       if (p.url) learnUrl(p.url);
       applyReading(p.data);
     }
+    if (p.projects) mergeProjects(p.projects);
   });
+
+  // Merge harvested projects (from the page's own API) into the cached list the
+  // scheduling picker reads. Keyed by uuid so repeat visits just refresh names.
+  function mergeProjects(found) {
+    if (!Array.isArray(found) || !found.length) return;
+    try {
+      chrome.storage?.local.get("cum_projects", (res) => {
+        const existing = (res && res.cum_projects) || [];
+        const byId = new Map(existing.map((p) => [p.uuid, p]));
+        let changed = false;
+        for (const p of found) {
+          if (!p || !p.uuid) continue;
+          const prev = byId.get(p.uuid);
+          if (!prev || prev.name !== p.name || prev.href !== p.href) changed = true;
+          byId.set(p.uuid, p);
+        }
+        if (changed) chrome.storage.local.set({ cum_projects: Array.from(byId.values()) });
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }
 
   // React to storage changes (manual reset, or a pinned endpoint from the popup).
   try {
