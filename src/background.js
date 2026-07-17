@@ -148,19 +148,71 @@ async function sendRun(tabId, jobId) {
   return { ok: false, error: "no response from page (content script not ready?)" };
 }
 
+// All open claude.ai tabs, across every window type — normal browser windows
+// AND installed-PWA app windows (windowType "app"). Some Chrome versions omit
+// app windows from an unfiltered query, so we union a few explicit queries.
+async function claudeTabs() {
+  const seen = new Map();
+  const queries = [
+    { url: "https://claude.ai/*" },
+    { url: "https://claude.ai/*", windowType: "app" },
+    { url: "https://claude.ai/*", windowType: "normal" },
+    { url: "https://claude.ai/*", windowType: "popup" },
+  ];
+  for (const q of queries) {
+    const tabs = await new Promise((res) => {
+      try {
+        chrome.tabs.query(q, (t) => {
+          void chrome.runtime.lastError; // invalid windowType combos just no-op
+          res(t || []);
+        });
+      } catch (e) {
+        res([]);
+      }
+    });
+    for (const t of tabs) if (t && t.id != null) seen.set(t.id, t);
+  }
+  return Array.from(seen.values());
+}
+
+// Find an already-open tab showing this conversation (browser tab or PWA).
+async function findChatTab(chatUrl) {
+  if (!chatUrl) return null;
+  const want = J.targetUrl({ chatUrl });
+  for (const t of await claudeTabs()) {
+    if (t.url && J.sameConversationUrl(t.url, want)) return t;
+  }
+  return null;
+}
+
 async function executeJob(job) {
   await updateJob(job.id, { status: "running", firedAt: Date.now(), error: null });
   const url = J.targetUrl(job);
-  let tab;
-  try {
-    tab = await chrome.tabs.create({ url, active: false });
-  } catch (e) {
-    await updateJob(job.id, { status: "error", error: "could not open tab" });
-    notify("Scheduled send failed", "Could not open a claude.ai tab.");
-    return;
+  let tab = null;
+  let createdTab = false;
+
+  // For a "this chat" target, reuse the tab/PWA window already on that
+  // conversation rather than opening a duplicate. New-chat and project targets
+  // always open fresh (that's the point — a new conversation).
+  if (job.chatUrl) {
+    try {
+      tab = await findChatTab(job.chatUrl);
+    } catch (e) {
+      tab = null;
+    }
+  }
+  if (!tab) {
+    try {
+      tab = await chrome.tabs.create({ url, active: false });
+      createdTab = true;
+    } catch (e) {
+      await updateJob(job.id, { status: "error", error: "could not open tab" });
+      notify("Scheduled send failed", "Could not open a claude.ai tab.");
+      return;
+    }
   }
   await waitTabComplete(tab.id, 30000);
-  await sleep(2500); // let the SPA composer render
+  await sleep(createdTab ? 2500 : 800); // a fresh tab needs the SPA to render
   const res = await sendRun(tab.id, job.id);
   if (res && res.ok) {
     await updateJob(job.id, { status: "done" });

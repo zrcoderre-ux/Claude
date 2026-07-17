@@ -132,3 +132,23 @@ test("projectUuidFromHref extracts the uuid", () => {
   );
   assert.equal(J.projectUuidFromHref("/cowork/projects"), null);
 });
+
+test("sameConversationUrl matches the same chat across query/hash/slash and PWA", () => {
+  const base = "https://claude.ai/chat/019f3fcd-9b35-7715-b2cc-b227512b5459";
+  // Ignore trailing slash, query string, and hash (a PWA window may add params).
+  assert.equal(J.sameConversationUrl(base, base + "/"), true);
+  assert.equal(J.sameConversationUrl(base, base + "?utm=x"), true);
+  assert.equal(J.sameConversationUrl(base, base + "#foo"), true);
+  assert.equal(J.sameConversationUrl(base + "?a=1", base + "?b=2"), true);
+  // Claude Code sessions match on their /code/session_… path.
+  const cc = "https://claude.ai/code/session_01SXUhPi4YPzLy3o9qEHfphe";
+  assert.equal(J.sameConversationUrl(cc, cc + "?ref=pwa"), true);
+  // Different conversations / origins / garbage do not match.
+  assert.equal(
+    J.sameConversationUrl(base, "https://claude.ai/chat/aaaaaaaa-0000-0000-0000-000000000000"),
+    false
+  );
+  assert.equal(J.sameConversationUrl(base, "https://example.com/chat/x"), false);
+  assert.equal(J.sameConversationUrl(base, "not a url"), false);
+  assert.equal(J.sameConversationUrl(cc, "https://claude.ai/new"), false);
+});
