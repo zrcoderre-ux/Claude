@@ -47,9 +47,60 @@
         because no claude.ai tab was open at the exact reset moment, so the
         usage % shown is the last value seen before it.
       </p>
+
+      <hr class="divider" />
+
+      <div class="head">
+        <div class="dot"></div>
+        <h1>Scheduled Sends</h1>
+      </div>
+      <p class="sub">
+        Queue files (and an optional prompt) to a <b>new chat</b> — optionally in
+        a Project — to send at a set time or when your 5-hour usage next resets.
+        Files are stored in the extension until they go out.
+      </p>
+
+      <div class="job-form">
+        <label class="jf-label" for="job-name">Label (optional)</label>
+        <input id="job-name" type="text" placeholder="e.g. Weekly report run" />
+
+        <label class="jf-label" for="job-files">Files</label>
+        <input id="job-files" type="file" multiple />
+
+        <label class="jf-label" for="job-prompt">Prompt (optional)</label>
+        <textarea id="job-prompt" rows="3" placeholder="What should Claude do with these files?"></textarea>
+
+        <label class="jf-label" for="job-project">Project</label>
+        <div class="jf-row">
+          <select id="job-project"><option value="">New chat — no project</option></select>
+          <button id="refresh-projects" type="button" class="ghost">Refresh</button>
+        </div>
+
+        <label class="jf-label">When to send</label>
+        <div class="jf-when">
+          <label class="jf-radio"><input type="radio" name="jf-trigger" value="reset" checked /> When usage resets</label>
+          <label class="jf-radio"><input type="radio" name="jf-trigger" value="time" /> At a set time</label>
+          <input id="job-time" type="datetime-local" disabled />
+        </div>
+
+        <div class="jf-actions">
+          <button id="add-job" type="button" class="primary">Queue send</button>
+          <span id="job-status" class="jf-status" hidden></span>
+        </div>
+      </div>
+
+      <div id="job-list" class="job-list"></div>
+      <p id="job-empty" class="empty" hidden>No scheduled sends queued.</p>
+
+      <p class="footnote">
+        Heads-up: a job can only fire while your browser is running and you're
+        logged into claude.ai — at fire time the extension opens a background
+        claude.ai tab, attaches the files, types the prompt, and clicks Send.
+      </p>
     </div>
 
     <script src="log.js"></script>
+    <script src="jobstore.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

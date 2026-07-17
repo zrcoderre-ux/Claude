@@ -78,6 +78,22 @@
                   if (H && H.hasData(bodyData)) emit("fetch:body", bodyData, url);
                 })
                 .catch(() => {});
+              // Scheduled-send: report file-upload completion so the executor
+              // knows when it's safe to click Send.
+              if (/upload-file/i.test(url)) {
+                response
+                  .clone()
+                  .json()
+                  .then((j) => {
+                    post({
+                      upload: {
+                        file_name: j && (j.file_name || j.sanitized_name || null),
+                        success: !!(j && j.success),
+                      },
+                    });
+                  })
+                  .catch(() => {});
+              }
             } catch (e) {
               /* ignore */
             }

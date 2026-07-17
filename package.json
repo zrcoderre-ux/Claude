@@ -4,7 +4,7 @@
   "private": true,
   "description": "Chrome extension showing current Claude session usage and time to reset.",
   "scripts": {
-    "test": "node --test test/harvest.test.js test/estimate.test.js test/log.test.js",
+    "test": "node --test test/harvest.test.js test/estimate.test.js test/log.test.js test/jobstore.test.js",
     "icons": "python3 scripts/make_icons.py"
   },
   "license": "MIT"
