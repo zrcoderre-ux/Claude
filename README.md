@@ -25,6 +25,35 @@ bottom-right corner of [claude.ai](https://claude.ai).
   endpoint or clear stored values.
 - **Drag the pill** anywhere on the page — its position is remembered, and the
   detail panel opens toward whichever side has room.
+- **Auto-click "Continue"** (opt-in) — when a long turn hits the tool-use /
+  length limit, clicks Claude's Continue button for you, even in background tabs.
+- **Usage log + CSV** (Options) — records when you hit 100% and the usage % at
+  each 5-hour reset; export to a spreadsheet.
+- **Scheduled sends** (Options) — queue files + an optional prompt to a new chat
+  (optionally in a Project) to send at a set time or when usage next resets.
+
+## Scheduled sends
+
+Set up in **Options**. Each job stores your files inside the extension
+(`chrome.storage`, `unlimitedStorage`) plus an optional prompt and a target
+(a new chat, or a Project). Triggers:
+
+- **When usage resets** — fires just after your 5-hour window rolls over (uses
+  the reset time the meter already tracks).
+- **At a set time** — a `chrome.alarms` timer.
+
+At fire time the background worker opens a background claude.ai tab at the right
+composer (`/new` or `/cowork/project/{uuid}`), and a content script attaches the
+files (via the hidden `file-upload` input), waits for each upload to finish
+(watching the `wiggle/upload-file` response), types the prompt into the
+ProseMirror editor, and clicks **Send message** — all by driving the real UI, so
+there's no token-harvesting or backend server.
+
+**Limitation:** a job only fires while your **browser is running and logged into
+claude.ai**. There's no headless/while-closed execution (that would require a
+hosted backend). "When usage resets" is the common case and your browser is
+usually open then; a specific time with the browser closed will fire the next
+time it's open.
 
 ### A note on precision
 
