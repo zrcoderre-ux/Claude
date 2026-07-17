@@ -29,14 +29,16 @@ bottom-right corner of [claude.ai](https://claude.ai).
   length limit, clicks Claude's Continue button for you, even in background tabs.
 - **Usage log + CSV** (Options) — records when you hit 100% and the usage % at
   each 5-hour reset; export to a spreadsheet.
-- **Scheduled sends** (Options) — queue files + an optional prompt to a new chat
-  (optionally in a Project) to send at a set time or when usage next resets.
+- **Scheduled sends** (Options) — queue files (pick individually or **a whole
+  folder**) + an optional prompt to a new chat (optionally in a Project) to send
+  at a set time or when usage next resets.
 
 ## Scheduled sends
 
-Set up in **Options**. Each job stores your files inside the extension
-(`chrome.storage`, `unlimitedStorage`) plus an optional prompt and a target
-(a new chat, or a Project). Triggers:
+Set up in **Options**. Pick files individually or **choose a folder** (its
+files are snapshotted at queue time). Each job stores your files inside the
+extension (`chrome.storage`, `unlimitedStorage`) plus an optional prompt and a
+target (a new chat, or a Project). Triggers:
 
 - **When usage resets** — fires just after your 5-hour window rolls over (uses
   the reset time the meter already tracks).
