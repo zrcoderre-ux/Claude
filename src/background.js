@@ -216,36 +216,45 @@ async function reschedule() {
   } catch (e) {}
 }
 
-// Open the projects page in a background tab, scrape the list, close it.
-async function refreshProjects() {
+// Open the projects page VISIBLY (claude.ai defers rendering in hidden tabs, so
+// a background scrape returns nothing), scrape it, close it, and return focus
+// to the tab that asked (the options page).
+async function refreshProjects(returnTabId) {
   let tab;
   try {
-    tab = await chrome.tabs.create({ url: "https://claude.ai/cowork/projects", active: false });
+    tab = await chrome.tabs.create({ url: "https://claude.ai/cowork/projects", active: true });
   } catch (e) {
     return { error: "could not open a claude.ai tab" };
   }
   await waitTabComplete(tab.id, 30000);
-  await sleep(3500);
+  await sleep(2500);
   let projects = [];
-  for (let attempt = 0; attempt < 8 && !projects.length; attempt++) {
+  for (let attempt = 0; attempt < 6 && !projects.length; attempt++) {
     try {
       const res = await chrome.tabs.sendMessage(tab.id, { type: "cum-scrape-projects" });
       if (res && res.projects && res.projects.length) projects = res.projects;
     } catch (e) {
       /* content script not ready yet */
     }
-    if (!projects.length) await sleep(2000);
+    if (!projects.length) await sleep(1500);
   }
   try {
     chrome.tabs.remove(tab.id);
   } catch (e) {}
-  await set({ cum_projects: projects });
+  if (returnTabId != null) {
+    try {
+      chrome.tabs.update(returnTabId, { active: true });
+    } catch (e) {}
+  }
+  if (projects.length) await set({ cum_projects: projects });
   return { projects };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === "cum-refresh-projects") {
-    refreshProjects().then(sendResponse).catch((e) => sendResponse({ error: String(e) }));
+    refreshProjects(sender && sender.tab && sender.tab.id)
+      .then(sendResponse)
+      .catch((e) => sendResponse({ error: String(e) }));
     return true;
   }
 });
