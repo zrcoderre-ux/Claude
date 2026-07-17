@@ -143,6 +143,22 @@
     return m ? m[1] : null;
   }
 
+  // Do two URLs point at the same conversation? Compares origin + pathname
+  // (ignoring query string, hash, and a trailing slash), so an already-open tab
+  // — including an installed-PWA app window, whose URL may carry extra query
+  // params — is recognized as the same chat and reused instead of duplicated.
+  function sameConversationUrl(a, b) {
+    try {
+      const ua = new URL(a);
+      const ub = new URL(b);
+      if (ua.origin !== ub.origin) return false;
+      const norm = (p) => p.replace(/\/+$/, "");
+      return norm(ua.pathname) === norm(ub.pathname);
+    } catch (e) {
+      return false;
+    }
+  }
+
   const api = {
     ORIGIN,
     fileKey,
@@ -159,6 +175,7 @@
     parseDataUrl,
     cleanProjectName,
     projectUuidFromHref,
+    sameConversationUrl,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMJobs = api;
