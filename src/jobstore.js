@@ -29,6 +29,8 @@
       projectUuid: f.projectUuid || null,
       projectName: f.projectName || null,
       projectHref: f.projectHref || null,
+      chatUrl: f.chatUrl || null, // send into an existing conversation
+      chatTitle: f.chatTitle || null,
       trigger:
         f.trigger && f.trigger.type === "time"
           ? { type: "time", at: f.trigger.at }
@@ -64,9 +66,22 @@
 
   // The claude.ai URL a job should open to compose its message.
   function targetUrl(job) {
+    if (job && job.chatUrl) {
+      // Stored as a full URL or a path.
+      return /^https?:\/\//i.test(job.chatUrl) ? job.chatUrl : ORIGIN + job.chatUrl;
+    }
     if (job && job.projectHref) return ORIGIN + job.projectHref;
     if (job && job.projectUuid) return ORIGIN + "/cowork/project/" + job.projectUuid;
     return ORIGIN + "/new";
+  }
+
+  // A short human label for a job's destination.
+  function targetLabel(job) {
+    if (!job) return "New chat";
+    if (job.chatUrl) return job.chatTitle ? "→ " + job.chatTitle : "→ this chat";
+    if (job.projectName) return "→ " + job.projectName;
+    if (job.projectUuid) return "→ project";
+    return "New chat";
   }
 
   // Time-triggered jobs that are due (pending and at <= now).
@@ -136,6 +151,7 @@
     removeJob,
     getJob,
     targetUrl,
+    targetLabel,
     dueTimeJobs,
     pendingResetJobs,
     hasPendingResetJobs,

@@ -49,6 +49,31 @@ test("targetUrl picks new / project url", () => {
   );
 });
 
+test("targetUrl uses an existing chat URL and takes precedence", () => {
+  assert.equal(
+    J.targetUrl(J.newJob({ chatUrl: "https://claude.ai/chat/abc" }, "x", NOW)),
+    "https://claude.ai/chat/abc"
+  );
+  assert.equal(
+    J.targetUrl(J.newJob({ chatUrl: "/chat/abc" }, "x", NOW)),
+    "https://claude.ai/chat/abc"
+  );
+  // chat wins over project
+  assert.equal(
+    J.targetUrl(J.newJob({ chatUrl: "/chat/abc", projectUuid: "p" }, "x", NOW)),
+    "https://claude.ai/chat/abc"
+  );
+});
+
+test("targetLabel describes the destination", () => {
+  assert.equal(J.targetLabel(J.newJob({}, "x", NOW)), "New chat");
+  assert.equal(J.targetLabel(J.newJob({ projectName: "Rulings" }, "x", NOW)), "→ Rulings");
+  assert.equal(
+    J.targetLabel(J.newJob({ chatUrl: "/chat/a", chatTitle: "My chat" }, "x", NOW)),
+    "→ My chat"
+  );
+});
+
 test("dueTimeJobs returns only pending time jobs at/after now", () => {
   const jobs = [
     J.newJob({ trigger: { type: "time", at: NOW - 1000 } }, "past", NOW),

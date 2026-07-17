@@ -33,6 +33,8 @@
       "js": [
         "src/estimate.js",
         "src/log.js",
+        "src/jobstore.js",
+        "src/jobform.js",
         "src/content.js",
         "src/autocontinue.js",
         "src/scheduler-run.js"

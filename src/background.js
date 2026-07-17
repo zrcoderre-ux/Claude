@@ -257,6 +257,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ error: String(e) }));
     return true;
   }
+  if (msg && msg.type === "cum-open-options") {
+    try {
+      chrome.runtime.openOptionsPage();
+    } catch (e) {}
+  }
 });
 
 // ==== Wiring =============================================================
