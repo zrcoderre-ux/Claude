@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="options.css" />
+    <title>Claude Usage Meter — Usage Log</title>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="head">
+        <div class="dot"></div>
+        <h1>Usage Log</h1>
+      </div>
+      <p class="sub">
+        Records the time you hit <b>100%</b> of your 5-hour session limit, and
+        the usage % your session had reached at each window reset.
+      </p>
+
+      <div class="toolbar">
+        <button id="download" class="primary" type="button">Download CSV</button>
+        <button id="clear" type="button">Clear log</button>
+        <span id="count" class="count"></span>
+      </div>
+
+      <div class="table-wrap">
+        <table id="log-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Event</th>
+              <th>Usage %</th>
+            </tr>
+          </thead>
+          <tbody id="log-body"></tbody>
+        </table>
+        <p id="empty" class="empty" hidden>
+          No events logged yet. Entries appear here the first time you hit
+          100% usage, or the first time your 5-hour window resets while the
+          extension is watching.
+        </p>
+      </div>
+    </div>
+
+    <script src="log.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

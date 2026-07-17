@@ -17,6 +17,8 @@
   const OVERAGE_KEY = "cum_show_overage"; // opt-in: show extra-usage spend
   const ESTIMATE_KEY = "cum_estimate_decimals"; // opt-in: estimated tenths
   const POS_KEY = "cum_pos"; // user-dragged position { left, top }
+  const LOG_KEY = "cum_log"; // journal of hit-100 / window-reset events
+  const HIT100_MARK_KEY = "cum_hit100_marker"; // resetAt already logged for
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   const EMPTY = {
@@ -40,6 +42,7 @@
   let estimateDecimals = false; // opt-in toggle (default off)
   let calib = null; // CUMEstimate calibrator instance
   let pos = null; // { left, top } once the user drags the pill
+  let hit100Marker = null; // resetAt for which a "hit100" entry was already logged
   let probing = false; // true while a proactive baseline fetch is in flight
   let els = null;
   let tickTimer = null;
@@ -63,7 +66,15 @@
         // the UI still builds (e.g. after an extension-context reload).
         if (chrome && chrome.storage && chrome.storage.local) {
           chrome.storage.local.get(
-            [STORAGE_KEY, URL_KEY, MANUAL_URL_KEY, OVERAGE_KEY, ESTIMATE_KEY, POS_KEY],
+            [
+              STORAGE_KEY,
+              URL_KEY,
+              MANUAL_URL_KEY,
+              OVERAGE_KEY,
+              ESTIMATE_KEY,
+              POS_KEY,
+              HIT100_MARK_KEY,
+            ],
             (res) => {
               if (res && res[STORAGE_KEY]) {
                 state = Object.assign(state, res[STORAGE_KEY]);
@@ -73,6 +84,7 @@
               showOverage = !!(res && res[OVERAGE_KEY]);
               estimateDecimals = !!(res && res[ESTIMATE_KEY]);
               if (res && res[POS_KEY]) pos = res[POS_KEY];
+              if (res && res[HIT100_MARK_KEY]) hit100Marker = res[HIT100_MARK_KEY];
               resolve();
             }
           );
@@ -83,6 +95,34 @@
         resolve();
       }
     });
+  }
+
+  // ---- Usage log (hit-100 / window-reset history for Options → CSV) ------
+  function appendLogEntry(entry) {
+    try {
+      if (!chrome.storage || !chrome.storage.local || !window.CUMLog) return;
+      chrome.storage.local.get(LOG_KEY, (res) => {
+        const existing = (res && res[LOG_KEY]) || [];
+        const next = window.CUMLog.addEntry(existing, entry);
+        chrome.storage.local.set({ [LOG_KEY]: next });
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  // Log the moment the 5-hour session reaches 100%, once per window (dedup by
+  // the window's resetAt, persisted so a reload doesn't re-log a duplicate).
+  function maybeLogHit100() {
+    if (state.percent == null || state.percent < 1 || state.resetAt == null) return;
+    if (hit100Marker === state.resetAt) return;
+    hit100Marker = state.resetAt;
+    try {
+      chrome.storage?.local.set({ [HIT100_MARK_KEY]: hit100Marker });
+    } catch (e) {
+      /* ignore */
+    }
+    appendLogEntry({ at: Date.now(), type: "hit100", percent: 100 });
   }
 
   // Merge a fresh reading. We keep the most recently observed values; a reset
@@ -106,6 +146,7 @@
         state.percent = data.percent;
         changed = true;
       }
+      maybeLogHit100();
     }
     if (data.weeklyPercent != null && data.weeklyPercent !== state.weeklyPercent) {
       state.weeklyPercent = data.weeklyPercent;
@@ -607,6 +648,15 @@
       // Once the reset time has passed, clear stale usage and re-baseline.
       let dirty = false;
       if (state.resetAt != null && state.resetAt <= Date.now()) {
+        // Log the usage % the window reset at, before clearing it.
+        const finalPct = sessionDisplayPercent();
+        if (finalPct != null) {
+          appendLogEntry({
+            at: state.resetAt,
+            type: "reset",
+            percent: Math.round(finalPct * 1000) / 10,
+          });
+        }
         state.resetAt = null;
         state.percent = null;
         state.used = null;

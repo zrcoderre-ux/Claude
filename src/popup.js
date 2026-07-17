@@ -19,6 +19,7 @@
     status: document.getElementById("status"),
     showOverage: document.getElementById("show-overage"),
     estimateDecimals: document.getElementById("estimate-decimals"),
+    openLog: document.getElementById("open-log"),
   };
 
   function flash(text) {
@@ -132,5 +133,9 @@
       render(cleared);
       flash("Cleared");
     });
+  });
+
+  el.openLog.addEventListener("click", () => {
+    chrome.runtime.openOptionsPage();
   });
 })();
