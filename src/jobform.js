@@ -229,10 +229,8 @@
       add("new", "New chat — no project");
       if (chat && chat.url) add("chat", "This chat" + (chat.title ? " — " + chat.title : ""));
       for (const p of projects || []) {
-        add("project:" + p.uuid, J.cleanProjectName(p.name) || p.uuid, {
-          name: J.cleanProjectName(p.name) || "",
-          href: p.href || "",
-        });
+        const name = J.cleanProjectName(p.name) || p.uuid;
+        add("project:" + p.uuid, "New chat in " + name, { name, href: p.href || "" });
       }
       if (cur && ui.target.querySelector(`option[value="${cur}"]`)) ui.target.value = cur;
       else if (chat && chat.url) ui.target.value = "chat"; // default to this chat when available
