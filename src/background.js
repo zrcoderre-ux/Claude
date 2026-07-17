@@ -262,6 +262,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       chrome.runtime.openOptionsPage();
     } catch (e) {}
   }
+  if (msg && msg.type === "cum-run-now" && msg.jobId) {
+    (async () => {
+      if (running) return { ok: false, error: "another job is running" };
+      const { [JOBS_KEY]: jobs } = await get(JOBS_KEY);
+      const job = J.getJob(jobs || [], msg.jobId);
+      if (!job) return { ok: false, error: "job not found" };
+      running = true;
+      try {
+        await executeJob(job);
+      } finally {
+        running = false;
+      }
+      return { ok: true };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
 });
 
 // ==== Wiring =============================================================
