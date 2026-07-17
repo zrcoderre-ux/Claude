@@ -18,7 +18,8 @@
   const ESTIMATE_KEY = "cum_estimate_decimals"; // opt-in: estimated tenths
   const POS_KEY = "cum_pos"; // user-dragged position { left, top }
   const LOG_KEY = "cum_log"; // journal of hit-100 / window-reset events
-  const HIT100_MARK_KEY = "cum_hit100_marker"; // resetAt already logged for
+  const HIT100_MARK_KEY = "cum_hit100_marker"; // resetAt already logged for hit100
+  const LAST_RESET_KEY = "cum_last_reset"; // resetAt already logged as a reset
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   const EMPTY = {
@@ -43,6 +44,7 @@
   let calib = null; // CUMEstimate calibrator instance
   let pos = null; // { left, top } once the user drags the pill
   let hit100Marker = null; // resetAt for which a "hit100" entry was already logged
+  let lastResetMarker = null; // resetAt for which a "reset" entry was already logged
   let probing = false; // true while a proactive baseline fetch is in flight
   let els = null;
   let tickTimer = null;
@@ -74,6 +76,7 @@
               ESTIMATE_KEY,
               POS_KEY,
               HIT100_MARK_KEY,
+              LAST_RESET_KEY,
             ],
             (res) => {
               if (res && res[STORAGE_KEY]) {
@@ -85,6 +88,7 @@
               estimateDecimals = !!(res && res[ESTIMATE_KEY]);
               if (res && res[POS_KEY]) pos = res[POS_KEY];
               if (res && res[HIT100_MARK_KEY]) hit100Marker = res[HIT100_MARK_KEY];
+              if (res && res[LAST_RESET_KEY]) lastResetMarker = res[LAST_RESET_KEY];
               resolve();
             }
           );
@@ -123,6 +127,43 @@
       /* ignore */
     }
     appendLogEntry({ at: Date.now(), type: "hit100", percent: 100 });
+  }
+
+  // Log a window reset once (deduped by the window's resetAt). `pct01` is the
+  // last-seen utilization (0..1); `approx` marks entries reconstructed on load
+  // because no tab was open at the actual reset moment.
+  function logReset(resetAt, pct01, approx) {
+    if (resetAt == null || lastResetMarker === resetAt) return;
+    lastResetMarker = resetAt;
+    try {
+      chrome.storage?.local.set({ [LAST_RESET_KEY]: resetAt });
+    } catch (e) {
+      /* ignore */
+    }
+    appendLogEntry({
+      at: resetAt,
+      type: "reset",
+      percent: pct01 != null ? Math.round(pct01 * 1000) / 10 : null,
+      approx: !!approx,
+    });
+  }
+
+  // On load, if the last-observed window's reset time has already elapsed, the
+  // window rolled over while no tab was watching. Reconstruct that reset from
+  // the last-seen usage % (flagged approximate) so the history stays complete.
+  function reconstructMissedReset() {
+    if (state.resetAt != null && state.resetAt <= Date.now()) {
+      logReset(state.resetAt, state.percent, true);
+      state.resetAt = null;
+      state.percent = null;
+      state.used = null;
+      state.remaining = null;
+      if (calib) {
+        calib.reset();
+        state.calib = calib.snapshot();
+      }
+      save();
+    }
   }
 
   // Merge a fresh reading. We keep the most recently observed values; a reset
@@ -648,15 +689,8 @@
       // Once the reset time has passed, clear stale usage and re-baseline.
       let dirty = false;
       if (state.resetAt != null && state.resetAt <= Date.now()) {
-        // Log the usage % the window reset at, before clearing it.
-        const finalPct = sessionDisplayPercent();
-        if (finalPct != null) {
-          appendLogEntry({
-            at: state.resetAt,
-            type: "reset",
-            percent: Math.round(finalPct * 1000) / 10,
-          });
-        }
+        // Observed live (a tab was open): log the last-seen % at reset.
+        logReset(state.resetAt, state.percent, false);
         state.resetAt = null;
         state.percent = null;
         state.used = null;
@@ -743,6 +777,9 @@
     }
     calib = makeCalibrator();
     build();
+    // If a window rolled over while no tab was open, backfill it before the
+    // fresh baseline overwrites the stale reset time.
+    reconstructMissedReset();
     // Kick off a proactive baseline read, then keep it fresh.
     requestBaseline();
     startPolling();
