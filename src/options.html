@@ -64,12 +64,17 @@
         <label class="jf-label" for="job-name">Label (optional)</label>
         <input id="job-name" type="text" placeholder="e.g. Weekly report run" />
 
-        <label class="jf-label" for="job-files">Files</label>
-        <div class="jf-row">
-          <input id="job-files" type="file" multiple />
-          <button id="pick-folder" type="button" class="ghost">Choose folder…</button>
+        <label class="jf-label">Files</label>
+        <div id="job-dropzone" class="jf-dropzone">
+          <p class="jf-dz-text">Drag files or a folder here, or</p>
+          <div class="jf-row">
+            <button id="pick-files" type="button" class="ghost">Choose files…</button>
+            <button id="pick-folder" type="button" class="ghost">Choose folder…</button>
+          </div>
         </div>
+        <input id="job-files" type="file" multiple hidden />
         <input id="job-folder" type="file" webkitdirectory hidden />
+        <div id="job-file-chips" class="jf-chips"></div>
         <div id="job-file-summary" class="jf-summary" hidden></div>
 
         <label class="jf-label" for="job-prompt">Prompt (optional)</label>

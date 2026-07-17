@@ -35,10 +35,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
 
 ## Scheduled sends
 
-Set up in **Options**. Pick files individually or **choose a folder** (its
-files are snapshotted at queue time). Each job stores your files inside the
-extension (`chrome.storage`, `unlimitedStorage`) plus an optional prompt and a
-target (a new chat, or a Project). Triggers:
+Set up in **Options**. Add files by **dragging them (or a whole folder) onto the
+drop zone**, or via the Choose files / Choose folder buttons; selections show as
+removable chips and are snapshotted at queue time. Each job stores your files
+inside the extension (`chrome.storage`, `unlimitedStorage`) plus an optional
+prompt and a target (a new chat, or a Project). Triggers:
 
 - **When usage resets** — fires just after your 5-hour window rolls over (uses
   the reset time the meter already tracks).
