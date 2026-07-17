@@ -159,12 +159,26 @@
           `<div class="job-meta">${escapeHtml(bits.join(" · "))} · ${escapeHtml(triggerText(job))}</div>` +
           (job.error ? `<div class="job-err">${escapeHtml(job.error)}</div>` : "") +
           `</div>` +
-          `<button class="job-del" data-id="${job.id}" title="Delete">✕</button>`;
+          `<div class="job-btns">` +
+          (job.status === "pending"
+            ? `<button class="job-run" data-id="${job.id}" title="Send now">Run now</button>`
+            : "") +
+          `<button class="job-del" data-id="${job.id}" title="Delete">✕</button>` +
+          `</div>`;
         jf.list.appendChild(row);
       }
       jf.empty.hidden = jobs.length !== 0;
       jf.list.querySelectorAll(".job-del").forEach((b) =>
         b.addEventListener("click", () => deleteJob(b.getAttribute("data-id")))
+      );
+      jf.list.querySelectorAll(".job-run").forEach((b) =>
+        b.addEventListener("click", () => {
+          b.disabled = true;
+          b.textContent = "Sending…";
+          chrome.runtime.sendMessage({ type: "cum-run-now", jobId: b.getAttribute("data-id") }, () => {
+            renderJobs();
+          });
+        })
       );
     });
   }
