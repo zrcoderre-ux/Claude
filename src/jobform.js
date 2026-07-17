@@ -237,7 +237,27 @@
       if (cur && ui.target.querySelector(`option[value="${cur}"]`)) ui.target.value = cur;
       else if (chat && chat.url) ui.target.value = "chat"; // default to this chat when available
     }
-    storageGet(PROJECTS_KEY).then((r) => fillTarget(r[PROJECTS_KEY]));
+    let lastProjects = [];
+    function loadProjects() {
+      storageGet(PROJECTS_KEY).then((r) => {
+        lastProjects = r[PROJECTS_KEY] || [];
+        fillTarget(lastProjects);
+      });
+    }
+    loadProjects();
+    // Live-update the picker when projects are (auto-)scraped in the background.
+    let onStorage = null;
+    try {
+      onStorage = (changes, area) => {
+        if (area === "local" && changes[PROJECTS_KEY]) {
+          lastProjects = changes[PROJECTS_KEY].newValue || [];
+          fillTarget(lastProjects);
+        }
+      };
+      chrome.storage.onChanged.addListener(onStorage);
+    } catch (e) {
+      /* ignore */
+    }
     ui.refresh.addEventListener("click", () => {
       ui.refresh.disabled = true;
       ui.refresh.textContent = "…";
@@ -321,6 +341,11 @@
 
     return {
       destroy() {
+        try {
+          if (onStorage) chrome.storage.onChanged.removeListener(onStorage);
+        } catch (e) {
+          /* ignore */
+        }
         el.remove();
       },
     };

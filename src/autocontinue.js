@@ -15,18 +15,25 @@
   "use strict";
 
   const CFG_KEY = "cum_autocontinue"; // { enabled: bool, max: number }
+  const STATE_KEY = "cum_state"; // usage snapshot (for the retry gate)
   const SELF_POLL_MS = 2000; // foreground self-poll
   const COOLDOWN_MS = 4000; // never click twice within this window
 
-  // Button labels that resume a paused turn. Kept as a set so it's easy to add
+  // Button labels that resume a paused turn. Kept as sets so it's easy to add
   // locale/wording variants after verifying against the live UI.
   const CONTINUE_LABELS = ["continue"];
+  // "Try again" appears when the usage limit is hit (claude.ai + Claude Code).
+  // Unlike Continue, we only click it once usage has actually reset.
+  const RETRY_LABELS = ["try again", "retry"];
 
   let cfg = { enabled: false, max: 50 };
   let clickCount = 0; // continues performed this page load
   let lastClickAt = 0;
   let paused = false; // set true once the cap is reached (until re-enabled)
   let armed = true; // click once per appearance; re-arm only when the button is gone
+  let retryArmed = true; // same, for the usage-limit "Try again" button
+  let retrySawLimit = false; // only auto-retry if we saw the usage cap while shown
+  let usageState = null; // latest cum_state (percent / resetAt) for the retry gate
 
   // ---- pure helpers (exposed for unit tests) ----------------------------
   function normText(s) {
@@ -34,6 +41,9 @@
   }
   function isContinueLabel(text) {
     return CONTINUE_LABELS.indexOf(normText(text)) !== -1;
+  }
+  function isRetryLabel(text) {
+    return RETRY_LABELS.indexOf(normText(text)) !== -1;
   }
 
   // ---- DOM ---------------------------------------------------------------
@@ -48,16 +58,36 @@
     return true;
   }
 
-  function findContinueButton() {
+  function findButton(pred) {
     const nodes = document.querySelectorAll('button, [role="button"]');
     for (let i = 0; i < nodes.length; i++) {
       const el = nodes[i];
-      // Match on the button's own label only (not nested giant text blocks).
-      if (!isContinueLabel(el.textContent)) continue;
+      if (!pred(el.textContent)) continue;
       if (!isClickable(el)) continue;
       return el;
     }
     return null;
+  }
+  function findContinueButton() {
+    return findButton(isContinueLabel);
+  }
+  // Prefer "try again" over the more generic "retry".
+  function findRetryButton() {
+    for (let i = 0; i < RETRY_LABELS.length; i++) {
+      const want = RETRY_LABELS[i];
+      const btn = findButton((t) => normText(t) === want);
+      if (btn) return btn;
+    }
+    return null;
+  }
+
+  // At/over the session cap (per the usage meter).
+  function usageMaxed() {
+    return !!(usageState && usageState.percent != null && usageState.percent >= 0.995);
+  }
+  // Available again once the window resets — content.js clears percent on reset.
+  function usageAvailable() {
+    return !usageMaxed();
   }
 
   // Claude is actively generating when a "Stop" control is present — don't
@@ -69,6 +99,17 @@
     return !!(stop && isClickable(stop));
   }
 
+  function clickOnce(btn, label) {
+    lastClickAt = Date.now();
+    clickCount++;
+    try {
+      btn.click();
+    } catch (e) {
+      /* ignore */
+    }
+    toast(`${label} (${clickCount}${cfg.max ? " / " + cfg.max : ""})`);
+  }
+
   function tick() {
     if (!cfg.enabled || paused) return;
     if (cfg.max && cfg.max > 0 && clickCount >= cfg.max) {
@@ -76,26 +117,40 @@
       toast(`Auto-continue paused — reached ${cfg.max}. Toggle it off/on to resume.`);
       return;
     }
-    const btn = findContinueButton();
-    // No Continue button visible → re-arm for the NEXT time it appears.
-    if (!btn) {
-      armed = true;
-      return;
-    }
-    // Already clicked this appearance (button lingers while Claude resumes), or
-    // Claude is generating right now — don't click again until it's truly gone.
-    if (!armed || isGenerating()) return;
     const now = Date.now();
-    if (now - lastClickAt < COOLDOWN_MS) return;
-    armed = false; // one click per appearance
-    lastClickAt = now;
-    clickCount++;
-    try {
-      btn.click();
-    } catch (e) {
-      /* ignore */
+
+    // 1) "Continue" (tool-use / length limit) — click immediately, once per
+    //    appearance, but not while Claude is generating.
+    const cont = findContinueButton();
+    if (cont) {
+      if (armed && !isGenerating() && now - lastClickAt >= COOLDOWN_MS) {
+        armed = false;
+        clickOnce(cont, "Auto-continued");
+      }
+    } else {
+      armed = true;
     }
-    toast(`Auto-continued (${clickCount}${cfg.max ? " / " + cfg.max : ""})`);
+
+    // 2) "Try again" (usage limit) — only engage if we saw the usage cap while
+    //    the button was showing (so we don't touch unrelated retry buttons),
+    //    then wait until usage resets and click once.
+    const retry = findRetryButton();
+    if (retry) {
+      if (usageMaxed()) retrySawLimit = true; // we're genuinely rate-limited
+      if (
+        retryArmed &&
+        retrySawLimit &&
+        usageAvailable() &&
+        !isGenerating() &&
+        now - lastClickAt >= COOLDOWN_MS
+      ) {
+        retryArmed = false;
+        clickOnce(retry, "Resumed after reset");
+      }
+    } else {
+      retryArmed = true;
+      retrySawLimit = false;
+    }
   }
 
   // ---- Toast -------------------------------------------------------------
@@ -130,8 +185,9 @@
 
   function loadCfg() {
     try {
-      chrome.storage?.local.get(CFG_KEY, (res) => {
+      chrome.storage?.local.get([CFG_KEY, STATE_KEY], (res) => {
         applyCfg(res && res[CFG_KEY]);
+        if (res && res[STATE_KEY]) usageState = res[STATE_KEY];
       });
     } catch (e) {
       /* ignore */
@@ -140,7 +196,9 @@
 
   try {
     chrome.storage?.onChanged.addListener((changes, area) => {
-      if (area === "local" && changes[CFG_KEY]) applyCfg(changes[CFG_KEY].newValue);
+      if (area !== "local") return;
+      if (changes[CFG_KEY]) applyCfg(changes[CFG_KEY].newValue);
+      if (changes[STATE_KEY]) usageState = changes[STATE_KEY].newValue || null;
     });
   } catch (e) {
     /* ignore */
@@ -159,5 +217,11 @@
   setInterval(tick, SELF_POLL_MS);
 
   // Expose pure helpers for tests.
-  window.CUMAutoContinue = { normText, isContinueLabel, CONTINUE_LABELS };
+  window.CUMAutoContinue = {
+    normText,
+    isContinueLabel,
+    isRetryLabel,
+    CONTINUE_LABELS,
+    RETRY_LABELS,
+  };
 })();

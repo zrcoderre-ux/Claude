@@ -25,8 +25,10 @@ bottom-right corner of [claude.ai](https://claude.ai).
   endpoint or clear stored values.
 - **Drag the pill** anywhere on the page — its position is remembered, and the
   detail panel opens toward whichever side has room.
-- **Auto-click "Continue"** (opt-in) — when a long turn hits the tool-use /
-  length limit, clicks Claude's Continue button for you, even in background tabs.
+- **Auto-click "Continue" / "Try again"** (opt-in) — clicks Claude's Continue
+  button when a long turn hits the tool-use / length limit, and clicks
+  **Try again** once your usage resets after hitting a limit (it waits for the
+  reset). Works on claude.ai and **Claude Code**, even in background tabs.
 - **Usage log + CSV** (Options) — records when you hit 100% and the usage % at
   each 5-hour reset; export to a spreadsheet.
 - **Scheduled sends** — queue files (pick individually or **a whole folder**) +
