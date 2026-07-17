@@ -306,7 +306,16 @@
       return true; // async response
     }
     if (msg.type === "cum-scrape-projects") {
-      sendResponse({ projects: scrapeProjects() });
+      const projects = scrapeProjects();
+      // The grid can virtualize (only visible cards live in the DOM), so nudge
+      // the scroll position before the next scrape to reveal more cards.
+      try {
+        const doc = document.scrollingElement || document.documentElement;
+        window.scrollTo(0, (doc.scrollTop || 0) + Math.round(window.innerHeight * 0.85));
+      } catch (e) {
+        /* ignore */
+      }
+      sendResponse({ projects });
       return false;
     }
   });
