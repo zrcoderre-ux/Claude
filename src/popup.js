@@ -6,6 +6,7 @@
   const MANUAL_URL_KEY = "cum_manual_url";
   const OVERAGE_KEY = "cum_show_overage";
   const ESTIMATE_KEY = "cum_estimate_decimals";
+  const AUTOCONTINUE_KEY = "cum_autocontinue";
 
   const el = {
     session: document.getElementById("session"),
@@ -19,6 +20,8 @@
     status: document.getElementById("status"),
     showOverage: document.getElementById("show-overage"),
     estimateDecimals: document.getElementById("estimate-decimals"),
+    autoContinue: document.getElementById("auto-continue"),
+    acMax: document.getElementById("ac-max"),
     openLog: document.getElementById("open-log"),
   };
 
@@ -75,15 +78,38 @@
       : "No data observed yet";
   }
 
+  let acCfg = { enabled: false, max: 50 };
+
   chrome.storage.local.get(
-    [STORAGE_KEY, MANUAL_URL_KEY, OVERAGE_KEY, ESTIMATE_KEY],
+    [STORAGE_KEY, MANUAL_URL_KEY, OVERAGE_KEY, ESTIMATE_KEY, AUTOCONTINUE_KEY],
     (res) => {
       render(res && res[STORAGE_KEY]);
       if (res && res[MANUAL_URL_KEY]) el.endpoint.value = res[MANUAL_URL_KEY];
       el.showOverage.checked = !!(res && res[OVERAGE_KEY]);
       el.estimateDecimals.checked = !!(res && res[ESTIMATE_KEY]);
+      acCfg = Object.assign(acCfg, (res && res[AUTOCONTINUE_KEY]) || {});
+      el.autoContinue.checked = !!acCfg.enabled;
+      el.acMax.value = acCfg.max;
     }
   );
+
+  function saveAc(msg) {
+    chrome.storage.local.set({ [AUTOCONTINUE_KEY]: acCfg }, () => msg && flash(msg));
+  }
+
+  el.autoContinue.addEventListener("change", () => {
+    acCfg.enabled = el.autoContinue.checked;
+    saveAc(acCfg.enabled ? "Auto-continue on" : "Auto-continue off");
+  });
+
+  el.acMax.addEventListener("change", () => {
+    let n = parseInt(el.acMax.value, 10);
+    if (!Number.isFinite(n) || n < 1) n = 1;
+    if (n > 999) n = 999;
+    el.acMax.value = n;
+    acCfg.max = n;
+    saveAc("Saved");
+  });
 
   el.showOverage.addEventListener("change", () => {
     chrome.storage.local.set({ [OVERAGE_KEY]: el.showOverage.checked }, () =>

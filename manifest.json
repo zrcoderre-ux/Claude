@@ -8,8 +8,9 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "alarms", "tabs"],
   "host_permissions": ["https://claude.ai/*"],
+  "background": { "service_worker": "src/background.js" },
   "options_page": "src/options.html",
   "action": {
     "default_title": "Claude Usage Meter",
@@ -29,7 +30,7 @@
     },
     {
       "matches": ["https://claude.ai/*"],
-      "js": ["src/estimate.js", "src/log.js", "src/content.js"],
+      "js": ["src/estimate.js", "src/log.js", "src/content.js", "src/autocontinue.js"],
       "css": ["src/content.css"],
       "run_at": "document_idle",
       "world": "ISOLATED"
