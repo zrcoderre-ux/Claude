@@ -11,6 +11,7 @@
     download: document.getElementById("download"),
     clear: document.getElementById("clear"),
     table: document.getElementById("log-table"),
+    footnote: document.getElementById("footnote"),
   };
 
   let entries = [];
@@ -34,16 +35,23 @@
   function render() {
     const sorted = entries.slice().sort((a, b) => b.at - a.at); // newest first
     el.body.innerHTML = "";
+    let anyApprox = false;
     for (const entry of sorted) {
       const tr = document.createElement("tr");
       const eventClass = entry.type === "hit100" ? "event-hit100" : "event-reset";
+      const pctText = entry.percent == null ? "—" : `${entry.percent}%`;
+      const approx = entry.approx
+        ? ` <span class="approx" title="Reconstructed on load — no tab was open at the exact reset time, so this is the last value seen before it.">~</span>`
+        : "";
+      if (entry.approx) anyApprox = true;
       tr.innerHTML =
         `<td>${fmtDate(entry.at)}</td>` +
         `<td>${fmtTime(entry.at)}</td>` +
         `<td class="${eventClass}">${window.CUMLog.eventLabel(entry.type)}</td>` +
-        `<td class="pct">${entry.percent}%</td>`;
+        `<td class="pct">${pctText}${approx}</td>`;
       el.body.appendChild(tr);
     }
+    el.footnote.hidden = !anyApprox;
     el.count.textContent = entries.length
       ? `${entries.length} event${entries.length === 1 ? "" : "s"}`
       : "";
@@ -66,9 +74,16 @@
       fmtDate(e.at),
       fmtTime(e.at),
       window.CUMLog.eventLabel(e.type),
-      e.percent,
+      e.percent == null ? "" : e.percent,
+      e.approx ? "yes" : "",
     ]);
-    const csv = window.CUMLog.buildCsv(rows, ["Date", "Time", "Event", "Usage %"]);
+    const csv = window.CUMLog.buildCsv(rows, [
+      "Date",
+      "Time",
+      "Event",
+      "Usage %",
+      "Approximate",
+    ]);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const stamp = new Date().toISOString().slice(0, 10);
