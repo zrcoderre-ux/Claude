@@ -125,6 +125,9 @@
   const jf = {
     name: document.getElementById("job-name"),
     files: document.getElementById("job-files"),
+    folder: document.getElementById("job-folder"),
+    pickFolder: document.getElementById("pick-folder"),
+    summary: document.getElementById("job-file-summary"),
     prompt: document.getElementById("job-prompt"),
     project: document.getElementById("job-project"),
     refresh: document.getElementById("refresh-projects"),
@@ -157,6 +160,43 @@
       fr.readAsDataURL(file);
     });
   }
+
+  // Combine files chosen individually and via the folder picker, de-duped.
+  function collectFiles() {
+    const seen = new Set();
+    const out = [];
+    for (const f of [...(jf.files.files || []), ...(jf.folder.files || [])]) {
+      const key = (f.webkitRelativePath || f.name) + ":" + f.size;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(f);
+    }
+    return out;
+  }
+
+  function fmtSize(bytes) {
+    if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    if (bytes >= 1024) return Math.round(bytes / 1024) + " KB";
+    return bytes + " B";
+  }
+
+  function updateFileSummary() {
+    const files = collectFiles();
+    if (!files.length) {
+      jf.summary.hidden = true;
+      return;
+    }
+    const total = files.reduce((s, f) => s + (f.size || 0), 0);
+    let txt = `${files.length} file${files.length === 1 ? "" : "s"} · ${fmtSize(total)}`;
+    if (files.length > 100) txt += " — that's a lot; consider narrowing the folder";
+    else if (total > 60 * 1024 * 1024) txt += " — large; storing may be slow";
+    jf.summary.textContent = txt;
+    jf.summary.hidden = false;
+  }
+
+  jf.pickFolder.addEventListener("click", () => jf.folder.click());
+  jf.files.addEventListener("change", updateFileSummary);
+  jf.folder.addEventListener("change", updateFileSummary);
 
   function fillProjects(projects) {
     const list = projects || [];
@@ -193,9 +233,9 @@
   });
 
   async function addJob() {
-    const files = Array.from(jf.files.files || []);
+    const files = collectFiles();
     const prompt = jf.prompt.value;
-    if (!files.length && !prompt.trim()) return jfFlash("Add a file or a prompt.", true);
+    if (!files.length && !prompt.trim()) return jfFlash("Add a file, folder, or prompt.", true);
 
     const trigType = document.querySelector('input[name="jf-trigger"]:checked').value;
     let trigger = { type: "reset" };
@@ -234,7 +274,9 @@
       await new Promise((r) => chrome.storage.local.set(writes, r));
       jf.name.value = "";
       jf.files.value = "";
+      jf.folder.value = "";
       jf.prompt.value = "";
+      updateFileSummary();
       jfFlash("Queued.");
       renderJobs();
     } catch (e) {

@@ -225,6 +225,13 @@ td .approx {
 .jf-row {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.jf-summary {
+  font-size: 12px;
+  color: #6b6b6b;
+  padding: 2px 2px 0;
 }
 
 .jf-row select {

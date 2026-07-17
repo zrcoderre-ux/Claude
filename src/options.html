@@ -65,7 +65,12 @@
         <input id="job-name" type="text" placeholder="e.g. Weekly report run" />
 
         <label class="jf-label" for="job-files">Files</label>
-        <input id="job-files" type="file" multiple />
+        <div class="jf-row">
+          <input id="job-files" type="file" multiple />
+          <button id="pick-folder" type="button" class="ghost">Choose folder…</button>
+        </div>
+        <input id="job-folder" type="file" webkitdirectory hidden />
+        <div id="job-file-summary" class="jf-summary" hidden></div>
 
         <label class="jf-label" for="job-prompt">Prompt (optional)</label>
         <textarea id="job-prompt" rows="3" placeholder="What should Claude do with these files?"></textarea>
