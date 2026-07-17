@@ -22,8 +22,19 @@
   const SEL = {
     fileInput: 'input[data-testid="file-upload"]',
     editor: 'div[data-testid="chat-input"]',
-    send: 'button[aria-label="Send message"]',
   };
+
+  // The send control (resilient to minor label/attribute changes).
+  function findSend() {
+    return (
+      document.querySelector('button[aria-label="Send message"]') ||
+      document.querySelector('button[aria-label="Send Message"]') ||
+      document.querySelector('button[aria-label*="Send message" i]') ||
+      document.querySelector('[data-testid="send-button"]') ||
+      document.querySelector('button[type="submit"][aria-label*="send" i]') ||
+      null
+    );
+  }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -71,6 +82,59 @@
     input.files = dt.files;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  // Fire a realistic pointer+mouse+click sequence — claude's send button is a
+  // custom (data-cds) button that may not respond to a bare .click().
+  function robustClick(el) {
+    const r = el.getBoundingClientRect();
+    const p = {
+      bubbles: true, cancelable: true, view: window, button: 0,
+      clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+    };
+    const fire = (Ctor, type, extra) => {
+      try {
+        el.dispatchEvent(new Ctor(type, Object.assign({ pointerId: 1, isPrimary: true }, p, extra)));
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    // A single synthetic gesture — a pointer/mouse sequence ending in one click.
+    // We deliberately do NOT also call el.click(), to avoid double-submitting.
+    fire(PointerEvent, "pointerdown");
+    fire(MouseEvent, "mousedown");
+    fire(PointerEvent, "pointerup");
+    fire(MouseEvent, "mouseup");
+    fire(MouseEvent, "click");
+  }
+
+  function sendDisabled(btn) {
+    return !btn || btn.disabled || btn.getAttribute("aria-disabled") === "true";
+  }
+
+  async function waitSendEnabled(timeoutMs) {
+    const deadline = Date.now() + (timeoutMs || 12000);
+    while (Date.now() < deadline) {
+      const btn = findSend();
+      if (btn && !sendDisabled(btn)) return btn;
+      await sleep(300);
+    }
+    return findSend();
+  }
+
+  // After clicking, confirm the message actually went out: the composer clears,
+  // the send control disables/disappears, or we navigate into a conversation.
+  async function confirmSent(editorTextBefore) {
+    for (let i = 0; i < 20; i++) {
+      await sleep(300);
+      const btn = findSend();
+      const ed = document.querySelector(SEL.editor);
+      const edText = ed ? (ed.textContent || "").trim() : "";
+      if (!btn || sendDisabled(btn)) return true;
+      if (editorTextBefore && edText === "") return true;
+      if (/\/chat\//.test(location.pathname)) return true;
+    }
+    return false;
   }
 
   function insertPrompt(editor, text) {
@@ -162,19 +226,34 @@
     // 4. Type the prompt.
     if (job.prompt) {
       insertPrompt(editor, job.prompt);
-      await sleep(300);
+      await sleep(400);
     }
 
     // 5. Send (only if there's something to send).
     if (!job.prompt && !files.length) return { ok: false, error: "empty job" };
-    const send = await waitFor(SEL.send, 8000);
-    if (!send) return { ok: false, error: "send button not found" };
-    if (send.disabled) {
-      await sleep(1200); // give uploads/validation a moment
+    const before = ((editor && editor.textContent) || "").trim();
+    const send = await waitSendEnabled(15000);
+    if (send && !sendDisabled(send)) {
+      robustClick(send);
+      if (await confirmSent(before)) return { ok: true };
     }
-    if (send.disabled) return { ok: false, error: "send button stayed disabled" };
-    send.click();
-    return { ok: true };
+    // Fallback: press Enter in the editor (claude sends on Enter).
+    if (editor) {
+      editor.focus();
+      for (const t of ["keydown", "keypress", "keyup"]) {
+        try {
+          editor.dispatchEvent(
+            new KeyboardEvent(t, { bubbles: true, cancelable: true, key: "Enter", code: "Enter", keyCode: 13, which: 13 })
+          );
+        } catch (e) {
+          /* ignore */
+        }
+      }
+      if (await confirmSent(before)) return { ok: true };
+    }
+    if (!send) return { ok: false, error: "send button not found" };
+    if (sendDisabled(send)) return { ok: false, error: "send button stayed disabled" };
+    return { ok: false, error: "clicked send but message did not appear to go out" };
   }
 
   // Scrape the visible project links (for the options-page picker).

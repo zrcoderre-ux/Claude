@@ -115,12 +115,20 @@
     }
   }
 
+  // A stable per-window key: claude's resets_at jitters by ~100–200ms between
+  // polls (microsecond precision), so we bucket to the nearest minute to
+  // identify "the same window" for dedup.
+  function windowKey(resetAt) {
+    return resetAt == null ? null : Math.round(resetAt / 60000);
+  }
+
   // Log the moment the 5-hour session reaches 100%, once per window (dedup by
-  // the window's resetAt, persisted so a reload doesn't re-log a duplicate).
+  // the window key, persisted so a reload doesn't re-log a duplicate).
   function maybeLogHit100() {
     if (state.percent == null || state.percent < 1 || state.resetAt == null) return;
-    if (hit100Marker === state.resetAt) return;
-    hit100Marker = state.resetAt;
+    const key = windowKey(state.resetAt);
+    if (hit100Marker === key) return;
+    hit100Marker = key;
     try {
       chrome.storage?.local.set({ [HIT100_MARK_KEY]: hit100Marker });
     } catch (e) {
@@ -133,10 +141,12 @@
   // last-seen utilization (0..1); `approx` marks entries reconstructed on load
   // because no tab was open at the actual reset moment.
   function logReset(resetAt, pct01, approx) {
-    if (resetAt == null || lastResetMarker === resetAt) return;
-    lastResetMarker = resetAt;
+    if (resetAt == null) return;
+    const key = windowKey(resetAt);
+    if (lastResetMarker === key) return;
+    lastResetMarker = key;
     try {
-      chrome.storage?.local.set({ [LAST_RESET_KEY]: resetAt });
+      chrome.storage?.local.set({ [LAST_RESET_KEY]: key });
     } catch (e) {
       /* ignore */
     }
