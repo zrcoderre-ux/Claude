@@ -227,17 +227,22 @@ async function refreshProjects(returnTabId) {
     return { error: "could not open a claude.ai tab" };
   }
   await waitTabComplete(tab.id, 30000);
-  await sleep(2500);
-  let projects = [];
-  for (let attempt = 0; attempt < 6 && !projects.length; attempt++) {
+  // Scrape repeatedly and UNION the results by uuid — the project grid renders
+  // progressively and can virtualize (each scrape scrolls the page a little, so
+  // cards that were off-screen render while earlier ones may unmount).
+  const byId = new Map();
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await sleep(attempt === 0 ? 2500 : 1000);
     try {
       const res = await chrome.tabs.sendMessage(tab.id, { type: "cum-scrape-projects" });
-      if (res && res.projects && res.projects.length) projects = res.projects;
+      for (const p of (res && res.projects) || []) {
+        if (p && p.uuid) byId.set(p.uuid, p);
+      }
     } catch (e) {
       /* content script not ready yet */
     }
-    if (!projects.length) await sleep(1500);
   }
+  const projects = Array.from(byId.values());
   try {
     chrome.tabs.remove(tab.id);
   } catch (e) {}
