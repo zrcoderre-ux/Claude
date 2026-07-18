@@ -19,6 +19,8 @@
 
   const CHANNEL = "CLAUDE_USAGE_METER";
   const JOBS_KEY = "cum_jobs";
+  const MODELS_KEY = "cum_models";
+  const isCodePage = () => /^\/code(\/|$)/.test(location.pathname);
   // Regular claude.ai chat markup. Claude Code on the web uses different markup
   // (a bare tiptap/ProseMirror editor, untagged file inputs, aria-label="Send"),
   // so the find* helpers below fall back to it.
@@ -80,6 +82,127 @@
       pick(document.querySelectorAll('button[type="submit"][aria-label*="send" i]')) ||
       null
     );
+  }
+
+  // ---- Model selection ---------------------------------------------------
+  function modelNameOf(text) {
+    try {
+      if (window.CUMJobs && window.CUMJobs.parseModelName)
+        return window.CUMJobs.parseModelName(text);
+    } catch (e) {
+      /* fall through */
+    }
+    const s = String(text || "").replace(/\s+/g, " ").trim();
+    const m = s.match(/^((?:Fable|Opus|Sonnet|Haiku|Claude)[A-Za-z]*\s*\d+(?:\.\d+)?)/i);
+    return m ? m[1].trim() : null;
+  }
+  const normLower = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
+
+  // The model dropdown trigger. Regular chat tags it; Claude Code uses a bare
+  // aria-haspopup="menu" button whose visible text is just a model name.
+  function findModelTrigger() {
+    const tagged =
+      document.querySelector('button[data-testid="model-selector-dropdown"]') ||
+      document.querySelector('button[aria-label^="Model:" i]');
+    if (tagged && !isOurs(tagged)) return tagged;
+    for (const b of document.querySelectorAll('button[aria-haspopup="menu"]')) {
+      if (isOurs(b)) continue;
+      if (modelNameOf(b.textContent)) return b;
+    }
+    return null;
+  }
+  function modelRadios() {
+    return Array.from(document.querySelectorAll('[role="menuitemradio"]')).filter((el) => !isOurs(el));
+  }
+  function menuItemMatching(re) {
+    for (const el of document.querySelectorAll('[role="menuitem"],[role="menuitemradio"]')) {
+      if (isOurs(el)) continue;
+      if (re.test((el.textContent || "").trim())) return el;
+    }
+    return null;
+  }
+
+  // Merge the currently-visible model names into cum_models so the scheduler
+  // picker stays live. Regular chat only — Claude Code glues a shortcut digit to
+  // each row, which would corrupt the version.
+  function harvestModels() {
+    if (isCodePage()) return;
+    const names = [];
+    for (const r of modelRadios()) {
+      const n = modelNameOf(r.textContent);
+      if (n && names.indexOf(n) === -1) names.push(n);
+    }
+    if (!names.length) return;
+    try {
+      chrome.storage.local.get(MODELS_KEY, (res) => {
+        const prev = (res && res[MODELS_KEY]) || [];
+        const merged = [];
+        const seen = new Set();
+        for (const n of names.concat(prev)) {
+          const k = n.toLowerCase();
+          if (seen.has(k)) continue;
+          seen.add(k);
+          merged.push(n);
+        }
+        if (merged.length !== prev.length || merged.some((n, i) => n !== prev[i]))
+          chrome.storage.local.set({ [MODELS_KEY]: merged });
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function closeMenu() {
+    try {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Escape", code: "Escape" })
+      );
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  // Pick `model` in the composer. Returns "ok" (selected or already active),
+  // "unsupported" (no picker found), or "notfound" (opened but not listed).
+  async function selectModel(model) {
+    if (!model) return "ok";
+    const want = normLower(model);
+    const trigger = findModelTrigger();
+    if (!trigger) return "unsupported";
+    const cur = normLower((trigger.getAttribute("aria-label") || "") + " " + (trigger.textContent || ""));
+    if (cur.indexOf(want) !== -1) return "ok"; // already on it
+
+    robustClick(trigger);
+    let radios = [];
+    const deadline = Date.now() + 4000;
+    while (Date.now() < deadline) {
+      radios = modelRadios();
+      if (radios.length) break;
+      await sleep(150);
+    }
+    harvestModels(); // whatever is visible now
+    let target = radios.find((r) => normLower(r.textContent).indexOf(want) === 0);
+    if (!target) {
+      // Dig into "More models" once.
+      const more = menuItemMatching(/more models/i);
+      if (more) {
+        robustClick(more);
+        const dl2 = Date.now() + 3000;
+        while (Date.now() < dl2 && !target) {
+          radios = modelRadios();
+          target = radios.find((r) => normLower(r.textContent).indexOf(want) === 0);
+          if (!target) await sleep(150);
+        }
+      }
+    }
+    if (target) {
+      robustClick(target);
+      await sleep(350);
+      closeMenu();
+      return "ok";
+    }
+    closeMenu();
+    return "notfound";
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -270,6 +393,19 @@
     if (files.length && !input) return { ok: false, error: "file input not found" };
     if (!editor) return { ok: false, error: "prompt editor not found" };
 
+    // 2b. Pick the requested model (best-effort; never fatal — fall back to
+    // whatever model the composer is already on).
+    let modelNote = null;
+    if (job.model) {
+      try {
+        const r = await selectModel(job.model);
+        if (r === "unsupported") modelNote = "couldn't find the model picker";
+        else if (r === "notfound") modelNote = 'model "' + job.model + '" not available';
+      } catch (e) {
+        modelNote = "model switch failed";
+      }
+    }
+
     // 3. Attach + wait for uploads.
     if (files.length) {
       setFiles(input, files);
@@ -290,7 +426,7 @@
     const send = await waitSendEnabled(15000);
     if (send && !sendDisabled(send)) {
       robustClick(send);
-      if (await confirmSent(before)) return { ok: true };
+      if (await confirmSent(before)) return { ok: true, note: modelNote };
     }
     // Fallback: press Enter in the editor (claude sends on Enter).
     if (editor) {
@@ -304,7 +440,7 @@
           /* ignore */
         }
       }
-      if (await confirmSent(before)) return { ok: true };
+      if (await confirmSent(before)) return { ok: true, note: modelNote };
     }
     if (!send) return { ok: false, error: "send button not found" };
     if (sendDisabled(send)) return { ok: false, error: "send button stayed disabled" };
@@ -351,6 +487,17 @@
   setTimeout(autoScrapeProjects, 2500);
   setTimeout(autoScrapeProjects, 6000);
   setTimeout(autoScrapeProjects, 15000);
+
+  // Keep the scheduler's model list live: whenever the user opens the model
+  // menu (regular chat only), harvest the visible names. Cheap — the selector
+  // matches nothing unless a menu is actually open.
+  setInterval(() => {
+    try {
+      if (!isCodePage() && document.querySelector('[role="menuitemradio"]')) harvestModels();
+    } catch (e) {
+      /* ignore */
+    }
+  }, 2500);
 
   chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;

@@ -31,6 +31,7 @@
       projectHref: f.projectHref || null,
       chatUrl: f.chatUrl || null, // send into an existing conversation
       chatTitle: f.chatTitle || null,
+      model: (f.model || "").trim() || null, // "" / null → leave the picker as-is
       trigger:
         f.trigger && f.trigger.type === "time"
           ? { type: "time", at: f.trigger.at }
@@ -143,6 +144,19 @@
     return m ? m[1] : null;
   }
 
+  // Extract a clean model name from a model-menu row's visible text. On regular
+  // chat a row reads "Opus 4.8For complex tasks" (name glued to a description);
+  // we keep just the "Family Version" head. (Claude Code rows glue a trailing
+  // keyboard-shortcut digit instead — "Opus 4.82" — which makes the version
+  // ambiguous, so we harvest names from regular chat only and match by prefix.)
+  function parseModelName(text) {
+    const s = String(text || "").replace(/\s+/g, " ").trim();
+    const m = s.match(
+      /^((?:Fable|Opus|Sonnet|Haiku|Claude)[A-Za-z]*\s*\d+(?:\.\d+)?)/i
+    );
+    return m ? m[1].replace(/\s+/g, " ").trim() : null;
+  }
+
   // Do two URLs point at the same conversation? Compares origin + pathname
   // (ignoring query string, hash, and a trailing slash), so an already-open tab
   // — including an installed-PWA app window, whose URL may carry extra query
@@ -176,6 +190,7 @@
     cleanProjectName,
     projectUuidFromHref,
     sameConversationUrl,
+    parseModelName,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMJobs = api;

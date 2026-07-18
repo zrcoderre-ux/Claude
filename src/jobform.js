@@ -14,7 +14,11 @@
 
   const JOBS_KEY = "cum_jobs";
   const PROJECTS_KEY = "cum_projects";
+  const MODELS_KEY = "cum_models";
   const STYLE_ID = "cumjf-styles";
+  // Seed list (from the account's model menu) so the picker isn't empty before
+  // the live list is harvested. Kept in menu order.
+  const SEED_MODELS = ["Opus 4.8", "Sonnet 5", "Haiku 4.5", "Fable 5"];
 
   const STYLES = `
     .cumjf { display:flex; flex-direction:column; gap:6px; }
@@ -134,6 +138,8 @@
       `<label class="cumjf-label">Send to</label>` +
       `<div class="cumjf-row"><select class="cumjf-target"></select>` +
       `<button class="cumjf-btn ghost cumjf-refresh" type="button">Refresh</button></div>` +
+      `<label class="cumjf-label">Model</label>` +
+      `<select class="cumjf-model"></select>` +
       `<label class="cumjf-label">When to send</label>` +
       `<div class="cumjf-when">` +
       `<label class="cumjf-radio"><input type="radio" name="cumjf-trig" value="reset" checked /> When usage resets</label>` +
@@ -156,6 +162,7 @@
       prompt: q(".cumjf-prompt"),
       target: q(".cumjf-target"),
       refresh: q(".cumjf-refresh"),
+      model: q(".cumjf-model"),
       time: q(".cumjf-time"),
       add: q(".cumjf-add"),
       status: q(".cumjf-status"),
@@ -270,6 +277,44 @@
     } catch (e) {
       /* ignore */
     }
+
+    // ---- model (live, harvested from the account's model menu) ----
+    function fillModels(models) {
+      const cur = ui.model.value;
+      const seen = new Set();
+      const list = [];
+      for (const m of (models || []).concat(SEED_MODELS)) {
+        const name = (m || "").trim();
+        if (!name || seen.has(name.toLowerCase())) continue;
+        seen.add(name.toLowerCase());
+        list.push(name);
+      }
+      ui.model.innerHTML = "";
+      const add = (value, label) => {
+        const o = doc.createElement("option");
+        o.value = value;
+        o.textContent = label;
+        ui.model.appendChild(o);
+      };
+      add("", "Default (leave current model)");
+      for (const name of list) add(name, name);
+      if (cur && ui.model.querySelector(`option[value="${cur.replace(/"/g, '\\"')}"]`))
+        ui.model.value = cur;
+    }
+    function loadModels() {
+      storageGet(MODELS_KEY).then((r) => fillModels(r[MODELS_KEY] || []));
+    }
+    loadModels();
+    let onModelStorage = null;
+    try {
+      onModelStorage = (changes, area) => {
+        if (area === "local" && changes[MODELS_KEY]) fillModels(changes[MODELS_KEY].newValue || []);
+      };
+      chrome.storage.onChanged.addListener(onModelStorage);
+    } catch (e) {
+      /* ignore */
+    }
+
     ui.refresh.addEventListener("click", () => {
       ui.refresh.disabled = true;
       ui.refresh.textContent = "…";
@@ -325,7 +370,7 @@
           writes[J.fileKey(id)] = await readAsDataURL(f);
           metas.push({ id, name: f.name, type: f.type, size: f.size });
         }
-        const fields = { name: ui.name.value, prompt, files: metas, trigger };
+        const fields = { name: ui.name.value, prompt, files: metas, trigger, model: ui.model.value };
         const tv = ui.target.value;
         if (tv === "chat" && chat) {
           fields.chatUrl = chat.url;
@@ -359,6 +404,7 @@
       destroy() {
         try {
           if (onStorage) chrome.storage.onChanged.removeListener(onStorage);
+          if (onModelStorage) chrome.storage.onChanged.removeListener(onModelStorage);
         } catch (e) {
           /* ignore */
         }

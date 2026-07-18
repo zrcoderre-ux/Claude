@@ -215,9 +215,10 @@ async function executeJob(job) {
   await sleep(createdTab ? 2500 : 800); // a fresh tab needs the SPA to render
   const res = await sendRun(tab.id, job.id);
   if (res && res.ok) {
-    await updateJob(job.id, { status: "done" });
+    await updateJob(job.id, { status: "done", note: res.note || null });
     await deleteJobFiles(job);
-    notify("Sent to Claude", job.name || "Your scheduled message was sent.");
+    const base = job.name || "Your scheduled message was sent.";
+    notify("Sent to Claude", res.note ? base + " (" + res.note + ")" : base);
   } else {
     await updateJob(job.id, { status: "error", error: (res && res.error) || "unknown" });
     notify("Scheduled send failed", (res && res.error) || "See the extension options.");
