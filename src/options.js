@@ -130,7 +130,8 @@
   };
 
   // The shared form (no chat context on the options page → New chat / projects).
-  window.CUMJobForm.create(jf.mount, { onSubmitted: renderJobs });
+  const jobForm = window.CUMJobForm.create(jf.mount, { onSubmitted: renderJobs });
+  let jobsById = {};
 
   function triggerText(job) {
     if (job.trigger && job.trigger.type === "time")
@@ -142,6 +143,8 @@
   function renderJobs() {
     chrome.storage.local.get(JOBS_KEY, (res) => {
       const jobs = (res && res[JOBS_KEY]) || [];
+      jobsById = {};
+      for (const j of jobs) jobsById[j.id] = j;
       const sorted = jobs.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       jf.list.innerHTML = "";
       for (const job of sorted) {
@@ -165,6 +168,9 @@
           (job.status === "pending"
             ? `<button class="job-run" data-id="${job.id}" title="Send now">Run now</button>`
             : "") +
+          (job.status !== "running"
+            ? `<button class="job-edit" data-id="${job.id}" title="Edit">Edit</button>`
+            : "") +
           `<button class="job-del" data-id="${job.id}" title="Delete">✕</button>` +
           `</div>`;
         jf.list.appendChild(row);
@@ -172,6 +178,12 @@
       jf.empty.hidden = jobs.length !== 0;
       jf.list.querySelectorAll(".job-del").forEach((b) =>
         b.addEventListener("click", () => deleteJob(b.getAttribute("data-id")))
+      );
+      jf.list.querySelectorAll(".job-edit").forEach((b) =>
+        b.addEventListener("click", () => {
+          const job = jobsById[b.getAttribute("data-id")];
+          if (job) jobForm.loadJob(job);
+        })
       );
       jf.list.querySelectorAll(".job-run").forEach((b) =>
         b.addEventListener("click", () => {

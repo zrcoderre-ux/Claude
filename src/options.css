@@ -405,7 +405,8 @@ td .approx {
   flex: 0 0 auto;
 }
 
-.job-run {
+.job-run,
+.job-edit {
   border: 1px solid rgba(0, 0, 0, 0.16);
   background: #f5f4f0;
   color: #1f1f1f;
@@ -417,7 +418,8 @@ td .approx {
   white-space: nowrap;
 }
 
-.job-run:hover {
+.job-run:hover,
+.job-edit:hover {
   background: #ecebe5;
 }
 
@@ -460,8 +462,8 @@ td .approx {
   .ghost { background: none; border-color: rgba(255, 255, 255, 0.18); }
   .job-meta { color: #8a877f; }
   .job-badge { color: #a5a29a; background: rgba(255, 255, 255, 0.08); }
-  .job-run { background: #35342f; border-color: rgba(255, 255, 255, 0.16); color: #f0efea; }
-  .job-run:hover { background: #403f39; }
+  .job-run, .job-edit { background: #35342f; border-color: rgba(255, 255, 255, 0.16); color: #f0efea; }
+  .job-run:hover, .job-edit:hover { background: #403f39; }
   .jf-dropzone { border-color: rgba(255, 255, 255, 0.22); }
   .jf-dropzone.drag { background: rgba(201, 100, 66, 0.12); }
   .jf-chip { background: #35342f; border-color: rgba(255, 255, 255, 0.14); }
