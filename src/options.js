@@ -152,12 +152,14 @@
         if (job.prompt) bits.push("prompt");
         const dest = J.targetLabel(job);
         if (dest && dest !== "New chat") bits.push(dest);
+        if (job.model) bits.push(job.model);
         row.innerHTML =
           `<div class="job-main">` +
           `<div class="job-title">${escapeHtml(job.name || "(untitled)")}` +
           `<span class="job-badge">${STATUS_LABEL[job.status] || job.status}</span></div>` +
           `<div class="job-meta">${escapeHtml(bits.join(" · "))} · ${escapeHtml(triggerText(job))}</div>` +
           (job.error ? `<div class="job-err">${escapeHtml(job.error)}</div>` : "") +
+          (job.note ? `<div class="job-meta">⚠ ${escapeHtml(job.note)}</div>` : "") +
           `</div>` +
           `<div class="job-btns">` +
           (job.status === "pending"

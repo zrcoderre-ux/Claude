@@ -18,6 +18,22 @@ test("newJob defaults to a reset trigger and pending status", () => {
   assert.equal(job.files[0].id, "f1");
 });
 
+test("newJob stores an optional model, defaulting to null", () => {
+  assert.equal(J.newJob({ prompt: "hi" }, "j", NOW).model, null);
+  assert.equal(J.newJob({ prompt: "hi", model: "" }, "j", NOW).model, null);
+  assert.equal(J.newJob({ prompt: "hi", model: "  Opus 4.8 " }, "j", NOW).model, "Opus 4.8");
+});
+
+test("parseModelName isolates the model name from a menu row", () => {
+  // Regular chat: name glued to a description.
+  assert.equal(J.parseModelName("Opus 4.8For complex tasks"), "Opus 4.8");
+  assert.equal(J.parseModelName("Sonnet 5Most efficient for everyday tasks"), "Sonnet 5");
+  assert.equal(J.parseModelName("Haiku 4.5Fastest for quick answers"), "Haiku 4.5");
+  assert.equal(J.parseModelName("Fable 5Included until July 19For your toughest challenges"), "Fable 5");
+  assert.equal(J.parseModelName(""), null);
+  assert.equal(J.parseModelName("More models"), null);
+});
+
 test("newJob keeps a valid time trigger", () => {
   const at = NOW + 3600_000;
   const job = J.newJob({ trigger: { type: "time", at } }, "j", NOW);
