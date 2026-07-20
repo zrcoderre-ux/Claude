@@ -20,6 +20,7 @@
   const LOG_KEY = "cum_log"; // journal of hit-100 / window-reset events
   const HIT100_MARK_KEY = "cum_hit100_marker"; // resetAt already logged for hit100
   const LAST_RESET_KEY = "cum_last_reset"; // resetAt already logged as a reset
+  const PREDICT_KEY = "cum_predict"; // session↔weekly correlation model
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   const EMPTY = {
@@ -45,6 +46,7 @@
   let pos = null; // { left, top } once the user drags the pill
   let hit100Marker = null; // resetAt for which a "hit100" entry was already logged
   let lastResetMarker = null; // resetAt for which a "reset" entry was already logged
+  let predictModel = null; // CUMPredict correlation model (persisted)
   let probing = false; // true while a proactive baseline fetch is in flight
   let els = null;
   let tickTimer = null;
@@ -77,6 +79,7 @@
               POS_KEY,
               HIT100_MARK_KEY,
               LAST_RESET_KEY,
+              PREDICT_KEY,
             ],
             (res) => {
               if (res && res[STORAGE_KEY]) {
@@ -89,6 +92,7 @@
               if (res && res[POS_KEY]) pos = res[POS_KEY];
               if (res && res[HIT100_MARK_KEY]) hit100Marker = res[HIT100_MARK_KEY];
               if (res && res[LAST_RESET_KEY]) lastResetMarker = res[LAST_RESET_KEY];
+              if (res && res[PREDICT_KEY]) predictModel = res[PREDICT_KEY];
               resolve();
             }
           );
@@ -135,6 +139,35 @@
       /* ignore */
     }
     appendLogEntry({ at: Date.now(), type: "hit100", percent: 100 });
+  }
+
+  // Fold the current reading into the session↔weekly correlation model, so we
+  // can estimate how many maxed 5-hour sessions the weekly budget has left.
+  // Read-modify-write against storage keeps multiple open tabs from
+  // double-counting the same increment.
+  function updatePredict() {
+    if (!window.CUMPredict) return;
+    if (state.percent == null || state.weeklyPercent == null) return;
+    const reading = {
+      sessionPct: state.percent * 100,
+      weeklyPct: state.weeklyPercent * 100,
+      sessionResetAt: state.resetAt,
+      weeklyResetAt: state.weeklyResetAt,
+    };
+    try {
+      chrome.storage.local.get(PREDICT_KEY, (res) => {
+        const prev = (res && res[PREDICT_KEY]) || window.CUMPredict.EMPTY;
+        predictModel = window.CUMPredict.observe(prev, reading);
+        try {
+          chrome.storage.local.set({ [PREDICT_KEY]: predictModel });
+        } catch (e) {
+          /* ignore */
+        }
+        render();
+      });
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   // Log a window reset once (deduped by the window's resetAt). `pct01` is the
@@ -261,6 +294,8 @@
       state.updatedAt = Date.now();
       save();
       render();
+      // Learn the session↔weekly relationship whenever a usage figure moved.
+      updatePredict();
     }
   }
 
@@ -446,6 +481,14 @@
     return `${oneDec.toFixed(1)}%`;
   }
 
+  // Format a predicted count of remaining sessions: one decimal below 10 (so a
+  // small number stays informative), whole numbers above.
+  function fmtSessions(n) {
+    if (!(n >= 0)) return "0";
+    if (n >= 10) return String(Math.round(n));
+    return (Math.round(n * 10) / 10).toFixed(1);
+  }
+
   function primaryLabel() {
     // The percent signal (from /usage) is authoritative for claude.ai; prefer
     // it so a stray count can never surface as e.g. "0 / 3000" on the button.
@@ -488,6 +531,10 @@
           <div class="cum-panel-row"><span>Weekly · 7 day</span><b id="cum-p-weekly">—</b></div>
           <div class="cum-panel-bar"><i id="cum-p-weekly-bar"></i></div>
           <div class="cum-panel-row cum-panel-meta"><span>resets in</span><b id="cum-p-weekly-reset">—</b></div>
+          <div class="cum-panel-row cum-panel-meta cum-sessions-row" id="cum-sessions-row" hidden>
+            <span>maxed 5-hr sessions left <span class="cum-est">est.</span></span>
+            <b id="cum-p-sessions">—</b>
+          </div>
         </div>
         <div class="cum-panel-group" id="cum-context-group" hidden>
           <div class="cum-panel-row"><span>Context <span class="cum-est">est.</span></span><b id="cum-p-context">—</b></div>
@@ -520,6 +567,8 @@
       pWeekly: root.querySelector("#cum-p-weekly"),
       pWeeklyBar: root.querySelector("#cum-p-weekly-bar"),
       pWeeklyReset: root.querySelector("#cum-p-weekly-reset"),
+      sessionsRow: root.querySelector("#cum-sessions-row"),
+      pSessions: root.querySelector("#cum-p-sessions"),
       contextGroup: root.querySelector("#cum-context-group"),
       pContext: root.querySelector("#cum-p-context"),
       pContextBar: root.querySelector("#cum-p-context-bar"),
@@ -693,6 +742,24 @@
       const wMs = state.weeklyResetAt != null ? state.weeklyResetAt - Date.now() : null;
       els.pWeeklyReset.textContent =
         wMs != null && wMs > 0 ? fmtCountdown(wMs) : "—";
+      // Predicted maxed 5-hour sessions left in this weekly window.
+      const est =
+        window.CUMPredict && predictModel
+          ? window.CUMPredict.estimate(predictModel, wpct * 100)
+          : { ready: false };
+      if (els.sessionsRow) {
+        if (est.ready) {
+          els.sessionsRow.hidden = false;
+          els.pSessions.textContent = "~" + fmtSessions(est.remaining);
+          els.pSessions.title =
+            "Estimated from how your weekly usage has tracked your 5-hour" +
+            " sessions so far (~" +
+            (est.total != null ? est.total.toFixed(1) : "?") +
+            " per week). Rough guide, not a guarantee.";
+        } else {
+          els.sessionsRow.hidden = true;
+        }
+      }
     } else {
       els.weeklyGroup.hidden = true;
     }
@@ -868,6 +935,11 @@
       }
       if (changes[ESTIMATE_KEY]) {
         estimateDecimals = !!changes[ESTIMATE_KEY].newValue;
+        render();
+      }
+      if (changes[PREDICT_KEY]) {
+        // Another tab folded in a reading — keep our estimate in sync.
+        predictModel = changes[PREDICT_KEY].newValue || predictModel;
         render();
       }
     });
