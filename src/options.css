@@ -428,6 +428,67 @@ td .approx {
   cursor: default;
 }
 
+.daily-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 12px;
+  padding: 16px;
+  background: #fff;
+}
+
+.daily-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.daily-day {
+  flex: 0 0 34px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #6b6b6b;
+}
+
+.daily-bar-wrap {
+  flex: 1;
+  height: 12px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.daily-bar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  background: #c96442;
+  border-radius: 6px;
+}
+
+.daily-val {
+  flex: 0 0 88px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.daily-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: #9a9a9a;
+}
+
+.daily-empty-day .daily-day,
+.daily-empty-day .daily-val {
+  opacity: 0.5;
+}
+
 .job-del {
   border: none;
   background: none;
@@ -467,6 +528,10 @@ td .approx {
   .jf-dropzone { border-color: rgba(255, 255, 255, 0.22); }
   .jf-dropzone.drag { background: rgba(201, 100, 66, 0.12); }
   .jf-chip { background: #35342f; border-color: rgba(255, 255, 255, 0.14); }
+  .daily-chart { background: #262624; border-color: rgba(255, 255, 255, 0.12); }
+  .daily-day { color: #a5a29a; }
+  .daily-bar-wrap { background: rgba(255, 255, 255, 0.08); }
+  .daily-sub { color: #8a877f; }
 }
 
 @media (prefers-color-scheme: dark) {

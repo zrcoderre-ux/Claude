@@ -70,9 +70,28 @@
         logged into claude.ai — at fire time the extension opens a background
         claude.ai tab, attaches the files, types the prompt, and clicks Send.
       </p>
+
+      <hr class="divider" />
+
+      <div class="head">
+        <div class="dot"></div>
+        <h1>Daily Usage</h1>
+      </div>
+      <p class="sub">
+        Which days you spend more of your weekly limit. <b>Share</b> is that
+        day's portion of a typical week's total usage; <b>avg</b> is how many
+        percentage-points of the weekly limit you burn on that day, on average.
+      </p>
+      <p id="daily-empty" class="empty">
+        Not enough data yet. Days fill in as the extension watches your weekly
+        usage rise — check back after using Claude across a few days.
+      </p>
+      <div id="daily-chart" class="daily-chart" hidden></div>
+      <p id="daily-note" class="footnote" hidden></p>
     </div>
 
     <script src="log.js"></script>
+    <script src="daily.js"></script>
     <script src="jobstore.js"></script>
     <script src="jobform.js"></script>
     <script src="options.js"></script>

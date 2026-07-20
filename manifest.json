@@ -34,6 +34,7 @@
         "src/estimate.js",
         "src/log.js",
         "src/predict.js",
+        "src/daily.js",
         "src/jobstore.js",
         "src/jobform.js",
         "src/content.js",

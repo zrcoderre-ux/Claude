@@ -220,4 +220,65 @@
   });
 
   renderJobs();
+
+
+  // ======================================================================
+  // Daily usage (weekday profile of weekly-limit consumption)
+  // ======================================================================
+  const DAILY_KEY = "cum_daily";
+  const D = window.CUMDaily;
+  const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon → Sun
+  const WEEK_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const dl = {
+    chart: document.getElementById("daily-chart"),
+    empty: document.getElementById("daily-empty"),
+    note: document.getElementById("daily-note"),
+  };
+
+  function fmtPts(n) {
+    if (!(n > 0)) return "0%";
+    return (Math.round(n * 10) / 10).toFixed(n >= 10 ? 0 : 1) + "%";
+  }
+
+  function renderDaily() {
+    chrome.storage.local.get(DAILY_KEY, (res) => {
+      const model = (res && res[DAILY_KEY]) || null;
+      const sum = D ? D.summary(model) : { totalDays: 0, share: [], avg: [], counts: [] };
+      if (!sum.totalDays) {
+        dl.chart.hidden = true;
+        dl.note.hidden = true;
+        dl.empty.hidden = false;
+        return;
+      }
+      dl.empty.hidden = true;
+      dl.chart.hidden = false;
+      const maxShare = Math.max.apply(null, WEEK_ORDER.map((wd) => sum.share[wd] || 0)) || 1;
+      dl.chart.innerHTML = "";
+      for (const wd of WEEK_ORDER) {
+        const share = sum.share[wd] || 0;
+        const avg = sum.avg[wd] || 0;
+        const count = sum.counts[wd] || 0;
+        const row = document.createElement("div");
+        row.className = "daily-row" + (count ? "" : " daily-empty-day");
+        const width = Math.round((share / maxShare) * 100);
+        row.innerHTML =
+          `<span class="daily-day">${WEEK_NAMES[wd]}</span>` +
+          `<span class="daily-bar-wrap"><i class="daily-bar" style="width:${width}%"></i></span>` +
+          `<span class="daily-val">${count ? Math.round(share) + "%" : "—"}` +
+          `<span class="daily-sub">${count ? "avg " + fmtPts(avg) : "no data"}</span></span>`;
+        dl.chart.appendChild(row);
+      }
+      dl.note.hidden = false;
+      dl.note.textContent =
+        `Based on ${sum.totalDays} day${sum.totalDays === 1 ? "" : "s"} of data` +
+        ` · a typical week totals about ${fmtPts(sum.avgTotal)} of your weekly limit.`;
+    });
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[DAILY_KEY]) renderDaily();
+  });
+
+  renderDaily();
 })();

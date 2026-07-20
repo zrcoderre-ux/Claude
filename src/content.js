@@ -21,6 +21,7 @@
   const HIT100_MARK_KEY = "cum_hit100_marker"; // resetAt already logged for hit100
   const LAST_RESET_KEY = "cum_last_reset"; // resetAt already logged as a reset
   const PREDICT_KEY = "cum_predict"; // session↔weekly correlation model
+  const DAILY_KEY = "cum_daily"; // per-day weekly-usage attribution
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   const EMPTY = {
@@ -141,27 +142,48 @@
     appendLogEntry({ at: Date.now(), type: "hit100", percent: 100 });
   }
 
-  // Fold the current reading into the session↔weekly correlation model, so we
-  // can estimate how many maxed 5-hour sessions the weekly budget has left.
-  // Read-modify-write against storage keeps multiple open tabs from
-  // double-counting the same increment.
-  function updatePredict() {
-    if (!window.CUMPredict) return;
-    if (state.percent == null || state.weeklyPercent == null) return;
-    const reading = {
-      sessionPct: state.percent * 100,
-      weeklyPct: state.weeklyPercent * 100,
+  function localDateStr(ms) {
+    const d = new Date(ms);
+    const p = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+
+  // Fold the current reading into (a) the session↔weekly correlation model that
+  // estimates maxed-sessions-left, and (b) the per-day weekly-usage tally. Both
+  // are read-modify-write against storage so multiple open tabs don't
+  // double-count the same increment.
+  function foldReading() {
+    if (state.weeklyPercent == null) return; // both models key off weekly
+    const weeklyPct = state.weeklyPercent * 100;
+    const dateStr = localDateStr(Date.now());
+    const predictReading = {
+      sessionPct: state.percent != null ? state.percent * 100 : null,
+      weeklyPct,
       sessionResetAt: state.resetAt,
       weeklyResetAt: state.weeklyResetAt,
     };
     try {
-      chrome.storage.local.get(PREDICT_KEY, (res) => {
-        const prev = (res && res[PREDICT_KEY]) || window.CUMPredict.EMPTY;
-        predictModel = window.CUMPredict.observe(prev, reading);
-        try {
-          chrome.storage.local.set({ [PREDICT_KEY]: predictModel });
-        } catch (e) {
-          /* ignore */
+      chrome.storage.local.get([PREDICT_KEY, DAILY_KEY], (res) => {
+        const writes = {};
+        if (window.CUMPredict && state.percent != null) {
+          predictModel = window.CUMPredict.observe(
+            (res && res[PREDICT_KEY]) || window.CUMPredict.EMPTY,
+            predictReading
+          );
+          writes[PREDICT_KEY] = predictModel;
+        }
+        if (window.CUMDaily) {
+          writes[DAILY_KEY] = window.CUMDaily.observe(
+            (res && res[DAILY_KEY]) || window.CUMDaily.EMPTY,
+            { weeklyPct, weeklyResetAt: state.weeklyResetAt, dateStr }
+          );
+        }
+        if (Object.keys(writes).length) {
+          try {
+            chrome.storage.local.set(writes);
+          } catch (e) {
+            /* ignore */
+          }
         }
         render();
       });
@@ -294,8 +316,8 @@
       state.updatedAt = Date.now();
       save();
       render();
-      // Learn the session↔weekly relationship whenever a usage figure moved.
-      updatePredict();
+      // Learn the session↔weekly relationship and per-day usage on each move.
+      foldReading();
     }
   }
 
