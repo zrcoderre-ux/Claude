@@ -253,20 +253,22 @@
       }
       dl.empty.hidden = true;
       dl.chart.hidden = false;
-      const maxShare = Math.max.apply(null, WEEK_ORDER.map((wd) => sum.share[wd] || 0)) || 1;
+      // Each day's number is the average share of the FULL weekly limit consumed
+      // on that weekday (e.g. "Mon 12%" = a typical Monday uses 12% of the week).
+      // Bars scale to the busiest weekday so the shape is readable.
+      const maxAvg = Math.max.apply(null, WEEK_ORDER.map((wd) => sum.avg[wd] || 0)) || 1;
       dl.chart.innerHTML = "";
       for (const wd of WEEK_ORDER) {
-        const share = sum.share[wd] || 0;
         const avg = sum.avg[wd] || 0;
         const count = sum.counts[wd] || 0;
         const row = document.createElement("div");
         row.className = "daily-row" + (count ? "" : " daily-empty-day");
-        const width = Math.round((share / maxShare) * 100);
+        const width = Math.round((avg / maxAvg) * 100);
         row.innerHTML =
           `<span class="daily-day">${WEEK_NAMES[wd]}</span>` +
           `<span class="daily-bar-wrap"><i class="daily-bar" style="width:${width}%"></i></span>` +
-          `<span class="daily-val">${count ? Math.round(share) + "%" : "—"}` +
-          `<span class="daily-sub">${count ? "avg " + fmtPts(avg) : "no data"}</span></span>`;
+          `<span class="daily-val">${count ? fmtPts(avg) : "—"}` +
+          `<span class="daily-sub">${count ? count + (count === 1 ? " day" : " days") : "no data"}</span></span>`;
         dl.chart.appendChild(row);
       }
       dl.note.hidden = false;
