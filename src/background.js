@@ -213,7 +213,20 @@ async function executeJob(job) {
   }
   await waitTabComplete(tab.id, 30000);
   await sleep(createdTab ? 2500 : 800); // a fresh tab needs the SPA to render
-  const res = await sendRun(tab.id, job.id);
+  let res = await sendRun(tab.id, job.id);
+  // If the page never answered, its content script may be stale (the extension
+  // was reloaded/updated while this tab stayed open) — reload the tab to inject
+  // fresh scripts and try once more before giving up.
+  if (res && !res.ok && /no response from page/.test(res.error || "")) {
+    try {
+      await chrome.tabs.reload(tab.id);
+      await waitTabComplete(tab.id, 30000);
+      await sleep(3000);
+      res = await sendRun(tab.id, job.id);
+    } catch (e) {
+      /* keep the original failure */
+    }
+  }
   if (res && res.ok) {
     await updateJob(job.id, { status: "done", note: res.note || null });
     await deleteJobFiles(job);
