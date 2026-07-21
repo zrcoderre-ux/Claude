@@ -102,6 +102,21 @@
   white-space: nowrap;
 }
 
+/* "weekly" tag shown on the pill when the weekly limit is the binding one. */
+.cum-tag {
+  display: inline-block;
+  vertical-align: baseline;
+  margin-right: 5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: #c96442;
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* Detail panel */
 #cum-panel {
   position: absolute;

@@ -103,6 +103,39 @@ test("remaining floors at zero when the weekly window is spent", () => {
   assert.equal(est.remaining, 0);
 });
 
+test("weeklyBindingUsage maps the weekly budget onto the 5-hour scale", () => {
+  // Learn 10 weekly% per full session (two full sessions cost 5% each... use
+  // the clean rate: 200 session%-points → 20 weekly%-points → 10%/session).
+  const m = feed([
+    { sessionPct: 0, weeklyPct: 0, sessionResetAt: SR, weeklyResetAt: WR },
+    { sessionPct: 50, weeklyPct: 2.5, sessionResetAt: SR, weeklyResetAt: WR },
+    { sessionPct: 100, weeklyPct: 5, sessionResetAt: SR, weeklyResetAt: WR },
+    { sessionPct: 0, weeklyPct: 5, sessionResetAt: SR2, weeklyResetAt: WR },
+    { sessionPct: 100, weeklyPct: 10, sessionResetAt: SR2, weeklyResetAt: WR },
+  ]); // perFull = 5 weekly% per full session
+
+  // Weekly at 97.5% → 2.5 left → 0.5 sessions remaining → shows 50%.
+  const half = P.weeklyBindingUsage(m, 97.5);
+  assert.ok(Math.abs(half - 0.5) < 1e-9, "half=" + half);
+
+  // Weekly exhausted → 100%.
+  assert.equal(P.weeklyBindingUsage(m, 100), 1);
+
+  // Plenty of weekly left (≥ a full session) → not binding → null.
+  assert.equal(P.weeklyBindingUsage(m, 50), null); // 50/5 = 10 sessions left
+
+  // Exactly one session left is the boundary → not binding.
+  assert.equal(P.weeklyBindingUsage(m, 95), null); // 5/5 = 1 session
+
+  // Just under a session left → binding.
+  const near = P.weeklyBindingUsage(m, 96); // 4/5 = 0.8 → 0.2 used
+  assert.ok(Math.abs(near - 0.2) < 1e-9, "near=" + near);
+});
+
+test("weeklyBindingUsage is null before the model is ready", () => {
+  assert.equal(P.weeklyBindingUsage(P.EMPTY, 99), null);
+});
+
 test("the cap halves the sums while preserving the ratio", () => {
   let m = P.EMPTY;
   // Drive many increments to exceed CAP; keep a constant 2:1 (session:weekly).

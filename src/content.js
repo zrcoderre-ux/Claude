@@ -493,6 +493,25 @@
     return clamp01((baseInt + calib.fraction()) / 100);
   }
 
+  // What the pill's ring should show: normally the 5-hour session usage, but
+  // when the weekly limit is the tighter constraint, the weekly budget mapped
+  // onto the same 5-hour scale (so a nearly-spent week reads high even at the
+  // start of a fresh window). Returns { pct, isWeekly, resetAt }.
+  function bindingDisplay() {
+    const sdp = sessionDisplayPercent();
+    let nw = null;
+    if (state.weeklyPercent != null && window.CUMPredict && predictModel) {
+      nw = window.CUMPredict.weeklyBindingUsage(predictModel, state.weeklyPercent * 100);
+    }
+    if (sdp == null) {
+      if (nw == null) return { pct: null, isWeekly: false, resetAt: state.resetAt };
+      return { pct: nw, isWeekly: true, resetAt: state.weeklyResetAt };
+    }
+    if (nw != null && nw > sdp)
+      return { pct: nw, isWeekly: true, resetAt: state.weeklyResetAt };
+    return { pct: sdp, isWeekly: false, resetAt: state.resetAt };
+  }
+
   // Render a 0..1 fraction as a percent, showing one decimal only when the
   // value genuinely has sub-integer precision (e.g. the token-derived context
   // meter → "64.1%", while the integer rate-limit values stay "48%").
@@ -727,27 +746,35 @@
   function render() {
     if (!els) return;
 
-    const pct = usagePercent();
     const sdp = sessionDisplayPercent(); // includes estimated tenths when on
+    // The ring reflects whichever limit is closest to cutting you off — the
+    // 5-hour session, or the weekly budget mapped onto the same 5-hour scale.
+    const disp = bindingDisplay();
+    const dp = disp.pct;
     const circumference = 2 * Math.PI * 15.9155;
-    if (sdp == null) {
+    if (dp == null) {
       els.ringFg.style.strokeDasharray = `0 ${circumference}`;
       els.ringLabel.textContent = "–";
       els.root.classList.remove("cum-warn", "cum-danger");
     } else {
-      els.ringFg.style.strokeDasharray = `${sdp * circumference} ${circumference}`;
-      els.ringLabel.textContent = fmtPercent(sdp);
-      els.root.classList.toggle("cum-warn", sdp >= 0.75 && sdp < 0.9);
-      els.root.classList.toggle("cum-danger", sdp >= 0.9);
+      els.ringFg.style.strokeDasharray = `${dp * circumference} ${circumference}`;
+      els.ringLabel.textContent = fmtPercent(dp);
+      els.root.classList.toggle("cum-warn", dp >= 0.75 && dp < 0.9);
+      els.root.classList.toggle("cum-danger", dp >= 0.9);
     }
+    els.root.classList.toggle("cum-weekly-binding", !!disp.isWeekly);
 
-    const remainMs = state.resetAt != null ? state.resetAt - Date.now() : null;
-    // The button shows just the reset countdown (the ring conveys what it's
-    // for); fall back to a status string when there's no reset time yet.
-    els.primary.textContent =
+    // The countdown reflects the binding window's reset — the weekly reset when
+    // the weekly limit is what's about to cut you off.
+    const remainMs = disp.resetAt != null ? disp.resetAt - Date.now() : null;
+    const countdown =
       remainMs != null && remainMs > 0 ? fmtCountdown(remainMs) : primaryLabel();
+    // A small "weekly" tag makes clear the ring flipped to the weekly limit.
+    els.primary.innerHTML = disp.isWeekly
+      ? '<span class="cum-tag">weekly</span>' + countdown
+      : countdown;
 
-    // Detail panel — session (5-hour) window
+    // Detail panel — session (5-hour) window (always the true 5-hour figures)
     els.pSession.textContent = sdp != null ? fmtPercent(sdp) : "—";
     els.pSessionBar.style.width = sdp != null ? `${sdp * 100}%` : "0%";
     setBarSeverity(els.pSessionBar, sdp);
