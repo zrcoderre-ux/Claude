@@ -45,7 +45,7 @@
   let estimateDecimals = false; // opt-in toggle (default off)
   let calib = null; // CUMEstimate calibrator instance
   let pos = null; // { left, top } once the user drags the pill
-  let hit100Marker = null; // resetAt for which a "hit100" entry was already logged
+  let hit100Active = false; // true while inside a logged "maxed" episode
   let lastResetMarker = null; // resetAt for which a "reset" entry was already logged
   let predictModel = null; // CUMPredict correlation model (persisted)
   let probing = false; // true while a proactive baseline fetch is in flight
@@ -91,7 +91,7 @@
               showOverage = !!(res && res[OVERAGE_KEY]);
               estimateDecimals = !!(res && res[ESTIMATE_KEY]);
               if (res && res[POS_KEY]) pos = res[POS_KEY];
-              if (res && res[HIT100_MARK_KEY]) hit100Marker = res[HIT100_MARK_KEY];
+              hit100Active = !!(res && res[HIT100_MARK_KEY]);
               if (res && res[LAST_RESET_KEY]) lastResetMarker = res[LAST_RESET_KEY];
               if (res && res[PREDICT_KEY]) predictModel = res[PREDICT_KEY];
               resolve();
@@ -127,19 +127,34 @@
     return resetAt == null ? null : Math.round(resetAt / 60000);
   }
 
-  // Log the moment the 5-hour session reaches 100%, once per window (dedup by
-  // the window key, persisted so a reload doesn't re-log a duplicate).
+  // Log the moment the 5-hour session reaches 100% — once per *maxed episode*,
+  // not once per window. claude's 5-hour window is rolling, so resets_at creeps
+  // forward minute by minute while you're capped; a window-key dedup would then
+  // re-log every minute. Instead: log when usage crosses into 100%, and don't
+  // log again until it has clearly dropped back below the cap.
+  const HIT100_ON = 0.999; // treat >= this as "maxed" (server reports integers)
+  const HIT100_OFF = 0.98; // must fall below this to re-arm the next episode
   function maybeLogHit100() {
-    if (state.percent == null || state.percent < 1 || state.resetAt == null) return;
-    const key = windowKey(state.resetAt);
-    if (hit100Marker === key) return;
-    hit100Marker = key;
-    try {
-      chrome.storage?.local.set({ [HIT100_MARK_KEY]: hit100Marker });
-    } catch (e) {
-      /* ignore */
+    if (state.percent == null) return;
+    if (state.percent >= HIT100_ON) {
+      if (hit100Active) return; // already logged this episode
+      hit100Active = true;
+      try {
+        chrome.storage?.local.set({ [HIT100_MARK_KEY]: true });
+      } catch (e) {
+        /* ignore */
+      }
+      appendLogEntry({ at: Date.now(), type: "hit100", percent: 100 });
+      return;
     }
-    appendLogEntry({ at: Date.now(), type: "hit100", percent: 100 });
+    if (state.percent < HIT100_OFF && hit100Active) {
+      hit100Active = false; // dropped below the cap → allow the next episode
+      try {
+        chrome.storage?.local.set({ [HIT100_MARK_KEY]: false });
+      } catch (e) {
+        /* ignore */
+      }
+    }
   }
 
   function localDateStr(ms) {
