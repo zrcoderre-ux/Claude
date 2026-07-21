@@ -84,7 +84,23 @@
     return { ready: true, remaining, total, perFull };
   }
 
-  const api = { EMPTY, observe, estimate, keyOf, MIN_SAMPLES, MIN_SESSION_OBSERVED, CAP };
+  // Map the weekly limit onto the 5-hour scale the user reads. Returns the
+  // effective "usage" fraction (0..1) implied by the weekly budget, where 1 =
+  // weekly exhausted: if the weekly budget has R full sessions left (R < 1), the
+  // current 5-hour window can only be used up to that point, so it effectively
+  // starts at (1 − R) used and climbs to 100% exactly as the weekly runs out.
+  // Returns null when there isn't enough data, or when the weekly budget still
+  // covers a whole session (R ≥ 1) — i.e. it isn't the binding constraint.
+  function weeklyBindingUsage(model, weeklyPct) {
+    const est = estimate(model, weeklyPct);
+    if (!est.ready || !(est.perFull > 0)) return null;
+    const wp = typeof weeklyPct === "number" ? weeklyPct : 0;
+    const remainingSessions = (100 - wp) / est.perFull;
+    if (remainingSessions >= 1) return null; // weekly won't cap the current session
+    return Math.max(0, Math.min(1, 1 - remainingSessions));
+  }
+
+  const api = { EMPTY, observe, estimate, weeklyBindingUsage, keyOf, MIN_SAMPLES, MIN_SESSION_OBSERVED, CAP };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMPredict = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
