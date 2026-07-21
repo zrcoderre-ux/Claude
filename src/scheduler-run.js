@@ -20,6 +20,7 @@
   const CHANNEL = "CLAUDE_USAGE_METER";
   const JOBS_KEY = "cum_jobs";
   const MODELS_KEY = "cum_models";
+  const REPOS_KEY = "cum_repos";
   const isCodePage = () => /^\/code(\/|$)/.test(location.pathname);
   // Regular claude.ai chat markup. Claude Code on the web uses different markup
   // (a bare tiptap/ProseMirror editor, untagged file inputs, aria-label="Send"),
@@ -203,6 +204,108 @@
     }
     closeMenu();
     return "notfound";
+  }
+
+  // ---- Claude Code: repo selection for a fresh session -------------------
+  const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
+
+  // The "+" / "Select repo…" control that opens the repo dialog.
+  function findRepoCombobox() {
+    return (
+      document.querySelector('button[role="combobox"][aria-label*="repositor" i]') ||
+      document.querySelector('button[aria-haspopup="dialog"][aria-label*="repositor" i]') ||
+      Array.from(document.querySelectorAll('button[role="combobox"],button[aria-haspopup="dialog"]')).find(
+        (b) => !isOurs(b) && /select repo|add repositor/i.test((b.textContent || "") + " " + (b.getAttribute("aria-label") || ""))
+      ) ||
+      null
+    );
+  }
+
+  // Scrape the visible repo names (owner/name) for the scheduler's picker.
+  function scrapeRepos() {
+    const out = [];
+    for (const e of document.querySelectorAll("span,div,button,a,li,[role='option']")) {
+      if (e.children.length) continue; // leaf nodes only
+      const t = (e.textContent || "").trim();
+      if (REPO_RE.test(t) && out.indexOf(t) === -1) out.push(t);
+    }
+    return out.slice(0, 100);
+  }
+  function harvestRepos() {
+    if (!isCodePage()) return;
+    const repos = scrapeRepos();
+    if (!repos.length) return;
+    try {
+      chrome.storage.local.get(REPOS_KEY, (res) => {
+        const prev = (res && res[REPOS_KEY]) || [];
+        const merged = prev.slice();
+        for (const r of repos) if (merged.indexOf(r) === -1) merged.push(r);
+        if (merged.length !== prev.length) chrome.storage.local.set({ [REPOS_KEY]: merged });
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  // Pick `repo` (owner/name) in a fresh Claude Code session. Returns "ok",
+  // "unsupported" (no picker), or "notfound" (opened but repo not listed).
+  async function selectCodeRepo(repo) {
+    const want = normLower(repo);
+    const combo = findRepoCombobox();
+    if (!combo) return "unsupported";
+    if (normLower(combo.textContent).indexOf(want) !== -1) return "ok"; // already chosen
+    robustClick(combo);
+
+    // Wait for the dialog to render.
+    let dlg = null;
+    const dl = Date.now() + 4000;
+    while (Date.now() < dl) {
+      dlg = document.querySelector('[role="dialog"]');
+      if (dlg) break;
+      await sleep(150);
+    }
+    const scope = dlg || document;
+
+    // If the dialog has a search box, type the repo to filter the list.
+    const input = scope.querySelector('input:not([type="hidden"]), [contenteditable="true"]');
+    if (input) {
+      try {
+        input.focus();
+        const ok = document.execCommand && document.execCommand("insertText", false, repo);
+        if (!ok && "value" in input) {
+          input.value = repo;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      await sleep(700);
+    }
+
+    const rowOf = () => {
+      const cands = scope.querySelectorAll('[role="option"],[role="menuitem"],li,button,a,div,span');
+      let starts = null;
+      for (const el of cands) {
+        if (isOurs(el)) continue;
+        const t = normLower(el.textContent);
+        if (!t) continue;
+        if (t === want) return el; // exact owner/name
+        if (starts == null && t.indexOf(want) === 0 && t.length - want.length < 25) starts = el;
+      }
+      return starts;
+    };
+    let target = rowOf();
+    for (let i = 0; i < 12 && !target; i++) {
+      await sleep(200);
+      target = rowOf();
+    }
+    if (!target) {
+      closeMenu();
+      return "notfound";
+    }
+    robustClick(target);
+    await sleep(500);
+    return "ok";
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -393,18 +496,32 @@
     if (files.length && !input) return { ok: false, error: "file input not found" };
     if (!editor) return { ok: false, error: "prompt editor not found" };
 
+    const notes = [];
+
+    // 2a. New Claude Code session: pick the repo via the "+" / Select repo
+    // dialog before anything else.
+    if (job.codeRepo) {
+      try {
+        const r = await selectCodeRepo(job.codeRepo);
+        if (r === "unsupported") notes.push("repo picker not found");
+        else if (r === "notfound") notes.push('repo "' + job.codeRepo + '" not in the list');
+      } catch (e) {
+        notes.push("repo select failed");
+      }
+    }
+
     // 2b. Pick the requested model (best-effort; never fatal — fall back to
     // whatever model the composer is already on).
-    let modelNote = null;
     if (job.model) {
       try {
         const r = await selectModel(job.model);
-        if (r === "unsupported") modelNote = "couldn't find the model picker";
-        else if (r === "notfound") modelNote = 'model "' + job.model + '" not available';
+        if (r === "unsupported") notes.push("couldn't find the model picker");
+        else if (r === "notfound") notes.push('model "' + job.model + '" not available');
       } catch (e) {
-        modelNote = "model switch failed";
+        notes.push("model switch failed");
       }
     }
+    const modelNote = notes.length ? notes.join("; ") : null;
 
     // 3. Attach + wait for uploads.
     if (files.length) {
@@ -498,6 +615,17 @@
       /* ignore */
     }
   }, 2500);
+
+  // On Claude Code pages, keep the repo list live for the scheduler picker.
+  setTimeout(harvestRepos, 3000);
+  setTimeout(harvestRepos, 8000);
+  setInterval(() => {
+    try {
+      harvestRepos();
+    } catch (e) {
+      /* ignore */
+    }
+  }, 6000);
 
   chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;

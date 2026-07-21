@@ -31,6 +31,7 @@
       projectHref: f.projectHref || null,
       chatUrl: f.chatUrl || null, // send into an existing conversation
       chatTitle: f.chatTitle || null,
+      codeRepo: (f.codeRepo || "").trim() || null, // "owner/name" → new Claude Code chat on that repo
       model: (f.model || "").trim() || null, // "" / null → leave the picker as-is
       trigger:
         f.trigger && f.trigger.type === "time"
@@ -71,6 +72,7 @@
       // Stored as a full URL or a path.
       return /^https?:\/\//i.test(job.chatUrl) ? job.chatUrl : ORIGIN + job.chatUrl;
     }
+    if (job && job.codeRepo) return ORIGIN + "/code"; // fresh Claude Code session
     if (job && job.projectHref) return ORIGIN + job.projectHref;
     if (job && job.projectUuid) return ORIGIN + "/cowork/project/" + job.projectUuid;
     return ORIGIN + "/new";
@@ -80,6 +82,7 @@
   function targetLabel(job) {
     if (!job) return "New chat";
     if (job.chatUrl) return job.chatTitle ? "→ " + job.chatTitle : "→ this chat";
+    if (job.codeRepo) return "→ Claude Code: " + job.codeRepo;
     if (job.projectName) return "→ " + job.projectName;
     if (job.projectUuid) return "→ project";
     return "New chat";
