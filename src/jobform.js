@@ -15,6 +15,7 @@
   const JOBS_KEY = "cum_jobs";
   const PROJECTS_KEY = "cum_projects";
   const MODELS_KEY = "cum_models";
+  const REPOS_KEY = "cum_repos";
   const STYLE_ID = "cumjf-styles";
   // Seed list (from the account's model menu) so the picker isn't empty before
   // the live list is harvested. Kept in menu order.
@@ -138,6 +139,10 @@
       `<label class="cumjf-label">Send to</label>` +
       `<div class="cumjf-row"><select class="cumjf-target"></select>` +
       `<button class="cumjf-btn ghost cumjf-refresh" type="button">Refresh</button></div>` +
+      `<div class="cumjf-repo-row" hidden>` +
+      `<label class="cumjf-label">Repository (owner/name)</label>` +
+      `<input class="cumjf-repo" type="text" list="cumjf-repo-list" placeholder="e.g. zrcoderre-ux/Claude" autocomplete="off" spellcheck="false" />` +
+      `<datalist id="cumjf-repo-list"></datalist></div>` +
       `<label class="cumjf-label">Model</label>` +
       `<select class="cumjf-model"></select>` +
       `<label class="cumjf-label">When to send</label>` +
@@ -163,6 +168,9 @@
       prompt: q(".cumjf-prompt"),
       target: q(".cumjf-target"),
       refresh: q(".cumjf-refresh"),
+      repoRow: q(".cumjf-repo-row"),
+      repo: q(".cumjf-repo"),
+      repoList: q("#cumjf-repo-list"),
       model: q(".cumjf-model"),
       time: q(".cumjf-time"),
       add: q(".cumjf-add"),
@@ -273,8 +281,42 @@
         const name = J.cleanProjectName(p.name) || p.uuid;
         add("project:" + p.uuid, "New chat in " + name, { name, href: p.href || "" });
       }
+      add("code", "New Claude Code chat (pick a repo)");
       if (cur && ui.target.querySelector(`option[value="${cur}"]`)) ui.target.value = cur;
       else if (activeChat && activeChat.url) ui.target.value = "chat"; // default to this chat when available
+      syncRepoRow();
+    }
+
+    // Show the repo field only for the "New Claude Code chat" target.
+    function syncRepoRow() {
+      if (ui.repoRow) ui.repoRow.hidden = ui.target.value !== "code";
+    }
+    ui.target.addEventListener("change", syncRepoRow);
+
+    // ---- repos (for the Claude Code repo picker) ----
+    function fillRepos(repos) {
+      if (!ui.repoList) return;
+      ui.repoList.innerHTML = "";
+      for (const r of repos || []) {
+        const name = String(r || "").trim();
+        if (!name) continue;
+        const o = doc.createElement("option");
+        o.value = name;
+        ui.repoList.appendChild(o);
+      }
+    }
+    function loadRepos() {
+      storageGet(REPOS_KEY).then((r) => fillRepos(r[REPOS_KEY] || []));
+    }
+    loadRepos();
+    let onRepoStorage = null;
+    try {
+      onRepoStorage = (changes, area) => {
+        if (area === "local" && changes[REPOS_KEY]) fillRepos(changes[REPOS_KEY].newValue || []);
+      };
+      chrome.storage.onChanged.addListener(onRepoStorage);
+    } catch (e) {
+      /* ignore */
     }
     let lastProjects = [];
     function loadProjects() {
@@ -373,6 +415,8 @@
         return flash("Extension was updated — reload this page, then try again.", true);
       const prompt = ui.prompt.value;
       if (!files.length && !prompt.trim()) return flash("Add a file, folder, or prompt.", true);
+      if (ui.target.value === "code" && !(ui.repo.value || "").trim())
+        return flash("Enter a repo (owner/name) for the Claude Code chat.", true);
       const trigType = el.querySelector('input[name="cumjf-trig"]:checked').value;
       let trigger = { type: "reset" };
       if (trigType === "time") {
@@ -408,6 +452,8 @@
           const o = ui.target.selectedOptions[0];
           fields.chatUrl = (o && o.dataset.url) || (chat && chat.url) || null;
           fields.chatTitle = (o && o.dataset.title) || (chat && chat.title) || null;
+        } else if (tv === "code") {
+          fields.codeRepo = (ui.repo.value || "").trim();
         } else if (tv.indexOf("project:") === 0) {
           const o = ui.target.selectedOptions[0];
           fields.projectUuid = tv.slice("project:".length);
@@ -457,7 +503,8 @@
       if (resetRadio) resetRadio.checked = true;
       ui.time.value = "";
       ui.time.disabled = true;
-      fillTarget(lastProjects);
+      if (ui.repo) ui.repo.value = "";
+      fillTarget(lastProjects); // also runs syncRepoRow()
       ui.add.textContent = "Queue send";
       ui.cancel.hidden = true;
     }
@@ -492,10 +539,13 @@
       ui.time.disabled = !isTime;
       ui.time.value = isTime && job.trigger.at ? toLocalDatetime(job.trigger.at) : "";
       // Target.
+      if (ui.repo) ui.repo.value = job.codeRepo || "";
       fillTarget(lastProjects);
       if (job.chatUrl) ui.target.value = "chat";
+      else if (job.codeRepo) ui.target.value = "code";
       else if (job.projectUuid) ui.target.value = "project:" + job.projectUuid;
       else ui.target.value = "new";
+      syncRepoRow();
       ui.add.textContent = "Save changes";
       ui.cancel.hidden = false;
       try {
@@ -528,6 +578,7 @@
         try {
           if (onStorage) chrome.storage.onChanged.removeListener(onStorage);
           if (onModelStorage) chrome.storage.onChanged.removeListener(onModelStorage);
+          if (onRepoStorage) chrome.storage.onChanged.removeListener(onRepoStorage);
         } catch (e) {
           /* ignore */
         }

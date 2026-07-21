@@ -65,6 +65,20 @@ test("targetUrl picks new / project url", () => {
   );
 });
 
+test("codeRepo target opens a fresh Claude Code session and labels the repo", () => {
+  const job = J.newJob({ codeRepo: "  zrcoderre-ux/Claude  ", prompt: "go" }, "x", NOW);
+  assert.equal(job.codeRepo, "zrcoderre-ux/Claude");
+  assert.equal(J.targetUrl(job), "https://claude.ai/code");
+  assert.equal(J.targetLabel(job), "→ Claude Code: zrcoderre-ux/Claude");
+  // Empty repo stays null.
+  assert.equal(J.newJob({ codeRepo: "" }, "x", NOW).codeRepo, null);
+  // chatUrl still wins over codeRepo if both are somehow present.
+  assert.equal(
+    J.targetUrl(J.newJob({ chatUrl: "https://claude.ai/code/session_z", codeRepo: "a/b" }, "x", NOW)),
+    "https://claude.ai/code/session_z"
+  );
+});
+
 test("targetUrl uses an existing chat URL and takes precedence", () => {
   assert.equal(
     J.targetUrl(J.newJob({ chatUrl: "https://claude.ai/chat/abc" }, "x", NOW)),
