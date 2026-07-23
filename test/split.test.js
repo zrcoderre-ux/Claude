@@ -60,6 +60,23 @@ test("unknown/absent surface counts as chat", () => {
   assert.equal(m.code, 0);
 });
 
+test("attributeGap sends a gap to Home when a chat was touched, else Code", () => {
+  assert.deepEqual(S.attributeGap(12, true), { chatDelta: 12, codeDelta: 0 });
+  assert.deepEqual(S.attributeGap(12, false), { chatDelta: 0, codeDelta: 12 });
+  assert.deepEqual(S.attributeGap(0, true), { chatDelta: 0, codeDelta: 0 });
+  assert.deepEqual(S.attributeGap(-5, false), { chatDelta: 0, codeDelta: 0 });
+});
+
+test("observe applies an explicit gap split and records the boundary time", () => {
+  let m = S.observe(S.EMPTY, { weeklyPct: 40, weeklyResetAt: WR, surface: "chat", at: 1000 });
+  assert.equal(m.lastAt, 1000);
+  // A 10-pt gap attributed entirely to Code via content.
+  m = S.observe(m, { weeklyPct: 50, weeklyResetAt: WR, chatDelta: 0, codeDelta: 10, at: 2000 });
+  assert.equal(Math.round(m.code), 10);
+  assert.equal(Math.round(m.chat), 0);
+  assert.equal(m.lastAt, 2000);
+});
+
 test("share computes percentages", () => {
   const s = S.share({ chat: 30, code: 10 });
   assert.equal(s.total, 40);

@@ -159,9 +159,8 @@
       sessionResetAt: state.resetAt,
       weeklyResetAt: state.weeklyResetAt,
     };
-    const surface = /^\/code(\/|$)/.test(location.pathname) ? "code" : "chat";
     try {
-      chrome.storage.local.get([PREDICT_KEY, DAILY_KEY, SPLIT_KEY], (res) => {
+      chrome.storage.local.get([PREDICT_KEY, DAILY_KEY], (res) => {
         const writes = {};
         if (window.CUMPredict && state.percent != null) {
           predictModel = window.CUMPredict.observe(
@@ -176,12 +175,6 @@
             { weeklyPct, weeklyResetAt: state.weeklyResetAt, dateStr }
           );
         }
-        if (window.CUMSplit) {
-          writes[SPLIT_KEY] = window.CUMSplit.observe(
-            (res && res[SPLIT_KEY]) || window.CUMSplit.EMPTY,
-            { weeklyPct, weeklyResetAt: state.weeklyResetAt, surface }
-          );
-        }
         if (Object.keys(writes).length) {
           try {
             chrome.storage.local.set(writes);
@@ -193,6 +186,89 @@
       });
     } catch (e) {
       /* ignore */
+    }
+    // Home vs Code split is handled separately so it can content-attribute a gap.
+    updateSplit(weeklyPct);
+  }
+
+  // ---- Home (chat) vs Code usage split -----------------------------------
+  // Live increments are attributed to the tab you're in. But a weekly jump that
+  // follows a gap (reopen, mobile, or a long pause) may have come from anywhere,
+  // so we check whether a Home chat was touched during the gap: Home chats all
+  // carry an updated_at in chat_conversations_v2, and Code sessions don't — so a
+  // gap with no fresh Home activity was Code.
+  const SPLIT_GAP_MS = 10 * 60 * 1000; // "gap" = this long since the last reading
+  const SPLIT_GAP_PCT = 0.3; // ...and at least this many weekly %-points
+  let lastHomeActivityAt = null; // max Home-chat updated_at we've seen (ms)
+  let splitBusy = false; // a gap resolution is in flight
+
+  function currentSurface() {
+    return /^\/code(\/|$)/.test(location.pathname) ? "code" : "chat";
+  }
+
+  function writeSplit(model, reading) {
+    try {
+      chrome.storage.local.set(
+        { [SPLIT_KEY]: window.CUMSplit.observe(model, reading) },
+        () => {
+          render();
+        }
+      );
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function updateSplit(currentWeekly) {
+    if (!window.CUMSplit || splitBusy) return;
+    try {
+      chrome.storage.local.get(SPLIT_KEY, (res) => {
+        const model = (res && res[SPLIT_KEY]) || window.CUMSplit.EMPTY;
+        const wKey = state.weeklyResetAt != null ? Math.round(state.weeklyResetAt / 60000) : null;
+        const sameWindow = model.lastW != null && model.wKey === wKey;
+        const gapDelta = sameWindow ? currentWeekly - model.lastW : 0;
+        const gapMs = model.lastAt != null ? Date.now() - model.lastAt : Infinity;
+        const now = Date.now();
+        if (gapDelta > SPLIT_GAP_PCT && gapMs > SPLIT_GAP_MS) {
+          // Gap — decide Home vs Code from fresh Home-conversation activity.
+          splitBusy = true;
+          const boundaryAt = model.lastAt || 0;
+          sendCommand({ type: "discoverConversations" });
+          let waited = 0;
+          const tick = setInterval(() => {
+            waited += 500;
+            if (lastHomeActivityAt != null || waited >= 6000) {
+              clearInterval(tick);
+              chrome.storage.local.get(SPLIT_KEY, (r2) => {
+                const m2 = (r2 && r2[SPLIT_KEY]) || window.CUMSplit.EMPTY;
+                if (lastHomeActivityAt == null) {
+                  // Couldn't check — fall back to the current tab's surface.
+                  writeSplit(m2, {
+                    weeklyPct: currentWeekly, weeklyResetAt: state.weeklyResetAt,
+                    surface: currentSurface(), at: now,
+                  });
+                } else {
+                  const homeTouched = lastHomeActivityAt >= boundaryAt;
+                  const parts = window.CUMSplit.attributeGap(gapDelta, homeTouched);
+                  writeSplit(m2, {
+                    weeklyPct: currentWeekly, weeklyResetAt: state.weeklyResetAt,
+                    chatDelta: parts.chatDelta, codeDelta: parts.codeDelta, at: now,
+                  });
+                }
+                splitBusy = false;
+              });
+            }
+          }, 500);
+        } else {
+          // Live — attribute to the tab we're in.
+          writeSplit(model, {
+            weeklyPct: currentWeekly, weeklyResetAt: state.weeklyResetAt,
+            surface: currentSurface(), at: now,
+          });
+        }
+      });
+    } catch (e) {
+      splitBusy = false;
     }
   }
 
@@ -961,6 +1037,8 @@
       applyReading(p.data);
     }
     if (p.projects) mergeProjects(p.projects, p.full);
+    if (p.homeActivityAt != null && (lastHomeActivityAt == null || p.homeActivityAt > lastHomeActivityAt))
+      lastHomeActivityAt = p.homeActivityAt;
   });
 
   // Fold harvested projects (from the page's own API) into the cached list the
