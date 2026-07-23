@@ -73,7 +73,44 @@
     return { avg, share, counts, sums, totalPct, totalDays, avgTotal };
   }
 
-  const api = { EMPTY, observe, summary, weekdayOf, MAX_DAYS };
+  function pad2(n) {
+    return String(n).padStart(2, "0");
+  }
+  function toStr(d) {
+    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+  }
+
+  // Per-weekday usage for the CURRENT week — the week containing refDateStr,
+  // whose week starts on weekStartDow (0=Sun..6=Sat; 2 = Tuesday).
+  //   actual[wd]  = weekly%-points used on that weekday this week (0 if none)
+  //   present[wd] = whether that weekday has occurred yet this week
+  //   total       = sum of this week's usage so far
+  //   weekStart   = start date ("YYYY-MM-DD")
+  function weekActual(model, refDateStr, weekStartDow) {
+    const days = (model && model.days) || {};
+    const startDow = weekStartDow == null ? 0 : weekStartDow;
+    const p = String(refDateStr).split("-");
+    const ref = new Date(+p[0], (+p[1] || 1) - 1, +p[2] || 1, 12, 0, 0);
+    const back = (ref.getDay() - startDow + 7) % 7;
+    const start = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - back, 12, 0, 0);
+    const actual = [0, 0, 0, 0, 0, 0, 0];
+    const present = [false, false, false, false, false, false, false];
+    let total = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i, 12, 0, 0);
+      if (d > ref) break; // future days this week
+      const wd = d.getDay();
+      present[wd] = true;
+      const v = days[toStr(d)];
+      if (v > 0) {
+        actual[wd] = v;
+        total += v;
+      }
+    }
+    return { actual: actual, present: present, total: total, weekStart: toStr(start) };
+  }
+
+  const api = { EMPTY, observe, summary, weekActual, weekdayOf, MAX_DAYS };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMDaily = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
