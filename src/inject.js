@@ -66,7 +66,16 @@
     }
     return out.length ? out : null;
   }
-  function maybeEmitProjects(url, text) {
+  // A URL pointing at the canonical org project list (not a search/filter),
+  // whose response is the authoritative full set — safe to replace with.
+  function isFullProjectsUrl(url) {
+    return (
+      typeof url === "string" &&
+      /\/api\/organizations\/[0-9a-f-]{36}\/projects(?:\?|$)/i.test(url) &&
+      !/[?&](q|search|name|query)=/i.test(url)
+    );
+  }
+  function maybeEmitProjects(url, text, explicitFull) {
     if (!looksLikeProjectsUrl(url) || !text) return;
     let json;
     try {
@@ -75,7 +84,9 @@
       return;
     }
     const projects = extractProjects(json);
-    if (projects) post({ projects });
+    // `full` means this is the complete list, so the cache can be replaced
+    // (which prunes deleted projects) rather than merely merged.
+    if (projects) post({ projects, full: !!explicitFull || isFullProjectsUrl(url) });
   }
 
   // A URL is a good "usage baseline" candidate if it looks account/limit shaped
@@ -250,7 +261,7 @@
     if (!origFetch) return;
     origFetch(url, { credentials: "include", headers: { accept: "*/*" } })
       .then((res) => (res.ok ? res.clone().text() : ""))
-      .then((text) => maybeEmitProjects(url, text))
+      .then((text) => maybeEmitProjects(url, text, true)) // authoritative full list
       .catch(() => {});
   }
 
