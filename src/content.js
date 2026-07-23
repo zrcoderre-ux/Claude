@@ -18,8 +18,6 @@
   const ESTIMATE_KEY = "cum_estimate_decimals"; // opt-in: estimated tenths
   const POS_KEY = "cum_pos"; // user-dragged position { left, top }
   const LOG_KEY = "cum_log"; // journal of hit-100 / window-reset events
-  const HIT100_MARK_KEY = "cum_hit100_marker"; // resetAt already logged for hit100
-  const LAST_RESET_KEY = "cum_last_reset"; // resetAt already logged as a reset
   const PREDICT_KEY = "cum_predict"; // session↔weekly correlation model
   const DAILY_KEY = "cum_daily"; // per-day weekly-usage attribution
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
@@ -45,8 +43,6 @@
   let estimateDecimals = false; // opt-in toggle (default off)
   let calib = null; // CUMEstimate calibrator instance
   let pos = null; // { left, top } once the user drags the pill
-  let hit100Active = false; // true while inside a logged "maxed" episode
-  let lastResetMarker = null; // resetAt for which a "reset" entry was already logged
   let predictModel = null; // CUMPredict correlation model (persisted)
   let probing = false; // true while a proactive baseline fetch is in flight
   let els = null;
@@ -78,8 +74,6 @@
               OVERAGE_KEY,
               ESTIMATE_KEY,
               POS_KEY,
-              HIT100_MARK_KEY,
-              LAST_RESET_KEY,
               PREDICT_KEY,
             ],
             (res) => {
@@ -91,8 +85,6 @@
               showOverage = !!(res && res[OVERAGE_KEY]);
               estimateDecimals = !!(res && res[ESTIMATE_KEY]);
               if (res && res[POS_KEY]) pos = res[POS_KEY];
-              hit100Active = !!(res && res[HIT100_MARK_KEY]);
-              if (res && res[LAST_RESET_KEY]) lastResetMarker = res[LAST_RESET_KEY];
               if (res && res[PREDICT_KEY]) predictModel = res[PREDICT_KEY];
               resolve();
             }
@@ -107,53 +99,42 @@
   }
 
   // ---- Usage log (hit-100 / window-reset history for Options → CSV) ------
+  // Append with content-based dedup, read-modify-write against the SHARED log so
+  // multiple open tabs (browser + PWA) and reloads can't each add their own copy.
   function appendLogEntry(entry) {
     try {
       if (!chrome.storage || !chrome.storage.local || !window.CUMLog) return;
       chrome.storage.local.get(LOG_KEY, (res) => {
         const existing = (res && res[LOG_KEY]) || [];
-        const next = window.CUMLog.addEntry(existing, entry);
-        chrome.storage.local.set({ [LOG_KEY]: next });
+        if (window.CUMLog.isDuplicate(existing, entry)) return;
+        chrome.storage.local.set({ [LOG_KEY]: window.CUMLog.addEntry(existing, entry) });
       });
     } catch (e) {
       /* ignore */
     }
   }
 
-  // A stable per-window key: claude's resets_at jitters by ~100–200ms between
-  // polls (microsecond precision), so we bucket to the nearest minute to
-  // identify "the same window" for dedup.
-  function windowKey(resetAt) {
-    return resetAt == null ? null : Math.round(resetAt / 60000);
+  // Log the moment the 5-hour session reaches 100%. Dedup is content-based (a
+  // hit100 stands "open" until a reset is logged), so this is safe to call on
+  // every reading and across tabs.
+  const HIT100_ON = 0.999; // treat >= this as "maxed" (server reports integers)
+  function maybeLogHit100() {
+    if (state.percent == null || state.percent < HIT100_ON) return;
+    appendLogEntry({ at: Date.now(), type: "hit100", percent: 100 });
   }
 
-  // Log the moment the 5-hour session reaches 100% — once per *maxed episode*,
-  // not once per window. claude's 5-hour window is rolling, so resets_at creeps
-  // forward minute by minute while you're capped; a window-key dedup would then
-  // re-log every minute. Instead: log when usage crosses into 100%, and don't
-  // log again until it has clearly dropped back below the cap.
-  const HIT100_ON = 0.999; // treat >= this as "maxed" (server reports integers)
-  const HIT100_OFF = 0.98; // must fall below this to re-arm the next episode
-  function maybeLogHit100() {
-    if (state.percent == null) return;
-    if (state.percent >= HIT100_ON) {
-      if (hit100Active) return; // already logged this episode
-      hit100Active = true;
-      try {
-        chrome.storage?.local.set({ [HIT100_MARK_KEY]: true });
-      } catch (e) {
-        /* ignore */
-      }
-      appendLogEntry({ at: Date.now(), type: "hit100", percent: 100 });
-      return;
-    }
-    if (state.percent < HIT100_OFF && hit100Active) {
-      hit100Active = false; // dropped below the cap → allow the next episode
-      try {
-        chrome.storage?.local.set({ [HIT100_MARK_KEY]: false });
-      } catch (e) {
-        /* ignore */
-      }
+  // Collapse duplicate entries out of the stored log (once, on load).
+  function dedupeStoredLog() {
+    try {
+      if (!chrome.storage || !chrome.storage.local || !window.CUMLog || !window.CUMLog.dedupe) return;
+      chrome.storage.local.get(LOG_KEY, (res) => {
+        const existing = (res && res[LOG_KEY]) || [];
+        if (!existing.length) return;
+        const cleaned = window.CUMLog.dedupe(existing);
+        if (cleaned.length !== existing.length) chrome.storage.local.set({ [LOG_KEY]: cleaned });
+      });
+    } catch (e) {
+      /* ignore */
     }
   }
 
@@ -207,19 +188,12 @@
     }
   }
 
-  // Log a window reset once (deduped by the window's resetAt). `pct01` is the
-  // last-seen utilization (0..1); `approx` marks entries reconstructed on load
-  // because no tab was open at the actual reset moment.
+  // Log a window reset. Dedup (resets within ~10 min are the same reset) is
+  // handled in appendLogEntry, so this is safe across tabs and reloads. `pct01`
+  // is the last-seen utilization (0..1); `approx` marks entries reconstructed on
+  // load because no tab was open at the actual reset moment.
   function logReset(resetAt, pct01, approx) {
     if (resetAt == null) return;
-    const key = windowKey(resetAt);
-    if (lastResetMarker === key) return;
-    lastResetMarker = key;
-    try {
-      chrome.storage?.local.set({ [LAST_RESET_KEY]: key });
-    } catch (e) {
-      /* ignore */
-    }
     appendLogEntry({
       at: resetAt,
       type: "reset",
@@ -496,6 +470,16 @@
     return Math.max(0, Math.min(1, x));
   }
 
+  const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+  // Fraction (0..1) of a window that has elapsed, from its reset time and known
+  // length: elapsed = 1 − timeLeft/length. Null if we don't know the reset time.
+  function windowElapsed(resetAt, lengthMs) {
+    if (resetAt == null) return null;
+    return clamp01(1 - (resetAt - Date.now()) / lengthMs);
+  }
+
   // Session utilization for display: the server integer, plus an estimated
   // fractional percent when the experimental toggle is on and we've calibrated
   // within the current (still-open) window.
@@ -581,11 +565,13 @@
         <div class="cum-panel-group">
           <div class="cum-panel-row"><span>Session · 5 hr</span><b id="cum-p-session">—</b></div>
           <div class="cum-panel-bar"><i id="cum-p-session-bar"></i></div>
+          <div class="cum-panel-bar cum-elapsed" title="How much of the 5-hour window has elapsed. If usage (above) stays at or below this, you'll pace out just as the window resets."><i id="cum-p-session-elapsed"></i></div>
           <div class="cum-panel-row cum-panel-meta"><span>resets in</span><b id="cum-p-session-reset">—</b></div>
         </div>
         <div class="cum-panel-group" id="cum-weekly-group" hidden>
           <div class="cum-panel-row"><span>Weekly · 7 day</span><b id="cum-p-weekly">—</b></div>
           <div class="cum-panel-bar"><i id="cum-p-weekly-bar"></i></div>
+          <div class="cum-panel-bar cum-elapsed" title="How far through the 7-day week you are."><i id="cum-p-weekly-elapsed"></i></div>
           <div class="cum-panel-row cum-panel-meta"><span>resets in</span><b id="cum-p-weekly-reset">—</b></div>
           <div class="cum-panel-row cum-panel-meta cum-sessions-row" id="cum-sessions-row" hidden>
             <span>maxed 5-hr sessions left <span class="cum-est">est.</span></span>
@@ -618,10 +604,12 @@
       panel: root.querySelector("#cum-panel"),
       pSession: root.querySelector("#cum-p-session"),
       pSessionBar: root.querySelector("#cum-p-session-bar"),
+      pSessionElapsed: root.querySelector("#cum-p-session-elapsed"),
       pSessionReset: root.querySelector("#cum-p-session-reset"),
       weeklyGroup: root.querySelector("#cum-weekly-group"),
       pWeekly: root.querySelector("#cum-p-weekly"),
       pWeeklyBar: root.querySelector("#cum-p-weekly-bar"),
+      pWeeklyElapsed: root.querySelector("#cum-p-weekly-elapsed"),
       pWeeklyReset: root.querySelector("#cum-p-weekly-reset"),
       sessionsRow: root.querySelector("#cum-sessions-row"),
       pSessions: root.querySelector("#cum-p-sessions"),
@@ -793,6 +781,10 @@
     els.pSession.textContent = sdp != null ? fmtPercent(sdp) : "—";
     els.pSessionBar.style.width = sdp != null ? `${sdp * 100}%` : "0%";
     setBarSeverity(els.pSessionBar, sdp);
+    // Time elapsed in the 5-hour window: if usage (bar above) stays at or below
+    // this, you'll pace out right as the window resets.
+    const sessElapsed = windowElapsed(state.resetAt, FIVE_HOURS_MS);
+    els.pSessionElapsed.style.width = sessElapsed != null ? `${sessElapsed * 100}%` : "0%";
     els.pSessionReset.textContent =
       remainMs != null && remainMs > 0 ? fmtCountdown(remainMs) : "—";
 
@@ -803,6 +795,9 @@
       els.pWeekly.textContent = fmtPercent(wpct);
       els.pWeeklyBar.style.width = `${Math.round(wpct * 100)}%`;
       setBarSeverity(els.pWeeklyBar, wpct);
+      // Fluid progress through the 168-hour week (not chunked into days).
+      const wElapsed = windowElapsed(state.weeklyResetAt, SEVEN_DAYS_MS);
+      els.pWeeklyElapsed.style.width = wElapsed != null ? `${wElapsed * 100}%` : "0%";
       const wMs = state.weeklyResetAt != null ? state.weeklyResetAt - Date.now() : null;
       els.pWeeklyReset.textContent =
         wMs != null && wMs > 0 ? fmtCountdown(wMs) : "—";
@@ -1038,6 +1033,9 @@
     }
     calib = makeCalibrator();
     build();
+    // One-time cleanup: collapse any duplicate hit100/reset entries that earlier
+    // versions (per-tab dedup) left behind.
+    dedupeStoredLog();
     // If a window rolled over while no tab was open, backfill it before the
     // fresh baseline overwrites the stale reset time.
     reconstructMissedReset();

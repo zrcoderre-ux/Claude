@@ -227,7 +227,9 @@
   // ======================================================================
   const DAILY_KEY = "cum_daily";
   const D = window.CUMDaily;
-  const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon → Sun
+  // Weeks start Tuesday (the 5-hour/weekly usage resets Tue 9am PT), so the
+  // chart leads with Tuesday.
+  const WEEK_ORDER = [2, 3, 4, 5, 6, 0, 1]; // Tue → Mon
   const WEEK_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   const dl = {
