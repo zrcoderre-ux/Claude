@@ -331,6 +331,7 @@
   const S = window.CUMSplit;
   const CHAT_COLOR = "#c96442";
   const CODE_COLOR = "#4a7ebb";
+  const AWAY_COLOR = "#8f8fa8";
 
   const sp = {
     wrap: document.getElementById("split-wrap"),
@@ -339,10 +340,22 @@
     legend: document.getElementById("split-legend"),
   };
 
+  // Round shares to whole numbers that still sum to 100.
+  function roundShares(vals) {
+    const floors = vals.map((v) => Math.floor(v));
+    let rem = 100 - floors.reduce((a, b) => a + b, 0);
+    const order = vals
+      .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+      .sort((a, b) => b.frac - a.frac);
+    const out = floors.slice();
+    for (let k = 0; k < order.length && rem > 0; k++, rem--) out[order[k].i] += 1;
+    return out;
+  }
+
   function renderSplit() {
     chrome.storage.local.get(SPLIT_KEY, (res) => {
       const model = (res && res[SPLIT_KEY]) || null;
-      const s = S ? S.share(model) : { total: 0, chatPct: 0, codePct: 0 };
+      const s = S ? S.share(model) : { total: 0, chatPct: 0, codePct: 0, awayPct: 0 };
       if (!s.total) {
         sp.wrap.hidden = true;
         sp.empty.hidden = false;
@@ -350,15 +363,18 @@
       }
       sp.empty.hidden = true;
       sp.wrap.hidden = false;
-      const chat = Math.round(s.chatPct);
-      const code = 100 - chat;
+      const [chat, code, away] = roundShares([s.chatPct, s.codePct, s.awayPct]);
+      const a = s.chatPct;
+      const b = s.chatPct + s.codePct;
       sp.pie.style.background =
-        `conic-gradient(${CHAT_COLOR} 0 ${s.chatPct}%, ${CODE_COLOR} ${s.chatPct}% 100%)`;
+        `conic-gradient(${CHAT_COLOR} 0 ${a}%, ${CODE_COLOR} ${a}% ${b}%, ${AWAY_COLOR} ${b}% 100%)`;
+      const key = (color, label, val) =>
+        `<div class="split-key"><span class="split-sw" style="background:${color}"></span>` +
+        `${label} <b>${val}%</b></div>`;
       sp.legend.innerHTML =
-        `<div class="split-key"><span class="split-sw" style="background:${CHAT_COLOR}"></span>` +
-        `Chat <b>${chat}%</b></div>` +
-        `<div class="split-key"><span class="split-sw" style="background:${CODE_COLOR}"></span>` +
-        `Claude Code <b>${code}%</b></div>`;
+        key(CHAT_COLOR, "Chat", chat) +
+        key(CODE_COLOR, "Claude Code", code) +
+        (away > 0 ? key(AWAY_COLOR, "Mobile / other", away) : "");
     });
   }
 

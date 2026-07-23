@@ -177,9 +177,13 @@
           );
         }
         if (window.CUMSplit) {
+          const visible =
+            typeof document !== "undefined" && document.visibilityState
+              ? document.visibilityState === "visible"
+              : true;
           writes[SPLIT_KEY] = window.CUMSplit.observe(
             (res && res[SPLIT_KEY]) || window.CUMSplit.EMPTY,
-            { weeklyPct, weeklyResetAt: state.weeklyResetAt, surface }
+            { weeklyPct, weeklyResetAt: state.weeklyResetAt, surface, at: Date.now(), visible }
           );
         }
         if (Object.keys(writes).length) {
