@@ -11,20 +11,24 @@
 (function (root) {
   "use strict";
 
-  const EMPTY = { chat: 0, code: 0, lastW: null, wKey: null };
+  const EMPTY = { chat: 0, code: 0, lastW: null, wKey: null, lastAt: null };
   const CAP = 10000; // keep the sums bounded; halving preserves the ratio
 
   function keyOf(resetAt) {
     return resetAt == null ? null : Math.round(resetAt / 60000);
   }
 
-  // Fold one reading in. `r` = { weeklyPct (0..100), weeklyResetAt, surface }
-  // where surface is "code" (the Code tab) or "chat" (the Home tab). Optional
+  // Fold one reading in. `r` = { weeklyPct (0..100), weeklyResetAt, surface, at }
+  // where surface is "code" (the Code tab) or "chat" (the Home tab), and `at` is
+  // the reading's timestamp (kept as the gap boundary). Optional
   // `chatDelta`/`codeDelta` explicitly split the increment (content-based
   // attribution across a gap); otherwise the whole increment goes to `surface`.
   function observe(model, r) {
     const src = model || EMPTY;
-    const m = { chat: src.chat || 0, code: src.code || 0, lastW: src.lastW, wKey: src.wKey };
+    const m = {
+      chat: src.chat || 0, code: src.code || 0,
+      lastW: src.lastW, wKey: src.wKey, lastAt: src.lastAt,
+    };
     if (!r || r.weeklyPct == null) return m;
     const wKey = keyOf(r.weeklyResetAt);
     if (m.lastW != null && wKey === m.wKey) {
@@ -46,7 +50,19 @@
     }
     m.lastW = r.weeklyPct;
     m.wKey = wKey;
+    if (r.at != null) m.lastAt = r.at;
     return m;
+  }
+
+  // Split a between-observations gap in weekly usage across Home (chat) and Code
+  // from a content signal: Home chats all live in chat_conversations_v2, so if
+  // one was touched during the gap the usage was (at least) Home; if none were,
+  // it was Code. Returns { chatDelta, codeDelta }. (A future refinement can
+  // apportion the both-used case by word count; for now Home-touched → Home.)
+  function attributeGap(gapDelta, homeTouched) {
+    const d = gapDelta > 0 ? gapDelta : 0;
+    if (!d) return { chatDelta: 0, codeDelta: 0 };
+    return homeTouched ? { chatDelta: d, codeDelta: 0 } : { chatDelta: 0, codeDelta: d };
   }
 
   // { chat, code, total, chatPct, codePct } — chatPct/codePct are 0..100.
@@ -63,7 +79,7 @@
     };
   }
 
-  const api = { EMPTY, observe, share, CAP };
+  const api = { EMPTY, observe, share, attributeGap, CAP };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMSplit = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

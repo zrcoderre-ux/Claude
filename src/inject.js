@@ -89,6 +89,36 @@
     if (projects) post({ projects, full: !!explicitFull || isFullProjectsUrl(url) });
   }
 
+  // ---- Home-conversation activity ----------------------------------------
+  // Home chats live in chat_conversations_v2 with an updated_at per chat. The
+  // most-recent updated_at tells us when Home was last used — the signal for
+  // attributing gap usage to Home (vs Code, which isn't in this list).
+  function looksLikeConversationsUrl(url) {
+    return typeof url === "string" && /\/chat_conversations(_v2)?(?:[/?]|$)/.test(url) &&
+      !/\/chat_conversations(_v2)?\/[0-9a-f-]{36}/i.test(url); // not a single conversation
+  }
+  function maxConvUpdate(json) {
+    const arr = Array.isArray(json) ? json : json && (json.data || json.conversations);
+    if (!Array.isArray(arr)) return null;
+    let max = 0;
+    for (const c of arr) {
+      const t = c && Date.parse(c.updated_at || c.updatedAt || "");
+      if (t && !isNaN(t) && t > max) max = t;
+    }
+    return max || (arr.length === 0 ? 0 : null);
+  }
+  function maybeEmitConversations(url, text) {
+    if (!looksLikeConversationsUrl(url) || !text) return;
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      return;
+    }
+    const t = maxConvUpdate(json);
+    if (t != null) post({ homeActivityAt: t });
+  }
+
   // A URL is a good "usage baseline" candidate if it looks account/limit shaped
   // rather than a per-message completion stream.
   function looksLikeUsageUrl(url) {
@@ -106,6 +136,7 @@
       const bodyData = H.parseBody(text);
       if (H.hasData(bodyData)) emit(source + ":body", bodyData, url);
       maybeEmitProjects(url, text);
+      maybeEmitConversations(url, text);
     } catch (e) {
       /* ignore */
     }
@@ -130,6 +161,7 @@
                   const bodyData = H && H.parseBody(text);
                   if (H && H.hasData(bodyData)) emit("fetch:body", bodyData, url);
                   maybeEmitProjects(url, text);
+                  maybeEmitConversations(url, text);
                 })
                 .catch(() => {});
               // Scheduled-send: report file-upload completion so the executor
@@ -277,6 +309,8 @@
       discover();
     } else if (c.type === "discoverProjects") {
       discoverProjects();
+    } else if (c.type === "discoverConversations") {
+      discoverConversations();
     }
   });
 
@@ -289,6 +323,29 @@
       .then((t) => {
         probeOrgIds(t, ids);
         ids.forEach((id) => fetchProjects(`/api/organizations/${id}/projects`));
+      })
+      .catch(() => {});
+  }
+
+  // Pull the Home conversation list (most-recent updated_at) so we can tell
+  // whether Home was used during a usage gap.
+  function fetchConversations(url) {
+    if (!origFetch) return;
+    origFetch(url, { credentials: "include", headers: { accept: "*/*" } })
+      .then((res) => (res.ok ? res.clone().text() : ""))
+      .then((text) => maybeEmitConversations(url, text))
+      .catch(() => {});
+  }
+  function discoverConversations() {
+    if (!origFetch) return;
+    const ids = new Set();
+    origFetch("/api/organizations", { credentials: "include" })
+      .then((r) => (r.ok ? r.clone().text() : ""))
+      .then((t) => {
+        probeOrgIds(t, ids);
+        ids.forEach((id) =>
+          fetchConversations(`/api/organizations/${id}/chat_conversations_v2`)
+        );
       })
       .catch(() => {});
   }
