@@ -535,6 +535,53 @@ td .approx {
   opacity: 0.5;
 }
 
+.split-wrap {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 12px;
+  padding: 20px;
+  background: #fff;
+}
+
+.split-pie {
+  flex: 0 0 auto;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+}
+
+.split-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-key {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #4a4a4a;
+}
+
+.split-key b {
+  font-variant-numeric: tabular-nums;
+}
+
+.split-sw {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  .split-wrap { background: #262624; border-color: rgba(255, 255, 255, 0.12); }
+  .split-key { color: #d4d1c9; }
+}
+
 .job-del {
   border: none;
   background: none;

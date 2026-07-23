@@ -89,10 +89,30 @@
       </p>
       <div id="daily-chart" class="daily-chart" hidden></div>
       <p id="daily-note" class="footnote" hidden></p>
+
+      <hr class="divider" />
+
+      <div class="head">
+        <div class="dot"></div>
+        <h1>Chat vs Claude Code</h1>
+      </div>
+      <p class="sub">
+        The share of your weekly usage spent in regular <b>chat</b> versus
+        <b>Claude Code</b> sessions, tracked across all your usage.
+      </p>
+      <p id="split-empty" class="empty">
+        Not enough data yet. This fills in as the extension watches your usage
+        across chat and Claude Code.
+      </p>
+      <div id="split-wrap" class="split-wrap" hidden>
+        <div id="split-pie" class="split-pie"></div>
+        <div id="split-legend" class="split-legend"></div>
+      </div>
     </div>
 
     <script src="log.js"></script>
     <script src="daily.js"></script>
+    <script src="split.js"></script>
     <script src="jobstore.js"></script>
     <script src="jobform.js"></script>
     <script src="options.js"></script>
