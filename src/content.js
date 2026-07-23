@@ -20,7 +20,6 @@
   const LOG_KEY = "cum_log"; // journal of hit-100 / window-reset events
   const PREDICT_KEY = "cum_predict"; // session↔weekly correlation model
   const DAILY_KEY = "cum_daily"; // per-day weekly-usage attribution
-  const WIN_KEY = "cum_session_win"; // { key, start, estimated } — 5h window start
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   const EMPTY = {
@@ -45,7 +44,6 @@
   let calib = null; // CUMEstimate calibrator instance
   let pos = null; // { left, top } once the user drags the pill
   let predictModel = null; // CUMPredict correlation model (persisted)
-  let sessionWin = null; // { key, start, estimated } — start of the current 5h window
   let probing = false; // true while a proactive baseline fetch is in flight
   let els = null;
   let tickTimer = null;
@@ -77,7 +75,6 @@
               ESTIMATE_KEY,
               POS_KEY,
               PREDICT_KEY,
-              WIN_KEY,
             ],
             (res) => {
               if (res && res[STORAGE_KEY]) {
@@ -89,7 +86,6 @@
               estimateDecimals = !!(res && res[ESTIMATE_KEY]);
               if (res && res[POS_KEY]) pos = res[POS_KEY];
               if (res && res[PREDICT_KEY]) predictModel = res[PREDICT_KEY];
-              if (res && res[WIN_KEY]) sessionWin = res[WIN_KEY];
               resolve();
             }
           );
@@ -228,7 +224,6 @@
   // timestamp that has already elapsed is dropped.
   function applyReading(data) {
     let changed = false;
-    const prevPercent = state.percent; // for detecting the window's first message
     if (data.resetAt != null && data.resetAt > Date.now()) {
       if (data.resetAt !== state.resetAt) {
         state.resetAt = data.resetAt;
@@ -306,8 +301,6 @@
         state.remaining = Math.max(0, state.limit - state.used);
       }
     }
-    // Pin the 5-hour window's start to the first message we observe after a reset.
-    noteWindowStart(prevPercent);
     if (changed) {
       state.updatedAt = Date.now();
       save();
@@ -487,51 +480,6 @@
     return clamp01(1 - (resetAt - Date.now()) / lengthMs);
   }
 
-  function winKeyOf(resetAt) {
-    return resetAt == null ? null : Math.round(resetAt / 60000);
-  }
-
-  // The 5-hour window starts at your FIRST message after a reset (that's what
-  // starts the next window), not at a fixed point 5h before the reset. When we
-  // observe usage begin in a new window, pin that moment as the start; otherwise
-  // (joined mid-window) estimate it as resetAt − 5h.
-  const WIN_START_MAX_PCT = 0.1; // "caught it near the start" if usage ≤ 10%
-  function noteWindowStart(prevPercent) {
-    if (state.resetAt == null || state.percent == null) return;
-    const key = winKeyOf(state.resetAt);
-    const havePinned = sessionWin && sessionWin.key === key && !sessionWin.estimated;
-    if (havePinned) return;
-    // A genuine first message: usage rose from an observed zero, OR this is our
-    // first sight of the window and usage is still tiny (so ~now is close to the
-    // real start). A fresh load already deep into a window does NOT qualify.
-    const roseFromZero = prevPercent === 0 && state.percent > 0;
-    const caughtEarly = prevPercent == null && state.percent > 0 && state.percent <= WIN_START_MAX_PCT;
-    const justStarted = roseFromZero || caughtEarly;
-    if (justStarted) {
-      sessionWin = { key: key, start: Date.now(), estimated: false };
-    } else if (!sessionWin || sessionWin.key !== key) {
-      // New window but we joined mid-way — best estimate is resetAt − 5h.
-      sessionWin = { key: key, start: state.resetAt - FIVE_HOURS_MS, estimated: true };
-    } else {
-      return;
-    }
-    try {
-      chrome.storage?.local.set({ [WIN_KEY]: sessionWin });
-    } catch (e) {
-      /* ignore */
-    }
-  }
-
-  // Fraction of the current 5-hour window elapsed, anchored to its real start
-  // (first message) and reaching 100% exactly at the reset time.
-  function sessionElapsed() {
-    if (state.resetAt == null) return null;
-    let start = null;
-    if (sessionWin && sessionWin.key === winKeyOf(state.resetAt)) start = sessionWin.start;
-    if (start == null) start = state.resetAt - FIVE_HOURS_MS; // fallback estimate
-    if (state.resetAt <= start) return null;
-    return clamp01((Date.now() - start) / (state.resetAt - start));
-  }
 
   // Session utilization for display: the server integer, plus an estimated
   // fractional percent when the experimental toggle is on and we've calibrated
@@ -834,10 +782,11 @@
     els.pSession.textContent = sdp != null ? fmtPercent(sdp) : "—";
     els.pSessionBar.style.width = sdp != null ? `${sdp * 100}%` : "0%";
     setBarSeverity(els.pSessionBar, sdp);
-    // Time elapsed in the 5-hour window (anchored to your first message): if
-    // usage (bar above) stays at or below this, you'll pace out right as the
-    // window resets.
-    const sessElapsed = sessionElapsed();
+    // Time elapsed in the 5-hour window = 1 − timeLeft/5h (the reset time is
+    // your first message + 5h, so this is simply how far into the window you
+    // are). If usage (bar above) stays at or below this, you pace out right as
+    // the window resets.
+    const sessElapsed = windowElapsed(state.resetAt, FIVE_HOURS_MS);
     els.pSessionElapsed.style.width = sessElapsed != null ? `${sessElapsed * 100}%` : "0%";
     els.pSessionReset.textContent =
       remainMs != null && remainMs > 0 ? fmtCountdown(remainMs) : "—";
@@ -1065,11 +1014,6 @@
       if (changes[PREDICT_KEY]) {
         // Another tab folded in a reading — keep our estimate in sync.
         predictModel = changes[PREDICT_KEY].newValue || predictModel;
-        render();
-      }
-      if (changes[WIN_KEY]) {
-        // Another tab pinned the window start — adopt it so the pace bar agrees.
-        sessionWin = changes[WIN_KEY].newValue || sessionWin;
         render();
       }
     });
