@@ -87,6 +87,59 @@ test("share computes percentages", () => {
   assert.equal(empty.chatPct, 0);
 });
 
+test("live Home increments with learnTok teach a weekly-%-per-token rate", () => {
+  const m = feed([
+    { weeklyPct: 0, weeklyResetAt: WR, surface: "chat" },
+    // +2 weekly% while Home grew by 1000 weighted tokens → rate 0.002 %/token.
+    { weeklyPct: 2, weeklyResetAt: WR, surface: "chat", learnTok: 1000 },
+    { weeklyPct: 5, weeklyResetAt: WR, surface: "chat", learnTok: 1500 },
+  ]);
+  // Cumulative: 5 weekly% over 2500 tokens → 0.002 %/token.
+  assert.ok(Math.abs(S.rate(m) - 0.002) < 1e-9, "rate: " + S.rate(m));
+});
+
+test("rate is null before any learning; code increments don't teach it", () => {
+  assert.equal(S.rate(S.EMPTY), null);
+  const m = feed([
+    { weeklyPct: 0, weeklyResetAt: WR, surface: "code" },
+    { weeklyPct: 6, weeklyResetAt: WR, surface: "code", learnTok: 1000 },
+  ]);
+  assert.equal(S.rate(m), null); // only live Home increments learn
+});
+
+test("splitByContent apportions a both-used gap via the learned rate", () => {
+  // Learn 0.002 %/token from live Home first.
+  const m = feed([
+    { weeklyPct: 0, weeklyResetAt: WR, surface: "chat" },
+    { weeklyPct: 2, weeklyResetAt: WR, surface: "chat", learnTok: 1000 },
+  ]);
+  // A 10-pt gap where Home added 2000 weighted tokens → est chat = 2000*0.002 = 4.
+  const parts = S.splitByContent(m, 10, 2000, true);
+  assert.equal(Math.round(parts.chatDelta), 4);
+  assert.equal(Math.round(parts.codeDelta), 6);
+});
+
+test("splitByContent caps chat at the whole gap and never goes negative", () => {
+  const m = feed([
+    { weeklyPct: 0, weeklyResetAt: WR, surface: "chat" },
+    { weeklyPct: 2, weeklyResetAt: WR, surface: "chat", learnTok: 1000 },
+  ]);
+  // Estimated chat (huge content) exceeds the gap → clamp to the gap.
+  const big = S.splitByContent(m, 5, 100000, true);
+  assert.equal(Math.round(big.chatDelta), 5);
+  assert.equal(Math.round(big.codeDelta), 0);
+  // No content measured → all Home (binary fallback).
+  const none = S.splitByContent(m, 5, 0, true);
+  assert.equal(Math.round(none.chatDelta), 0);
+  assert.equal(Math.round(none.codeDelta), 5);
+});
+
+test("splitByContent falls back to binary attribution without a learned rate", () => {
+  assert.deepEqual(S.splitByContent(S.EMPTY, 8, 5000, true), { chatDelta: 8, codeDelta: 0 });
+  assert.deepEqual(S.splitByContent(S.EMPTY, 8, 5000, false), { chatDelta: 0, codeDelta: 8 });
+  assert.deepEqual(S.splitByContent(S.EMPTY, 0, 5000, true), { chatDelta: 0, codeDelta: 0 });
+});
+
 test("the cap halves both sums while preserving the ratio", () => {
   let m = S.EMPTY;
   for (let i = 0; i < 1200; i++) {

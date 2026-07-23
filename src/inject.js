@@ -17,6 +17,7 @@
 
   const CHANNEL = "CLAUDE_USAGE_METER";
   const H = window.CUMHarvest;
+  const W = window.CUMWeights;
   const origFetch =
     typeof window.fetch === "function" ? window.fetch.bind(window) : null;
 
@@ -311,6 +312,8 @@
       discoverProjects();
     } else if (c.type === "discoverConversations") {
       discoverConversations();
+    } else if (c.type === "measureHome") {
+      measureHome(typeof c.sinceMs === "number" ? c.sinceMs : null);
     }
   });
 
@@ -348,6 +351,82 @@
         );
       })
       .catch(() => {});
+  }
+
+  // Measure how much Home-chat content was added since `sinceMs` (the gap
+  // boundary), model-weighted, so content.js can split a both-used gap by
+  // content. We list conversations, pick the ones updated in the gap, fetch each
+  // one's messages, and sum the tokens of messages created during the gap. The
+  // total is posted as { homeWeighted }; it also emits homeActivityAt en route.
+  const MAX_CONVS_TO_MEASURE = 8;
+  function measureHome(sinceMs) {
+    if (!origFetch || !W) {
+      post({ homeWeighted: 0, since: sinceMs });
+      return;
+    }
+    const ids = new Set();
+    origFetch("/api/organizations", { credentials: "include" })
+      .then((r) => (r.ok ? r.clone().text() : ""))
+      .then((t) => {
+        probeOrgIds(t, ids);
+        const orgs = Array.from(ids);
+        return Promise.all(
+          orgs.map((id) => measureHomeForOrg(id, sinceMs))
+        ).then((totals) => {
+          const homeWeighted = totals.reduce((a, b) => a + (b || 0), 0);
+          post({ homeWeighted, since: sinceMs });
+        });
+      })
+      .catch(() => post({ homeWeighted: 0, since: sinceMs }));
+  }
+
+  function measureHomeForOrg(orgId, sinceMs) {
+    const listUrl = `/api/organizations/${orgId}/chat_conversations_v2`;
+    return origFetch(listUrl, { credentials: "include", headers: { accept: "*/*" } })
+      .then((res) => (res.ok ? res.clone().text() : ""))
+      .then((text) => {
+        if (!text) return 0;
+        maybeEmitConversations(listUrl, text); // also surfaces homeActivityAt
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          return 0;
+        }
+        const arr = Array.isArray(json) ? json : json && (json.data || json.conversations);
+        if (!Array.isArray(arr)) return 0;
+        const touched = arr
+          .filter((c) => {
+            const t = c && Date.parse(c.updated_at || c.updatedAt || "");
+            return t && !Number.isNaN(t) && (sinceMs == null || t >= sinceMs);
+          })
+          .map((c) => c.uuid || c.id)
+          .filter((u) => u && /^[0-9a-f-]{36}$/i.test(String(u)))
+          .slice(0, MAX_CONVS_TO_MEASURE);
+        return Promise.all(
+          touched.map((uuid) => measureConversation(orgId, uuid, sinceMs))
+        ).then((vals) => vals.reduce((a, b) => a + (b || 0), 0));
+      })
+      .catch(() => 0);
+  }
+
+  function measureConversation(orgId, uuid, sinceMs) {
+    const url = `/api/organizations/${orgId}/chat_conversations/${uuid}`;
+    return origFetch(url, { credentials: "include", headers: { accept: "*/*" } })
+      .then((res) => (res.ok ? res.clone().text() : ""))
+      .then((text) => {
+        if (!text) return 0;
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          return 0;
+        }
+        const msgs = json && json.chat_messages;
+        const model = json && typeof json.model === "string" ? json.model : null;
+        return W.sumNewContent(msgs, sinceMs, model);
+      })
+      .catch(() => 0);
   }
 
   post({ ready: true });

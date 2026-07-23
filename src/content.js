@@ -200,10 +200,43 @@
   const SPLIT_GAP_MS = 10 * 60 * 1000; // "gap" = this long since the last reading
   const SPLIT_GAP_PCT = 0.3; // ...and at least this many weekly %-points
   let lastHomeActivityAt = null; // max Home-chat updated_at we've seen (ms)
+  let lastHomeWeighted = null; // model-weighted tokens Home added during a gap
   let splitBusy = false; // a gap resolution is in flight
+  // For learning the weekly-%-per-token rate live: the last Home conversation
+  // and its estimated context size, so we can pair the weekly meter's rise with
+  // how much that conversation grew.
+  let lastCtxLearn = { key: null, tokens: null };
 
   function currentSurface() {
     return /^\/code(\/|$)/.test(location.pathname) ? "code" : "chat";
+  }
+
+  function convKey() {
+    const m = location.href.match(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+    );
+    return m ? m[0] : location.pathname;
+  }
+
+  // How much (model-weighted tokens) the active Home conversation grew since the
+  // last live reading — the content signal we pair with the weekly-% rise to
+  // learn the conversion rate. Returns 0 when we can't measure it cleanly (new
+  // conversation, no context estimate, or context shrank).
+  function liveLearnTokens() {
+    if (currentSurface() !== "chat") {
+      lastCtxLearn = { key: null, tokens: null };
+      return 0;
+    }
+    const ctx = state.context;
+    if (!ctx || ctx.tokens == null) return 0;
+    const key = convKey();
+    let learn = 0;
+    if (lastCtxLearn.key === key && lastCtxLearn.tokens != null && ctx.tokens > lastCtxLearn.tokens) {
+      const w = window.CUMWeights ? window.CUMWeights.modelWeight(ctx.model) : 1;
+      learn = (ctx.tokens - lastCtxLearn.tokens) * w;
+    }
+    lastCtxLearn = { key, tokens: ctx.tokens };
+    return learn;
   }
 
   function writeSplit(model, reading) {
@@ -230,14 +263,18 @@
         const gapMs = model.lastAt != null ? Date.now() - model.lastAt : Infinity;
         const now = Date.now();
         if (gapDelta > SPLIT_GAP_PCT && gapMs > SPLIT_GAP_MS) {
-          // Gap — decide Home vs Code from fresh Home-conversation activity.
+          // Gap — decide Home vs Code from fresh Home-conversation activity, and
+          // when both were used, split by how much Home content was added.
           splitBusy = true;
           const boundaryAt = model.lastAt || 0;
-          sendCommand({ type: "discoverConversations" });
+          lastHomeWeighted = null;
+          sendCommand({ type: "measureHome", sinceMs: boundaryAt });
           let waited = 0;
           const tick = setInterval(() => {
             waited += 500;
-            if (lastHomeActivityAt != null || waited >= 6000) {
+            // measureHome always reports homeWeighted (even 0) once it finishes;
+            // wait for it so a content split has the measurement in hand.
+            if (lastHomeWeighted != null || waited >= 6000) {
               clearInterval(tick);
               chrome.storage.local.get(SPLIT_KEY, (r2) => {
                 const m2 = (r2 && r2[SPLIT_KEY]) || window.CUMSplit.EMPTY;
@@ -249,7 +286,9 @@
                   });
                 } else {
                   const homeTouched = lastHomeActivityAt >= boundaryAt;
-                  const parts = window.CUMSplit.attributeGap(gapDelta, homeTouched);
+                  const parts = window.CUMSplit.splitByContent(
+                    m2, gapDelta, homeTouched ? lastHomeWeighted : null, homeTouched
+                  );
                   writeSplit(m2, {
                     weeklyPct: currentWeekly, weeklyResetAt: state.weeklyResetAt,
                     chatDelta: parts.chatDelta, codeDelta: parts.codeDelta, at: now,
@@ -260,10 +299,11 @@
             }
           }, 500);
         } else {
-          // Live — attribute to the tab we're in.
+          // Live — attribute to the tab we're in, and (on Home) learn the
+          // weekly-%-per-token rate from how much this conversation grew.
           writeSplit(model, {
             weeklyPct: currentWeekly, weeklyResetAt: state.weeklyResetAt,
-            surface: currentSurface(), at: now,
+            surface: currentSurface(), at: now, learnTok: liveLearnTokens(),
           });
         }
       });
@@ -1039,6 +1079,7 @@
     if (p.projects) mergeProjects(p.projects, p.full);
     if (p.homeActivityAt != null && (lastHomeActivityAt == null || p.homeActivityAt > lastHomeActivityAt))
       lastHomeActivityAt = p.homeActivityAt;
+    if (p.homeWeighted != null) lastHomeWeighted = p.homeWeighted;
   });
 
   // Fold harvested projects (from the page's own API) into the cached list the

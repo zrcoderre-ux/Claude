@@ -11,8 +11,13 @@
 (function (root) {
   "use strict";
 
-  const EMPTY = { chat: 0, code: 0, lastW: null, wKey: null, lastAt: null };
+  // rNum/rDen accumulate a learned rate: weekly-% per model-weighted token,
+  // measured from live Home usage (how much the weekly meter rose as a Home
+  // conversation's content grew). It converts a gap's estimated chat content
+  // into an estimated chat %, so the rest of the gap can go to Code.
+  const EMPTY = { chat: 0, code: 0, lastW: null, wKey: null, lastAt: null, rNum: 0, rDen: 0 };
   const CAP = 10000; // keep the sums bounded; halving preserves the ratio
+  const RATE_CAP = 5e6; // bound the rate accumulator so recent data dominates
 
   function keyOf(resetAt) {
     return resetAt == null ? null : Math.round(resetAt / 60000);
@@ -28,6 +33,7 @@
     const m = {
       chat: src.chat || 0, code: src.code || 0,
       lastW: src.lastW, wKey: src.wKey, lastAt: src.lastAt,
+      rNum: src.rNum || 0, rDen: src.rDen || 0,
     };
     if (!r || r.weeklyPct == null) return m;
     const wKey = keyOf(r.weeklyResetAt);
@@ -41,6 +47,13 @@
           m.code += dW;
         } else {
           m.chat += dW;
+          // Live Home increment with a measured content growth (weighted
+          // tokens): learn the weekly-%-per-token rate for future gap splits.
+          if (r.learnTok > 0) {
+            m.rNum += dW;
+            m.rDen += r.learnTok;
+            if (m.rDen > RATE_CAP) { m.rNum *= 0.5; m.rDen *= 0.5; }
+          }
         }
         if (m.chat + m.code > CAP) {
           m.chat *= 0.5;
@@ -54,15 +67,39 @@
     return m;
   }
 
-  // Split a between-observations gap in weekly usage across Home (chat) and Code
-  // from a content signal: Home chats all live in chat_conversations_v2, so if
-  // one was touched during the gap the usage was (at least) Home; if none were,
-  // it was Code. Returns { chatDelta, codeDelta }. (A future refinement can
-  // apportion the both-used case by word count; for now Home-touched → Home.)
+  // Coarse gap attribution from a content signal alone: Home chats all live in
+  // chat_conversations_v2, so if one was touched during the gap the usage was
+  // (at least) Home; if none were, it was Code. Used as the fallback for
+  // splitByContent before a rate is learned. Returns { chatDelta, codeDelta }.
   function attributeGap(gapDelta, homeTouched) {
     const d = gapDelta > 0 ? gapDelta : 0;
     if (!d) return { chatDelta: 0, codeDelta: 0 };
     return homeTouched ? { chatDelta: d, codeDelta: 0 } : { chatDelta: 0, codeDelta: d };
+  }
+
+  // The learned weekly-%-per-weighted-token rate, or null before enough live
+  // Home data has been observed.
+  function rate(model) {
+    const rDen = (model && model.rDen) || 0;
+    if (rDen <= 0) return null;
+    return ((model && model.rNum) || 0) / rDen;
+  }
+
+  // Split a gap in which Home was touched but Code may also have run. Estimate
+  // Home's share from its measured content (`chatWeighted` = model-weighted
+  // tokens added to Home chats during the gap) times the learned rate, and give
+  // the remainder to Code. Falls back to the binary attributeGap when there's no
+  // learned rate yet or no content measurement. Returns { chatDelta, codeDelta }.
+  function splitByContent(model, gapDelta, chatWeighted, homeTouched) {
+    const d = gapDelta > 0 ? gapDelta : 0;
+    if (!d) return { chatDelta: 0, codeDelta: 0 };
+    const rt = rate(model);
+    if (rt == null || chatWeighted == null || !(chatWeighted >= 0)) {
+      return attributeGap(d, homeTouched);
+    }
+    const est = Math.max(0, chatWeighted * rt);
+    const chatDelta = Math.min(est, d);
+    return { chatDelta, codeDelta: d - chatDelta };
   }
 
   // { chat, code, total, chatPct, codePct } — chatPct/codePct are 0..100.
@@ -79,7 +116,7 @@
     };
   }
 
-  const api = { EMPTY, observe, share, attributeGap, CAP };
+  const api = { EMPTY, observe, share, attributeGap, splitByContent, rate, CAP, RATE_CAP };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMSplit = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
