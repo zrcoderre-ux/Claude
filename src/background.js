@@ -321,13 +321,16 @@ async function refreshProjects() {
     }
   }
 
-  // Wait for the harvested list to arrive/grow, up to ~15s.
+  // Wait for the authoritative list to land, up to ~15s. It may grow (new
+  // projects) or shrink (deleted ones), so break as soon as the SET changes.
+  const key = (list) => list.map((p) => p.uuid).sort().join(",");
+  const beforeKey = key(before);
   let projects = before;
   for (let i = 0; i < 15; i++) {
     await sleep(1000);
     const now = await readProjects();
-    if (now.length > projects.length) projects = now;
-    if (now.length > before.length) break;
+    projects = now;
+    if (key(now) !== beforeKey) break; // added or removed
   }
 
   if (createdTab) {

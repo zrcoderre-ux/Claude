@@ -954,25 +954,37 @@
       if (p.url) learnUrl(p.url);
       applyReading(p.data);
     }
-    if (p.projects) mergeProjects(p.projects);
+    if (p.projects) mergeProjects(p.projects, p.full);
   });
 
-  // Merge harvested projects (from the page's own API) into the cached list the
-  // scheduling picker reads. Keyed by uuid so repeat visits just refresh names.
-  function mergeProjects(found) {
+  // Fold harvested projects (from the page's own API) into the cached list the
+  // scheduling picker reads, keyed by uuid. A partial capture (DOM scrape, a
+  // filtered response) MERGES — add/refresh only. An authoritative full list
+  // (`full`) REPLACES, so projects deleted on claude.ai are pruned here too.
+  function mergeProjects(found, full) {
     if (!Array.isArray(found) || !found.length) return;
     try {
       chrome.storage?.local.get("cum_projects", (res) => {
         const existing = (res && res.cum_projects) || [];
-        const byId = new Map(existing.map((p) => [p.uuid, p]));
-        let changed = false;
-        for (const p of found) {
-          if (!p || !p.uuid) continue;
-          const prev = byId.get(p.uuid);
-          if (!prev || prev.name !== p.name || prev.href !== p.href) changed = true;
-          byId.set(p.uuid, p);
+        let next;
+        if (full) {
+          // Replace: dedupe the fresh list by uuid, keep its order.
+          const byId = new Map();
+          for (const p of found) if (p && p.uuid && !byId.has(p.uuid)) byId.set(p.uuid, p);
+          next = Array.from(byId.values());
+        } else {
+          const byId = new Map(existing.map((p) => [p.uuid, p]));
+          for (const p of found) if (p && p.uuid) byId.set(p.uuid, p);
+          next = Array.from(byId.values());
         }
-        if (changed) chrome.storage.local.set({ cum_projects: Array.from(byId.values()) });
+        // Only write when something actually changed (avoid storage churn).
+        const same =
+          next.length === existing.length &&
+          next.every((p, i) => {
+            const e = existing[i];
+            return e && e.uuid === p.uuid && e.name === p.name && e.href === p.href;
+          });
+        if (!same) chrome.storage.local.set({ cum_projects: next });
       });
     } catch (e) {
       /* ignore */
