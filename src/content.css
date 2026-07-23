@@ -203,6 +203,24 @@
   background: #d23f31;
 }
 
+/* Time-elapsed "pace" track — thinner and a neutral colour so it reads as
+   time-through-the-window, distinct from the coloured usage bar above it. */
+.cum-panel-bar.cum-elapsed {
+  height: 3px;
+  margin: 0 0 2px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.cum-panel-bar.cum-elapsed i {
+  background: #7c86a0;
+  transition: width 0.4s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cum-panel-bar.cum-elapsed { background: rgba(255, 255, 255, 0.08); }
+  .cum-panel-bar.cum-elapsed i { background: #8b93ad; }
+}
+
 .cum-est {
   font-size: 9px;
   font-weight: 600;
