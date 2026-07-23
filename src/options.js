@@ -337,7 +337,16 @@
     empty: document.getElementById("split-empty"),
     pie: document.getElementById("split-pie"),
     legend: document.getElementById("split-legend"),
+    tools: document.getElementById("split-tools"),
+    reset: document.getElementById("split-reset"),
   };
+
+  if (sp.reset) {
+    sp.reset.addEventListener("click", () => {
+      if (!confirm("Reset the Chat vs Code chart? This clears its tracked data and starts fresh.")) return;
+      chrome.storage.local.remove("cum_split", renderSplit);
+    });
+  }
 
   function renderSplit() {
     chrome.storage.local.get(SPLIT_KEY, (res) => {
@@ -345,11 +354,13 @@
       const s = S ? S.share(model) : { total: 0, chatPct: 0, codePct: 0 };
       if (!s.total) {
         sp.wrap.hidden = true;
+        if (sp.tools) sp.tools.hidden = true;
         sp.empty.hidden = false;
         return;
       }
       sp.empty.hidden = true;
       sp.wrap.hidden = false;
+      if (sp.tools) sp.tools.hidden = false;
       const chat = Math.round(s.chatPct);
       const code = 100 - chat;
       sp.pie.style.background =
