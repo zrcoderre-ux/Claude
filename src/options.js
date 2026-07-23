@@ -243,11 +243,35 @@
     return (Math.round(n * 10) / 10).toFixed(n >= 10 ? 0 : 1) + "%";
   }
 
+  function localDateStr(d) {
+    const p = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+
+  // One chart row with two bars (running average + this week's actual).
+  function dailyRow(label, avg, week, weekPresent, maxVal, note, extraClass) {
+    const aw = Math.round((avg / maxVal) * 100);
+    const ww = Math.round(((week || 0) / maxVal) * 100);
+    return (
+      `<div class="daily-row${extraClass || ""}">` +
+      `<span class="daily-day">${label}</span>` +
+      `<span class="daily-bars">` +
+      `<span class="daily-bar-wrap"><i class="daily-bar avg" style="width:${avg > 0 ? aw : 0}%"></i></span>` +
+      `<span class="daily-bar-wrap"><i class="daily-bar week" style="width:${weekPresent ? ww : 0}%"></i></span>` +
+      `</span>` +
+      `<span class="daily-val">` +
+      `<span class="daily-avg">${avg > 0 ? fmtPts(avg) : "—"}</span>` +
+      `<span class="daily-week">${weekPresent ? fmtPts(week) : (note || "")}</span>` +
+      `</span></div>`
+    );
+  }
+
   function renderDaily() {
     chrome.storage.local.get(DAILY_KEY, (res) => {
       const model = (res && res[DAILY_KEY]) || null;
-      const sum = D ? D.summary(model) : { totalDays: 0, share: [], avg: [], counts: [] };
-      if (!sum.totalDays) {
+      const sum = D ? D.summary(model) : { totalDays: 0, avg: [], counts: [], avgTotal: 0 };
+      const wk = D ? D.weekActual(model, localDateStr(new Date()), 2) : { actual: [], present: [], total: 0 };
+      if (!sum.totalDays && !wk.total) {
         dl.chart.hidden = true;
         dl.note.hidden = true;
         dl.empty.hidden = false;
@@ -255,28 +279,37 @@
       }
       dl.empty.hidden = true;
       dl.chart.hidden = false;
-      // Each day's number is the average share of the FULL weekly limit consumed
-      // on that weekday (e.g. "Mon 12%" = a typical Monday uses 12% of the week).
-      // Bars scale to the busiest weekday so the shape is readable.
-      const maxAvg = Math.max.apply(null, WEEK_ORDER.map((wd) => sum.avg[wd] || 0)) || 1;
-      dl.chart.innerHTML = "";
+      // Bars (avg and this-week) share one scale so they're directly comparable.
+      const maxVal =
+        Math.max.apply(
+          null,
+          WEEK_ORDER.map((wd) => sum.avg[wd] || 0).concat(WEEK_ORDER.map((wd) => wk.actual[wd] || 0))
+        ) || 1;
+      let html =
+        `<div class="daily-legend">` +
+        `<span class="daily-key"><i class="daily-bar avg"></i>running avg</span>` +
+        `<span class="daily-key"><i class="daily-bar week"></i>this week</span></div>`;
       for (const wd of WEEK_ORDER) {
-        const avg = sum.avg[wd] || 0;
         const count = sum.counts[wd] || 0;
-        const row = document.createElement("div");
-        row.className = "daily-row" + (count ? "" : " daily-empty-day");
-        const width = Math.round((avg / maxAvg) * 100);
-        row.innerHTML =
-          `<span class="daily-day">${WEEK_NAMES[wd]}</span>` +
-          `<span class="daily-bar-wrap"><i class="daily-bar" style="width:${width}%"></i></span>` +
-          `<span class="daily-val">${count ? fmtPts(avg) : "—"}` +
-          `<span class="daily-sub">${count ? count + (count === 1 ? " day" : " days") : "no data"}</span></span>`;
-        dl.chart.appendChild(row);
+        html += dailyRow(
+          WEEK_NAMES[wd],
+          sum.avg[wd] || 0,
+          wk.actual[wd] || 0,
+          !!wk.present[wd],
+          maxVal,
+          count ? "" : "",
+          count || wk.present[wd] ? "" : " daily-empty-day"
+        );
       }
+      // Weekly totals at the bottom.
+      const maxTotal = Math.max(sum.avgTotal || 0, wk.total || 0) || 1;
+      html += dailyRow("Week", sum.avgTotal || 0, wk.total || 0, true, maxTotal, "", " daily-total");
+      dl.chart.innerHTML = html;
+
       dl.note.hidden = false;
       dl.note.textContent =
-        `Based on ${sum.totalDays} day${sum.totalDays === 1 ? "" : "s"} of data` +
-        ` · a typical week totals about ${fmtPts(sum.avgTotal)} of your weekly limit.`;
+        `Based on ${sum.totalDays} day${sum.totalDays === 1 ? "" : "s"} of history` +
+        ` · typical week ~${fmtPts(sum.avgTotal)}, this week ${fmtPts(wk.total)} of your weekly limit so far.`;
     });
   }
 

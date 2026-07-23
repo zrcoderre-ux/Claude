@@ -438,10 +438,31 @@ td .approx {
   background: #fff;
 }
 
+.daily-legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-size: 11.5px;
+  color: #6b6b6b;
+}
+
+.daily-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.daily-key .daily-bar {
+  width: 14px;
+  height: 8px;
+  border-radius: 3px;
+}
+
 .daily-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-bottom: 8px;
 }
 
 .daily-day {
@@ -451,37 +472,62 @@ td .approx {
   color: #6b6b6b;
 }
 
-.daily-bar-wrap {
+.daily-bars {
   flex: 1;
-  height: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.daily-bar-wrap {
+  height: 9px;
   background: rgba(0, 0, 0, 0.06);
-  border-radius: 6px;
+  border-radius: 5px;
   overflow: hidden;
 }
 
 .daily-bar {
   display: block;
   height: 100%;
-  min-width: 2px;
+  border-radius: 5px;
+}
+
+.daily-bar.avg {
+  background: #9aa0b0;
+}
+
+.daily-bar.week {
   background: #c96442;
-  border-radius: 6px;
 }
 
 .daily-val {
-  flex: 0 0 88px;
+  flex: 0 0 64px;
   text-align: right;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   display: flex;
   flex-direction: column;
-  line-height: 1.25;
+  line-height: 1.3;
 }
 
-.daily-sub {
-  font-size: 11px;
-  font-weight: 400;
-  color: #9a9a9a;
+.daily-val .daily-avg {
+  color: #8a8f9c;
+}
+
+.daily-val .daily-week {
+  color: #c96442;
+}
+
+.daily-total {
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  margin-top: 6px;
+  padding-top: 10px;
+}
+
+.daily-total .daily-day {
+  color: #1f1f1f;
+  font-weight: 700;
 }
 
 .daily-empty-day .daily-day,
@@ -531,7 +577,11 @@ td .approx {
   .daily-chart { background: #262624; border-color: rgba(255, 255, 255, 0.12); }
   .daily-day { color: #a5a29a; }
   .daily-bar-wrap { background: rgba(255, 255, 255, 0.08); }
-  .daily-sub { color: #8a877f; }
+  .daily-legend { color: #a5a29a; }
+  .daily-bar.avg { background: #7a8090; }
+  .daily-val .daily-avg { color: #9a9fac; }
+  .daily-total { border-top-color: rgba(255, 255, 255, 0.12); }
+  .daily-total .daily-day { color: #f0efea; }
 }
 
 @media (prefers-color-scheme: dark) {

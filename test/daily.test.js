@@ -86,6 +86,40 @@ test("summary on an empty model is safe", () => {
   assert.equal(s.avgTotal, 0);
 });
 
+test("weekActual pulls the current Tuesday-start week's per-day usage", () => {
+  // 2026-07-23 is a Thursday. Week starting Tuesday (dow 2) = 2026-07-21.
+  const model = {
+    days: {
+      "2026-07-21": 5, // Tue (this week)
+      "2026-07-22": 8, // Wed (this week)
+      "2026-07-23": 3, // Thu (this week, = ref day)
+      "2026-07-20": 99, // Mon — previous week, must be excluded
+      "2026-07-24": 99, // Fri — future this week, excluded (after ref)
+    },
+  };
+  const w = D.weekActual(model, "2026-07-23", 2);
+  assert.equal(w.weekStart, "2026-07-21");
+  assert.equal(w.actual[2], 5); // Tue
+  assert.equal(w.actual[3], 8); // Wed
+  assert.equal(w.actual[4], 3); // Thu
+  assert.equal(w.actual[1], 0); // Mon not part of this week
+  assert.equal(w.total, 16); // 5+8+3, prior/future excluded
+  // Days that have occurred this week are present; future ones are not.
+  assert.equal(w.present[2], true); // Tue
+  assert.equal(w.present[4], true); // Thu (ref day)
+  assert.equal(w.present[5], false); // Fri hasn't happened yet
+  assert.equal(w.present[1], false); // Mon (next week)
+});
+
+test("weekActual when today IS the week start (Tuesday)", () => {
+  const model = { days: { "2026-07-21": 4 } };
+  const w = D.weekActual(model, "2026-07-21", 2);
+  assert.equal(w.weekStart, "2026-07-21");
+  assert.equal(w.total, 4);
+  assert.equal(w.present[2], true);
+  assert.equal(w.present[3], false); // Wed not yet
+});
+
 test("observe bounds the number of stored dates", () => {
   let m = D.EMPTY;
   // 200 distinct dates, each getting a bump (needs two readings per date, but a
