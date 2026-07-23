@@ -322,4 +322,49 @@
   });
 
   renderDaily();
+
+
+  // ======================================================================
+  // Chat vs Claude Code split (pie)
+  // ======================================================================
+  const SPLIT_KEY = "cum_split";
+  const S = window.CUMSplit;
+  const CHAT_COLOR = "#c96442";
+  const CODE_COLOR = "#4a7ebb";
+
+  const sp = {
+    wrap: document.getElementById("split-wrap"),
+    empty: document.getElementById("split-empty"),
+    pie: document.getElementById("split-pie"),
+    legend: document.getElementById("split-legend"),
+  };
+
+  function renderSplit() {
+    chrome.storage.local.get(SPLIT_KEY, (res) => {
+      const model = (res && res[SPLIT_KEY]) || null;
+      const s = S ? S.share(model) : { total: 0, chatPct: 0, codePct: 0 };
+      if (!s.total) {
+        sp.wrap.hidden = true;
+        sp.empty.hidden = false;
+        return;
+      }
+      sp.empty.hidden = true;
+      sp.wrap.hidden = false;
+      const chat = Math.round(s.chatPct);
+      const code = 100 - chat;
+      sp.pie.style.background =
+        `conic-gradient(${CHAT_COLOR} 0 ${s.chatPct}%, ${CODE_COLOR} ${s.chatPct}% 100%)`;
+      sp.legend.innerHTML =
+        `<div class="split-key"><span class="split-sw" style="background:${CHAT_COLOR}"></span>` +
+        `Chat <b>${chat}%</b></div>` +
+        `<div class="split-key"><span class="split-sw" style="background:${CODE_COLOR}"></span>` +
+        `Claude Code <b>${code}%</b></div>`;
+    });
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[SPLIT_KEY]) renderSplit();
+  });
+
+  renderSplit();
 })();

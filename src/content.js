@@ -20,6 +20,7 @@
   const LOG_KEY = "cum_log"; // journal of hit-100 / window-reset events
   const PREDICT_KEY = "cum_predict"; // session↔weekly correlation model
   const DAILY_KEY = "cum_daily"; // per-day weekly-usage attribution
+  const SPLIT_KEY = "cum_split"; // chat vs Claude Code usage split
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   const EMPTY = {
@@ -158,8 +159,9 @@
       sessionResetAt: state.resetAt,
       weeklyResetAt: state.weeklyResetAt,
     };
+    const surface = /^\/code(\/|$)/.test(location.pathname) ? "code" : "chat";
     try {
-      chrome.storage.local.get([PREDICT_KEY, DAILY_KEY], (res) => {
+      chrome.storage.local.get([PREDICT_KEY, DAILY_KEY, SPLIT_KEY], (res) => {
         const writes = {};
         if (window.CUMPredict && state.percent != null) {
           predictModel = window.CUMPredict.observe(
@@ -172,6 +174,12 @@
           writes[DAILY_KEY] = window.CUMDaily.observe(
             (res && res[DAILY_KEY]) || window.CUMDaily.EMPTY,
             { weeklyPct, weeklyResetAt: state.weeklyResetAt, dateStr }
+          );
+        }
+        if (window.CUMSplit) {
+          writes[SPLIT_KEY] = window.CUMSplit.observe(
+            (res && res[SPLIT_KEY]) || window.CUMSplit.EMPTY,
+            { weeklyPct, weeklyResetAt: state.weeklyResetAt, surface }
           );
         }
         if (Object.keys(writes).length) {
