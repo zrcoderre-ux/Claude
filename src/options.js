@@ -301,15 +301,19 @@
           count || wk.present[wd] ? "" : " daily-empty-day"
         );
       }
-      // Weekly totals at the bottom.
-      const maxTotal = Math.max(sum.avgTotal || 0, wk.total || 0) || 1;
-      html += dailyRow("Week", sum.avgTotal || 0, wk.total || 0, true, maxTotal, "", " daily-total");
+      // Weekly totals at the bottom: cumulative usage through THIS point in the
+      // week — the average-to-date (typical usage by now) vs this week's actual —
+      // so you can gauge whether you're running faster or slower than usual.
+      const avgToDate = D ? D.weekAverageToDate(model, localDateStr(new Date()), 2) : 0;
+      const maxTotal = Math.max(avgToDate || 0, wk.total || 0) || 1;
+      html += dailyRow("Week", avgToDate || 0, wk.total || 0, true, maxTotal, "", " daily-total");
       dl.chart.innerHTML = html;
 
       dl.note.hidden = false;
       dl.note.textContent =
         `Based on ${sum.totalDays} day${sum.totalDays === 1 ? "" : "s"} of history` +
-        ` · typical week ~${fmtPts(sum.avgTotal)}, this week ${fmtPts(wk.total)} of your weekly limit so far.`;
+        ` · by this point in the week you've typically used ~${fmtPts(avgToDate)}; this week: ${fmtPts(wk.total)}` +
+        ` (a full week averages ~${fmtPts(sum.avgTotal)}).`;
     });
   }
 

@@ -110,7 +110,18 @@
     return { actual: actual, present: present, total: total, weekStart: toStr(start) };
   }
 
-  const api = { EMPTY, observe, summary, weekActual, weekdayOf, MAX_DAYS };
+  // How much of your weekly limit you'd TYPICALLY have used by this point in the
+  // week: the sum of the per-weekday running averages for the days that have
+  // elapsed so far this week (Tuesday → today). Comparable to weekActual().total.
+  function weekAverageToDate(model, refDateStr, weekStartDow) {
+    const s = summary(model);
+    const w = weekActual(model, refDateStr, weekStartDow);
+    let total = 0;
+    for (let wd = 0; wd < 7; wd++) if (w.present[wd]) total += s.avg[wd] || 0;
+    return total;
+  }
+
+  const api = { EMPTY, observe, summary, weekActual, weekAverageToDate, weekdayOf, MAX_DAYS };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMDaily = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -111,6 +111,25 @@ test("weekActual pulls the current Tuesday-start week's per-day usage", () => {
   assert.equal(w.present[1], false); // Mon (next week)
 });
 
+test("weekAverageToDate sums daily averages only through the current day", () => {
+  // Build averages: Tue avg 5, Wed avg 8, Thu avg 3 (one sample each), plus a
+  // Fri sample that must NOT count when today is Thursday.
+  const model = {
+    days: {
+      "2026-06-16": 5, // Tue
+      "2026-06-17": 8, // Wed
+      "2026-06-18": 3, // Thu
+      "2026-06-19": 20, // Fri (future relative to a Thursday ref)
+    },
+  };
+  // Ref is a Thursday → elapsed weekdays this week: Tue, Wed, Thu.
+  const toDate = D.weekAverageToDate(model, "2026-07-23", 2); // 2026-07-23 = Thu
+  assert.ok(Math.abs(toDate - (5 + 8 + 3)) < 1e-9, "avgToDate=" + toDate); // Fri excluded
+  // On a Tuesday ref, only Tuesday counts.
+  const tueOnly = D.weekAverageToDate(model, "2026-07-21", 2); // 2026-07-21 = Tue
+  assert.ok(Math.abs(tueOnly - 5) < 1e-9, "tueOnly=" + tueOnly);
+});
+
 test("weekActual when today IS the week start (Tuesday)", () => {
   const model = { days: { "2026-07-21": 4 } };
   const w = D.weekActual(model, "2026-07-21", 2);
