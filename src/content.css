@@ -447,12 +447,13 @@
   }
 }
 
-/* Context-usage alarm pill — a second, independent pill above the main meter. */
+/* Context-usage alarm pill — docked above the main meter and moves with it. */
 #cum-ctx-pill {
-  position: fixed;
-  right: 16px;
-  bottom: 72px;
-  z-index: 2147483646;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  white-space: nowrap;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -468,6 +469,10 @@
   color: #1f1f1f;
   pointer-events: none; /* purely an indicator — never intercept page clicks */
   user-select: none;
+}
+#cum-root.cum-ctx-below #cum-ctx-pill {
+  bottom: auto;
+  top: calc(100% + 8px);
 }
 #cum-ctx-pill .cum-ctx-dot {
   width: 8px;
