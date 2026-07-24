@@ -765,9 +765,10 @@
       optionsBtn: root.querySelector("#cum-options-btn"),
     };
 
-    // A separate context-usage alarm pill. It flashes each time context crosses
-    // another 5%, appears only briefly on the first 5%, and becomes permanent
-    // once context reaches 10% (then keeps updating).
+    // A context-usage alarm pill, docked to the main pill (a child of #cum-root)
+    // so it rides along when you drag the meter. It flashes each time context
+    // crosses another 5%, appears only briefly on the first 5%, and becomes
+    // permanent once context reaches 10% (then keeps updating).
     const ctxPill = document.createElement("div");
     ctxPill.id = "cum-ctx-pill";
     ctxPill.hidden = true;
@@ -775,7 +776,7 @@
       `<span class="cum-ctx-dot"></span>` +
       `<span class="cum-ctx-cap">Context</span>` +
       `<b id="cum-ctx-pct">—</b>`;
-    document.body.appendChild(ctxPill);
+    root.insertBefore(ctxPill, els.btn); // above the button; panel still paints over
     els.ctxPill = ctxPill;
     els.ctxPillPct = ctxPill.querySelector("#cum-ctx-pct");
 
@@ -849,6 +850,14 @@
     }
   }
 
+  // Keep the docked context pill on-screen: sit it below the button instead of
+  // above when the meter is dragged near the top edge.
+  function placeCtxPill() {
+    if (!els || !els.ctxPill || !els.root) return;
+    const r = els.root.getBoundingClientRect();
+    els.root.classList.toggle("cum-ctx-below", r.top < 48);
+  }
+
   // Open the panel toward whatever space is available around the pill.
   function placePanel() {
     const r = els.root.getBoundingClientRect();
@@ -888,6 +897,7 @@
       els.root.classList.add("cum-dragging");
       els.panel.hidden = true;
       applyPosition({ left: originLeft + dx, top: originTop + dy }, false);
+      placeCtxPill();
     });
 
     function end(e) {
@@ -1186,6 +1196,7 @@
     const visible = ctxPillPermanent || Date.now() < ctxPillTransientUntil;
     els.ctxPill.hidden = !visible;
     if (visible) {
+      placeCtxPill();
       els.ctxPillPct.textContent = fmtPercent(cd.pct);
       els.ctxPill.classList.toggle("cum-ctx-warn", pct >= 75 && pct < 90);
       els.ctxPill.classList.toggle("cum-ctx-danger", pct >= 90);
