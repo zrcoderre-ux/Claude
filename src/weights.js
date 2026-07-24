@@ -119,6 +119,37 @@
     return raw * modelWeight(model);
   }
 
+  // Read the real context figures out of the Code tab's native context panel
+  // text (e.g. "Context window 696.1k / 1.0M (70%)"). The web app tokenizes
+  // client-side and shows no persistent number — the figure exists only while
+  // that panel is expanded — so this is the one authoritative source when the
+  // user opens it. Matches only the full "used / total (pct%)" breakdown, so the
+  // bare collapsed "Context window" label is ignored. Returns { tokens, window,
+  // pct } (pct 0..1) or null. Tolerant of the value being split across spans,
+  // since it runs on a container's concatenated textContent.
+  function parseNativeContext(text) {
+    if (typeof text !== "string" || !/context window/i.test(text)) return null;
+    const m = text.match(
+      /context window[^%]*?(\d[\d.]*)\s*([kmb])?\s*\/\s*(\d[\d.]*)\s*([kmb])\s*\(\s*(\d+(?:\.\d+)?)\s*%\)/i
+    );
+    if (!m) return null;
+    const used = toTokens(m[1], m[2] || m[4]);
+    const win = toTokens(m[3], m[4]);
+    const pct = parseFloat(m[5]) / 100;
+    if (!(win > 0) || !(pct >= 0)) return null;
+    return { tokens: used, window: win, pct };
+  }
+
+  function toTokens(n, unit) {
+    const v = parseFloat(n);
+    if (!(v >= 0)) return 0;
+    const u = (unit || "").toLowerCase();
+    if (u === "b") return v * 1e9;
+    if (u === "m") return v * 1e6;
+    if (u === "k") return v * 1e3;
+    return v;
+  }
+
   const api = {
     TOKENS_PER_WORD,
     modelWeight,
@@ -127,6 +158,7 @@
     attachmentTokens,
     messageTokens,
     sumNewContent,
+    parseNativeContext,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMWeights = api;
