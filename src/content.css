@@ -436,6 +436,105 @@
   #cum-options-btn:hover {
     background: rgba(255, 255, 255, 0.08);
   }
+  #cum-ctx-pill {
+    background: #2a2a28;
+    border-color: rgba(255, 255, 255, 0.22);
+    color: #f0efea;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+  #cum-ctx-pill .cum-ctx-cap {
+    color: #a5a29a;
+  }
+}
+
+/* Context-usage alarm pill — a second, independent pill above the main meter. */
+#cum-ctx-pill {
+  position: fixed;
+  right: 16px;
+  bottom: 72px;
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1.5px solid rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 12px;
+  color: #1f1f1f;
+  pointer-events: none; /* purely an indicator — never intercept page clicks */
+  user-select: none;
+}
+#cum-ctx-pill .cum-ctx-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c96442;
+  flex: 0 0 auto;
+}
+#cum-ctx-pill .cum-ctx-cap {
+  color: #6b6862;
+  font-weight: 600;
+}
+#cum-ctx-pill b {
+  font-weight: 700;
+}
+#cum-ctx-pill.cum-ctx-warn {
+  border-color: #d99b1f;
+}
+#cum-ctx-pill.cum-ctx-warn .cum-ctx-dot {
+  background: #d99b1f;
+}
+#cum-ctx-pill.cum-ctx-danger {
+  border-color: #d23f31;
+}
+#cum-ctx-pill.cum-ctx-danger .cum-ctx-dot {
+  background: #d23f31;
+}
+
+@keyframes cum-ctx-alarm-kf {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+  15%,
+  45% {
+    transform: scale(1.14);
+    box-shadow: 0 0 0 7px rgba(201, 100, 66, 0.28), 0 6px 20px rgba(0, 0, 0, 0.2);
+  }
+  30%,
+  60% {
+    transform: scale(1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+}
+#cum-ctx-pill.cum-ctx-alarm {
+  animation: cum-ctx-alarm-kf 1.6s ease;
+}
+#cum-ctx-pill.cum-ctx-alarm.cum-ctx-danger {
+  animation-name: cum-ctx-alarm-danger-kf;
+}
+@keyframes cum-ctx-alarm-danger-kf {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  }
+  15%,
+  45% {
+    transform: scale(1.14);
+    box-shadow: 0 0 0 7px rgba(210, 63, 49, 0.32), 0 6px 20px rgba(0, 0, 0, 0.22);
+  }
+  30%,
+  60% {
+    transform: scale(1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  }
 }
 
 /* While the extension briefly opens claude.ai's usage menu in the background to
