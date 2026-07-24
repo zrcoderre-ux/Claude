@@ -413,3 +413,17 @@
     color: #8a877f;
   }
 }
+
+/* While the extension briefly opens claude.ai's usage menu in the background to
+   read the real context figure, keep that popover (and its backdrop) invisible
+   and non-interactive so it doesn't flash on screen. The read lasts a few
+   hundred milliseconds; these rules are removed as soon as it finishes. */
+html.cum-ctx-reading [role="dialog"],
+html.cum-ctx-reading [data-base-ui-popup],
+html.cum-ctx-reading [data-base-ui-positioner],
+html.cum-ctx-reading [data-base-ui-backdrop],
+html.cum-ctx-reading [data-base-ui-popup-backdrop] {
+  opacity: 0 !important;
+  transition: none !important;
+  pointer-events: none !important;
+}

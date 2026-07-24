@@ -927,6 +927,106 @@
     }
   }
 
+  // ---- Background refresh of the Code context panel ----------------------
+  // The real figure lives only in claude.ai's usage menu (open it → expand the
+  // "Context window" section). To keep it current without the user doing that
+  // each time, we briefly open that menu ourselves — hidden via CSS — after each
+  // Code turn and on a slow timer, let the observer read it, then close it.
+  const CTX_TRIGGER_SEL =
+    'button[aria-haspopup="dialog"][aria-label^="Usage" i], [data-base-ui-click-trigger][aria-label^="Usage" i]';
+  const CTX_READ_THROTTLE_MS = 15000;
+  const CTX_PERIODIC_MS = 60000;
+  const CTX_TURN_DELAY_MS = 4000;
+  let ctxReading = false;
+  let lastCtxReadAt = 0;
+  let ctxTurnTimer = null;
+  let lastCtxNavKey = null;
+
+  function isCodeChat() {
+    return /^\/code(\/|$)/.test(location.pathname);
+  }
+
+  function wait(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  // Some popovers open on pointer events rather than a bare click, so drive the
+  // full sequence.
+  function synthClick(el) {
+    if (!el) return;
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+      try {
+        el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }
+
+  function findContextExpander(root) {
+    const scope = root || document;
+    const btns = scope.querySelectorAll('button, [role="button"]');
+    for (const b of btns) {
+      const t = (b.textContent || "").trim();
+      if (/^context window/i.test(t) && t.length < 40) return b;
+    }
+    return null;
+  }
+
+  function scheduleTurnRead() {
+    if (!isCodeChat()) return;
+    clearTimeout(ctxTurnTimer);
+    ctxTurnTimer = setTimeout(() => backgroundReadContext(), CTX_TURN_DELAY_MS);
+  }
+
+  async function backgroundReadContext() {
+    if (ctxReading || !isCodeChat() || document.hidden) return;
+    if (Date.now() - lastCtxReadAt < CTX_READ_THROTTLE_MS) return;
+    const trigger = document.querySelector(CTX_TRIGGER_SEL);
+    if (!trigger) return;
+    // Don't hijack focus while the user is typing.
+    const ae = document.activeElement;
+    if (ae && (ae.isContentEditable || /^(INPUT|TEXTAREA)$/.test(ae.tagName))) return;
+    // Don't fight a menu the user opened themselves.
+    if (trigger.getAttribute("aria-expanded") === "true") return;
+
+    ctxReading = true;
+    const prevFocus = document.activeElement;
+    document.documentElement.classList.add("cum-ctx-reading");
+    try {
+      synthClick(trigger);
+      await wait(200);
+      const dialog = document.querySelector('[role="dialog"]') || document.body;
+      const exp = findContextExpander(dialog);
+      if (exp && exp.getAttribute("aria-expanded") !== "true") {
+        synthClick(exp);
+        await wait(180);
+      }
+      extractNativeContext(document.querySelector('[role="dialog"]') || dialog);
+      lastCtxReadAt = Date.now();
+    } catch (e) {
+      /* ignore */
+    } finally {
+      // Close whatever we opened, and restore focus.
+      try {
+        if (trigger.getAttribute("aria-expanded") === "true") synthClick(trigger);
+        await wait(30);
+        if (trigger.getAttribute("aria-expanded") === "true") {
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      try {
+        if (prevFocus && prevFocus.focus) prevFocus.focus();
+      } catch (e) {
+        /* ignore */
+      }
+      document.documentElement.classList.remove("cum-ctx-reading");
+      ctxReading = false;
+    }
+  }
+
   // The context figure to show: the real one read from claude.ai's panel when we
   // have it for this conversation, else our per-conversation estimate (marked ~).
   function contextForDisplay() {
@@ -1153,6 +1253,12 @@
         if (ctxPanelEl.isConnected) extractNativeContext(ctxPanelEl);
         else ctxPanelEl = null;
       }
+      // On navigating into a different Code chat, read its context figure.
+      const navKey = convKey();
+      if (navKey !== lastCtxNavKey) {
+        lastCtxNavKey = navKey;
+        if (isCodeChat()) setTimeout(backgroundReadContext, 1200);
+      }
       render();
     }, 1000);
   }
@@ -1180,6 +1286,7 @@
     if (p.homeActivityAt != null && (lastHomeActivityAt == null || p.homeActivityAt > lastHomeActivityAt))
       lastHomeActivityAt = p.homeActivityAt;
     if (p.homeWeighted != null) lastHomeWeighted = p.homeWeighted;
+    if (p.turnEnded) scheduleTurnRead();
   });
 
   // Fold harvested projects (from the page's own API) into the cached list the
@@ -1265,6 +1372,12 @@
     build();
     // Watch for claude.ai's native context panel so we can read the real figure.
     setupContextScraper();
+    // On a Code chat, read the real context figure now and keep it fresh on a
+    // slow safety timer (turn-end events refresh it promptly in between).
+    if (isCodeChat()) setTimeout(backgroundReadContext, 2500);
+    setInterval(() => {
+      if (isCodeChat()) backgroundReadContext();
+    }, CTX_PERIODIC_MS);
     // One-time cleanup: collapse any duplicate hit100/reset entries that earlier
     // versions (per-tab dedup) left behind.
     dedupeStoredLog();
