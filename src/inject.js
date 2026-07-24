@@ -153,6 +153,11 @@
         promise
           .then((response) => {
             try {
+              // A streamed response is an assistant turn — signal it so the
+              // content script can refresh the Code context panel afterward.
+              const ct =
+                (response.headers && response.headers.get && response.headers.get("content-type")) || "";
+              if (/text\/event-stream/i.test(ct)) post({ turnEnded: true });
               const headerData = H && H.harvestHeaders(response.headers);
               if (H && H.hasData(headerData)) emit("fetch:headers", headerData, url);
               response
