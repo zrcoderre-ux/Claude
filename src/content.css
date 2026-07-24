@@ -274,6 +274,24 @@
   background: #b85838;
 }
 
+/* Open-options button in the panel (secondary, under Schedule a send) */
+#cum-options-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#cum-options-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
 /* Schedule-a-send modal */
 #cum-modal-overlay {
   position: fixed;
@@ -411,6 +429,12 @@
   .cum-panel-sub,
   .cum-panel-hint {
     color: #8a877f;
+  }
+  #cum-options-btn {
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+  #cum-options-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
   }
 }
 

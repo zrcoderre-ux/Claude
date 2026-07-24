@@ -726,6 +726,7 @@
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
         <div class="cum-panel-hint" id="cum-p-hint" hidden>Reading your usage — this updates automatically.</div>
         <button id="cum-schedule-btn" type="button">＋ Schedule a send</button>
+        <button id="cum-options-btn" type="button">Open options →</button>
       </div>
     `;
     document.body.appendChild(root);
@@ -761,6 +762,7 @@
       pUpdated: root.querySelector("#cum-p-updated"),
       pHint: root.querySelector("#cum-p-hint"),
       scheduleBtn: root.querySelector("#cum-schedule-btn"),
+      optionsBtn: root.querySelector("#cum-options-btn"),
     };
 
     els.btn.addEventListener("click", () => {
@@ -776,6 +778,16 @@
       e.stopPropagation();
       els.panel.hidden = true;
       openScheduleModal();
+    });
+
+    els.optionsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      els.panel.hidden = true;
+      try {
+        chrome.runtime?.sendMessage({ type: "cum-open-options" });
+      } catch (err) {
+        /* ignore */
+      }
     });
 
     document.addEventListener("click", (e) => {
