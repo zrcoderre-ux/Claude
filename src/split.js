@@ -77,6 +77,27 @@
     return homeTouched ? { chatDelta: d, codeDelta: 0 } : { chatDelta: 0, codeDelta: d };
   }
 
+  // Fold a rate observation in WITHOUT attributing usage to a bucket — for
+  // ground-truth signals (the real Code context tokens read from claude.ai's own
+  // panel) that should sharpen the weekly-%-per-token rate but not themselves be
+  // counted as chat/code usage (the live/gap paths already bucket that). `dPct`
+  // is the weekly-% rise over the interval; `weightedTokens` is the real,
+  // model-weighted content added. Same accumulator and cap as the live learner.
+  function learn(model, dPct, weightedTokens) {
+    const src = model || EMPTY;
+    const m = {
+      chat: src.chat || 0, code: src.code || 0,
+      lastW: src.lastW, wKey: src.wKey, lastAt: src.lastAt,
+      rNum: src.rNum || 0, rDen: src.rDen || 0,
+    };
+    if (dPct > 0 && weightedTokens > 0) {
+      m.rNum += dPct;
+      m.rDen += weightedTokens;
+      if (m.rDen > RATE_CAP) { m.rNum *= 0.5; m.rDen *= 0.5; }
+    }
+    return m;
+  }
+
   // The learned weekly-%-per-weighted-token rate, or null before enough live
   // Home data has been observed.
   function rate(model) {
@@ -116,7 +137,7 @@
     };
   }
 
-  const api = { EMPTY, observe, share, attributeGap, splitByContent, rate, CAP, RATE_CAP };
+  const api = { EMPTY, observe, learn, share, attributeGap, splitByContent, rate, CAP, RATE_CAP };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMSplit = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
