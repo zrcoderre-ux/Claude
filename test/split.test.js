@@ -98,6 +98,38 @@ test("live Home increments with learnTok teach a weekly-%-per-token rate", () =>
   assert.ok(Math.abs(S.rate(m) - 0.002) < 1e-9, "rate: " + S.rate(m));
 });
 
+test("learn folds a ground-truth rate observation without touching buckets", () => {
+  let m = feed([
+    { weeklyPct: 0, weeklyResetAt: WR, surface: "code" },
+    { weeklyPct: 10, weeklyResetAt: WR, surface: "code" }, // +10 code usage
+  ]);
+  assert.equal(Math.round(m.code), 10);
+  assert.equal(m.chat, 0);
+  // Real Code tokens: +4 weekly% over 2000 weighted tokens → 0.002 %/token.
+  m = S.learn(m, 4, 2000);
+  assert.ok(Math.abs(S.rate(m) - 0.002) < 1e-9, "rate: " + S.rate(m));
+  // Buckets are unchanged — learn only adjusts the rate.
+  assert.equal(Math.round(m.code), 10);
+  assert.equal(m.chat, 0);
+});
+
+test("learn ignores non-positive deltas", () => {
+  let m = S.learn(S.EMPTY, 0, 1000);
+  assert.equal(S.rate(m), null);
+  m = S.learn(m, 5, 0);
+  assert.equal(S.rate(m), null);
+  m = S.learn(m, -2, 1000);
+  assert.equal(S.rate(m), null);
+});
+
+test("a learn-taught rate drives splitByContent", () => {
+  // No live Home data at all; the rate comes purely from real Code tokens.
+  const m = S.learn(S.EMPTY, 2, 1000); // 0.002 %/token
+  const parts = S.splitByContent(m, 10, 2000, true); // 2000*0.002 = 4 to chat
+  assert.equal(Math.round(parts.chatDelta), 4);
+  assert.equal(Math.round(parts.codeDelta), 6);
+});
+
 test("rate is null before any learning; code increments don't teach it", () => {
   assert.equal(S.rate(S.EMPTY), null);
   const m = feed([

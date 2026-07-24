@@ -913,9 +913,64 @@
         tokens: parsed.tokens,
         window: parsed.window,
         pct: parsed.pct,
+        model: parseMenuModel(txt),
         at: Date.now(),
       };
+      // Use the exact token count to sharpen the chat/code split's rate learner.
+      learnFromRealCode();
       if (els) render();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  // The usage menu lists a per-model weekly limit (e.g. "Weekly · Fable"); that
+  // model-specific line names the model the Code chat is using. Parse the first
+  // recognized model name (ignoring the "all models" aggregate line) so the rate
+  // learner can weight its real token counts correctly. Null if none is found.
+  function parseMenuModel(txt) {
+    const re = /weekly\s*[·:•]\s*([a-z0-9.\- ]{1,24}?)(?=resets|\d|weekly|context|$)/gi;
+    let m;
+    while ((m = re.exec(txt))) {
+      const name = m[1].trim();
+      if (/all\s*models/i.test(name)) continue;
+      if (/opus|sonnet|haiku|fable/i.test(name)) return name;
+    }
+    return null;
+  }
+
+  // Pair two real Code context readings (same conversation and weekly window) to
+  // learn weekly-% per real, model-weighted token — ground truth that sharpens
+  // the rate the gap split uses. Skipped unless we can identify the model, so an
+  // unknown weight can't skew the accumulator. This only touches the rate, not
+  // the chat/code buckets (the live/gap paths already attribute usage).
+  let lastCodeReal = null; // { key, tokens, weeklyPct, wKey }
+  function learnFromRealCode() {
+    try {
+      if (!window.CUMSplit || !window.CUMSplit.learn || !isCodeChat()) return;
+      if (!nativeCtx || nativeCtx.tokens == null || state.weeklyPercent == null) return;
+      const wKey = state.weeklyResetAt != null ? Math.round(state.weeklyResetAt / 60000) : null;
+      const cur = {
+        key: nativeCtx.key,
+        tokens: nativeCtx.tokens,
+        weeklyPct: state.weeklyPercent * 100,
+        wKey: wKey,
+      };
+      const prev = lastCodeReal;
+      lastCodeReal = cur;
+      if (!prev || prev.key !== cur.key || prev.wKey !== cur.wKey) return;
+      const dTok = cur.tokens - prev.tokens;
+      const dW = cur.weeklyPct - prev.weeklyPct;
+      if (!(dTok > 0) || !(dW > 0)) return;
+      const model = nativeCtx.model || (state.context && state.context.model) || null;
+      if (!model || !window.CUMWeights) return; // need a known model to weight
+      const weighted = dTok * window.CUMWeights.modelWeight(model);
+      chrome.storage.local.get(SPLIT_KEY, (res) => {
+        const m = (res && res[SPLIT_KEY]) || window.CUMSplit.EMPTY;
+        chrome.storage.local.set({ [SPLIT_KEY]: window.CUMSplit.learn(m, dW, weighted) }, () => {
+          if (els) render();
+        });
+      });
     } catch (e) {
       /* ignore */
     }
