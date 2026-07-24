@@ -50,6 +50,14 @@
   let tickTimer = null;
   let pollTimer = null;
   let probeTimeout = null;
+  // The real context figure, read from claude.ai's own context panel when the
+  // user expands it (the page tokenizes client-side and exposes no API field or
+  // persistent number). Keyed to the conversation it was read in, and timestamped
+  // so the panel can show how fresh it is. `ctxPanelEl` is the live panel element
+  // while it's open, so we can keep re-reading it as usage streams.
+  let nativeCtx = null; // { key, tokens, window, pct, at }
+  let ctxPanelEl = null;
+  let ctxObserver = null;
 
   // ---- Persistence -------------------------------------------------------
   function save() {
@@ -385,7 +393,9 @@
     }
     if (data.context != null && data.context.tokens != null) {
       const prevMsgs = state.context && state.context.messages;
-      state.context = data.context;
+      // Tag with the conversation it came from so a stale estimate from another
+      // chat is never shown against the one you're looking at now.
+      state.context = Object.assign({}, data.context, { key: convKey() });
       changed = true;
       // Feed the tenths-place calibrator with this turn's consumption proxy.
       // Preferred: real output_tokens (if the API ever exposes them). Otherwise,
@@ -739,6 +749,7 @@
       sessionsRow: root.querySelector("#cum-sessions-row"),
       pSessions: root.querySelector("#cum-p-sessions"),
       contextGroup: root.querySelector("#cum-context-group"),
+      pContextEst: root.querySelector("#cum-context-group .cum-est"),
       pContext: root.querySelector("#cum-p-context"),
       pContextBar: root.querySelector("#cum-p-context-bar"),
       pContextModel: root.querySelector("#cum-p-context-model"),
@@ -871,6 +882,78 @@
     btn.addEventListener("pointercancel", end);
   }
 
+  // ---- Native context panel scraping ------------------------------------
+  // claude.ai computes the context-window breakdown client-side and shows the
+  // number only while its context panel is expanded — there's no API field and
+  // no persistent element. So we watch for that panel and read the exact figure
+  // straight from it whenever the user opens it.
+  function extractNativeContext(el) {
+    try {
+      if (!el || el.nodeType !== 1 || !window.CUMWeights) return;
+      if (els && els.root && els.root.contains(el)) return; // ignore our own UI
+      const txt = el.textContent || "";
+      if (!txt || txt.length > 300000 || !/context window/i.test(txt)) return;
+      const parsed = window.CUMWeights.parseNativeContext(txt);
+      if (!parsed) return;
+      ctxPanelEl = el;
+      nativeCtx = {
+        key: convKey(),
+        tokens: parsed.tokens,
+        window: parsed.window,
+        pct: parsed.pct,
+        at: Date.now(),
+      };
+      if (els) render();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function setupContextScraper() {
+    try {
+      if (ctxObserver || typeof MutationObserver === "undefined" || !document.body) return;
+      ctxObserver = new MutationObserver((muts) => {
+        for (const mut of muts) {
+          const nodes = mut.addedNodes;
+          if (!nodes) continue;
+          for (let i = 0; i < nodes.length; i++) {
+            if (nodes[i].nodeType === 1) extractNativeContext(nodes[i]);
+          }
+        }
+      });
+      ctxObserver.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  // The context figure to show: the real one read from claude.ai's panel when we
+  // have it for this conversation, else our per-conversation estimate (marked ~).
+  function contextForDisplay() {
+    const key = convKey();
+    if (nativeCtx && nativeCtx.key === key && nativeCtx.window > 0) {
+      return {
+        tokens: nativeCtx.tokens,
+        window: nativeCtx.window,
+        pct: nativeCtx.pct != null ? nativeCtx.pct : clamp01(nativeCtx.tokens / nativeCtx.window),
+        native: true,
+        at: nativeCtx.at,
+        model: null,
+      };
+    }
+    const ctx = state.context;
+    if (ctx && ctx.tokens != null && ctx.window && ctx.key === key) {
+      return {
+        tokens: ctx.tokens,
+        window: ctx.window,
+        pct: clamp01(ctx.tokens / ctx.window),
+        estimated: true,
+        model: ctx.model || null,
+      };
+    }
+    return null;
+  }
+
   function render() {
     if (!els) return;
 
@@ -950,17 +1033,28 @@
       els.weeklyGroup.hidden = true;
     }
 
-    // Detail panel — context window (per-conversation)
-    const ctx = state.context;
-    if (ctx && ctx.tokens != null && ctx.window) {
-      const cpct = clamp01(ctx.tokens / ctx.window);
-      const pre = ctx.estimated ? "~" : "";
+    // Detail panel — context window. Prefer the exact figure read from claude.ai's
+    // own context panel; otherwise fall back to our per-conversation estimate (~).
+    const cd = contextForDisplay();
+    if (cd) {
+      const cpct = clamp01(cd.pct);
+      const pre = cd.native ? "" : "~";
       els.contextGroup.hidden = false;
       els.pContext.textContent = pre + fmtPercent(cpct);
       els.pContextBar.style.width = `${Math.round(cpct * 100)}%`;
       setBarSeverity(els.pContextBar, cpct);
-      els.pContextTokens.textContent = `${pre}${fmtTokens(ctx.tokens)} / ${fmtTokens(ctx.window)}`;
-      els.pContextModel.textContent = ctx.model ? shortModel(ctx.model) : "estimated";
+      els.pContextTokens.textContent = `${pre}${fmtTokens(cd.tokens)} / ${fmtTokens(cd.window)}`;
+      if (els.pContextEst) {
+        if (cd.native) {
+          els.pContextEst.textContent = "actual";
+          els.pContextEst.title = "Read from Claude's own context panel (" + timeAgo(cd.at) + ").";
+        } else {
+          els.pContextEst.textContent = "est.";
+          els.pContextEst.title =
+            "Estimated from the conversation's length. Open Claude's context panel once for the exact figure.";
+        }
+      }
+      els.pContextModel.textContent = cd.model ? shortModel(cd.model) : cd.native ? "measured" : "estimated";
     } else {
       els.contextGroup.hidden = true;
     }
@@ -1052,6 +1146,12 @@
       if (dirty) {
         save();
         requestBaseline();
+      }
+      // Keep re-reading the native context panel while it's open so the figure
+      // tracks usage as it streams; drop the reference once it closes.
+      if (ctxPanelEl) {
+        if (ctxPanelEl.isConnected) extractNativeContext(ctxPanelEl);
+        else ctxPanelEl = null;
       }
       render();
     }, 1000);
@@ -1163,6 +1263,8 @@
     }
     calib = makeCalibrator();
     build();
+    // Watch for claude.ai's native context panel so we can read the real figure.
+    setupContextScraper();
     // One-time cleanup: collapse any duplicate hit100/reset entries that earlier
     // versions (per-tab dedup) left behind.
     dedupeStoredLog();

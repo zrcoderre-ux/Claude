@@ -297,12 +297,17 @@
   function parseConversation(obj) {
     if (!obj || !Array.isArray(obj.chat_messages)) return null;
     let chars = 0;
-    for (const m of obj.chat_messages) chars += messageChars(m);
-    if (chars <= 0) return null;
+    let attachTok = 0;
+    const W = typeof window !== "undefined" ? window.CUMWeights : null;
+    for (const m of obj.chat_messages) {
+      chars += messageChars(m);
+      if (W) attachTok += W.attachmentTokens(m); // files/images add real tokens
+    }
+    if (chars <= 0 && attachTok <= 0) return null;
     const model = typeof obj.model === "string" && obj.model ? obj.model : null;
     return {
       context: {
-        tokens: Math.round(chars / CHARS_PER_TOKEN),
+        tokens: Math.round(chars / CHARS_PER_TOKEN + attachTok),
         model,
         window: contextWindowFor(model),
         estimated: true,

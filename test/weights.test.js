@@ -75,3 +75,34 @@ test("sumNewContent tolerates junk input", () => {
   assert.equal(W.sumNewContent(null, 0, "opus"), 0);
   assert.equal(W.sumNewContent([], 0, "opus"), 0);
 });
+
+test("parseNativeContext reads the expanded panel's used / total (pct%)", () => {
+  // Concatenated textContent of the expanded native panel.
+  const txt =
+    "Context window696.1k / 1.0M (70%)Messages659.4k65.9%System tools18.4k1.8%";
+  const r = W.parseNativeContext(txt);
+  assert.equal(r.window, 1000000);
+  assert.equal(Math.round(r.tokens), 696100);
+  assert.ok(Math.abs(r.pct - 0.7) < 1e-9);
+});
+
+test("parseNativeContext handles a spaced label and a 200k window", () => {
+  const r = W.parseNativeContext("Context window 84.2k / 200k (42%)");
+  assert.equal(r.window, 200000);
+  assert.equal(Math.round(r.tokens), 84200);
+  assert.ok(Math.abs(r.pct - 0.42) < 1e-9);
+});
+
+test("parseNativeContext ignores the bare collapsed label and junk", () => {
+  assert.equal(W.parseNativeContext("Context window"), null);
+  assert.equal(W.parseNativeContext("some unrelated 55% text"), null);
+  assert.equal(W.parseNativeContext(null), null);
+  assert.equal(W.parseNativeContext(""), null);
+});
+
+test("parseNativeContext takes the context figure, not a later breakdown %", () => {
+  // The first "used / total (pct%)" after the label is the whole-window one.
+  const r = W.parseNativeContext("Context window 5.0k / 10.0k (50%) Messages 4.0k 40%");
+  assert.equal(r.window, 10000);
+  assert.ok(Math.abs(r.pct - 0.5) < 1e-9);
+});
