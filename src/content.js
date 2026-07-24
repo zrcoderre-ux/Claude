@@ -765,6 +765,20 @@
       optionsBtn: root.querySelector("#cum-options-btn"),
     };
 
+    // A separate context-usage alarm pill. It flashes each time context crosses
+    // another 5%, appears only briefly on the first 5%, and becomes permanent
+    // once context reaches 10% (then keeps updating).
+    const ctxPill = document.createElement("div");
+    ctxPill.id = "cum-ctx-pill";
+    ctxPill.hidden = true;
+    ctxPill.innerHTML =
+      `<span class="cum-ctx-dot"></span>` +
+      `<span class="cum-ctx-cap">Context</span>` +
+      `<b id="cum-ctx-pct">—</b>`;
+    document.body.appendChild(ctxPill);
+    els.ctxPill = ctxPill;
+    els.ctxPillPct = ctxPill.querySelector("#cum-ctx-pct");
+
     els.btn.addEventListener("click", () => {
       if (suppressClick) {
         suppressClick = false;
@@ -1121,6 +1135,65 @@
     return null;
   }
 
+  // ---- Context-usage alarm pill ------------------------------------------
+  // Buckets are 5%-wide (0 = <5%, 1 = 5–<10%, 2 = 10–<15%, …). Crossing UP into a
+  // new bucket fires a brief alarm flash. The pill shows transiently on the first
+  // 5% and latches permanently once context reaches 10%.
+  let ctxPillKey = null;
+  let ctxPillMaxBucket = 0;
+  let ctxPillPermanent = false;
+  let ctxPillTransientUntil = 0;
+  let ctxAlarmTimer = null;
+  const CTX_PILL_TRANSIENT_MS = 5000;
+
+  function triggerCtxAlarm() {
+    const pill = els && els.ctxPill;
+    if (!pill) return;
+    pill.hidden = false; // make sure the flash is seen
+    pill.classList.remove("cum-ctx-alarm");
+    void pill.offsetWidth; // reflow so the animation restarts
+    pill.classList.add("cum-ctx-alarm");
+    clearTimeout(ctxAlarmTimer);
+    ctxAlarmTimer = setTimeout(() => {
+      if (els && els.ctxPill) els.ctxPill.classList.remove("cum-ctx-alarm");
+    }, 1700);
+  }
+
+  function updateContextPill() {
+    if (!els || !els.ctxPill) return;
+    const cd = contextForDisplay();
+    if (!cd || cd.pct == null) {
+      if (!ctxPillPermanent && Date.now() >= ctxPillTransientUntil) els.ctxPill.hidden = true;
+      return;
+    }
+    const pct = clamp01(cd.pct) * 100;
+    const bucket = Math.floor(pct / 5);
+    const key = convKey();
+    // A new conversation adopts its current level silently (no alarm for the jump)
+    // so the next 5% it climbs in this chat alarms fresh.
+    if (key !== ctxPillKey) {
+      ctxPillKey = key;
+      ctxPillMaxBucket = bucket;
+    }
+    if (bucket >= 2) ctxPillPermanent = true;
+    if (bucket > ctxPillMaxBucket && bucket >= 1) {
+      ctxPillMaxBucket = bucket;
+      triggerCtxAlarm();
+      if (!ctxPillPermanent) ctxPillTransientUntil = Date.now() + CTX_PILL_TRANSIENT_MS;
+    } else if (bucket < ctxPillMaxBucket) {
+      ctxPillMaxBucket = bucket; // context dropped (branch/edit) — re-arm thresholds
+    }
+    const visible = ctxPillPermanent || Date.now() < ctxPillTransientUntil;
+    els.ctxPill.hidden = !visible;
+    if (visible) {
+      els.ctxPillPct.textContent = fmtPercent(cd.pct);
+      els.ctxPill.classList.toggle("cum-ctx-warn", pct >= 75 && pct < 90);
+      els.ctxPill.classList.toggle("cum-ctx-danger", pct >= 90);
+      els.ctxPill.title =
+        (cd.native ? "Context (actual): " : "Context (estimated): ") + fmtPercent(cd.pct);
+    }
+  }
+
   function render() {
     if (!els) return;
 
@@ -1249,6 +1322,8 @@
       : "Not observed yet";
     // Only surface the hint while we genuinely have nothing yet.
     els.pHint.hidden = state.updatedAt != null;
+
+    updateContextPill();
   }
 
   function fmtTokens(n) {
