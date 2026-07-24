@@ -123,6 +123,9 @@
   right: 0;
   bottom: calc(100% + 10px);
   width: 220px;
+  /* Sit above the docked context pill (z-index: 1) so, when the panel is open,
+     it paints over the pill instead of the pill covering the panel's buttons. */
+  z-index: 2;
 }
 
 /* Panel opens toward the available space when the pill is dragged around. */
