@@ -7,6 +7,10 @@
   const OVERAGE_KEY = "cum_show_overage";
   const ESTIMATE_KEY = "cum_estimate_decimals";
   const AUTOCONTINUE_KEY = "cum_autocontinue";
+  const STATUS_KEY = "cum_status";
+  const STATUS_CFG_KEY = "cum_status_cfg";
+
+  const S = window.CUMStatus;
 
   const el = {
     session: document.getElementById("session"),
@@ -21,8 +25,13 @@
     showOverage: document.getElementById("show-overage"),
     estimateDecimals: document.getElementById("estimate-decimals"),
     autoContinue: document.getElementById("auto-continue"),
+    allowOnce: document.getElementById("allow-once"),
     acMax: document.getElementById("ac-max"),
     openLog: document.getElementById("open-log"),
+    svcStatus: document.getElementById("svc-status"),
+    svcDetail: document.getElementById("svc-detail"),
+    statusWarn: document.getElementById("status-warn"),
+    statusHold: document.getElementById("status-hold"),
   };
 
   function flash(text) {
@@ -78,10 +87,53 @@
       : "No data observed yet";
   }
 
-  let acCfg = { enabled: false, max: 50 };
+  // ---- Claude service status --------------------------------------------
+  // Unlike the pill (which stays out of the way until something is wrong), the
+  // popup always shows the current reading — it's the one place to confirm the
+  // check is actually working.
+  const SVC_CLASSES = ["svc-minor", "svc-maintenance", "svc-major", "svc-critical"];
+
+  function renderStatus(snap) {
+    if (!el.svcStatus) return;
+    const label = S ? S.shortLabel(snap) : "—";
+    el.svcStatus.textContent = snap ? label : "Checking…";
+    const level = snap && snap.ok ? snap.level : "unknown";
+    for (const c of SVC_CLASSES) {
+      el.svcStatus.classList.toggle(c, c === "svc-" + level);
+    }
+    const lines = snap && S ? S.detailLines(snap) : [];
+    // A snapshot with both `ok` and `error` is a remembered reading we couldn't
+    // refresh — say how old it is rather than pass it off as current.
+    if (snap && snap.ok && snap.error) lines.push("last checked " + timeAgo(snap.fetchedAt));
+    const detail = lines.slice(0, 3).join(" · ");
+    el.svcDetail.textContent = detail;
+    el.svcDetail.hidden = !detail;
+  }
+
+  function askStatus(force) {
+    chrome.runtime.sendMessage({ type: "cum-status", force: !!force }, (res) => {
+      void chrome.runtime.lastError;
+      if (res && res.status) renderStatus(res.status);
+    });
+  }
+
+  function saveStatusCfg(cfg, msg) {
+    chrome.storage.local.set({ [STATUS_CFG_KEY]: cfg }, () => msg && flash(msg));
+  }
+
+  let acCfg = { enabled: false, max: 50, allowOnce: false };
+  let statusCfg = { warn: true, holdSends: true };
 
   chrome.storage.local.get(
-    [STORAGE_KEY, MANUAL_URL_KEY, OVERAGE_KEY, ESTIMATE_KEY, AUTOCONTINUE_KEY],
+    [
+      STORAGE_KEY,
+      MANUAL_URL_KEY,
+      OVERAGE_KEY,
+      ESTIMATE_KEY,
+      AUTOCONTINUE_KEY,
+      STATUS_KEY,
+      STATUS_CFG_KEY,
+    ],
     (res) => {
       render(res && res[STORAGE_KEY]);
       if (res && res[MANUAL_URL_KEY]) el.endpoint.value = res[MANUAL_URL_KEY];
@@ -89,9 +141,34 @@
       el.estimateDecimals.checked = !!(res && res[ESTIMATE_KEY]);
       acCfg = Object.assign(acCfg, (res && res[AUTOCONTINUE_KEY]) || {});
       el.autoContinue.checked = !!acCfg.enabled;
+      el.allowOnce.checked = !!acCfg.allowOnce;
       el.acMax.value = acCfg.max;
+      // Both status toggles default ON, so only an explicit false turns them off.
+      const sc = (res && res[STATUS_CFG_KEY]) || {};
+      statusCfg = { warn: sc.warn !== false, holdSends: sc.holdSends !== false };
+      el.statusWarn.checked = statusCfg.warn;
+      el.statusHold.checked = statusCfg.holdSends;
+      renderStatus((res && res[STATUS_KEY]) || null);
+      askStatus(false); // and refresh it if the worker's reading has gone stale
     }
   );
+
+  el.statusWarn.addEventListener("change", () => {
+    statusCfg.warn = el.statusWarn.checked;
+    saveStatusCfg(statusCfg, statusCfg.warn ? "Outage warnings on" : "Outage warnings off");
+  });
+
+  el.statusHold.addEventListener("change", () => {
+    statusCfg.holdSends = el.statusHold.checked;
+    saveStatusCfg(
+      statusCfg,
+      statusCfg.holdSends ? "Sends will wait out an outage" : "Sends will fire regardless"
+    );
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[STATUS_KEY]) renderStatus(changes[STATUS_KEY].newValue);
+  });
 
   function saveAc(msg) {
     chrome.storage.local.set({ [AUTOCONTINUE_KEY]: acCfg }, () => msg && flash(msg));
@@ -100,6 +177,11 @@
   el.autoContinue.addEventListener("change", () => {
     acCfg.enabled = el.autoContinue.checked;
     saveAc(acCfg.enabled ? "Auto-continue on" : "Auto-continue off");
+  });
+
+  el.allowOnce.addEventListener("change", () => {
+    acCfg.allowOnce = el.allowOnce.checked;
+    saveAc(acCfg.allowOnce ? 'Auto-clicking "Allow once"' : "Auto-allow off");
   });
 
   el.acMax.addEventListener("change", () => {

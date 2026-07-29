@@ -1,26 +1,40 @@
 /**
  * Claude Usage Meter — background service worker.
  *
- * Two responsibilities:
+ * Three responsibilities:
  *   1. Auto-continue keepalive: nudge claude.ai tabs to click "Continue" even
  *      when backgrounded (content-script timers throttle there).
  *   2. Scheduled sends: fire queued jobs at their set time, or when the usage
  *      window resets, by opening a claude.ai composer tab and driving it.
+ *   3. Service status: poll status.claude.com so the pill can warn about an
+ *      outage, and HOLD a scheduled send until Claude recovers.
  *
  * MV3 workers are short-lived, so a chrome.alarm keeps things ticking.
  */
-importScripts("jobstore.js"); // provides self.CUMJobs
+importScripts("jobstore.js", "status.js"); // provides self.CUMJobs, self.CUMStatus
 
 const CFG_KEY = "cum_autocontinue";
 const JOBS_KEY = "cum_jobs";
 const STATE_KEY = "cum_state";
+const STATUS_KEY = "cum_status"; // last status.claude.com snapshot
+const STATUS_CFG_KEY = "cum_status_cfg"; // { warn, holdSends } — both default on
 const KEEPALIVE = "cum-ac-keepalive";
 const TIME_ALARM = "cum-job-time";
 const RESET_ALARM = "cum-job-reset";
+const STATUS_ALARM = "cum-status";
 const BURST_MS = 5000;
 const BURST_COUNT = 6;
+const STATUS_POLL_MIN = 5; // normal cadence, minutes
+const STATUS_POLL_HOT_MIN = 1; // while an outage is live or a job is held
+// How long a remembered outage survives a status page we can no longer reach.
+// Past that the reading degrades to "unknown", which holds nothing (fail open) —
+// the meter must never become a second way for a send to silently not happen.
+const STATUS_GRACE_MS = 15 * 60 * 1000;
+// At fire time a poll-cadence-old reading isn't good enough; re-read if older.
+const STATUS_FIRE_FRESH_MS = 60 * 1000;
 
 const J = self.CUMJobs;
+const S = self.CUMStatus;
 
 // ---- storage helpers ----------------------------------------------------
 function get(keys) {
@@ -74,9 +88,15 @@ function notify(title, message) {
 }
 
 // ==== Auto-continue keepalive ===========================================
+// Any of the auto-clickers being on is reason to keep nudging: a backgrounded
+// tab's own timers throttle, and the Allow-once clicker has its own toggle
+// independent of Continue's.
 function acEnabled() {
   return new Promise((resolve) => {
-    get(CFG_KEY).then((r) => resolve(!!(r[CFG_KEY] && r[CFG_KEY].enabled)));
+    get(CFG_KEY).then((r) => {
+      const c = r[CFG_KEY] || {};
+      resolve(!!(c.enabled || c.allowOnce));
+    });
   });
 }
 function pollTabs() {
@@ -103,6 +123,118 @@ async function acBurst() {
     if (n++ >= BURST_COUNT || !(await acEnabled())) return clearInterval(id);
     pollTabs();
   }, BURST_MS);
+}
+
+// ==== Claude service status ==============================================
+// Polled here rather than in the content script for two reasons: one fetch
+// serves every open tab, and a send can fire with no tab open at all — the gate
+// below needs a reading it can get on its own.
+let statusBusy = null; // in-flight refresh, so concurrent callers coalesce
+
+async function statusCfg() {
+  const c = (await get(STATUS_CFG_KEY))[STATUS_CFG_KEY] || {};
+  return { warn: c.warn !== false, holdSends: c.holdSends !== false };
+}
+
+async function readStatus() {
+  return (await get(STATUS_KEY))[STATUS_KEY] || null;
+}
+
+function statusHeadline(snap) {
+  const lines = S.detailLines(snap);
+  return lines.length ? lines.slice(0, 2).join(" — ") : S.shortLabel(snap);
+}
+
+async function refreshStatus() {
+  if (statusBusy) return statusBusy;
+  statusBusy = (async () => {
+    const prev = await readStatus();
+    let snap;
+    try {
+      const res = await fetch(S.SUMMARY_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      snap = S.parseSummary(await res.json(), Date.now());
+    } catch (e) {
+      const err = (e && e.message) || String(e || "unreachable");
+      // A status page we can't reach must not erase an outage we already know
+      // about — a held job would then fire straight into it. Keep the last good
+      // reading (its own fetchedAt, so the UI can say how old it is) until the
+      // grace window runs out.
+      if (prev && prev.ok && Date.now() - prev.fetchedAt < STATUS_GRACE_MS) {
+        // fetchedAt stays put (it's the age of the data), checkedAt advances (it's
+        // when we last tried) — so the poll cadence holds instead of retrying on
+        // every worker start for as long as the status page is down.
+        snap = Object.assign({}, prev, { error: err, checkedAt: Date.now() });
+      } else {
+        snap = S.unknown(err, Date.now());
+      }
+    }
+    await set({ [STATUS_KEY]: snap });
+
+    const wasBlocking = !!(prev && prev.ok && prev.blocking);
+    const nowBlocking = !!(snap.ok && snap.blocking);
+    const cfg = await statusCfg();
+    if (cfg.warn && nowBlocking && !wasBlocking) {
+      notify("Claude is having problems", statusHeadline(snap));
+    } else if (cfg.warn && wasBlocking && !nowBlocking) {
+      notify("Claude is back", S.shortLabel(snap));
+    }
+    return snap;
+  })();
+  try {
+    return await statusBusy;
+  } finally {
+    statusBusy = null;
+  }
+}
+
+// A reading fresh enough to gate a send on, fetched now if need be.
+async function statusForGate() {
+  const snap = await readStatus();
+  if (snap && !S.isStale(snap, Date.now(), STATUS_FIRE_FRESH_MS)) return snap;
+  return refreshStatus();
+}
+
+// Only refresh when the stored reading has actually aged out. This runs on every
+// worker start, and the keepalive restarts the worker every 30 seconds — polling
+// unconditionally would hammer status.claude.com.
+async function refreshStatusIfStale() {
+  const snap = await readStatus();
+  const hot = !!(snap && snap.ok && snap.blocking);
+  const every = (hot ? STATUS_POLL_HOT_MIN : STATUS_POLL_MIN) * 60 * 1000;
+  if (S.isDuePoll(snap, Date.now(), every)) return refreshStatus();
+  return snap;
+}
+
+function getAlarm(name) {
+  return new Promise((resolve) => {
+    try {
+      chrome.alarms.get(name, (a) => resolve(a || null));
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+// Poll faster while an outage is live or a job is stuck behind one, so a held
+// send goes out within a minute of Claude recovering instead of up to five.
+async function ensureStatusAlarm(hot) {
+  let want = !!hot;
+  if (hot == null) {
+    const snap = await readStatus();
+    const jobs = (await get(JOBS_KEY))[JOBS_KEY] || [];
+    want = !!(snap && snap.ok && snap.blocking) || J.hasHeldJobs(jobs);
+  }
+  const period = want ? STATUS_POLL_HOT_MIN : STATUS_POLL_MIN;
+  // Creating an alarm RESETS its countdown, and this is called on every worker
+  // start — which the 30-second keepalive triggers over and over. Re-creating it
+  // blindly would push the poll out forever and it would never fire, so only
+  // touch it when it's missing or on the wrong cadence.
+  const existing = await getAlarm(STATUS_ALARM);
+  if (existing && existing.periodInMinutes === period) return;
+  try {
+    chrome.alarms.create(STATUS_ALARM, { periodInMinutes: period });
+  } catch (e) {}
 }
 
 // ==== Scheduled sends ====================================================
@@ -185,8 +317,52 @@ async function findChatTab(chatUrl) {
   return null;
 }
 
-async function executeJob(job) {
-  await updateJob(job.id, { status: "running", firedAt: Date.now(), error: null });
+// Hold this job if Claude is down, rather than driving files and a prompt into a
+// composer that can't send them. `opts.force` is an explicit "Run now" — the
+// operator overriding the gate — and never holds.
+async function outageGate(job, opts) {
+  const cfg = await statusCfg();
+  if (!cfg.holdSends || (opts && opts.force)) return { hold: false };
+  return S.holdDecision(await statusForGate(), {
+    enabled: true,
+    heldSince: typeof job.heldSince === "number" ? job.heldSince : null,
+    now: Date.now(),
+  });
+}
+
+async function executeJob(job, opts) {
+  const gate = await outageGate(job, opts);
+  if (gate.hold) {
+    const firstHold = job.status !== "waiting";
+    await updateJob(job.id, {
+      status: "waiting",
+      heldSince: typeof job.heldSince === "number" ? job.heldSince : Date.now(),
+      holdReason: gate.reason,
+      error: null,
+    });
+    if (firstHold) {
+      notify(
+        "Scheduled send is waiting",
+        (job.name ? job.name + " — " : "") +
+          "holding until Claude recovers (" + gate.reason + ")."
+      );
+    }
+    ensureStatusAlarm(true); // poll hard so it goes out as soon as this clears
+    return;
+  }
+  // Waited out the ceiling: go anyway, but say so — a queued send that never
+  // leaves is its own failure.
+  const heldNote = gate.expired
+    ? "sent after waiting " + S.fmtWaited(gate.waitedMs) + " for " + gate.reason
+    : null;
+
+  await updateJob(job.id, {
+    status: "running",
+    firedAt: Date.now(),
+    error: null,
+    heldSince: null,
+    holdReason: null,
+  });
   const url = J.targetUrl(job);
   let tab = null;
   let createdTab = false;
@@ -228,18 +404,21 @@ async function executeJob(job) {
     }
   }
   if (res && res.ok) {
-    await updateJob(job.id, { status: "done", note: res.note || null });
+    const note = [heldNote, res.note].filter(Boolean).join(" · ") || null;
+    await updateJob(job.id, { status: "done", note });
     await deleteJobFiles(job);
     const base = job.name || "Your scheduled message was sent.";
-    notify("Sent to Claude", res.note ? base + " (" + res.note + ")" : base);
+    notify("Sent to Claude", note ? base + " (" + note + ")" : base);
   } else {
     await updateJob(job.id, { status: "error", error: (res && res.error) || "unknown" });
     notify("Scheduled send failed", (res && res.error) || "See the extension options.");
   }
 }
 
-// Run any due jobs, one at a time (avoid opening many tabs at once).
-async function runJobs(kind /* "time" | "reset" */) {
+// Run any due jobs, one at a time (avoid opening many tabs at once). "hold"
+// retries the jobs an outage parked — their trigger already fired, so the status
+// poll is the only thing that will wake them.
+async function runJobs(kind /* "time" | "reset" | "hold" */) {
   if (running) return;
   running = true;
   try {
@@ -247,11 +426,15 @@ async function runJobs(kind /* "time" | "reset" */) {
     const { [JOBS_KEY]: jobs } = await get(JOBS_KEY);
     const list = jobs || [];
     const due =
-      kind === "reset" ? J.pendingResetJobs(list) : J.dueTimeJobs(list, now);
+      kind === "hold"
+        ? J.heldJobs(list)
+        : kind === "reset"
+        ? J.pendingResetJobs(list)
+        : J.dueTimeJobs(list, now);
     for (const job of due) {
       // Re-read to respect any cancellation between iterations.
       const fresh = J.getJob((await get(JOBS_KEY))[JOBS_KEY] || [], job.id);
-      if (fresh && fresh.status === "pending") await executeJob(fresh);
+      if (J.isQueued(fresh)) await executeJob(fresh);
     }
   } finally {
     running = false;
@@ -280,6 +463,9 @@ async function reschedule() {
       chrome.alarms.create(RESET_ALARM, { when: resetAt + 5000 });
     }
   } catch (e) {}
+
+  // A held job wants the fast status cadence; nothing held drops back to slow.
+  await ensureStatusAlarm(null);
 }
 
 // Refresh the cached project list. Rather than scrape the (virtualized) grid,
@@ -361,7 +547,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!job) return { ok: false, error: "job not found" };
       running = true;
       try {
-        await executeJob(job);
+        // An explicit Run now overrides the outage gate — the operator can see
+        // the warning on the pill and has decided to try anyway.
+        await executeJob(job, { force: true });
       } finally {
         running = false;
       }
@@ -369,6 +557,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })()
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
+  // The pill, popup and options page all read cum_status from storage; this is
+  // how they ask for a fresh one (on load, or on demand).
+  if (msg && msg.type === "cum-status") {
+    (async () => {
+      const cached = await readStatus();
+      if (msg.force || S.isDuePoll(cached, Date.now(), STATUS_POLL_MIN * 60 * 1000)) {
+        return await refreshStatus();
+      }
+      return cached;
+    })()
+      .then((snap) => sendResponse({ status: snap }))
+      .catch((e) => sendResponse({ status: S.unknown(String(e), Date.now()) }));
     return true;
   }
 });
@@ -384,18 +586,27 @@ chrome.runtime.onInstalled.addListener(() => {
   ensureKeepalive();
   acBurst();
   reschedule();
+  refreshStatus();
 });
 chrome.runtime.onStartup.addListener(() => {
   ensureKeepalive();
   acBurst();
   reschedule();
   runJobs("time"); // catch anything whose time passed while the browser was off
+  // ...and anything an outage parked before the browser closed. The stored
+  // reading is hours old by now, so this always fetches.
+  refreshStatusIfStale().then(() => runJobs("hold"));
 });
 
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === KEEPALIVE) acBurst();
   else if (a.name === TIME_ALARM) runJobs("time");
   else if (a.name === RESET_ALARM) runJobs("reset");
+  else if (a.name === STATUS_ALARM) {
+    // Always retry held jobs after a refresh — the gate itself decides whether
+    // things have recovered, so this needs no separate recovery check.
+    refreshStatus().then(() => runJobs("hold"));
+  }
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -405,7 +616,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
     acBurst();
   }
   if (changes[JOBS_KEY] || changes[STATE_KEY]) reschedule();
+  // Turning the gate off should release anything it is holding right now.
+  if (changes[STATUS_CFG_KEY]) {
+    statusCfg().then((cfg) => {
+      if (!cfg.holdSends) runJobs("hold");
+    });
+  }
 });
 
 ensureKeepalive();
 reschedule();
+ensureStatusAlarm(null);
+refreshStatusIfStale();

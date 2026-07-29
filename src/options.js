@@ -138,7 +138,28 @@
       return "at " + new Date(job.trigger.at).toLocaleString();
     return "when usage resets";
   }
-  const STATUS_LABEL = { pending: "Queued", running: "Sending…", done: "Sent", error: "Failed", canceled: "Canceled" };
+  const STATUS_LABEL = {
+    pending: "Queued",
+    waiting: "Waiting out an outage",
+    running: "Sending…",
+    done: "Sent",
+    error: "Failed",
+    canceled: "Canceled",
+  };
+
+  // Why a job is parked, and for how long — a held send that says nothing looks
+  // exactly like a broken one.
+  function holdText(job) {
+    const S = window.CUMStatus;
+    const waited =
+      S && typeof job.heldSince === "number" ? S.fmtWaited(Date.now() - job.heldSince) : "";
+    return (
+      "⏸ " +
+      (job.holdReason || "Claude is having problems") +
+      (waited ? " · waiting " + waited : "") +
+      " — it sends itself once this clears."
+    );
+  }
 
   function renderJobs() {
     chrome.storage.local.get(JOBS_KEY, (res) => {
@@ -162,11 +183,17 @@
           `<span class="job-badge">${STATUS_LABEL[job.status] || job.status}</span></div>` +
           `<div class="job-meta">${escapeHtml(bits.join(" · "))} · ${escapeHtml(triggerText(job))}</div>` +
           (job.error ? `<div class="job-err">${escapeHtml(job.error)}</div>` : "") +
+          (job.status === "waiting"
+            ? `<div class="job-hold">${escapeHtml(holdText(job))}</div>`
+            : "") +
           (job.note ? `<div class="job-meta">⚠ ${escapeHtml(job.note)}</div>` : "") +
           `</div>` +
           `<div class="job-btns">` +
-          (job.status === "pending"
-            ? `<button class="job-run" data-id="${job.id}" title="Send now">Run now</button>`
+          // "Run now" on a held job is the override — it sends despite the outage.
+          (J.isQueued(job)
+            ? `<button class="job-run" data-id="${job.id}" title="${
+                job.status === "waiting" ? "Send now, outage or not" : "Send now"
+              }">Run now</button>`
             : "") +
           (job.status !== "running"
             ? `<button class="job-edit" data-id="${job.id}" title="Edit">Edit</button>`
