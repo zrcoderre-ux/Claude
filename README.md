@@ -84,11 +84,18 @@ The background worker polls
 Atlassian Statuspage, so the schema is the documented v2 one — every 5 minutes,
 and every minute while something is wrong. The reading drives two things:
 
+- **A status line in the pill's panel**, directly under the Context bar and
+  **always shown**: a coloured dot plus the status page's own wording — green
+  `All Systems Operational` on a normal day, amber when degraded, red during an
+  outage, blue for maintenance, grey when the check itself couldn't complete.
+  Green is reserved for a check that came back clean, never one that failed, so
+  the row can't quietly imply all-clear. Click it to open the status page. The
+  popup mirrors it.
 - **A warning pill** above the meter, showing what's affected (`Claude.ai major
-  outage`, `Elevated errors on message send`) and linking to the status page. It
-  appears only while Claude is actually degraded or down, so a normal day costs
-  nothing. The popup shows the current reading either way — that's where to
-  confirm the check is working.
+  outage`, `Elevated errors on message send`) and linking to the status page.
+  Unlike the panel row this appears *only* while Claude is actually degraded or
+  down — the panel is where you deliberately went to look, the pill is what
+  interrupts you.
 - **Scheduled sends wait.** A job whose trigger fires during an outage goes to
   **Waiting** instead of running, and sends itself once Claude recovers (within a
   minute of it clearing). Nothing is lost — the files and prompt stay queued.

@@ -83,6 +83,9 @@
 
   const INCIDENT_CLOSED = { resolved: true, postmortem: true };
 
+  // Statuspage's own all-clear wording, used when the page didn't send one.
+  const ALL_CLEAR = "All Systems Operational";
+
   // Surfaces this extension does not drive. An outage confined to one of these
   // must not warn on the pill or hold a send: the extension only ever types into
   // claude.ai. Kept deliberately narrow — anything unrecognised counts.
@@ -323,7 +326,9 @@
   function shortLabel(snapshot) {
     if (!snapshot) return "Status unknown";
     if (!snapshot.ok) return "Status unavailable";
-    if (snapshot.level === "ok") return "All systems operational";
+    // All clear: prefer the page's OWN wording ("All Systems Operational") so the
+    // panel reads exactly as status.claude.com does, rather than paraphrasing it.
+    if (snapshot.level === "ok") return clip(snapshot.description, 42) || ALL_CLEAR;
     const comp = worstOf(snapshot.affected);
     if (comp && rank(comp.level) >= rank(snapshot.level)) {
       return clip(comp.name, 28) + " " + (COMPONENT_TEXT[comp.status] || comp.status);

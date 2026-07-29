@@ -716,12 +716,6 @@
       </button>
       <div id="cum-panel" hidden>
         <div class="cum-panel-row cum-panel-title">Claude usage</div>
-        <div class="cum-panel-group" id="cum-status-group" hidden>
-          <div class="cum-panel-row"><span>Service status</span><b id="cum-p-status">—</b></div>
-          <div class="cum-panel-row cum-panel-meta cum-status-detail" id="cum-p-status-detail"></div>
-          <a class="cum-panel-row cum-panel-meta cum-status-link" id="cum-p-status-link"
-             target="_blank" rel="noreferrer noopener">status.claude.com →</a>
-        </div>
         <div class="cum-panel-group">
           <div class="cum-panel-row"><span>Session · 5 hr</span><b id="cum-p-session">—</b></div>
           <div class="cum-panel-bar"><i id="cum-p-session-bar"></i></div>
@@ -742,6 +736,12 @@
           <div class="cum-panel-row"><span>Context <span class="cum-est">est.</span></span><b id="cum-p-context">—</b></div>
           <div class="cum-panel-bar"><i id="cum-p-context-bar"></i></div>
           <div class="cum-panel-row cum-panel-meta"><span id="cum-p-context-model">tokens</span><b id="cum-p-context-tokens">—</b></div>
+        </div>
+        <div class="cum-panel-group" id="cum-status-group">
+          <div class="cum-panel-row"><span>Claude status</span></div>
+          <a class="cum-status-value" id="cum-p-status" target="_blank" rel="noreferrer noopener"
+             ><i class="cum-status-dot"></i><span id="cum-p-status-text">Checking…</span></a>
+          <div class="cum-panel-row cum-panel-meta cum-status-detail" id="cum-p-status-detail" hidden></div>
         </div>
         <div class="cum-panel-group" id="cum-overage-group" hidden>
           <div class="cum-panel-row"><span>Extra usage</span><b id="cum-p-overage">—</b></div>
@@ -790,10 +790,10 @@
       optionsBtn: root.querySelector("#cum-options-btn"),
       statusGroup: root.querySelector("#cum-status-group"),
       pStatus: root.querySelector("#cum-p-status"),
+      pStatusText: root.querySelector("#cum-p-status-text"),
       pStatusDetail: root.querySelector("#cum-p-status-detail"),
-      pStatusLink: root.querySelector("#cum-p-status-link"),
     };
-    els.pStatusLink.href = STATUS_URL;
+    els.pStatus.href = STATUS_URL;
 
     // Indicator pills, docked to the main pill (children of #cum-root) so they
     // ride along when you drag the meter:
@@ -1279,11 +1279,19 @@
   }
 
   const STATUS_LEVEL_CLASSES = [
+    "cum-status-ok",
     "cum-status-minor",
     "cum-status-maintenance",
     "cum-status-major",
     "cum-status-critical",
+    "cum-status-unknown",
   ];
+
+  function setStatusLevelClass(el, level) {
+    for (const c of STATUS_LEVEL_CLASSES) {
+      el.classList.toggle(c, c === "cum-status-" + level);
+    }
+  }
 
   let statusPillShown = false;
 
@@ -1302,9 +1310,7 @@
     }
     const level = statusSnap.level;
     els.statusText.textContent = S.shortLabel(statusSnap);
-    for (const c of STATUS_LEVEL_CLASSES) {
-      els.statusPill.classList.toggle(c, c === "cum-status-" + level);
-    }
+    setStatusLevelClass(els.statusPill, level);
     const lines = S.detailLines(statusSnap);
     els.statusPill.title =
       (lines.length ? lines.join("\n") : S.shortLabel(statusSnap)) +
@@ -1327,29 +1333,23 @@
       : heldSends + " scheduled sends are waiting";
   }
 
+  // The panel row is ALWAYS shown, unlike the pill. The pill stays out of the way
+  // until something is wrong; the panel is where you deliberately went to look, so
+  // "All Systems Operational" in green is the answer you came for — and it's the
+  // only thing that distinguishes "everything is fine" from "the check is broken".
   function updateStatusPanel() {
     if (!els || !els.statusGroup) return;
-    const bad = statusIsBad();
-    // Kept out of the way when there's nothing to say — but a held send is always
-    // worth surfacing, even if the status page has since gone quiet.
-    if (!bad && !heldSends) {
-      els.statusGroup.hidden = true;
-      return;
-    }
-    els.statusGroup.hidden = false;
-    els.pStatus.textContent = bad
-      ? S.shortLabel(statusSnap)
-      : statusSnap && statusSnap.ok
-      ? "operational"
-      : "unknown";
-    for (const c of STATUS_LEVEL_CLASSES) {
-      els.pStatus.classList.toggle(c, bad && c === "cum-status-" + statusSnap.level);
-    }
-    const lines = bad ? S.detailLines(statusSnap) : [];
+    // Level drives both the dot's colour and the text. `unknown` is grey and says
+    // so: a check we couldn't complete must never read as a green all-clear.
+    const level = S && statusSnap ? (statusSnap.ok ? statusSnap.level : "unknown") : "unknown";
+    setStatusLevelClass(els.pStatus, level);
+    els.pStatusText.textContent = statusSnap && S ? S.shortLabel(statusSnap) : "Checking…";
+
+    const lines = statusIsBad() ? S.detailLines(statusSnap) : [];
     if (heldSends) lines.unshift(heldLabel());
-    // A reading we couldn't refresh is shown with its real age rather than
-    // silently passed off as current.
-    if (statusSnap && statusSnap.error && statusSnap.ok) {
+    // A reading we couldn't refresh carries its real age rather than being passed
+    // off as current (`ok` plus an `error` is a remembered snapshot).
+    if (statusSnap && statusSnap.ok && statusSnap.error) {
       lines.push("last checked " + timeAgo(statusSnap.fetchedAt));
     }
     els.pStatusDetail.textContent = lines.slice(0, 3).join(" · ");
