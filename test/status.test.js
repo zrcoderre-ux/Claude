@@ -41,8 +41,17 @@ test("an all-clear page is ok and blocks nothing", () => {
   assert.equal(snap.level, "ok");
   assert.equal(snap.blocking, false);
   assert.equal(snap.affected.length, 0);
-  assert.equal(S.shortLabel(snap), "All systems operational");
+  // The page's own wording, verbatim — the panel shows this next to a green dot.
+  assert.equal(S.shortLabel(snap), "All Systems Operational");
   assert.equal(S.holdDecision(snap, { now: NOW }).hold, false);
+});
+
+test("the all-clear label falls back when the page sends no description", () => {
+  const s = summary({ status: { indicator: "none" } });
+  assert.equal(S.shortLabel(S.parseSummary(s, NOW)), "All Systems Operational");
+  // ...and takes a reworded all-clear as-is rather than overriding it.
+  const reworded = summary({ status: { indicator: "none", description: "All Good" } });
+  assert.equal(S.shortLabel(S.parseSummary(reworded, NOW)), "All Good");
 });
 
 test("degraded performance warns but does not hold a send", () => {

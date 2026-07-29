@@ -452,6 +452,12 @@
   #cum-status-pill.cum-status-critical {
     color: #ff9d90;
   }
+  #cum-p-status.cum-status-ok {
+    color: #5fc98a;
+  }
+  #cum-p-status.cum-status-ok .cum-status-dot {
+    background: #4fbe7c;
+  }
   #cum-p-status.cum-status-minor {
     color: #e6b444;
   }
@@ -462,8 +468,11 @@
   #cum-p-status.cum-status-maintenance {
     color: #7fb0e8;
   }
-  a.cum-status-link {
-    color: #e0855f;
+  #cum-p-status.cum-status-unknown {
+    color: #a5a29a;
+  }
+  .cum-status-detail {
+    color: #8a877f;
   }
 }
 
@@ -587,29 +596,77 @@
   animation: cum-ctx-alarm-danger-kf 1.6s ease;
 }
 
-/* Service-status row in the detail panel. */
+/* Service-status row in the detail panel — always shown, colour-coded by level,
+   and a link to the status page. Sits directly under the Context group, so the
+   dot is the one glanceable "is Claude itself healthy?" answer in the panel. */
+/* The value gets its own line rather than sitting opposite the label: the panel
+   is 220px wide and "All Systems Operational" does not fit beside one without
+   being ellipsized down to nothing. */
+a.cum-status-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 1px 0 3px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  color: inherit;
+}
+a#cum-p-status:hover #cum-p-status-text {
+  text-decoration: underline;
+}
+#cum-p-status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#cum-p-status .cum-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: #9a9a9a; /* unknown until we've actually read the page */
+}
+/* Green is reserved for a completed check that came back clean — never for a
+   check we couldn't finish. */
+#cum-p-status.cum-status-ok {
+  color: #1f7a3f;
+}
+#cum-p-status.cum-status-ok .cum-status-dot {
+  background: #1f7a3f;
+}
 #cum-p-status.cum-status-minor {
   color: #a87510;
 }
+#cum-p-status.cum-status-minor .cum-status-dot {
+  background: #d99b1f;
+}
 #cum-p-status.cum-status-maintenance {
   color: #3f7fd2;
+}
+#cum-p-status.cum-status-maintenance .cum-status-dot {
+  background: #3f7fd2;
 }
 #cum-p-status.cum-status-major,
 #cum-p-status.cum-status-critical {
   color: #d23f31;
 }
+#cum-p-status.cum-status-major .cum-status-dot,
+#cum-p-status.cum-status-critical .cum-status-dot {
+  background: #d23f31;
+}
+#cum-p-status.cum-status-unknown {
+  color: #8a8a8a;
+}
+/* The detail lines are secondary to the status itself. `.cum-panel-meta` only
+   greys its `span` children and this row has none, so it needs the grey directly
+   — otherwise it renders near-black and out-shouts the value above it. */
 .cum-status-detail {
   display: block;
   white-space: normal;
   line-height: 1.35;
-}
-a.cum-status-link {
-  display: block;
-  color: #c96442;
-  text-decoration: none;
-}
-a.cum-status-link:hover {
-  text-decoration: underline;
+  color: #9a9a9a;
 }
 
 @keyframes cum-ctx-alarm-kf {
