@@ -77,6 +77,30 @@ h1 {
   margin-top: 4px;
 }
 
+/* Claude service status. Maintenance reads blue — deliberate, not broken — even
+   though it holds a scheduled send just as an outage does. */
+#svc-status.svc-minor {
+  color: #a87510;
+}
+#svc-status.svc-maintenance {
+  color: #3f7fd2;
+}
+#svc-status.svc-major,
+#svc-status.svc-critical {
+  color: #c0392b;
+}
+#svc-detail {
+  display: block;
+  line-height: 1.4;
+}
+a.svc-link {
+  color: #c96442;
+  text-decoration: none;
+}
+a.svc-link:hover {
+  text-decoration: underline;
+}
+
 .note {
   font-size: 11px;
   line-height: 1.45;
@@ -219,6 +243,19 @@ input#endpoint:focus {
   }
   .note {
     color: #a5a29a;
+  }
+  #svc-status.svc-minor {
+    color: #e6b444;
+  }
+  #svc-status.svc-maintenance {
+    color: #7fb0e8;
+  }
+  #svc-status.svc-major,
+  #svc-status.svc-critical {
+    color: #ff9d90;
+  }
+  a.svc-link {
+    color: #e0855f;
   }
   .field-label {
     color: #a5a29a;

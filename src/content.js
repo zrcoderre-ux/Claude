@@ -21,7 +21,13 @@
   const PREDICT_KEY = "cum_predict"; // session↔weekly correlation model
   const DAILY_KEY = "cum_daily"; // per-day weekly-usage attribution
   const SPLIT_KEY = "cum_split"; // chat vs Claude Code usage split
+  const JOBS_KEY = "cum_jobs"; // scheduled sends (read only, for the held count)
+  const STATUS_KEY = "cum_status"; // status.claude.com snapshot (background polls)
+  const STATUS_CFG_KEY = "cum_status_cfg"; // { warn, holdSends } — both default on
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
+
+  const S = window.CUMStatus || null; // service-status model (pure)
+  const STATUS_URL = (S && S.STATUS_PAGE_URL) || "https://status.claude.com/";
 
   const EMPTY = {
     percent: null, // 0..1 utilization of the 5-hour session window
@@ -58,6 +64,12 @@
   let nativeCtx = null; // { key, tokens, window, pct, at }
   let ctxPanelEl = null;
   let ctxObserver = null;
+  // Claude's own service status, polled by the background worker (one fetch
+  // serves every tab, and it still works with no tab open — which is what the
+  // scheduled-send gate needs). Here we only read the snapshot it stores.
+  let statusSnap = null;
+  let statusWarn = true; // opt-out via the popup toggle
+  let heldSends = 0; // scheduled sends an outage is currently holding back
 
   // ---- Persistence -------------------------------------------------------
   function save() {
@@ -84,6 +96,9 @@
               ESTIMATE_KEY,
               POS_KEY,
               PREDICT_KEY,
+              STATUS_KEY,
+              STATUS_CFG_KEY,
+              JOBS_KEY,
             ],
             (res) => {
               if (res && res[STORAGE_KEY]) {
@@ -95,6 +110,10 @@
               estimateDecimals = !!(res && res[ESTIMATE_KEY]);
               if (res && res[POS_KEY]) pos = res[POS_KEY];
               if (res && res[PREDICT_KEY]) predictModel = res[PREDICT_KEY];
+              if (res && res[STATUS_KEY]) statusSnap = res[STATUS_KEY];
+              // Defaults ON, so only an explicit false turns the warning off.
+              statusWarn = (((res && res[STATUS_CFG_KEY]) || {}).warn !== false);
+              heldSends = countHeld(res && res[JOBS_KEY]);
               resolve();
             }
           );
@@ -697,6 +716,12 @@
       </button>
       <div id="cum-panel" hidden>
         <div class="cum-panel-row cum-panel-title">Claude usage</div>
+        <div class="cum-panel-group" id="cum-status-group" hidden>
+          <div class="cum-panel-row"><span>Service status</span><b id="cum-p-status">—</b></div>
+          <div class="cum-panel-row cum-panel-meta cum-status-detail" id="cum-p-status-detail"></div>
+          <a class="cum-panel-row cum-panel-meta cum-status-link" id="cum-p-status-link"
+             target="_blank" rel="noreferrer noopener">status.claude.com →</a>
+        </div>
         <div class="cum-panel-group">
           <div class="cum-panel-row"><span>Session · 5 hr</span><b id="cum-p-session">—</b></div>
           <div class="cum-panel-bar"><i id="cum-p-session-bar"></i></div>
@@ -763,22 +788,37 @@
       pHint: root.querySelector("#cum-p-hint"),
       scheduleBtn: root.querySelector("#cum-schedule-btn"),
       optionsBtn: root.querySelector("#cum-options-btn"),
+      statusGroup: root.querySelector("#cum-status-group"),
+      pStatus: root.querySelector("#cum-p-status"),
+      pStatusDetail: root.querySelector("#cum-p-status-detail"),
+      pStatusLink: root.querySelector("#cum-p-status-link"),
     };
+    els.pStatusLink.href = STATUS_URL;
 
-    // A context-usage alarm pill, docked to the main pill (a child of #cum-root)
-    // so it rides along when you drag the meter. It flashes each time context
-    // crosses another 5%, appears only briefly on the first 5%, and becomes
-    // permanent once context reaches 10% (then keeps updating).
-    const ctxPill = document.createElement("div");
-    ctxPill.id = "cum-ctx-pill";
-    ctxPill.hidden = true;
-    ctxPill.innerHTML =
+    // Indicator pills, docked to the main pill (children of #cum-root) so they
+    // ride along when you drag the meter:
+    //   - a SERVICE-STATUS warning (outer), shown only while Claude is degraded
+    //     or down — clickable, it opens status.claude.com; and
+    //   - the CONTEXT-usage alarm, which flashes each time context crosses
+    //     another 5%, appears only briefly on the first 5%, and becomes
+    //     permanent once context reaches 10% (then keeps updating).
+    const pills = document.createElement("div");
+    pills.id = "cum-pills";
+    pills.innerHTML =
+      `<a id="cum-status-pill" hidden target="_blank" rel="noreferrer noopener">` +
+      `<span class="cum-status-dot"></span>` +
+      `<b id="cum-status-text">—</b></a>` +
+      `<div id="cum-ctx-pill" hidden>` +
       `<span class="cum-ctx-dot"></span>` +
       `<span class="cum-ctx-cap">Context</span>` +
-      `<b id="cum-ctx-pct">—</b>`;
-    root.insertBefore(ctxPill, els.btn); // above the button; panel still paints over
-    els.ctxPill = ctxPill;
-    els.ctxPillPct = ctxPill.querySelector("#cum-ctx-pct");
+      `<b id="cum-ctx-pct">—</b></div>`;
+    root.insertBefore(pills, els.btn); // above the button; panel still paints over
+    els.pills = pills;
+    els.statusPill = pills.querySelector("#cum-status-pill");
+    els.statusText = pills.querySelector("#cum-status-text");
+    els.ctxPill = pills.querySelector("#cum-ctx-pill");
+    els.ctxPillPct = pills.querySelector("#cum-ctx-pct");
+    els.statusPill.href = STATUS_URL;
 
     els.btn.addEventListener("click", () => {
       if (suppressClick) {
@@ -850,12 +890,14 @@
     }
   }
 
-  // Keep the docked context pill on-screen: sit it below the button instead of
-  // above when the meter is dragged near the top edge.
-  function placeCtxPill() {
-    if (!els || !els.ctxPill || !els.root) return;
+  // Keep the docked indicator pills on-screen: sit the stack below the button
+  // instead of above when the meter is dragged near the top edge. The stack is
+  // one or two pills tall depending on what's showing, so measure it rather than
+  // assuming a single row's worth of headroom.
+  function placePills() {
+    if (!els || !els.pills || !els.root) return;
     const r = els.root.getBoundingClientRect();
-    els.root.classList.toggle("cum-ctx-below", r.top < 48);
+    els.root.classList.toggle("cum-pills-below", r.top < els.pills.offsetHeight + 12);
   }
 
   // Open the panel toward whatever space is available around the pill.
@@ -897,7 +939,7 @@
       els.root.classList.add("cum-dragging");
       els.panel.hidden = true;
       applyPosition({ left: originLeft + dx, top: originTop + dy }, false);
-      placeCtxPill();
+      placePills();
     });
 
     function end(e) {
@@ -1196,12 +1238,138 @@
     const visible = ctxPillPermanent || Date.now() < ctxPillTransientUntil;
     els.ctxPill.hidden = !visible;
     if (visible) {
-      placeCtxPill();
+      placePills();
       els.ctxPillPct.textContent = fmtPercent(cd.pct);
       els.ctxPill.classList.toggle("cum-ctx-warn", pct >= 75 && pct < 90);
       els.ctxPill.classList.toggle("cum-ctx-danger", pct >= 90);
       els.ctxPill.title =
         (cd.native ? "Context (actual): " : "Context (estimated): ") + fmtPercent(cd.pct);
+    }
+  }
+
+  // ---- Service-status warning --------------------------------------------
+  // The background worker polls status.claude.com and stores the snapshot; the
+  // pill just reflects it. A `minor` reading (degraded performance, a low-impact
+  // incident) warns but does not hold a scheduled send — Claude still answers.
+  let statusPillLevel = null; // last level we flashed for
+  let statusAlarmTimer = null;
+
+  function countHeld(jobs) {
+    let n = 0;
+    for (const j of jobs || []) if (j && j.status === "waiting") n++;
+    return n;
+  }
+
+  function flashStatusPill() {
+    const pill = els && els.statusPill;
+    if (!pill) return;
+    pill.classList.remove("cum-status-alarm");
+    void pill.offsetWidth; // reflow so the animation restarts
+    pill.classList.add("cum-status-alarm");
+    clearTimeout(statusAlarmTimer);
+    statusAlarmTimer = setTimeout(() => {
+      if (els && els.statusPill) els.statusPill.classList.remove("cum-status-alarm");
+    }, 1700);
+  }
+
+  // Only a READABLE, non-ok snapshot warns. An unreachable status page (level
+  // "unknown") says nothing — a warning we can't stand behind is worse than none.
+  function statusIsBad() {
+    return !!(S && statusSnap && statusSnap.ok && statusSnap.level !== "ok");
+  }
+
+  const STATUS_LEVEL_CLASSES = [
+    "cum-status-minor",
+    "cum-status-maintenance",
+    "cum-status-major",
+    "cum-status-critical",
+  ];
+
+  let statusPillShown = false;
+
+  function updateStatusPill() {
+    if (!els || !els.statusPill) return;
+    const show = !!(statusWarn && statusIsBad());
+    els.statusPill.hidden = !show;
+    // Re-measure only when the stack's height can actually have changed — this
+    // runs once a second, and a forced layout for nothing isn't free.
+    const shownChanged = show !== statusPillShown;
+    statusPillShown = show;
+    if (!show) {
+      statusPillLevel = null;
+      if (shownChanged) placePills();
+      return;
+    }
+    const level = statusSnap.level;
+    els.statusText.textContent = S.shortLabel(statusSnap);
+    for (const c of STATUS_LEVEL_CLASSES) {
+      els.statusPill.classList.toggle(c, c === "cum-status-" + level);
+    }
+    const lines = S.detailLines(statusSnap);
+    els.statusPill.title =
+      (lines.length ? lines.join("\n") : S.shortLabel(statusSnap)) +
+      (heldSends ? "\n\n" + heldLabel() + " until this clears." : "") +
+      "\n\nClick to open status.claude.com";
+    // Flash when things get worse, not on every re-render (this runs each second).
+    if (level !== statusPillLevel) {
+      const worsened = S.rank(level) > S.rank(statusPillLevel || "ok");
+      statusPillLevel = level;
+      if (worsened) flashStatusPill();
+      placePills(); // the label changed, so the stack may have grown a line
+    } else if (shownChanged) {
+      placePills();
+    }
+  }
+
+  function heldLabel() {
+    return heldSends === 1
+      ? "1 scheduled send is waiting"
+      : heldSends + " scheduled sends are waiting";
+  }
+
+  function updateStatusPanel() {
+    if (!els || !els.statusGroup) return;
+    const bad = statusIsBad();
+    // Kept out of the way when there's nothing to say — but a held send is always
+    // worth surfacing, even if the status page has since gone quiet.
+    if (!bad && !heldSends) {
+      els.statusGroup.hidden = true;
+      return;
+    }
+    els.statusGroup.hidden = false;
+    els.pStatus.textContent = bad
+      ? S.shortLabel(statusSnap)
+      : statusSnap && statusSnap.ok
+      ? "operational"
+      : "unknown";
+    for (const c of STATUS_LEVEL_CLASSES) {
+      els.pStatus.classList.toggle(c, bad && c === "cum-status-" + statusSnap.level);
+    }
+    const lines = bad ? S.detailLines(statusSnap) : [];
+    if (heldSends) lines.unshift(heldLabel());
+    // A reading we couldn't refresh is shown with its real age rather than
+    // silently passed off as current.
+    if (statusSnap && statusSnap.error && statusSnap.ok) {
+      lines.push("last checked " + timeAgo(statusSnap.fetchedAt));
+    }
+    els.pStatusDetail.textContent = lines.slice(0, 3).join(" · ");
+    els.pStatusDetail.hidden = !lines.length;
+  }
+
+  // Ask the worker for a fresh reading (it owns the fetch — one per browser, not
+  // one per tab) and take whatever it hands back.
+  function requestStatus(force) {
+    try {
+      chrome.runtime?.sendMessage({ type: "cum-status", force: !!force }, (res) => {
+        void chrome.runtime.lastError;
+        if (res && res.status) {
+          statusSnap = res.status;
+          updateStatusPill();
+          updateStatusPanel();
+        }
+      });
+    } catch (e) {
+      /* extension context reloaded — the storage listener will catch up */
     }
   }
 
@@ -1335,6 +1503,8 @@
     els.pHint.hidden = state.updatedAt != null;
 
     updateContextPill();
+    updateStatusPill();
+    updateStatusPanel();
   }
 
   function fmtTokens(n) {
@@ -1503,6 +1673,22 @@
         predictModel = changes[PREDICT_KEY].newValue || predictModel;
         render();
       }
+      if (changes[STATUS_KEY]) {
+        statusSnap = changes[STATUS_KEY].newValue || null;
+        updateStatusPill();
+        updateStatusPanel();
+      }
+      if (changes[STATUS_CFG_KEY]) {
+        statusWarn = (changes[STATUS_CFG_KEY].newValue || {}).warn !== false;
+        updateStatusPill();
+        updateStatusPanel();
+      }
+      if (changes[JOBS_KEY]) {
+        // A send going on hold (or coming off it) changes what the panel says.
+        heldSends = countHeld(changes[JOBS_KEY].newValue);
+        updateStatusPill();
+        updateStatusPanel();
+      }
     });
   } catch (e) {
     /* ignore */
@@ -1540,6 +1726,9 @@
     // Kick off a proactive baseline read, then keep it fresh.
     requestBaseline();
     startPolling();
+    // And a service-status read, so a tab opened mid-outage warns immediately
+    // rather than at the worker's next poll.
+    requestStatus(false);
   }
 
   load().then(init);

@@ -69,6 +69,11 @@
         Heads-up: a job can only fire while your browser is running and you're
         logged into claude.ai — at fire time the extension opens a background
         claude.ai tab, attaches the files, types the prompt, and clicks Send.
+        If
+        <a href="https://status.claude.com/" target="_blank" rel="noreferrer noopener"
+          >Claude is down</a
+        >, the job <b>waits</b> and sends itself once the outage clears (up to
+        6 hours, then it goes anyway); <b>Run now</b> overrides the wait.
       </p>
 
       <hr class="divider" />
@@ -118,6 +123,7 @@
     <script src="split.js"></script>
     <script src="jobstore.js"></script>
     <script src="jobform.js"></script>
+    <script src="status.js"></script>
     <script src="options.js"></script>
   </body>
 </html>

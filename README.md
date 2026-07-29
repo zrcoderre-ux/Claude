@@ -29,6 +29,16 @@ bottom-right corner of [claude.ai](https://claude.ai).
   button when a long turn hits the tool-use / length limit, and clicks
   **Try again** once your usage resets after hitting a limit (it waits for the
   reset). Works on claude.ai and **Claude Code**, even in background tabs.
+- **Auto-click "Allow once"** (opt-in, separate toggle) — clicks Claude's
+  **Allow once** button the moment a permission prompt appears, so an agentic run
+  doesn't stall. It matches **only** `Allow once` — never *Allow always* or
+  *Allow for this chat* — so nothing is granted beyond the single call in front of
+  it. You are approving those calls sight-unseen, which is why it's off by
+  default and has its own switch rather than riding on auto-continue's.
+- **Outage warnings** — watches
+  [status.claude.com](https://status.claude.com/) and warns on the pill when
+  Claude is degraded, down, or under maintenance. A **scheduled send waits out an
+  outage** instead of firing into it. See [Outage detection](#outage-detection).
 - **Usage log + CSV** (Options) — records when you hit 100% and the usage % at
   each 5-hour reset; export to a spreadsheet.
 - **Scheduled sends** — queue files (pick individually or **a whole folder**) +
@@ -51,6 +61,9 @@ chat, a Project, or — when opened from the pill while viewing a conversation �
   the reset time the meter already tracks).
 - **At a set time** — a `chrome.alarms` timer.
 
+If Claude is down when a trigger fires, the job **waits** rather than sending
+into the outage — see [Outage detection](#outage-detection).
+
 At fire time the background worker opens a background claude.ai tab at the right
 composer (`/new` or `/cowork/project/{uuid}`), and a content script attaches the
 files (via the hidden `file-upload` input), waits for each upload to finish
@@ -63,6 +76,51 @@ claude.ai**. There's no headless/while-closed execution (that would require a
 hosted backend). "When usage resets" is the common case and your browser is
 usually open then; a specific time with the browser closed will fire the next
 time it's open.
+
+## Outage detection
+
+The background worker polls
+[`status.claude.com/api/v2/summary.json`](https://status.claude.com/api) — an
+Atlassian Statuspage, so the schema is the documented v2 one — every 5 minutes,
+and every minute while something is wrong. The reading drives two things:
+
+- **A warning pill** above the meter, showing what's affected (`Claude.ai major
+  outage`, `Elevated errors on message send`) and linking to the status page. It
+  appears only while Claude is actually degraded or down, so a normal day costs
+  nothing. The popup shows the current reading either way — that's where to
+  confirm the check is working.
+- **Scheduled sends wait.** A job whose trigger fires during an outage goes to
+  **Waiting** instead of running, and sends itself once Claude recovers (within a
+  minute of it clearing). Nothing is lost — the files and prompt stay queued.
+
+Two calls decide what counts:
+
+**Whose outage is it.** The page's blended `status.indicator` covers surfaces this
+extension never touches — Bedrock, Vertex, the developer console — so relevance
+is judged per component. A Bedrock-only outage neither warns nor holds. The page
+indicator is trusted only when our own components look clean *and* nothing
+excluded explains it, so a schema change can never read as "all clear".
+`api.anthropic.com` is deliberately **not** excluded: claude.ai rides the same
+serving layer, and waiting through a model outage is the recoverable mistake.
+
+**Warn vs hold.** *Degraded performance* and low-impact incidents **warn only** —
+Claude still answers, so blocking a send would cost more than it saves. *Partial
+outage*, *major outage* and *under maintenance* **hold**, because a send driven
+through the real UI has nothing to fall back on.
+
+And the escape hatches, because a queued send that never leaves is its own
+failure:
+
+- After **6 hours** of waiting a job sends anyway, with a note saying how long it
+  waited and why.
+- **Run now** (Options) always overrides the wait.
+- A status page we *can't reach* holds nothing — the reading degrades to
+  `unknown` and the send goes out. A remembered outage does survive up to 15
+  minutes of failed polls, so one blip can't release a hold prematurely.
+- Both behaviours have popup toggles (on by default).
+
+The parsing and the gate live in `src/status.js` (no DOM/chrome deps) and are
+unit-tested in `test/status.test.js`.
 
 ### A note on precision
 
@@ -158,12 +216,15 @@ rate-limit headers, SSE `resets_at` payloads, and the false-positive guards
 manifest.json          MV3 manifest
 src/harvest.js         Pure usage-parsing logic (shared by ext + tests)
 src/estimate.js        Pure tenths-place calibrator (shared by ext + tests)
+src/status.js          Pure status.claude.com model + the scheduled-send gate
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown
 src/content.css        Floating-button styles (light + dark)
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
 test/estimate.test.js  Unit tests for the tenths-place calibrator
+test/status.test.js    Unit tests for the status model + hold decisions
+test/autocontinue.test.js  Unit tests for the button-label predicates
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only
 ```
@@ -172,7 +233,8 @@ scripts/make_icons.py  Regenerates the icons with the Python stdlib only
 
 Everything runs locally in your browser. No data is sent anywhere; the only
 storage used is `chrome.storage.local` on your machine. The extension requests
-access to `claude.ai` only.
+access to `claude.ai` and — for the outage check — `status.claude.com`, which is
+a public, unauthenticated status page: the request carries nothing about you.
 
 ## Regenerating icons
 

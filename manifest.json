@@ -9,7 +9,7 @@
     "128": "icons/icon128.png"
   },
   "permissions": ["storage", "unlimitedStorage", "alarms", "tabs", "notifications"],
-  "host_permissions": ["https://claude.ai/*"],
+  "host_permissions": ["https://claude.ai/*", "https://status.claude.com/*"],
   "background": { "service_worker": "src/background.js" },
   "options_page": "src/options.html",
   "action": {
@@ -39,6 +39,7 @@
         "src/split.js",
         "src/jobstore.js",
         "src/jobform.js",
+        "src/status.js",
         "src/content.js",
         "src/autocontinue.js",
         "src/scheduler-run.js"

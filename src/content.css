@@ -436,7 +436,8 @@
   #cum-options-btn:hover {
     background: rgba(255, 255, 255, 0.08);
   }
-  #cum-ctx-pill {
+  #cum-ctx-pill,
+  #cum-status-pill {
     background: #2a2a28;
     border-color: rgba(255, 255, 255, 0.22);
     color: #f0efea;
@@ -445,15 +446,52 @@
   #cum-ctx-pill .cum-ctx-cap {
     color: #a5a29a;
   }
+  /* The light-mode outage text darkens for contrast on white; on dark it has to
+     lighten instead, or the warning is the least readable thing on screen. */
+  #cum-status-pill.cum-status-major,
+  #cum-status-pill.cum-status-critical {
+    color: #ff9d90;
+  }
+  #cum-p-status.cum-status-minor {
+    color: #e6b444;
+  }
+  #cum-p-status.cum-status-major,
+  #cum-p-status.cum-status-critical {
+    color: #ff9d90;
+  }
+  #cum-p-status.cum-status-maintenance {
+    color: #7fb0e8;
+  }
+  a.cum-status-link {
+    color: #e0855f;
+  }
 }
 
-/* Context-usage alarm pill — docked above the main meter and moves with it. */
-#cum-ctx-pill {
+/* Indicator-pill stack — docked above the main meter and moves with it. The
+   service-status pill is the outer one (furthest from the button) so a context
+   alarm appearing underneath it never shifts the warning out from under the
+   cursor. Docks below the meter instead when it's dragged near the top edge. */
+#cum-pills {
   position: absolute;
   right: 0;
   bottom: calc(100% + 8px);
-  white-space: nowrap;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none; /* re-enabled on the status pill, which is a link */
+}
+#cum-root.cum-pills-below #cum-pills {
+  bottom: auto;
+  top: calc(100% + 8px);
+  flex-direction: column-reverse;
+}
+
+/* Both pills share one shape. */
+#cum-ctx-pill,
+#cum-status-pill {
+  white-space: nowrap;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -469,10 +507,6 @@
   color: #1f1f1f;
   pointer-events: none; /* purely an indicator — never intercept page clicks */
   user-select: none;
-}
-#cum-root.cum-ctx-below #cum-ctx-pill {
-  bottom: auto;
-  top: calc(100% + 8px);
 }
 #cum-ctx-pill .cum-ctx-dot {
   width: 8px;
@@ -499,6 +533,83 @@
 }
 #cum-ctx-pill.cum-ctx-danger .cum-ctx-dot {
   background: #d23f31;
+}
+
+/* Service-status warning pill. Unlike the context pill this one is a link, so it
+   takes clicks — a warning you can't act on is half a warning. Shown only while
+   Claude is actually degraded or down, so it costs nothing on a normal day. */
+#cum-status-pill {
+  pointer-events: auto;
+  cursor: pointer;
+  text-decoration: none;
+  max-width: 260px;
+  font-weight: 600;
+}
+#cum-status-pill b {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#cum-status-pill:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18), 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+#cum-status-pill .cum-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d99b1f;
+  flex: 0 0 auto;
+}
+#cum-status-pill.cum-status-minor {
+  border-color: #d99b1f;
+}
+#cum-status-pill.cum-status-minor .cum-status-dot {
+  background: #d99b1f;
+}
+/* Maintenance is deliberate, not broken — blue rather than alarm colours, even
+   though it holds a scheduled send just as an outage does. */
+#cum-status-pill.cum-status-maintenance {
+  border-color: #3f7fd2;
+}
+#cum-status-pill.cum-status-maintenance .cum-status-dot {
+  background: #3f7fd2;
+}
+#cum-status-pill.cum-status-major,
+#cum-status-pill.cum-status-critical {
+  border-color: #d23f31;
+  color: #a8291d;
+}
+#cum-status-pill.cum-status-major .cum-status-dot,
+#cum-status-pill.cum-status-critical .cum-status-dot {
+  background: #d23f31;
+}
+#cum-status-pill.cum-status-alarm {
+  animation: cum-ctx-alarm-danger-kf 1.6s ease;
+}
+
+/* Service-status row in the detail panel. */
+#cum-p-status.cum-status-minor {
+  color: #a87510;
+}
+#cum-p-status.cum-status-maintenance {
+  color: #3f7fd2;
+}
+#cum-p-status.cum-status-major,
+#cum-p-status.cum-status-critical {
+  color: #d23f31;
+}
+.cum-status-detail {
+  display: block;
+  white-space: normal;
+  line-height: 1.35;
+}
+a.cum-status-link {
+  display: block;
+  color: #c96442;
+  text-decoration: none;
+}
+a.cum-status-link:hover {
+  text-decoration: underline;
 }
 
 @keyframes cum-ctx-alarm-kf {

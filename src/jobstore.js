@@ -43,10 +43,14 @@
         type: x.type || "",
         size: x.size || 0,
       })),
-      status: "pending", // pending | running | done | error | canceled
+      status: "pending", // pending | waiting | running | done | error | canceled
       createdAt: now,
       firedAt: null,
       error: null,
+      // Set while a Claude outage is holding this job back (see src/status.js).
+      // heldSince pins when the wait started, so the hold has a ceiling.
+      heldSince: null,
+      holdReason: null,
     };
   }
 
@@ -86,6 +90,25 @@
     if (job.projectName) return "→ " + job.projectName;
     if (job.projectUuid) return "→ project";
     return "New chat";
+  }
+
+  // A job still on its way out: queued, or held back by an outage.
+  function isQueued(job) {
+    return !!job && (job.status === "pending" || job.status === "waiting");
+  }
+
+  // Jobs an outage is holding. Their trigger has ALREADY fired, so nothing else
+  // will wake them — the status poll retries these once Claude recovers. They
+  // are deliberately absent from dueTimeJobs / pendingResetJobs /
+  // nextTimeTrigger: a held time-job's `at` is in the past, so leaving it in
+  // nextTimeTrigger would re-arm the alarm for "now" and spin the gate once a
+  // second for the whole outage.
+  function heldJobs(jobs) {
+    return (jobs || []).filter((j) => j && j.status === "waiting");
+  }
+
+  function hasHeldJobs(jobs) {
+    return heldJobs(jobs).length > 0;
   }
 
   // Time-triggered jobs that are due (pending and at <= now).
@@ -185,6 +208,9 @@
     getJob,
     targetUrl,
     targetLabel,
+    isQueued,
+    heldJobs,
+    hasHeldJobs,
     dueTimeJobs,
     pendingResetJobs,
     hasPendingResetJobs,

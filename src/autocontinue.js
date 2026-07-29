@@ -10,14 +10,27 @@
  * "Continue"; a per-click cooldown and a max-continuations cap (per page load)
  * prevent runaway clicking. A background service worker nudges this via
  * "cum-ac-poll" messages so it also works in backgrounded tabs.
+ *
+ * A THIRD, separately-toggled clicker handles Claude's **Allow once** permission
+ * prompt. It gets its own switch (and its own default-off) because it is a
+ * different kind of decision: Continue only resumes work you already asked for,
+ * where Allow once GRANTS a tool or connector permission. So the matching is
+ * deliberately narrow — "Allow once" and nothing else, never "Allow always" or
+ * "Allow for this chat", whose grant would outlive the prompt. And unlike
+ * Continue it must NOT wait for generation to stop: the prompt appears mid-turn
+ * with Stop on screen, which is exactly when it needs clicking.
  */
 (function () {
   "use strict";
 
-  const CFG_KEY = "cum_autocontinue"; // { enabled: bool, max: number }
+  const CFG_KEY = "cum_autocontinue"; // { enabled, max, allowOnce, allowMax }
   const STATE_KEY = "cum_state"; // usage snapshot (for the retry gate)
   const SELF_POLL_MS = 2000; // foreground self-poll
   const COOLDOWN_MS = 4000; // never click twice within this window
+  // Permission prompts arrive back-to-back during an agentic run, so this one is
+  // short — but still a floor, so a misidentified button can't be hammered.
+  const ALLOW_COOLDOWN_MS = 1200;
+  const ALLOW_MAX_DEFAULT = 100; // per page load; toggling off/on resets it
 
   // Button labels that resume a paused turn. Kept as sets so it's easy to add
   // locale/wording variants after verifying against the live UI.
@@ -26,7 +39,7 @@
   // Unlike Continue, we only click it once usage has actually reset.
   const RETRY_LABELS = ["try again", "retry"];
 
-  let cfg = { enabled: false, max: 50 };
+  let cfg = { enabled: false, max: 50, allowOnce: false, allowMax: ALLOW_MAX_DEFAULT };
   let clickCount = 0; // continues performed this page load
   let lastClickAt = 0;
   let paused = false; // set true once the cap is reached (until re-enabled)
@@ -34,6 +47,10 @@
   let retryArmed = true; // same, for the usage-limit "Try again" button
   let retrySawLimit = false; // only auto-retry if we saw the usage cap while shown
   let usageState = null; // latest cum_state (percent / resetAt) for the retry gate
+  let allowCount = 0; // Allow-once clicks this page load
+  let allowPaused = false; // hit the allow cap
+  let lastAllowAt = 0;
+  let lastAllowEl = null; // the node we last clicked, so we never re-click it
 
   // ---- pure helpers (exposed for unit tests) ----------------------------
   function normText(s) {
@@ -44,6 +61,16 @@
   }
   function isRetryLabel(text) {
     return RETRY_LABELS.indexOf(normText(text)) !== -1;
+  }
+  // "Allow once" ONLY. The trailing group tolerates a keyboard-shortcut hint the
+  // UI glues onto a button's text (Claude Code's model menu does the same thing,
+  // see CUMJobs.parseModelName) — never a different word, so "Allow always",
+  // "Allow for this chat" and "Always allow" can't slip through: those grant
+  // permission beyond the one call in front of you, which is not what a
+  // click-through automation should ever be handing out.
+  const ALLOW_ONCE_RE = /^allow once(?:[\s\d.,()·⌘⌥⇧⌃^⏎↵]*)$/;
+  function isAllowOnceLabel(text) {
+    return ALLOW_ONCE_RE.test(normText(text));
   }
 
   // ---- DOM ---------------------------------------------------------------
@@ -80,6 +107,20 @@
     }
     return null;
   }
+  // The permission button may label itself with an aria-label rather than visible
+  // text, so check both — either one qualifying is enough, and neither is looser
+  // than the exact-match rule above.
+  function findAllowOnceButton() {
+    const nodes = document.querySelectorAll('button, [role="button"]');
+    for (let i = 0; i < nodes.length; i++) {
+      const el = nodes[i];
+      const aria = el.getAttribute ? el.getAttribute("aria-label") : null;
+      if (!isAllowOnceLabel(el.textContent) && !isAllowOnceLabel(aria)) continue;
+      if (!isClickable(el)) continue;
+      return el;
+    }
+    return null;
+  }
 
   // At/over the session cap (per the usage meter).
   function usageMaxed() {
@@ -110,7 +151,39 @@
     toast(`${label} (${clickCount}${cfg.max ? " / " + cfg.max : ""})`);
   }
 
+  // "Allow once" — its own toggle, its own cap, and no generation gate: the
+  // prompt shows up mid-turn, while Stop is on screen.
+  function tickAllowOnce() {
+    if (!cfg.allowOnce || allowPaused) return;
+    const cap = cfg.allowMax > 0 ? cfg.allowMax : ALLOW_MAX_DEFAULT;
+    if (allowCount >= cap) {
+      allowPaused = true;
+      toast(`Auto-allow paused — reached ${cap}. Toggle it off/on to resume.`);
+      return;
+    }
+    const btn = findAllowOnceButton();
+    if (!btn) {
+      lastAllowEl = null; // prompt gone — a reused DOM node counts as fresh again
+      return;
+    }
+    // Identity, not an armed flag: consecutive prompts can stack, and this lets a
+    // genuinely new button through while never clicking the same node twice.
+    if (btn === lastAllowEl) return;
+    if (Date.now() - lastAllowAt < ALLOW_COOLDOWN_MS) return;
+    lastAllowEl = btn;
+    lastAllowAt = Date.now();
+    allowCount++;
+    try {
+      btn.click();
+    } catch (e) {
+      /* ignore */
+    }
+    toast(`Allowed once (${allowCount} / ${cap})`);
+  }
+
   function tick() {
+    // Independent of the Continue/Try-again toggle and its cap.
+    tickAllowOnce();
     if (!cfg.enabled || paused) return;
     if (cfg.max && cfg.max > 0 && clickCount >= cfg.max) {
       paused = true;
@@ -175,11 +248,20 @@
   // ---- Config ------------------------------------------------------------
   function applyCfg(value) {
     const prevEnabled = cfg.enabled;
-    cfg = Object.assign({ enabled: false, max: 50 }, value || {});
+    const prevAllow = cfg.allowOnce;
+    cfg = Object.assign(
+      { enabled: false, max: 50, allowOnce: false, allowMax: ALLOW_MAX_DEFAULT },
+      value || {}
+    );
     if (cfg.enabled && !prevEnabled) {
       // Re-enabling clears the cap/pause so the user can resume after a cap.
       clickCount = 0;
       paused = false;
+    }
+    if (cfg.allowOnce && !prevAllow) {
+      allowCount = 0;
+      allowPaused = false;
+      lastAllowEl = null;
     }
   }
 
@@ -221,6 +303,7 @@
     normText,
     isContinueLabel,
     isRetryLabel,
+    isAllowOnceLabel,
     CONTINUE_LABELS,
     RETRY_LABELS,
   };

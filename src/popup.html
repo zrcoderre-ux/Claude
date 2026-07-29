@@ -20,10 +20,40 @@
       <div class="row sub" id="updated">No data observed yet</div>
     </div>
 
+    <div class="card">
+      <div class="row"><span>Claude status</span><b id="svc-status">Checking…</b></div>
+      <div class="row sub" id="svc-detail" hidden></div>
+      <a
+        class="row sub svc-link"
+        href="https://status.claude.com/"
+        target="_blank"
+        rel="noreferrer noopener"
+        >status.claude.com →</a
+      >
+    </div>
+
     <p class="note">
       The floating meter appears on <b>claude.ai</b>. It reads your usage
       automatically and keeps it fresh in the background.
     </p>
+
+    <label class="toggle">
+      <input id="status-warn" type="checkbox" />
+      <span>Warn me about Claude outages</span>
+    </label>
+    <p class="hint">On by default. Shows a warning pill above the meter (and a
+      desktop notification) while <b>status.claude.com</b> reports Claude
+      degraded, down, or under maintenance.</p>
+
+    <label class="toggle">
+      <input id="status-hold" type="checkbox" />
+      <span>Hold scheduled sends during an outage</span>
+    </label>
+    <p class="hint">On by default. A scheduled send <b>waits</b> instead of firing
+      into an outage, then goes out on its own once Claude recovers. Degraded
+      performance only warns — it doesn't hold. After <b>6 hours</b> of waiting a
+      job sends anyway rather than never leaving, and <b>Run now</b> always
+      overrides the wait.</p>
 
     <label class="toggle">
       <input id="show-overage" type="checkbox" />
@@ -51,6 +81,18 @@
       <input id="ac-max" type="number" min="1" max="999" class="inline-num" /> continues
       (per page load); toggle off/on to resume after that.</p>
 
+    <label class="toggle">
+      <input id="allow-once" type="checkbox" />
+      <span>Auto-click "Allow once"</span>
+    </label>
+    <p class="hint">Off by default. Clicks Claude's <b>Allow once</b> button as
+      soon as a permission prompt appears, so an agentic run doesn't stall waiting
+      for you. It only ever clicks <b>Allow once</b> — never <b>Allow always</b>
+      or <b>Allow for this chat</b> — so nothing is granted beyond the single call
+      in front of it. <b>You are approving those calls sight-unseen</b>; leave
+      this off if you want to read each prompt. Stops after 100 clicks per page
+      load; toggle off/on to resume.</p>
+
     <label class="field-label" for="endpoint">Usage endpoint (optional)</label>
     <input
       id="endpoint"
@@ -73,6 +115,7 @@
       Usage log (100% &amp; reset history) →
     </button>
 
+    <script src="status.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
