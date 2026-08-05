@@ -319,8 +319,90 @@
       discoverConversations();
     } else if (c.type === "measureHome") {
       measureHome(typeof c.sinceMs === "number" ? c.sinceMs : null);
+    } else if (c.type === "fetchConversation" && typeof c.uuid === "string") {
+      fetchConversation(c.uuid, c.reqId);
     }
   });
+
+  // ---- Reading one conversation ------------------------------------------
+  // The workflow runner needs the text of Claude's last reply to hand it to the
+  // next chat. Its first choice is the page's own copy control (hooked below);
+  // this is the fallback, and it's the same payload the context meter reads.
+  function fetchConversation(uuid, reqId) {
+    const reply = (obj) => post({ conversation: Object.assign({ reqId }, obj) });
+    if (!origFetch || !/^[0-9a-f-]{36}$/i.test(uuid)) return reply({ error: "unavailable" });
+    const ids = new Set();
+    origFetch("/api/organizations", { credentials: "include" })
+      .then((r) => (r.ok ? r.clone().text() : ""))
+      .then((t) => {
+        probeOrgIds(t, ids);
+        const orgs = Array.from(ids);
+        if (!orgs.length) return reply({ error: "no organization" });
+        // Try each org in turn — an account can belong to more than one, and
+        // only the owning org answers for this conversation.
+        return (function next(i) {
+          if (i >= orgs.length) return reply({ error: "conversation not found" });
+          const url =
+            `/api/organizations/${orgs[i]}/chat_conversations/${uuid}` +
+            "?tree=True&rendering_mode=messages";
+          return origFetch(url, { credentials: "include", headers: { accept: "*/*" } })
+            .then((res) => (res.ok ? res.clone().text() : ""))
+            .then((text) => {
+              if (!text) return next(i + 1);
+              let json;
+              try {
+                json = JSON.parse(text);
+              } catch (e) {
+                return next(i + 1);
+              }
+              reply({ data: json });
+            })
+            .catch(() => next(i + 1));
+        })(0);
+      })
+      .catch((e) => reply({ error: String((e && e.message) || e) }));
+  }
+
+  // ---- Clipboard capture --------------------------------------------------
+  // Claude's reply has a copy box under it that copies the answer WITHOUT the
+  // thinking block. The workflow runner clicks it; this reports what the page
+  // wrote, so the text can be read out of a background tab with no clipboard
+  // permission and no focus requirement (navigator.clipboard.readText() has
+  // both). Read-only: the original write still happens, untouched.
+  function hookClipboard() {
+    try {
+      const clip = navigator.clipboard;
+      if (clip && typeof clip.writeText === "function") {
+        const orig = clip.writeText.bind(clip);
+        clip.writeText = function (text) {
+          try {
+            post({ clipboardWrite: { text: String(text == null ? "" : text), at: Date.now() } });
+          } catch (e) {
+            /* ignore */
+          }
+          return orig(text);
+        };
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    try {
+      // Copies done the old way (execCommand) surface as a copy event; listening
+      // in the bubble phase means the page's own handler has already filled in
+      // the data by the time we read it.
+      document.addEventListener("copy", (e) => {
+        try {
+          const t = e.clipboardData && e.clipboardData.getData("text/plain");
+          if (t) post({ clipboardWrite: { text: t, at: Date.now() } });
+        } catch (err) {
+          /* ignore */
+        }
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  hookClipboard();
 
   // Probe org ids, then pull each org's project list from the API.
   function discoverProjects() {

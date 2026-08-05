@@ -45,6 +45,10 @@ bottom-right corner of [claude.ai](https://claude.ai).
   an optional prompt to a **new chat, a Project, or the chat you're currently
   in**, to send at a set time or when usage next resets. Set them up from the
   Options page or the **＋ Schedule a send** button in the pill's panel.
+- **Workflows** — run one piece of work through **several chats that hand it
+  back and forth**: A drafts, B attacks the draft, A revises, round and round,
+  then a final pass. Editable, copyable, deletable, with one pre-built. See
+  [Workflows](#workflows).
 
 ## Scheduled sends
 
@@ -76,6 +80,80 @@ claude.ai**. There's no headless/while-closed execution (that would require a
 hosted backend). "When usage resets" is the common case and your browser is
 usually open then; a specific time with the browser closed will fire the next
 time it's open.
+
+## Workflows
+
+A scheduled send fires one message into one chat. A **workflow** runs a piece of
+work through **several chats that talk to each other**, because a second
+conversation criticising the first one's output is worth more than asking the
+first one to check its own work.
+
+The pre-built example — the one this was built for — is
+**Tentative ruling — 3× devil's advocate**:
+
+1. **Chat A** gets the motion papers and drafts the tentative ruling
+   (`tentative-ruling` skill).
+2. The draft goes to **chat B**, which attacks it (`devils-advocate` skill).
+3. The report goes back to **A**, which revises.
+4. Steps 2–3 again, and again — **three devil's advocate passes**.
+5. **A** does a final substantive pass over the whole thing.
+6. **A** runs the `ruling-style` pass over it.
+
+Nine steps, two conversations, no copying and pasting by hand.
+
+### Building your own
+
+**Options → Workflows → New workflow.** Everything is editable, and any workflow
+can be **copied** (a copy is yours — the pre-built one is not special) or
+**deleted**.
+
+- **Chats worked between** — 1 to 6. Each is its own claude.ai conversation with
+  its own destination (new chat, a **Project**, or a **Claude Code** session on a
+  repo) and its own **model**. Reducing the count moves any orphaned steps to the
+  last remaining chat rather than throwing their prompts away.
+- **Documents** — dropped in once, with a tick per chat saying **who gets them**.
+  A chat's documents upload with its **first** message, which is the one that
+  opens the conversation. A document assigned to nobody isn't uploaded, and the
+  editor says so.
+- **Steps** — ordered, each naming the chat it runs in and the prompt to send. A
+  step can **carry the previous step's reply** under its prompt (this is the
+  hand-off; it's the copy-and-paste the workflow exists to automate), with a
+  label so the pasted material is announced — `----- BEGIN DEVIL'S ADVOCATE
+  REPORT -----`. Steps returning to a chat that already has the material usually
+  don't need to carry anything: the conversation still remembers it.
+
+### Running one
+
+Pick **Run now**, **When usage resets**, or **At a set time** on the workflow's
+row and press **Start** — the same three triggers a scheduled send has, sharing
+the same alarms. The run then walks its steps: open (or return to) the step's
+chat, attach that chat's documents if it's the chat's first message, type the
+composed prompt, send, **wait for Claude to finish**, take the reply, and carry
+it into the next step. Progress, the conversation links, and any failure show up
+under **Runs**, where a run can be **cancelled** or **resumed** from the step it
+stopped on.
+
+**How the reply is read.** The way you would do it: the **copy box** under the
+finished answer, which copies the answer *without* the thinking. The extension
+clicks it and captures what the page writes to the clipboard (hooked in
+`src/inject.js`) — so it needs no clipboard permission, works in a background
+tab, and gets Claude's own markdown. If that comes back implausibly short (a code
+block has its own copy button) it falls back to the conversation payload from
+claude.ai's API, text blocks only, and finally to the rendered message text.
+A step is only read once Claude has stopped generating **and** the text has held
+still for a few seconds, so a half-streamed answer never travels.
+
+**When things go wrong.** A run is driven through the real UI, so it needs your
+browser open and logged in. If Claude is down it **waits mid-workflow** and picks
+up where it left off (same gate, same 6-hour ceiling as a scheduled send). If the
+service worker dies mid-step — which MV3 does routinely — the page keeps going
+and writes the result to storage, and the worker takes the run back within 30
+seconds. A step whose message has already gone out is **re-attached to, never
+re-sent**, so nothing is ever posted twice. A run that can't finish fails loudly
+(a notification, and the error on the row) rather than going quiet.
+
+Each chat's tab is left open when the run finishes — the conversations are the
+point.
 
 ## Outage detection
 
@@ -224,13 +302,21 @@ manifest.json          MV3 manifest
 src/harvest.js         Pure usage-parsing logic (shared by ext + tests)
 src/estimate.js        Pure tenths-place calibrator (shared by ext + tests)
 src/status.js          Pure status.claude.com model + the scheduled-send gate
+src/jobstore.js        Pure scheduled-send job model
+src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown
 src/content.css        Floating-button styles (light + dark)
+src/composer.js        The one place that drives claude.ai's composer DOM
+src/scheduler-run.js   Sends a queued job through the composer
+src/workflow-run.js    Runs one workflow step and reads Claude's reply
+src/jobform.js         Shared scheduled-send form (options page + pill modal)
+src/workflowform.js    Workflow editor (options page)
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
 test/estimate.test.js  Unit tests for the tenths-place calibrator
 test/status.test.js    Unit tests for the status model + hold decisions
+test/workflow.test.js  Unit tests for the workflow model + run transitions
 test/autocontinue.test.js  Unit tests for the button-label predicates
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only

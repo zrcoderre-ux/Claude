@@ -40,9 +40,12 @@
         "src/jobstore.js",
         "src/jobform.js",
         "src/status.js",
+        "src/workflow.js",
         "src/content.js",
         "src/autocontinue.js",
-        "src/scheduler-run.js"
+        "src/composer.js",
+        "src/scheduler-run.js",
+        "src/workflow-run.js"
       ],
       "css": ["src/content.css"],
       "run_at": "document_idle",
