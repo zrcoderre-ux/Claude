@@ -80,6 +80,50 @@
 
       <div class="head">
         <div class="dot"></div>
+        <h1>Workflows</h1>
+      </div>
+      <p class="sub">
+        A workflow runs one piece of work through <b>several chats that hand it
+        back and forth</b> — chat A drafts, chat B criticises, A revises, and so
+        on — so each pass improves on the last. Documents go up with the first
+        message of whichever chats you assign them to, and each step's prompt
+        can carry the previous chat's reply with it.
+      </p>
+
+      <div class="toolbar">
+        <button id="wf-new" class="primary" type="button">New workflow</button>
+      </div>
+
+      <div id="wf-form-mount" class="job-form"></div>
+
+      <div id="wf-list" class="job-list"></div>
+      <p id="wf-empty" class="empty" hidden>
+        No workflows yet. <b>New workflow</b> starts one from scratch.
+      </p>
+
+      <p class="sub" style="margin-top: 22px">Runs</p>
+      <div id="wf-runs" class="job-list"></div>
+      <p id="wf-runs-empty" class="empty" hidden>
+        No runs yet. Start one from a workflow above — it opens a background
+        claude.ai tab per chat and walks the steps, waiting for each reply
+        before sending the next.
+      </p>
+
+      <p class="footnote">
+        A run drives the real UI, so it needs your browser open and logged into
+        claude.ai, and it leaves each chat's conversation open so you can read
+        it. Claude's reply travels between chats the way you would move it: the
+        <b>copy box</b> under the finished answer, which copies the answer
+        without the thinking. If
+        <a href="https://status.claude.com/" target="_blank" rel="noreferrer noopener"
+          >Claude is down</a
+        >, the run <b>waits</b> mid-workflow and picks up where it left off.
+      </p>
+
+      <hr class="divider" />
+
+      <div class="head">
+        <div class="dot"></div>
         <h1>Daily Usage</h1>
       </div>
       <p class="sub">
@@ -123,6 +167,8 @@
     <script src="split.js"></script>
     <script src="jobstore.js"></script>
     <script src="jobform.js"></script>
+    <script src="workflow.js"></script>
+    <script src="workflowform.js"></script>
     <script src="status.js"></script>
     <script src="options.js"></script>
   </body>

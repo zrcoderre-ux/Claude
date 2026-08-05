@@ -250,6 +250,258 @@
 
 
   // ======================================================================
+  // Workflows (multi-chat runs)
+  // ======================================================================
+  const WORKFLOWS_KEY = "cum_workflows";
+  const RUNS_KEY = "cum_wf_runs";
+  const WF = window.CUMWorkflow;
+
+  const wfui = {
+    list: document.getElementById("wf-list"),
+    empty: document.getElementById("wf-empty"),
+    mount: document.getElementById("wf-form-mount"),
+    newBtn: document.getElementById("wf-new"),
+    runs: document.getElementById("wf-runs"),
+    runsEmpty: document.getElementById("wf-runs-empty"),
+  };
+
+  const wfForm = window.CUMWorkflowForm.create(wfui.mount, {
+    onSaved: renderWorkflows,
+    onClosed: renderWorkflows,
+  });
+  let workflowsById = {};
+
+  wfui.newBtn.addEventListener("click", () => wfForm.create());
+
+  const RUN_STATUS_LABEL = {
+    pending: "Queued",
+    waiting: "Waiting out an outage",
+    running: "Running",
+    done: "Finished",
+    error: "Stopped",
+    canceled: "Canceled",
+  };
+
+  // "Drafting → Critic → Drafting → …" — the route the work takes, cut short
+  // once it stops telling you anything new.
+  function stepChain(wf) {
+    const names = WF.planRun(wf).map((s) => s.chatName);
+    const shown = names.slice(0, 6).join(" → ");
+    return names.length > 6 ? shown + " → …" : shown;
+  }
+
+  function readWorkflows() {
+    return new Promise((r) =>
+      chrome.storage.local.get(WORKFLOWS_KEY, (res) => r((res && res[WORKFLOWS_KEY]) || []))
+    );
+  }
+
+  function renderWorkflows() {
+    readWorkflows().then((list) => {
+      workflowsById = {};
+      for (const w of list) workflowsById[w.id] = w;
+      const sorted = list.slice().sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      wfui.list.innerHTML = "";
+      for (const wf of sorted) {
+        const row = document.createElement("div");
+        row.className = "job-item";
+        row.innerHTML =
+          `<div class="job-main">` +
+          `<div class="job-title">${escapeHtml(wf.name || "(untitled)")}` +
+          (wf.builtin ? `<span class="job-badge">Pre-built</span>` : "") +
+          `</div>` +
+          (wf.description ? `<div class="job-meta">${escapeHtml(wf.description)}</div>` : "") +
+          `<div class="job-meta">${escapeHtml(WF.summarize(wf))} · ${escapeHtml(
+            stepChain(wf)
+          )}</div>` +
+          `<div class="job-meta wf-run-bar">` +
+          `<select class="wf-when" data-id="${wf.id}">` +
+          `<option value="now">Run now</option>` +
+          `<option value="reset">When usage resets</option>` +
+          `<option value="time">At a set time</option></select> ` +
+          `<input class="wf-at" type="datetime-local" data-id="${wf.id}" disabled /> ` +
+          `<button class="job-run wf-start" data-id="${wf.id}">Start</button>` +
+          `</div></div>` +
+          `<div class="job-btns">` +
+          `<button class="job-edit wf-edit" data-id="${wf.id}" title="Edit">Edit</button>` +
+          `<button class="job-edit wf-copy" data-id="${wf.id}" title="Duplicate">Copy</button>` +
+          `<button class="job-del wf-del" data-id="${wf.id}" title="Delete">✕</button>` +
+          `</div>`;
+        wfui.list.appendChild(row);
+      }
+      wfui.empty.hidden = list.length !== 0;
+
+      wfui.list.querySelectorAll(".wf-when").forEach((sel) =>
+        sel.addEventListener("change", () => {
+          const at = sel.parentElement.querySelector(".wf-at");
+          at.disabled = sel.value !== "time";
+        })
+      );
+      wfui.list.querySelectorAll(".wf-edit").forEach((b) =>
+        b.addEventListener("click", () => {
+          const wf = workflowsById[b.getAttribute("data-id")];
+          if (wf) wfForm.edit(wf);
+        })
+      );
+      wfui.list.querySelectorAll(".wf-copy").forEach((b) =>
+        b.addEventListener("click", () => copyWorkflow(b.getAttribute("data-id")))
+      );
+      wfui.list.querySelectorAll(".wf-del").forEach((b) =>
+        b.addEventListener("click", () => deleteWorkflow(b.getAttribute("data-id")))
+      );
+      wfui.list.querySelectorAll(".wf-start").forEach((b) =>
+        b.addEventListener("click", () => startWorkflow(b, b.getAttribute("data-id")))
+      );
+    });
+  }
+
+  function startWorkflow(btn, id) {
+    const bar = btn.parentElement;
+    const when = bar.querySelector(".wf-when").value;
+    let trigger = { type: when === "reset" ? "reset" : "now" };
+    if (when === "time") {
+      const raw = bar.querySelector(".wf-at").value;
+      const at = raw ? new Date(raw).getTime() : NaN;
+      if (!Number.isFinite(at)) return alert("Pick a valid date & time.");
+      if (at <= Date.now()) return alert("Pick a time in the future.");
+      trigger = { type: "time", at };
+    }
+    btn.disabled = true;
+    btn.textContent = "Starting…";
+    chrome.runtime.sendMessage({ type: "cum-wf-run", workflowId: id, trigger }, (res) => {
+      btn.disabled = false;
+      btn.textContent = "Start";
+      if (!res || !res.ok) alert("Could not start: " + ((res && res.error) || "unknown error"));
+      renderRuns();
+    });
+  }
+
+  function copyWorkflow(id) {
+    readWorkflows().then((list) => {
+      const wf = WF.getWorkflow(list, id);
+      if (!wf) return;
+      const copy = WF.cloneWorkflow(wf, crypto.randomUUID(), Date.now(), () => crypto.randomUUID());
+      chrome.storage.local.set({ [WORKFLOWS_KEY]: WF.upsertWorkflow(list, copy) }, renderWorkflows);
+    });
+  }
+
+  function deleteWorkflow(id) {
+    readWorkflows().then((list) => {
+      const wf = WF.getWorkflow(list, id);
+      if (!wf) return;
+      if (!confirm(`Delete “${wf.name}”? Its documents are deleted too. This can't be undone.`))
+        return;
+      const next = WF.removeWorkflow(list, id);
+      // Only bin document bytes no surviving workflow (a copy, say) still uses.
+      const stillUsed = WF.fileIdsInUse(next, null);
+      const dead = (wf.docs || []).map((d) => d.id).filter((fid) => !stillUsed.has(fid));
+      chrome.storage.local.set({ [WORKFLOWS_KEY]: next }, () => {
+        if (dead.length) chrome.storage.local.remove(dead.map((fid) => J.fileKey(fid)));
+        renderWorkflows();
+      });
+    });
+  }
+
+  // ---- runs ----
+  function runHoldText(run) {
+    const S = window.CUMStatus;
+    const waited =
+      S && typeof run.heldSince === "number" ? S.fmtWaited(Date.now() - run.heldSince) : "";
+    return (
+      "⏸ " +
+      (run.holdReason || "Claude is having problems") +
+      (waited ? " · waiting " + waited : "") +
+      " — it picks up where it left off once this clears."
+    );
+  }
+
+  function renderRuns() {
+    chrome.storage.local.get([RUNS_KEY, WORKFLOWS_KEY], (res) => {
+      const runs = (res && res[RUNS_KEY]) || [];
+      const workflows = (res && res[WORKFLOWS_KEY]) || [];
+      const sorted = runs.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      wfui.runs.innerHTML = "";
+      for (const run of sorted) {
+        const wf = WF.getWorkflow(workflows, run.workflowId);
+        const links = Object.keys(run.chats || {})
+          .map((cid) => {
+            const url = (run.chats[cid] || {}).url;
+            if (!url) return "";
+            const name = wf ? WF.chatName(wf, cid) : "chat";
+            return `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(
+              name
+            )}</a>`;
+          })
+          .filter(Boolean)
+          .join(" · ");
+        const row = document.createElement("div");
+        row.className = "job-item status-" + (run.status || "pending");
+        row.innerHTML =
+          `<div class="job-main">` +
+          `<div class="job-title">${escapeHtml(run.name || "Workflow")}` +
+          `<span class="job-badge">${RUN_STATUS_LABEL[run.status] || run.status}</span></div>` +
+          `<div class="job-meta">${escapeHtml(WF.progressText(run, wf))}` +
+          (run.trigger && run.trigger.type === "time" && run.status === "pending"
+            ? " · at " + escapeHtml(new Date(run.trigger.at).toLocaleString())
+            : "") +
+          (run.trigger && run.trigger.type === "reset" && run.status === "pending"
+            ? " · when usage resets"
+            : "") +
+          `</div>` +
+          (links ? `<div class="job-meta">Chats: ${links}</div>` : "") +
+          (run.error ? `<div class="job-err">${escapeHtml(run.error)}</div>` : "") +
+          (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
+          (run.note ? `<div class="job-meta">⚠ ${escapeHtml(run.note)}</div>` : "") +
+          `</div>` +
+          `<div class="job-btns">` +
+          (run.status === "error" || run.status === "waiting"
+            ? `<button class="job-run wf-run-resume" data-id="${run.id}" title="Carry on from this step">Resume</button>`
+            : "") +
+          (WF.isRunActive(run)
+            ? `<button class="job-edit wf-run-cancel" data-id="${run.id}" title="Stop here">Cancel</button>`
+            : "") +
+          `<button class="job-del wf-run-del" data-id="${run.id}" title="Remove from the list">✕</button>` +
+          `</div>`;
+        wfui.runs.appendChild(row);
+      }
+      wfui.runsEmpty.hidden = runs.length !== 0;
+
+      wfui.runs.querySelectorAll(".wf-run-cancel").forEach((b) =>
+        b.addEventListener("click", () => {
+          b.disabled = true;
+          chrome.runtime.sendMessage({ type: "cum-wf-cancel", runId: b.getAttribute("data-id") }, renderRuns);
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-run-resume").forEach((b) =>
+        b.addEventListener("click", () => {
+          b.disabled = true;
+          b.textContent = "Resuming…";
+          chrome.runtime.sendMessage({ type: "cum-wf-resume", runId: b.getAttribute("data-id") }, renderRuns);
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-run-del").forEach((b) =>
+        b.addEventListener("click", () => {
+          const id = b.getAttribute("data-id");
+          chrome.storage.local.get(RUNS_KEY, (r) => {
+            const list = (r && r[RUNS_KEY]) || [];
+            chrome.storage.local.set({ [RUNS_KEY]: WF.removeRun(list, id) }, renderRuns);
+          });
+        })
+      );
+    });
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (changes[WORKFLOWS_KEY] && !wfForm.isOpen()) renderWorkflows();
+    if (changes[RUNS_KEY]) renderRuns();
+  });
+
+  renderWorkflows();
+  renderRuns();
+
+
+  // ======================================================================
   // Daily usage (weekday profile of weekly-limit consumption)
   // ======================================================================
   const DAILY_KEY = "cum_daily";

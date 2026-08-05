@@ -8,13 +8,19 @@
  *      window resets, by opening a claude.ai composer tab and driving it.
  *   3. Service status: poll status.claude.com so the pill can warn about an
  *      outage, and HOLD a scheduled send until Claude recovers.
+ *   4. Workflow runs: walk a multi-chat workflow one step at a time, opening (or
+ *      returning to) each chat's conversation and handing the last reply on to
+ *      the next step.
  *
  * MV3 workers are short-lived, so a chrome.alarm keeps things ticking.
  */
-importScripts("jobstore.js", "status.js"); // provides self.CUMJobs, self.CUMStatus
+importScripts("jobstore.js", "status.js", "workflow.js"); // self.CUMJobs / CUMStatus / CUMWorkflow
 
 const CFG_KEY = "cum_autocontinue";
 const JOBS_KEY = "cum_jobs";
+const WORKFLOWS_KEY = "cum_workflows";
+const RUNS_KEY = "cum_wf_runs";
+const WF_SEEDED_KEY = "cum_wf_seeded";
 const STATE_KEY = "cum_state";
 const STATUS_KEY = "cum_status"; // last status.claude.com snapshot
 const STATUS_CFG_KEY = "cum_status_cfg"; // { warn, holdSends } — both default on
@@ -35,6 +41,7 @@ const STATUS_FIRE_FRESH_MS = 60 * 1000;
 
 const J = self.CUMJobs;
 const S = self.CUMStatus;
+const W = self.CUMWorkflow;
 
 // ---- storage helpers ----------------------------------------------------
 function get(keys) {
@@ -223,7 +230,11 @@ async function ensureStatusAlarm(hot) {
   if (hot == null) {
     const snap = await readStatus();
     const jobs = (await get(JOBS_KEY))[JOBS_KEY] || [];
-    want = !!(snap && snap.ok && snap.blocking) || J.hasHeldJobs(jobs);
+    const runs = (await get(RUNS_KEY))[RUNS_KEY] || [];
+    want =
+      !!(snap && snap.ok && snap.blocking) ||
+      J.hasHeldJobs(jobs) ||
+      W.heldRuns(runs).length > 0;
   }
   const period = want ? STATUS_POLL_HOT_MIN : STATUS_POLL_MIN;
   // Creating an alarm RESETS its countdown, and this is called on every worker
@@ -442,12 +453,23 @@ async function runJobs(kind /* "time" | "reset" | "hold" */) {
   await reschedule();
 }
 
-// (Re)create alarms for the next time trigger and the reset trigger.
+// (Re)create alarms for the next time trigger and the reset trigger. Scheduled
+// sends and workflow runs share both alarms — they answer the same two
+// questions, "what's the soonest clock trigger" and "is anything waiting for the
+// usage window to roll over".
 async function reschedule() {
-  const { [JOBS_KEY]: jobs, [STATE_KEY]: state } = await get([JOBS_KEY, STATE_KEY]);
+  const { [JOBS_KEY]: jobs, [STATE_KEY]: state, [RUNS_KEY]: runsRaw } = await get([
+    JOBS_KEY,
+    STATE_KEY,
+    RUNS_KEY,
+  ]);
   const list = jobs || [];
+  const runs = runsRaw || [];
 
-  const nextTime = J.nextTimeTrigger(list, Date.now());
+  const times = [J.nextTimeTrigger(list, Date.now()), W.nextRunTrigger(runs, Date.now())].filter(
+    (t) => typeof t === "number"
+  );
+  const nextTime = times.length ? Math.min.apply(null, times) : null;
   try {
     chrome.alarms.clear(TIME_ALARM);
     if (nextTime != null) {
@@ -458,7 +480,8 @@ async function reschedule() {
   try {
     chrome.alarms.clear(RESET_ALARM);
     const resetAt = state && state.resetAt;
-    if (J.hasPendingResetJobs(list) && typeof resetAt === "number" && resetAt > Date.now()) {
+    const wantsReset = J.hasPendingResetJobs(list) || W.pendingResetRuns(runs).length > 0;
+    if (wantsReset && typeof resetAt === "number" && resetAt > Date.now()) {
       // Fire shortly after the window resets so fresh usage is available.
       chrome.alarms.create(RESET_ALARM, { when: resetAt + 5000 });
     }
@@ -466,6 +489,211 @@ async function reschedule() {
 
   // A held job wants the fast status cadence; nothing held drops back to slow.
   await ensureStatusAlarm(null);
+}
+
+// ==== Workflow runs ======================================================
+// A run walks its workflow's steps: post the composed message into that step's
+// chat, wait for Claude to finish, carry the reply into the next step. The tab's
+// content script (src/workflow-run.js) owns the step and writes its result to
+// storage, so the worker dying mid-step costs nothing — the pickup pass below
+// finds the run again and continues from wherever it actually got to.
+const drivingRuns = new Set();
+
+async function readRuns() {
+  return (await get(RUNS_KEY))[RUNS_KEY] || [];
+}
+async function readRun(id) {
+  return W.getRun(await readRuns(), id);
+}
+async function saveRun(run) {
+  await set({ [RUNS_KEY]: W.upsertRun(await readRuns(), run) });
+  return run;
+}
+
+// Put the pre-built workflow in place once. The flag means deleting it makes it
+// stay deleted — re-seeding a workflow the user threw away would be rude.
+async function seedWorkflows() {
+  const store = await get([WORKFLOWS_KEY, WF_SEEDED_KEY]);
+  if (store[WF_SEEDED_KEY]) return;
+  const list = store[WORKFLOWS_KEY] || [];
+  const wf = W.builtinWorkflow(() => crypto.randomUUID(), Date.now());
+  await set({ [WORKFLOWS_KEY]: W.upsertWorkflow(list, wf), [WF_SEEDED_KEY]: true });
+}
+
+// The tab a step should run in: the chat's existing conversation if it has one
+// (that's the whole point — chat A comes back to its own thread), otherwise a
+// fresh composer at the chat's configured destination.
+async function stepTab(savedUrl, chat) {
+  if (savedUrl) {
+    try {
+      const existing = await findChatTab(savedUrl);
+      if (existing) return { tab: existing, created: false };
+    } catch (e) {
+      /* fall through and open one */
+    }
+  }
+  const url =
+    savedUrl ||
+    J.targetUrl({
+      projectHref: (chat.target && chat.target.projectHref) || null,
+      projectUuid: (chat.target && chat.target.projectUuid) || null,
+      codeRepo: (chat.target && chat.target.codeRepo) || null,
+    });
+  try {
+    const tab = await chrome.tabs.create({ url, active: false });
+    await waitTabComplete(tab.id, 30000);
+    await sleep(2500); // the SPA needs a moment to render the composer
+    return { tab, created: true };
+  } catch (e) {
+    return { tab: null, created: false };
+  }
+}
+
+// Hand the step to the page. Only the "content script isn't listening yet" case
+// retries — once it has the message, it owns the step (which can take the better
+// part of an hour), and this waits.
+async function sendStep(tabId, payload) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await chrome.tabs.sendMessage(tabId, payload);
+      if (res) return res;
+    } catch (e) {
+      /* content script maybe not ready yet */
+    }
+    await sleep(1500);
+  }
+  return { ok: false, error: "no response from page (content script not ready?)" };
+}
+
+async function driveRun(runId, opts) {
+  if (drivingRuns.has(runId)) return;
+  drivingRuns.add(runId);
+  try {
+    // Bounded so a bug can never spin the worker; far above any real workflow.
+    for (let guard = 0; guard < 500; guard++) {
+      let run = await readRun(runId);
+      if (!run || !W.isRunActive(run)) return;
+      const wf = W.getWorkflow((await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], run.workflowId);
+      if (!wf) {
+        await saveRun(W.markError(run, "its workflow was deleted", Date.now()));
+        notify("Workflow stopped", (run.name || "A workflow") + " — its definition is gone.");
+        return;
+      }
+      const plan = W.planRun(wf);
+      const step = plan[run.stepIndex];
+      if (!step) {
+        await saveRun(
+          Object.assign({}, run, { status: "done", phase: "idle", finishedAt: Date.now() })
+        );
+        return;
+      }
+
+      // Same gate as a scheduled send: a run driven through the real UI has
+      // nothing to fall back on if Claude is down, so it waits — with the same
+      // 6-hour ceiling, and Run now still overrides it.
+      const gate = await outageGate(run, opts);
+      if (gate.hold) {
+        const firstHold = run.status !== "waiting";
+        await saveRun(W.markHeld(run, gate.reason, Date.now()));
+        if (firstHold)
+          notify(
+            "Workflow is waiting",
+            (run.name ? run.name + " — " : "") +
+              "holding at step " + (run.stepIndex + 1) + " until Claude recovers (" + gate.reason + ")."
+          );
+        ensureStatusAlarm(true);
+        return;
+      }
+      const heldNote = gate.expired
+        ? "step " + (run.stepIndex + 1) + " sent after waiting " + S.fmtWaited(gate.waitedMs)
+        : null;
+
+      // Re-attaching to a step whose message already went out must NOT send it
+      // again — it waits for the reply that is already coming.
+      const awaitOnly = run.phase === "awaiting-reply";
+      const now = Date.now();
+      run = await saveRun(
+        W.markSending(
+          Object.assign({}, W.markStarted(run, now), heldNote ? { note: heldNote } : {}),
+          now
+        )
+      );
+
+      const chat = W.getChat(wf, step.chatId) || {};
+      const saved = (run.chats && run.chats[step.chatId]) || {};
+      const { tab } = await stepTab(saved.url, chat);
+      if (!tab) {
+        await saveRun(W.markError(await readRun(runId), "could not open a claude.ai tab", Date.now()));
+        notify("Workflow stopped", "Could not open a claude.ai tab.");
+        return;
+      }
+
+      const docs = (wf.docs || [])
+        .filter((d) => step.docIds.indexOf(d.id) !== -1)
+        .map((d) => ({ id: d.id, name: d.name, type: d.type }));
+
+      const res = await sendStep(tab.id, {
+        type: "cum-wf-step",
+        runId: runId,
+        stepIndex: run.stepIndex,
+        chatId: step.chatId,
+        chatName: step.chatName,
+        total: plan.length,
+        awaitOnly: awaitOnly,
+        text: W.composeStepText(step, run.lastReply),
+        files: awaitOnly ? [] : docs,
+        // A conversation keeps the model it started with, and only a fresh
+        // Claude Code session has a repo to pick — so both are first-step only.
+        model: step.firstInChat && !saved.url ? chat.model || null : null,
+        codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
+      });
+
+      const after = await readRun(runId);
+      if (!after || after.status === "canceled") return;
+      if (!res || !res.ok) {
+        if (res && res.canceled) return;
+        await saveRun(W.markError(after, (res && res.error) || "unknown", Date.now()));
+        notify(
+          "Workflow stopped",
+          (after.name || "Workflow") + " failed at step " + (after.stepIndex + 1) + ": " +
+            ((res && res.error) || "unknown")
+        );
+        return;
+      }
+      if (after.status === "done") {
+        notify(
+          "Workflow finished",
+          (after.name || "Workflow") + " — all " + plan.length + " steps done."
+        );
+        return;
+      }
+      if (after.stepIndex === run.stepIndex) {
+        // The page said OK but the run didn't move. Stop rather than re-send the
+        // same step forever.
+        await saveRun(W.markError(after, "step reported success but did not advance", Date.now()));
+        return;
+      }
+    }
+  } finally {
+    drivingRuns.delete(runId);
+  }
+}
+
+// Start (or continue) whatever the given event makes due. Runs go one at a time
+// — each one is already driving a full conversation.
+async function startRuns(kind /* "time" | "reset" | "hold" | "pickup" */) {
+  const runs = await readRuns();
+  const now = Date.now();
+  const due =
+    kind === "hold"
+      ? W.heldRuns(runs)
+      : kind === "reset"
+      ? W.pendingResetRuns(runs)
+      : kind === "pickup"
+      ? W.pickupRuns(runs, now, W.STALE_MS)
+      : W.dueRuns(runs, now);
+  for (const r of due) await driveRun(r.id);
+  if (due.length) await reschedule();
 }
 
 // Refresh the cached project list. Rather than scrape the (virtualized) grid,
@@ -559,6 +787,54 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
+  // Queue a workflow run. The options page hands over the workflow id and a
+  // trigger; the run itself is minted here so only one place decides what a
+  // fresh run looks like.
+  if (msg && msg.type === "cum-wf-run" && msg.workflowId) {
+    (async () => {
+      const wf = W.getWorkflow((await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], msg.workflowId);
+      if (!wf) return { ok: false, error: "workflow not found" };
+      const problems = W.validate(wf).filter((p) => !/aren't assigned to a chat/.test(p));
+      if (problems.length) return { ok: false, error: problems[0] };
+      const run = W.newRun(wf, crypto.randomUUID(), Date.now(), msg.trigger);
+      await saveRun(run);
+      await reschedule();
+      if (run.trigger.type === "now") driveRun(run.id); // long-running: don't await
+      return { ok: true, runId: run.id };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
+  // Stop a run where it is. The page driving the current step notices on its
+  // next poll and lets go; whatever Claude has already been sent stays sent.
+  if (msg && msg.type === "cum-wf-cancel" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "run not found" };
+      await saveRun(W.markCanceled(run, Date.now()));
+      await reschedule();
+      return { ok: true };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
+  // Retry a stopped run from the step it died on, or resume a held one now.
+  if (msg && msg.type === "cum-wf-resume" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "run not found" };
+      await saveRun(
+        Object.assign({}, W.markStarted(run, Date.now()), { phase: "idle", finishedAt: null })
+      );
+      driveRun(msg.runId, { force: true }); // long-running: don't await
+      return { ok: true };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
   // The pill, popup and options page all read cum_status from storage; this is
   // how they ask for a fresh one (on load, or on demand).
   if (msg && msg.type === "cum-status") {
@@ -585,27 +861,44 @@ function ensureKeepalive() {
 chrome.runtime.onInstalled.addListener(() => {
   ensureKeepalive();
   acBurst();
+  seedWorkflows();
   reschedule();
   refreshStatus();
 });
 chrome.runtime.onStartup.addListener(() => {
   ensureKeepalive();
   acBurst();
+  seedWorkflows();
   reschedule();
   runJobs("time"); // catch anything whose time passed while the browser was off
+  startRuns("time");
   // ...and anything an outage parked before the browser closed. The stored
   // reading is hours old by now, so this always fetches.
-  refreshStatusIfStale().then(() => runJobs("hold"));
+  refreshStatusIfStale().then(() => {
+    runJobs("hold");
+    startRuns("hold");
+  });
 });
 
 chrome.alarms.onAlarm.addListener((a) => {
-  if (a.name === KEEPALIVE) acBurst();
-  else if (a.name === TIME_ALARM) runJobs("time");
-  else if (a.name === RESET_ALARM) runJobs("reset");
-  else if (a.name === STATUS_ALARM) {
+  if (a.name === KEEPALIVE) {
+    acBurst();
+    // The keepalive is also the workflow watchdog: a run left between steps by a
+    // worker that died mid-await gets picked up here, within 30 seconds.
+    startRuns("pickup");
+  } else if (a.name === TIME_ALARM) {
+    runJobs("time");
+    startRuns("time");
+  } else if (a.name === RESET_ALARM) {
+    runJobs("reset");
+    startRuns("reset");
+  } else if (a.name === STATUS_ALARM) {
     // Always retry held jobs after a refresh — the gate itself decides whether
     // things have recovered, so this needs no separate recovery check.
-    refreshStatus().then(() => runJobs("hold"));
+    refreshStatus().then(() => {
+      runJobs("hold");
+      startRuns("hold");
+    });
   }
 });
 
@@ -615,16 +908,20 @@ chrome.storage.onChanged.addListener((changes, area) => {
     ensureKeepalive();
     acBurst();
   }
-  if (changes[JOBS_KEY] || changes[STATE_KEY]) reschedule();
+  if (changes[JOBS_KEY] || changes[STATE_KEY] || changes[RUNS_KEY]) reschedule();
   // Turning the gate off should release anything it is holding right now.
   if (changes[STATUS_CFG_KEY]) {
     statusCfg().then((cfg) => {
-      if (!cfg.holdSends) runJobs("hold");
+      if (!cfg.holdSends) {
+        runJobs("hold");
+        startRuns("hold");
+      }
     });
   }
 });
 
 ensureKeepalive();
+seedWorkflows();
 reschedule();
 ensureStatusAlarm(null);
 refreshStatusIfStale();

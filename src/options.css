@@ -437,6 +437,39 @@ td .approx {
   cursor: default;
 }
 
+/* The "run this workflow" bar inside a workflow row. */
+.wf-run-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.wf-run-bar select,
+.wf-run-bar input[type="datetime-local"] {
+  font: inherit;
+  font-size: 11.5px;
+  padding: 3px 6px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 7px;
+  background: #fff;
+  color: #1f1f1f;
+}
+
+.wf-run-bar input[type="datetime-local"]:disabled {
+  opacity: 0.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .wf-run-bar select,
+  .wf-run-bar input[type="datetime-local"] {
+    background: #1f1e1c;
+    border-color: rgba(255, 255, 255, 0.16);
+    color: #f0efea;
+  }
+}
+
 .daily-chart {
   display: flex;
   flex-direction: column;
