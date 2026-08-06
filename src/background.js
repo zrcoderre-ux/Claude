@@ -819,9 +819,22 @@ async function driveRun(runId, opts) {
         return;
       }
       if (after.stepIndex === run.stepIndex) {
-        // The page said OK but the run didn't move. Stop rather than re-send the
-        // same step forever.
-        await saveRun(W.markError(after, "step reported success but did not advance", Date.now()));
+        // The page said OK but the run hasn't moved here yet. It reports where
+        // it left the run, so give the storage write a moment to land before
+        // concluding anything went wrong.
+        if (res.stepIndex != null && res.stepIndex > run.stepIndex) {
+          await sleep(1000);
+          const again = await readRun(runId);
+          if (again && again.stepIndex > run.stepIndex) continue;
+        }
+        await saveRun(
+          W.markError(
+            after,
+            "the page reported this step finished but recorded no result for it — " +
+              "its reply was not saved, so the next step would have nothing to carry",
+            Date.now()
+          )
+        );
         return;
       }
     }

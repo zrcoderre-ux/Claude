@@ -182,6 +182,20 @@ test("a run walks its steps and finishes on the last one", () => {
   assert.equal(r.transcript[2].chars, "REVISED".length);
 });
 
+test("a step result for a step already passed is ignored, not applied again", () => {
+  // The worker retries delivery when a page doesn't answer, so the same step
+  // can be run twice. The second copy names the step the WORKER asked for, so
+  // it lands on a run that has moved on and must do nothing — applying it would
+  // advance the run again and skip a step's prompt entirely.
+  const { run } = startedRun();
+  const first = W.applyStepResult(run, { stepIndex: 0, chatId: "a", reply: "DRAFT", now: NOW, total: 3 });
+  assert.equal(first.stepIndex, 1);
+  const duplicate = W.applyStepResult(first, { stepIndex: 0, chatId: "a", reply: "DRAFT", now: NOW + 9, total: 3 });
+  assert.equal(duplicate.stepIndex, 1, "the run stays where it is");
+  assert.equal(duplicate.transcript.length, 1);
+  assert.equal(duplicate.lastReply, "DRAFT");
+});
+
 test("a duplicate step result cannot advance the run twice", () => {
   const { run } = startedRun();
   const once = W.applyStepResult(run, { stepIndex: 0, chatId: "a", reply: "A", now: NOW, total: 3 });
