@@ -214,6 +214,31 @@ A reply also has to differ from what was on screen before the step's message wen
 out — the transcript can hold just the newest turn in the DOM, so counting
 rendered messages is not on its own enough to know a new answer arrived.
 
+### Changing a run while it's going
+
+A run carries **its own copy** of the chats, steps and documents it was started
+with. The template can be re-armed for the next matter, edited, or deleted
+without changing what a run in flight does — and the run itself can be changed
+without touching every future run.
+
+**Pause** stops it at the next step boundary, keeping its place, what it's
+carrying, and which conversations it's in. A step already in flight is allowed to
+finish; pausing is not cancelling. **Edit run** then opens the same editor the
+workflow uses, on the run's own copy: insert a step, reword a prompt, rename a
+chat, add documents. **Resume** picks up from exactly where it stopped.
+
+Documents added to a run already under way can't ride a chat's opening message —
+that having been sent — so they go up with the **next step in each of their
+chats**. Add a reply brief for both chats at step 4 of nine and it attaches to
+whichever step comes next in each, not at the start and not at the end.
+
+**Save as workflow** turns a run back into a template. A run that was edited
+mid-flight — or whose workflow has since been re-armed, rewritten or deleted — is
+the only record of how that work was actually done, so this is how a good
+improvised run becomes the way you do it next time. It takes the chats and steps,
+with fresh ids so the new template stands alone, and no documents: those papers
+belonged to that matter.
+
 ### Fixing a partial run
 
 A ten-step run that stops at step six shouldn't have to start again. **Fix &

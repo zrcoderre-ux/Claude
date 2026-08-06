@@ -134,10 +134,11 @@
     el.className = "cumwf";
     el.hidden = true;
     el.innerHTML =
+      `<div class="cumwf-tmpl-row">` +
       `<label class="cumwf-label">Workflow name</label>` +
       `<input class="cumwf-template" type="text" placeholder="e.g. Tentative ruling — 3× devil's advocate" />` +
       `<p class="cumwf-hint">The template's own name. It keeps this one — it's what the workflow goes back ` +
-      `to after each run starts.</p>` +
+      `to after each run starts.</p></div>` +
       `<label class="cumwf-label">Run name</label>` +
       `<input class="cumwf-name" type="text" placeholder="e.g. Demurrer — Smith v. Jones" />` +
       `<p class="cumwf-hint">This matter, this run. Starting a run gives it this name along with the ` +
@@ -172,6 +173,7 @@
     const ui = {
       name: q(".cumwf-name"),
       template: q(".cumwf-template"),
+      tmplRow: q(".cumwf-tmpl-row"),
       desc: q(".cumwf-desc"),
       count: q(".cumwf-count"),
       chats: q(".cumwf-chats"),
@@ -188,6 +190,9 @@
     };
 
     let wf = null; // the workflow being edited (a working copy)
+    // When set, we're editing a RUN's own copy of its steps and papers rather
+    // than a template, and this is where the result goes.
+    let runSink = null;
     let originalDocIds = [];
     const pendingFiles = new Map(); // docId -> File, written to storage on save
     let projects = [];
@@ -456,6 +461,9 @@
     function close() {
       el.hidden = true;
       wf = null;
+      runSink = null;
+      if (ui.tmplRow) ui.tmplRow.hidden = false;
+      ui.save.textContent = "Save workflow";
       pendingFiles.clear();
       if (typeof opts.onClosed === "function") opts.onClosed();
     }
@@ -494,6 +502,18 @@
       try {
         const writes = {};
         for (const [id, file] of pendingFiles) writes[J.fileKey(id)] = await readAsDataURL(file);
+
+        // Editing a run: the bytes still go to storage, but the shape goes back
+        // to the caller to fold into the run — the template is not touched.
+        if (runSink) {
+          await storageSet(writes);
+          const sink = runSink;
+          flash("Saved.");
+          close();
+          sink(candidate);
+          return;
+        }
+
         const all = (await storageGet(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [];
         const next = W.upsertWorkflow(all, candidate);
         writes[WORKFLOWS_KEY] = next;
@@ -545,6 +565,29 @@
             Date.now()
           )
         );
+      },
+      // Edit a RUN in progress: its own steps, chats and documents, none of
+      // which belong to the template it came from. `onSave` receives the edited
+      // shape; the file bytes are already stored by then.
+      editRun(run, onSave) {
+        runSink = onSave;
+        const plan = run.plan || {};
+        open(
+          W.newWorkflow(
+            {
+              name: run.name,
+              templateName: run.name,
+              chats: plan.chats || [],
+              docs: run.docs || [],
+              steps: plan.steps || [],
+            },
+            run.id,
+            Date.now()
+          )
+        );
+        if (ui.tmplRow) ui.tmplRow.hidden = true; // a run has no resting name
+        ui.name.value = run.name || "";
+        ui.save.textContent = "Save changes to this run";
       },
       close,
       isOpen: () => !el.hidden,

@@ -256,6 +256,102 @@ test("a run remembers its own window, and forgets one that's gone", () => {
   assert.equal(W.reviseRun(placed, { stepIndex: 1 }, NOW).windowId, 42);
 });
 
+test("a run executes its own copy, not the template's", () => {
+  const wf = twoChatWorkflow();
+  const run = W.newRun(wf, "r1", NOW, { type: "now" }, wf.docs);
+  assert.equal(run.plan.steps.length, 3);
+  // The template is re-armed for another matter and rewritten entirely.
+  const reused = W.newWorkflow(
+    Object.assign({}, wf, { steps: [{ id: "z", chatId: "a", prompt: "something else" }] }),
+    wf.id,
+    NOW + 1
+  );
+  const src = W.runSource(run, reused);
+  assert.equal(src.steps.length, 3, "the run in flight is unaffected");
+  assert.equal(W.planRun(src)[1].prompt, "attack it");
+  // A run from before runs carried their own falls back to the workflow.
+  const legacy = Object.assign({}, run, { plan: null });
+  assert.equal(W.runSource(legacy, reused).steps.length, 1);
+});
+
+test("a step can be added to a run in progress without touching the template", () => {
+  const wf = twoChatWorkflow();
+  let run = W.newRun(wf, "r1", NOW, { type: "now" }, wf.docs);
+  run = W.applyStepResult(W.markStarted(run, NOW), {
+    stepIndex: 0, chatId: "a", reply: "DRAFT", now: NOW, total: 3,
+  });
+  assert.equal(run.stepIndex, 1);
+
+  const steps = run.plan.steps.slice();
+  steps.splice(2, 0, { id: "extra", chatId: "b", prompt: "one more pass", carry: true });
+  const edited = W.applyRunEdit(run, { steps }, NOW + 5);
+  assert.equal(edited.totalSteps, 4);
+  assert.equal(W.planRun(W.runSource(edited, wf))[2].prompt, "one more pass");
+  assert.equal(edited.stepIndex, 1, "where it had got to is untouched");
+  assert.equal(wf.steps.length, 3, "the template is not edited");
+});
+
+test("documents added mid-run ride the next step in their chats", () => {
+  const wf = twoChatWorkflow();
+  let run = W.newRun(wf, "r1", NOW, { type: "now" }, wf.docs);
+  // Two steps done; chat A's and chat B's opening messages have both gone.
+  run = Object.assign({}, run, { stepIndex: 2 });
+  const docs = run.docs.concat([{ id: "late", name: "reply-brief.pdf", chats: ["a", "b"] }]);
+  const edited = W.applyRunEdit(run, { docs }, NOW + 5);
+
+  const added = edited.docs.find((d) => d.id === "late");
+  assert.equal(added.addedAt, 2, "stamped with where the run had reached");
+  const plan = W.planRun(W.runSource(edited, wf));
+  assert.deepEqual(plan[0].docIds, ["d1"], "the opening message is long gone; unchanged");
+  assert.deepEqual(plan[2].docIds, ["late"], "goes up with the next step in chat A");
+  // Chat B's next step is in the future here, so it rides that one instead.
+  const withB = W.applyRunEdit(
+    Object.assign({}, run, { stepIndex: 0 }),
+    { docs, steps: run.plan.steps },
+    NOW + 6
+  );
+  const planB = W.planRun(W.runSource(withB, wf));
+  assert.ok(planB[1].docIds.indexOf("late") !== -1, "chat B's next step carries it");
+});
+
+test("an edited run can be saved back as a new workflow", () => {
+  const wf = twoChatWorkflow();
+  let run = W.newRun(Object.assign({}, wf, { name: "Demurrer — Smith" }), "r1", NOW, { type: "now" }, wf.docs);
+  // Edited mid-flight: an extra pass nobody's template has.
+  const steps = run.plan.steps.concat([{ id: "x", chatId: "b", prompt: "one more pass", carry: true }]);
+  run = W.applyRunEdit(run, { steps }, NOW + 1);
+
+  const made = W.workflowFromRun(run, wf, "w2", NOW + 2, idgen("n"));
+  assert.equal(made.name, "Demurrer — Smith");
+  assert.equal(made.templateName, "Demurrer — Smith");
+  assert.equal(made.steps.length, 4, "including the step added mid-run");
+  assert.equal(made.steps[3].prompt, "one more pass");
+  assert.deepEqual(made.docs, [], "a template starts empty — those papers were that matter's");
+  assert.deepEqual(W.validate(made), []);
+  // Fresh ids: a new template, not a reference back to the run's workflow.
+  assert.notEqual(made.chats[0].id, wf.chats[0].id);
+  assert.deepEqual(
+    W.planRun(made).map((s) => s.chatName),
+    ["Drafting", "Critic", "Drafting", "Critic"]
+  );
+
+  // It works when the original workflow is gone entirely.
+  const orphan = W.workflowFromRun(run, null, "w3", NOW + 3, idgen("o"));
+  assert.equal(orphan.steps.length, 4);
+});
+
+test("pausing keeps a run's place; resuming picks it up", () => {
+  const { run } = startedRun();
+  const waiting = W.markSent(run, { chatId: "a", url: "u", now: NOW });
+  const paused = W.markPaused(waiting, NOW + 1);
+  assert.equal(paused.status, "paused");
+  assert.equal(paused.stepIndex, waiting.stepIndex, "same place");
+  assert.equal(paused.phase, "awaiting-reply", "and it still knows the message went out");
+  assert.equal(W.resumePlan(paused).alreadySent, true);
+  assert.equal(W.isRunActive(paused), false, "nothing picks a paused run back up on its own");
+  assert.equal(W.pickupRuns([paused], NOW + W.STALE_MS + 1, W.STALE_MS).length, 0);
+});
+
 test("carrySource points at the chat that produced the hand-off", () => {
   const wf = twoChatWorkflow();
   // Step 3 (revise, in A) carries what step 2 (attack, in B) produced.

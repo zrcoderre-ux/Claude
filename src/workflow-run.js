@@ -395,7 +395,10 @@
     try {
       while (Date.now() < deadline) {
         const run = await readRun(runId);
-        if (!run || run.status === "canceled") return { el: null, canceled: true };
+        // Paused counts as "let go" too — the run keeps its place and its
+        // phase, so resuming waits for this reply rather than re-sending.
+        if (!run || run.status === "canceled" || run.status === "paused")
+          return { el: null, canceled: true };
         const now = Date.now();
         const list = assistantMessages();
         const el = list.length ? list[list.length - 1] : null;
