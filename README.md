@@ -125,21 +125,24 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
 ### A workflow is a template
 
 The same workflow runs many matters, so it isn't meant to keep any one of them.
-Name it for the matter in front of you, drop in that matter's papers, and press
-**Start**:
+The editor has two names for that reason:
+
+- **Workflow name** — the template's own, and durable. It keeps this one.
+- **Run name** — the matter in front of you. Blank means "use the workflow
+  name".
+
+Set the run name, drop in that matter's papers, and press **Start**:
 
 - the **run** takes that name and those documents, and owns them for its whole
   life;
-- the **workflow** goes straight back to its **resting name** and **no
-  documents**, ready to arm for the next matter — even while the run it just
-  spawned is still going.
+- the **workflow** goes straight back to its own name with **no documents**,
+  ready for the next matter — even while the run it just spawned is still going.
 
-The resting name is a field of its own in the editor (leave it blank and it's
-just the workflow's current name, so a workflow you never rename per matter
-behaves exactly as before). Because the run owns its copy, deleting the template
-— or re-arming it for the next matter — can't disturb a run in flight, and the
-stored files are only discarded when nothing, run or workflow, still points at
-them.
+A workflow armed for a matter shows both in the list, so a shelf of
+similarly-named rows stays readable. Because the run owns its copy of the papers,
+re-arming the template — or deleting it outright — can't disturb a run in
+flight, and stored files are only discarded once nothing, run or workflow, still
+points at them.
 
 ### Running one
 

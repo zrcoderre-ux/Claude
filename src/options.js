@@ -363,6 +363,11 @@
           `<div class="job-main">` +
           `<div class="job-title">${escapeHtml(wf.name || "(untitled)")}` +
           (wf.builtin ? `<span class="job-badge">Pre-built</span>` : "") +
+          // Armed for a matter: say so, and name the template it will go back
+          // to, so a list of similarly-named rows stays readable.
+          (wf.templateName && wf.templateName !== wf.name
+            ? `<span class="job-badge">${escapeHtml(wf.templateName)}</span>`
+            : "") +
           `</div>` +
           (wf.description ? `<div class="job-meta">${escapeHtml(wf.description)}</div>` : "") +
           `<div class="job-meta">${escapeHtml(WF.summarize(wf))} · ${escapeHtml(
