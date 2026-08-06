@@ -238,11 +238,26 @@
     }
   }
 
+  // How many attachment chips the composer is showing. The markup is
+  // unversioned, so take the best of several shapes rather than trusting one.
+  function countChips() {
+    const counts = [
+      document.querySelectorAll("button h3").length,
+      document.querySelectorAll('[data-testid="file-thumbnail"]').length,
+      document.querySelectorAll('[data-testid*="attachment" i]').length,
+      document.querySelectorAll('[data-testid*="file-chip" i]').length,
+    ];
+    return Math.max.apply(null, counts);
+  }
+
   // Wait until `expected` uploads have reported success (via inject.js), or a
-  // fallback: `expected` attachment chips are present, or we time out.
+  // fallback: `expected` attachment chips are present, or we time out. Resolves
+  // { ok, uploads, chips } so a caller can say WHY it gave up — an upload that
+  // silently doesn't happen is the failure mode that matters here.
   function waitUploads(expected, timeoutMs) {
     return new Promise((resolve) => {
-      if (expected <= 0) return resolve(true);
+      if (expected <= 0) return resolve({ ok: true, uploads: 0, chips: 0 });
+      const baseChips = countChips(); // a conversation may already show some
       let done = 0;
       const deadline = Date.now() + (timeoutMs || 120000);
       function onMsg(event) {
@@ -255,17 +270,75 @@
       }
       window.addEventListener("message", onMsg);
       const timer = setInterval(() => {
-        // DOM fallback: enough attachment chips rendered.
-        const chips = document.querySelectorAll("button h3").length;
+        const chips = countChips() - baseChips;
         if (done >= expected || chips >= expected) return finish(true);
         if (Date.now() > deadline) return finish(done > 0 || chips > 0);
       }, 400);
       function finish(ok) {
         clearInterval(timer);
         window.removeEventListener("message", onMsg);
-        resolve(ok);
+        resolve({ ok, uploads: done, chips: Math.max(0, countChips() - baseChips) });
       }
     });
+  }
+
+  // Where a file drop lands: the composer's own form/container, falling back to
+  // the page. claude.ai accepts dropped files as well as picked ones, which is
+  // the second way in when the hidden input can't be found or React ignores it.
+  function findDropTarget() {
+    const ed = findEditor();
+    if (ed) {
+      const form = ed.closest("form") || ed.closest('[class*="composer" i]') || ed.parentElement;
+      if (form) return form;
+      return ed;
+    }
+    return document.body;
+  }
+
+  function dropFiles(el, files) {
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+    const r = el.getBoundingClientRect();
+    const base = {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+    };
+    for (const type of ["dragenter", "dragover", "drop"]) {
+      try {
+        const ev = new DragEvent(type, Object.assign({ dataTransfer: dt }, base));
+        el.dispatchEvent(ev);
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }
+
+  // Attach `files` to the composer and wait for them to land. Tries the hidden
+  // file input first, then a synthesized drop. Returns { ok, how, detail } —
+  // `detail` names what was actually observed, so a failure can say more than
+  // "uploads did not complete".
+  async function attachFiles(files, timeoutMs) {
+    const input = findFileInput();
+    let how = null;
+    let res = { ok: false, uploads: 0, chips: 0 };
+    if (input) {
+      setFiles(input, files);
+      how = "file input";
+      res = await waitUploads(files.length, timeoutMs || 120000);
+    }
+    if (!res.ok) {
+      // Second way in: drop them on the composer.
+      const target = findDropTarget();
+      if (target) {
+        dropFiles(target, files);
+        how = how ? how + ", then drop" : "drop";
+        res = await waitUploads(files.length, Math.min(timeoutMs || 120000, 60000));
+      }
+    }
+    const detail =
+      (input ? "" : "no file input found; ") +
+      res.uploads + "/" + files.length + " uploads confirmed, " + res.chips + " attachment(s) visible";
+    return { ok: res.ok, how, detail };
   }
 
   // ---- Model selection ---------------------------------------------------
@@ -501,9 +574,8 @@
     const notes = [];
     const files = o.files || [];
 
-    const input = files.length ? await waitFor(findFileInput) : null;
+    if (files.length) await waitFor(findFileInput, 15000); // may legitimately not exist
     const editor = await waitFor(findEditor);
-    if (files.length && !input) return { ok: false, error: "file input not found", notes };
     if (!editor) return { ok: false, error: "prompt editor not found", notes };
 
     if (o.codeRepo) {
@@ -525,10 +597,20 @@
       }
     }
 
+    // Attach first, and never send without the files: a prompt that says "the
+    // attached papers" arriving with nothing attached is worse than not sending
+    // — Claude answers anyway, plausibly, from nothing.
     if (files.length) {
-      setFiles(input, files);
-      const uploaded = await waitUploads(files.length, o.uploadTimeoutMs || 120000);
-      if (!uploaded) return { ok: false, error: "uploads did not complete", notes };
+      const att = await attachFiles(files, o.uploadTimeoutMs || 120000);
+      if (!att.ok)
+        return {
+          ok: false,
+          error:
+            "could not attach " + files.length + " document(s) — " + att.detail +
+            (att.how ? " (tried: " + att.how + ")" : ""),
+          notes,
+        };
+      notes.push("attached " + files.length + " document(s) via " + att.how);
       await sleep(600);
     }
 
@@ -579,6 +661,9 @@
     dataUrlToFile,
     filesFromStorage,
     setFiles,
+    attachFiles,
+    countChips,
+    dropFiles,
     robustClick,
     sendDisabled,
     waitSendEnabled,

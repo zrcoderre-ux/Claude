@@ -361,6 +361,7 @@
         url,
         now: Date.now(),
         total: msg.total,
+        docs: (msg.files || []).length,
       })
     );
     return {

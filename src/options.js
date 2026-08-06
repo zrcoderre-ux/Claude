@@ -314,6 +314,9 @@
           `<div class="job-meta">${escapeHtml(WF.summarize(wf))} · ${escapeHtml(
             stepChain(wf)
           )}</div>` +
+          `<div class="job-meta${WF.totalUploads(wf) ? "" : " job-err"}">${escapeHtml(
+            WF.uploadSummary(wf)
+          )}</div>` +
           `<div class="job-meta wf-run-bar">` +
           `<select class="wf-when" data-id="${wf.id}">` +
           `<option value="now">Run now</option>` +
@@ -356,6 +359,17 @@
   }
 
   function startWorkflow(btn, id) {
+    const wf = workflowsById[id];
+    // Don't let a run that uploads nothing start silently. These prompts talk
+    // about "the attached papers"; Claude will answer anyway, from nothing, and
+    // the result looks like work.
+    if (wf && !WF.totalUploads(wf)) {
+      const stray = (wf.docs || []).length;
+      const msg = stray
+        ? `“${wf.name}” has ${stray} document(s), but none are ticked for a chat — nothing will be uploaded. Start anyway?`
+        : `“${wf.name}” has no documents attached — its first message goes out with nothing. Start anyway?`;
+      if (!confirm(msg)) return;
+    }
     const bar = btn.parentElement;
     const when = bar.querySelector(".wf-when").value;
     let trigger = { type: when === "reset" ? "reset" : "now" };
@@ -403,6 +417,18 @@
   }
 
   // ---- runs ----
+  // What each finished step actually did — including how many documents went up
+  // with it, so an upload that didn't happen is visible after the fact.
+  function transcriptText(run) {
+    return (run.transcript || [])
+      .map(
+        (t) =>
+          "· " + (t.stepIndex + 1) + (t.docs ? " (" + t.docs + " doc)" : "") +
+          " → " + Math.round((t.chars || 0) / 100) / 10 + "k chars"
+      )
+      .join(" ");
+  }
+
   function runHoldText(run) {
     const S = window.CUMStatus;
     const waited =
@@ -449,6 +475,9 @@
             : "") +
           `</div>` +
           (links ? `<div class="job-meta">Chats: ${links}</div>` : "") +
+          (run.transcript && run.transcript.length
+            ? `<div class="job-meta">${escapeHtml(transcriptText(run))}</div>`
+            : "") +
           (run.error ? `<div class="job-err">${escapeHtml(run.error)}</div>` : "") +
           (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
           (run.note ? `<div class="job-meta">⚠ ${escapeHtml(run.note)}</div>` : "") +
