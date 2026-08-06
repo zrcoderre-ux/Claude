@@ -110,8 +110,17 @@
     };
   }
 
-  function docsForChat(wf, chatId) {
-    return ((wf && wf.docs) || []).filter(
+  // A workflow's own documents plus the ones belonging to the run in hand. A
+  // workflow is a TEMPLATE: the papers are different every matter, so at Start
+  // they move to the run and the template goes back to empty. The run then owns
+  // them for its whole life, which is what lets the template be reused (or
+  // re-armed for the next matter) while a run is still going.
+  function allDocs(wf, extra) {
+    return ((wf && wf.docs) || []).concat(extra || []);
+  }
+
+  function docsForChat(wf, chatId, extra) {
+    return allDocs(wf, extra).filter(
       (d) => d && Array.isArray(d.chats) && d.chats.indexOf(chatId) !== -1
     );
   }
@@ -123,6 +132,11 @@
     const wf = {
       id: id,
       name: trimmed(f.name) || "Untitled workflow",
+      // What the name goes back to after a run starts. A workflow is named for
+      // the matter in front of you while you set it up; this is the name it
+      // wears at rest, so the next matter starts from a clean template rather
+      // than the last one's title.
+      templateName: trimmed(f.templateName) || trimmed(f.name) || "Untitled workflow",
       description: trimmed(f.description),
       builtin: !!f.builtin,
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
@@ -283,7 +297,26 @@
   // its chat, the text's hand-off, and which documents to attach — documents go
   // up on the chat's FIRST step, because that's the message that opens the
   // conversation.
-  function planRun(wf) {
+  // Back to a blank template: the name it wears at rest, and no papers. Called
+  // when a run starts and takes this matter's documents with it.
+  function resetToTemplate(wf, now) {
+    if (!wf) return wf;
+    return Object.assign({}, wf, {
+      name: trimmed(wf.templateName) || wf.name,
+      docs: [],
+      updatedAt: now,
+    });
+  }
+
+  // The stored files a run is holding on its own account — the ones handed over
+  // when it started. Nothing else may delete these while the run lives.
+  function runFileIds(runs) {
+    const ids = new Set();
+    for (const r of runs || []) for (const d of (r && r.docs) || []) if (d && d.id) ids.add(d.id);
+    return ids;
+  }
+
+  function planRun(wf, extraDocs) {
     const seen = new Set();
     return ((wf && wf.steps) || []).map((s, i) => {
       const firstInChat = !seen.has(s.chatId);
@@ -297,7 +330,7 @@
         carry: i > 0 && s.carry !== false,
         carryLabel: trimmed(s.carryLabel) || "material from the previous step",
         firstInChat: firstInChat,
-        docIds: firstInChat ? docsForChat(wf, s.chatId).map((d) => d.id) : [],
+        docIds: firstInChat ? docsForChat(wf, s.chatId, extraDocs).map((d) => d.id) : [],
       };
     });
   }
@@ -341,12 +374,17 @@
 
   // ---- runs ---------------------------------------------------------------
 
-  function newRun(wf, id, now, trigger) {
+  function newRun(wf, id, now, trigger, docs) {
     const t = trigger || {};
     return {
       id: id,
       workflowId: wf ? wf.id : null,
+      // The name the workflow was wearing when it started — this matter's name.
+      // The template goes back to its own straight after (see resetToTemplate).
       name: wf ? wf.name : "Workflow",
+      // This matter's papers, handed over at Start so the template can be
+      // cleared and re-armed while this run is still going.
+      docs: (docs || (wf && wf.docs) || []).map((d) => newDoc(d, d && d.id)),
       totalSteps: wf && wf.steps ? wf.steps.length : 0,
       trigger:
         t.type === "time"
@@ -918,6 +956,9 @@
     removeWorkflow,
     getWorkflow,
     fileIdsInUse,
+    resetToTemplate,
+    runFileIds,
+    allDocs,
     validate,
     summarize,
     uploadPlan,

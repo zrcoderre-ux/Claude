@@ -135,7 +135,11 @@
     el.hidden = true;
     el.innerHTML =
       `<label class="cumwf-label">Workflow name</label>` +
-      `<input class="cumwf-name" type="text" placeholder="e.g. Tentative ruling — 3× devil's advocate" />` +
+      `<input class="cumwf-name" type="text" placeholder="e.g. Demurrer — Smith v. Jones" />` +
+      `<p class="cumwf-hint">Name it for the matter in front of you. Starting a run gives the run this ` +
+      `name, then puts the template back to its resting name below and clears its documents, ready for the next one.</p>` +
+      `<label class="cumwf-label">Resting name (the template's own)</label>` +
+      `<input class="cumwf-template" type="text" placeholder="e.g. Tentative ruling — 3× devil's advocate" />` +
       `<label class="cumwf-label">What it does (optional)</label>` +
       `<input class="cumwf-desc" type="text" placeholder="One line, for the list" />` +
 
@@ -165,6 +169,7 @@
     const q = (c) => el.querySelector(c);
     const ui = {
       name: q(".cumwf-name"),
+      template: q(".cumwf-template"),
       desc: q(".cumwf-desc"),
       count: q(".cumwf-count"),
       chats: q(".cumwf-chats"),
@@ -427,6 +432,7 @@
       originalDocIds = (wf.docs || []).map((d) => d.id);
       pendingFiles.clear();
       ui.name.value = wf.name || "";
+      ui.template.value = wf.templateName || wf.name || "";
       ui.desc.value = wf.description || "";
       ui.count.value = (wf.chats || []).length || 1;
       ui.problems.hidden = true;
@@ -466,6 +472,9 @@
     ui.save.addEventListener("click", async () => {
       if (!wf) return;
       wf.name = ui.name.value;
+      // Left blank, the resting name is whatever it's called now — so a
+      // workflow that is never renamed per matter simply keeps its name.
+      wf.templateName = ui.template.value.trim() || ui.name.value;
       wf.description = ui.desc.value;
       const candidate = W.newWorkflow(wf, wf.id, Date.now());
       const problems = W.validate(candidate);

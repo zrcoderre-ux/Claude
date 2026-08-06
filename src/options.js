@@ -417,12 +417,19 @@
       if (!confirm(`Delete “${wf.name}”? Its documents are deleted too. This can't be undone.`))
         return;
       const next = WF.removeWorkflow(list, id);
-      // Only bin document bytes no surviving workflow (a copy, say) still uses.
-      const stillUsed = WF.fileIdsInUse(next, null);
-      const dead = (wf.docs || []).map((d) => d.id).filter((fid) => !stillUsed.has(fid));
-      chrome.storage.local.set({ [WORKFLOWS_KEY]: next }, () => {
-        if (dead.length) chrome.storage.local.remove(dead.map((fid) => J.fileKey(fid)));
-        renderWorkflows();
+      // Only bin document bytes nothing else still needs — a copy of this
+      // workflow, or a RUN that took these papers with it and may still be
+      // uploading them.
+      chrome.storage.local.get(RUNS_KEY, (r2) => {
+        const stillUsed = WF.fileIdsInUse(next, null);
+        const heldByRuns = WF.runFileIds((r2 && r2[RUNS_KEY]) || []);
+        const dead = (wf.docs || [])
+          .map((d) => d.id)
+          .filter((fid) => !stillUsed.has(fid) && !heldByRuns.has(fid));
+        chrome.storage.local.set({ [WORKFLOWS_KEY]: next }, () => {
+          if (dead.length) chrome.storage.local.remove(dead.map((fid) => J.fileKey(fid)));
+          renderWorkflows();
+        });
       });
     });
   }
@@ -599,6 +606,11 @@
           `<div class="job-main">` +
           `<div class="job-title">${escapeHtml(run.name || "Workflow")}` +
           `<span class="job-badge">${RUN_STATUS_LABEL[run.status] || run.status}</span></div>` +
+          (run.docs && run.docs.length
+            ? `<div class="job-meta">${run.docs.length} document${
+                run.docs.length === 1 ? "" : "s"
+              } — this run's own copy</div>`
+            : "") +
           `<div class="job-meta">${escapeHtml(WF.progressText(run, wf))}` +
           (run.trigger && run.trigger.type === "time" && run.status === "pending"
             ? " · at " + escapeHtml(new Date(run.trigger.at).toLocaleString())
@@ -675,9 +687,21 @@
       wfui.runs.querySelectorAll(".wf-run-del").forEach((b) =>
         b.addEventListener("click", () => {
           const id = b.getAttribute("data-id");
-          chrome.storage.local.get(RUNS_KEY, (r) => {
+          chrome.storage.local.get([RUNS_KEY, WORKFLOWS_KEY], (r) => {
             const list = (r && r[RUNS_KEY]) || [];
-            chrome.storage.local.set({ [RUNS_KEY]: WF.removeRun(list, id) }, renderRuns);
+            const run = WF.getRun(list, id);
+            const rest = WF.removeRun(list, id);
+            // The run owned this matter's papers; with the run gone, so are
+            // they — unless another run or a workflow still points at them.
+            const stillUsed = WF.fileIdsInUse((r && r[WORKFLOWS_KEY]) || [], null);
+            const heldByRuns = WF.runFileIds(rest);
+            const dead = ((run && run.docs) || [])
+              .map((d) => d.id)
+              .filter((fid) => !stillUsed.has(fid) && !heldByRuns.has(fid));
+            chrome.storage.local.set({ [RUNS_KEY]: rest }, () => {
+              if (dead.length) chrome.storage.local.remove(dead.map((fid) => J.fileKey(fid)));
+              renderRuns();
+            });
           });
         })
       );

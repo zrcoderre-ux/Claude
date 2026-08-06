@@ -122,6 +122,25 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   REPORT -----`. Steps returning to a chat that already has the material usually
   don't need to carry anything: the conversation still remembers it.
 
+### A workflow is a template
+
+The same workflow runs many matters, so it isn't meant to keep any one of them.
+Name it for the matter in front of you, drop in that matter's papers, and press
+**Start**:
+
+- the **run** takes that name and those documents, and owns them for its whole
+  life;
+- the **workflow** goes straight back to its **resting name** and **no
+  documents**, ready to arm for the next matter — even while the run it just
+  spawned is still going.
+
+The resting name is a field of its own in the editor (leave it blank and it's
+just the workflow's current name, so a workflow you never rename per matter
+behaves exactly as before). Because the run owns its copy, deleting the template
+— or re-arming it for the next matter — can't disturb a run in flight, and the
+stored files are only discarded when nothing, run or workflow, still points at
+them.
+
 ### Running one
 
 Pick **Run now**, **When usage resets**, or **At a set time** on the workflow's
