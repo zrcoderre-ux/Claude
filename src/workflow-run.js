@@ -30,8 +30,32 @@
 
   const POLL_MS = 1500;
   const HEARTBEAT_MS = 20000;
-  const STABLE_MS = 3000; // the reply must hold still this long before we take it
+  // With the stream-closed signal, this is just "let the DOM finish painting".
+  const SETTLE_MS = 1500;
+  // Without it, the text has to hold still this long AND across this many
+  // consecutive looks — see the visibility note in waitForReply.
+  const STABLE_MS = 6000;
+  const STABLE_POLLS = 3;
   const COPY_WAIT_MS = 4000;
+
+  // ---- the assistant's response stream ------------------------------------
+  // inject.js reports when a text/event-stream response opens and when its body
+  // finishes reading, which is the turn genuinely ending. Tracked from page
+  // load so a stream that closes between polls is never missed.
+  let streamStartedAt = 0;
+  let streamDoneAt = 0;
+  try {
+    window.addEventListener("message", (event) => {
+      if (event.source !== window) return;
+      const m = event.data;
+      const p = m && m.__channel === C.CHANNEL ? m.payload : null;
+      if (!p) return;
+      if (p.streamStart) streamStartedAt = p.at || Date.now();
+      if (p.streamDone) streamDoneAt = p.at || Date.now();
+    });
+  } catch (e) {
+    /* ignore */
+  }
 
   // Assistant turns, newest last. claude.ai's markup is unversioned, so this
   // walks a cascade and takes the first selector that matches anything.
@@ -58,8 +82,11 @@
     const list = assistantMessages();
     return list.length ? list[list.length - 1] : null;
   }
+  // textContent, not innerText: innerText is computed from layout, and a
+  // background tab may not lay out at all — which makes a still-growing reply
+  // look frozen, exactly the wrong answer for a stability check.
   function renderedText(el) {
-    return el ? (el.innerText || el.textContent || "").trim() : "";
+    return el ? (el.textContent || "").trim() : "";
   }
   // Streaming is advertised on the message itself; the Stop control is the
   // page-wide signal. Either one means "not finished".
@@ -250,42 +277,85 @@
   // for it to finish. `before` is { count, text } sampled just before sending —
   // the transcript can hold only the newest turn in the DOM, so a grown count is
   // one signal for "something new arrived", not the only one.
-  async function waitForReply(runId, before, timeoutMs) {
-    const deadline = Date.now() + (timeoutMs || W.STEP_TIMEOUT_MS);
+  async function waitForReply(runId, before, timeoutMs, sentAt) {
+    const startedAt = Date.now();
+    const deadline = startedAt + (timeoutMs || W.STEP_TIMEOUT_MS);
+    const since = typeof sentAt === "number" ? sentAt : startedAt;
     let lastText = "";
     let lastChangeAt = Date.now();
-    while (Date.now() < deadline) {
-      const run = await readRun(runId);
-      if (!run || run.status === "canceled") return { el: null, canceled: true };
-      const now = Date.now();
-      const list = assistantMessages();
-      const el = list.length ? list[list.length - 1] : null;
-      if (el) {
-        const text = renderedText(el);
-        if (text !== lastText) {
-          lastText = text;
-          lastChangeAt = now;
+    let stablePolls = 0;
+
+    // Clicking into the tab is the moment the poll loop stops being throttled
+    // and starts running every poll interval again. Everything measured while
+    // the tab was in the background was measured across minute-wide gaps, so it
+    // is not evidence about a turn that may still be running: throw the
+    // stability window away and make the reply prove it's finished from here.
+    // Without this, focusing a tab mid-turn cashes in a stale "unchanged for 60
+    // seconds" and the run bolts to the next step over a half-written answer.
+    let onVisible = null;
+    try {
+      onVisible = () => {
+        if (document.visibilityState === "visible") {
+          lastChangeAt = Date.now();
+          stablePolls = 0;
         }
-        const fresh = W.isNewReply({
-          count: list.length,
-          beforeCount: before.count,
-          text,
-          beforeText: before.text,
-        });
-        if (
-          fresh &&
-          W.turnSettled({
-            text,
-            generating: streaming(el),
-            unchangedMs: now - lastChangeAt,
-            minStableMs: STABLE_MS,
-          })
-        )
-          return { el, canceled: false };
-      }
-      await C.sleep(POLL_MS);
+      };
+      document.addEventListener("visibilitychange", onVisible);
+    } catch (e) {
+      /* ignore */
     }
-    return { el: null, canceled: false, timedOut: true };
+
+    try {
+      while (Date.now() < deadline) {
+        const run = await readRun(runId);
+        if (!run || run.status === "canceled") return { el: null, canceled: true };
+        const now = Date.now();
+        const list = assistantMessages();
+        const el = list.length ? list[list.length - 1] : null;
+        if (el) {
+          const text = renderedText(el);
+          if (text !== lastText) {
+            lastText = text;
+            lastChangeAt = now;
+            stablePolls = 0;
+          } else {
+            stablePolls++;
+          }
+          const fresh = W.isNewReply({
+            count: list.length,
+            beforeCount: before.count,
+            text,
+            beforeText: before.text,
+          });
+          // Only trust a stream that closed AFTER this step's message went out,
+          // and only if a stream actually opened for it — a "done" left over
+          // from the previous turn must not release this one.
+          const streamDone = streamDoneAt > since && streamDoneAt >= streamStartedAt;
+          if (
+            fresh &&
+            W.turnSettled({
+              text,
+              generating: streaming(el),
+              unchangedMs: now - lastChangeAt,
+              stablePolls,
+              streamDone,
+              minSettleMs: SETTLE_MS,
+              minStableMs: STABLE_MS,
+              minStablePolls: STABLE_POLLS,
+            })
+          )
+            return { el, canceled: false, via: streamDone ? "stream" : "text" };
+        }
+        await C.sleep(POLL_MS);
+      }
+      return { el: null, canceled: false, timedOut: true };
+    } finally {
+      try {
+        if (onVisible) document.removeEventListener("visibilitychange", onVisible);
+      } catch (e) {
+        /* ignore */
+      }
+    }
   }
 
   // ---- one step ----------------------------------------------------------
@@ -307,6 +377,9 @@
       return { ok: false, error: "step already moved on" };
 
     const notes = [];
+    // When this step's message went out — the line after which a closing
+    // response stream belongs to THIS turn and not the one before it.
+    let sentAt = Date.now();
     // What the transcript looked like BEFORE we sent, so the reply we take can't
     // be the one that was already on screen.
     const priorList = assistantMessages();
@@ -327,18 +400,27 @@
       if (sent.notes && sent.notes.length) notes.push.apply(notes, sent.notes);
       if (!sent.ok)
         return { ok: false, error: sent.error, note: notes.join("; ") || null };
+      sentAt = Date.now();
       const url = await settledUrl(20000);
       await updateRun(runId, (r) =>
-        W.markSent(r, { chatId: msg.chatId, url, now: Date.now() })
+        W.markSent(r, { chatId: msg.chatId, url, now: sentAt })
       );
     } else {
       // Re-attaching to a step whose message already went out: the reply may
       // have arrived while nobody was watching, so there is no "before" to
       // compare against — take the newest turn and let the settled check decide.
       before = { count: -1, text: null };
+      // The message went out before this tab took the step over; anything the
+      // stream signals from here on is fair game.
+      sentAt = typeof run.sentAt === "number" ? run.sentAt : 0;
     }
 
-    const { el, canceled, timedOut } = await waitForReply(runId, before, W.STEP_TIMEOUT_MS);
+    const { el, canceled, timedOut } = await waitForReply(
+      runId,
+      before,
+      W.STEP_TIMEOUT_MS,
+      sentAt
+    );
     if (canceled) return { ok: false, canceled: true, error: "canceled" };
     if (!el)
       return {

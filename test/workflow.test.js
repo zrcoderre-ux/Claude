@@ -312,12 +312,34 @@ test("isNewReply spots a new answer even when the rendered count never grows", (
   assert.equal(W.isNewReply(null), false);
 });
 
-test("turnSettled waits for generation to stop AND the text to hold still", () => {
-  const base = { text: "an answer", generating: false, unchangedMs: 3000, minStableMs: 2500 };
-  assert.ok(W.turnSettled(base));
-  assert.equal(W.turnSettled(Object.assign({}, base, { generating: true })), false);
-  assert.equal(W.turnSettled(Object.assign({}, base, { unchangedMs: 500 })), false);
-  assert.equal(W.turnSettled(Object.assign({}, base, { text: "   " })), false);
+test("turnSettled takes the network's word for it when the stream has closed", () => {
+  const done = { text: "an answer", generating: false, streamDone: true, unchangedMs: 1500 };
+  assert.ok(W.turnSettled(done), "stream closed and the DOM caught up");
+  assert.equal(
+    W.turnSettled(Object.assign({}, done, { unchangedMs: 200 })),
+    false,
+    "still give the DOM a moment to finish rendering"
+  );
+  assert.equal(
+    W.turnSettled(Object.assign({}, done, { generating: true })),
+    false,
+    "a Stop control still on screen outranks a stale stream signal"
+  );
+});
+
+test("without a stream signal, one quiet reading is not enough to advance", () => {
+  // The background-tab trap: timers throttle to ~1/min, so a single "unchanged"
+  // observation spans a minute of not looking. Clicking into the tab must not
+  // cash that in as a finished turn.
+  const oneLook = { text: "half an answer", generating: false, unchangedMs: 60000, stablePolls: 1 };
+  assert.equal(W.turnSettled(oneLook), false, "one observation across a throttled gap proves nothing");
+  assert.ok(W.turnSettled(Object.assign({}, oneLook, { stablePolls: 3 })));
+  assert.equal(
+    W.turnSettled({ text: "x", generating: false, unchangedMs: 2000, stablePolls: 9 }),
+    false,
+    "consecutive polls still have to span real time"
+  );
+  assert.equal(W.turnSettled({ text: "   ", generating: false, unchangedMs: 60000, stablePolls: 9 }), false);
   assert.equal(W.turnSettled(null), false);
 });
 
