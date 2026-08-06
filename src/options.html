@@ -4,162 +4,186 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="options.css" />
-    <title>Claude Usage Meter — Usage Log</title>
+    <title>Claude Usage Meter — Options</title>
   </head>
   <body>
     <div class="wrap">
-      <div class="head">
-        <div class="dot"></div>
-        <h1>Usage Log</h1>
-      </div>
-      <p class="sub">
-        Records the time you hit <b>100%</b> of your 5-hour session limit, and
-        the usage % your session had reached at each window reset.
-      </p>
-
-      <div class="toolbar">
-        <button id="download" class="primary" type="button">Download CSV</button>
-        <button id="clear" type="button">Clear log</button>
-        <span id="count" class="count"></span>
+      <div class="tabs" role="tablist" aria-label="Sections">
+        <button class="tab" type="button" role="tab" data-panel="usage" id="tab-usage">
+          Usage
+        </button>
+        <button class="tab" type="button" role="tab" data-panel="sends" id="tab-sends">
+          Scheduled sends
+        </button>
+        <button class="tab" type="button" role="tab" data-panel="workflows" id="tab-workflows">
+          Workflows
+        </button>
       </div>
 
-      <div class="table-wrap">
-        <table id="log-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Event</th>
-              <th>Usage %</th>
-            </tr>
-          </thead>
-          <tbody id="log-body"></tbody>
-        </table>
-        <p id="empty" class="empty" hidden>
-          No events logged yet. Entries appear here the first time you hit
-          100% usage, or the first time your 5-hour window resets while the
-          extension is watching.
+      <!-- ================= Usage ================= -->
+      <section class="panel" data-panel="usage" role="tabpanel" aria-labelledby="tab-usage" hidden>
+        <div class="head">
+          <div class="dot"></div>
+          <h1>Usage Log</h1>
+        </div>
+        <p class="sub">
+          Records the time you hit <b>100%</b> of your 5-hour session limit, and
+          the usage % your session had reached at each window reset.
         </p>
-      </div>
 
-      <p id="footnote" class="footnote" hidden>
-        <b>~</b> Approximate — reconstructed when the extension next loaded
-        because no claude.ai tab was open at the exact reset moment, so the
-        usage % shown is the last value seen before it.
-      </p>
+        <div class="toolbar">
+          <button id="download" class="primary" type="button">Download CSV</button>
+          <button id="clear" type="button">Clear log</button>
+          <span id="count" class="count"></span>
+        </div>
 
-      <hr class="divider" />
+        <div class="table-wrap">
+          <table id="log-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Event</th>
+                <th>Usage %</th>
+              </tr>
+            </thead>
+            <tbody id="log-body"></tbody>
+          </table>
+          <p id="empty" class="empty" hidden>
+            No events logged yet. Entries appear here the first time you hit
+            100% usage, or the first time your 5-hour window resets while the
+            extension is watching.
+          </p>
+        </div>
 
-      <div class="head">
-        <div class="dot"></div>
-        <h1>Scheduled Sends</h1>
-      </div>
-      <p class="sub">
-        Queue files (and an optional prompt) to a <b>new chat</b> — optionally in
-        a Project — to send at a set time or when your 5-hour usage next resets.
-        Files are stored in the extension until they go out.
-      </p>
+        <p id="footnote" class="footnote" hidden>
+          <b>~</b> Approximate — reconstructed when the extension next loaded
+          because no claude.ai tab was open at the exact reset moment, so the
+          usage % shown is the last value seen before it.
+        </p>
 
-      <div id="job-form-mount" class="job-form"></div>
+        <hr class="divider" />
 
-      <div id="job-list" class="job-list"></div>
-      <p id="job-empty" class="empty" hidden>No scheduled sends queued.</p>
+        <div class="head">
+          <div class="dot"></div>
+          <h1>Daily Usage</h1>
+        </div>
+        <p class="sub">
+          How much of your <b>weekly limit</b> you spend on each day of the week.
+          Each day shows your <b>running average</b> and <b>this week's actual</b>
+          (as a share of your whole weekly allowance). The week starts Tuesday, and
+          the totals at the bottom compare a typical week with this one so far.
+        </p>
+        <p id="daily-empty" class="empty">
+          Not enough data yet. Days fill in as the extension watches your weekly
+          usage rise — check back after using Claude across a few days.
+        </p>
+        <div id="daily-chart" class="daily-chart" hidden></div>
+        <p id="daily-note" class="footnote" hidden></p>
 
-      <p class="footnote">
-        Heads-up: a job can only fire while your browser is running and you're
-        logged into claude.ai — at fire time the extension opens a background
-        claude.ai tab, attaches the files, types the prompt, and clicks Send.
-        If
-        <a href="https://status.claude.com/" target="_blank" rel="noreferrer noopener"
-          >Claude is down</a
-        >, the job <b>waits</b> and sends itself once the outage clears (up to
-        6 hours, then it goes anyway); <b>Run now</b> overrides the wait.
-      </p>
+        <hr class="divider" />
 
-      <hr class="divider" />
+        <div class="head">
+          <div class="dot"></div>
+          <h1>Chat vs Claude Code</h1>
+        </div>
+        <p class="sub">
+          The share of your weekly usage spent in the <b>Home</b> (chat) tab
+          versus the <b>Code</b> tab, tracked across all your usage.
+        </p>
+        <p id="split-empty" class="empty">
+          Not enough data yet. This fills in as the extension watches your usage
+          across chat and Claude Code.
+        </p>
+        <div id="split-wrap" class="split-wrap" hidden>
+          <div id="split-pie" class="split-pie"></div>
+          <div id="split-legend" class="split-legend"></div>
+        </div>
+        <div class="toolbar" id="split-tools" hidden>
+          <button id="split-reset" type="button">Reset chart data</button>
+        </div>
+      </section>
 
-      <div class="head">
-        <div class="dot"></div>
-        <h1>Workflows</h1>
-      </div>
-      <p class="sub">
-        A workflow runs one piece of work through <b>several chats that hand it
-        back and forth</b> — chat A drafts, chat B criticises, A revises, and so
-        on — so each pass improves on the last. Documents go up with the first
-        message of whichever chats you assign them to, and each step's prompt
-        can carry the previous chat's reply with it.
-      </p>
+      <!-- ============ Scheduled sends ============ -->
+      <section class="panel" data-panel="sends" role="tabpanel" aria-labelledby="tab-sends" hidden>
+        <div class="head">
+          <div class="dot"></div>
+          <h1>Scheduled Sends</h1>
+        </div>
+        <p class="sub">
+          Queue files (and an optional prompt) to a <b>new chat</b> — optionally in
+          a Project — to send at a set time or when your 5-hour usage next resets.
+          Files are stored in the extension until they go out.
+        </p>
 
-      <div class="toolbar">
-        <button id="wf-new" class="primary" type="button">New workflow</button>
-      </div>
+        <div id="job-form-mount" class="job-form"></div>
 
-      <div id="wf-form-mount" class="job-form"></div>
+        <div id="job-list" class="job-list"></div>
+        <p id="job-empty" class="empty" hidden>No scheduled sends queued.</p>
 
-      <div id="wf-list" class="job-list"></div>
-      <p id="wf-empty" class="empty" hidden>
-        No workflows yet. <b>New workflow</b> starts one from scratch.
-      </p>
+        <p class="footnote">
+          Heads-up: a job can only fire while your browser is running and you're
+          logged into claude.ai — at fire time the extension opens a background
+          claude.ai tab, attaches the files, types the prompt, and clicks Send.
+          If
+          <a href="https://status.claude.com/" target="_blank" rel="noreferrer noopener"
+            >Claude is down</a
+          >, the job <b>waits</b> and sends itself once the outage clears (up to
+          6 hours, then it goes anyway); <b>Run now</b> overrides the wait.
+        </p>
+      </section>
 
-      <p class="sub" style="margin-top: 22px">Runs</p>
-      <div id="wf-runs" class="job-list"></div>
-      <p id="wf-runs-empty" class="empty" hidden>
-        No runs yet. Start one from a workflow above — it opens a background
-        claude.ai tab per chat and walks the steps, waiting for each reply
-        before sending the next.
-      </p>
+      <!-- =============== Workflows =============== -->
+      <section
+        class="panel"
+        data-panel="workflows"
+        role="tabpanel"
+        aria-labelledby="tab-workflows"
+        hidden
+      >
+        <div class="head">
+          <div class="dot"></div>
+          <h1>Workflows</h1>
+        </div>
+        <p class="sub">
+          A workflow runs one piece of work through <b>several chats that hand it
+          back and forth</b> — chat A drafts, chat B criticises, A revises, and so
+          on — so each pass improves on the last. Each workflow is a
+          <b>template</b>: name it for the matter, add that matter's documents, and
+          starting a run hands both to the run and puts the template back to its
+          resting name, empty and ready for the next one.
+        </p>
 
-      <p class="footnote">
-        A run drives the real UI, so it needs your browser open and logged into
-        claude.ai, and it leaves each chat's conversation open so you can read
-        it. Claude's reply travels between chats the way you would move it: the
-        <b>copy box</b> under the finished answer, which copies the answer
-        without the thinking. If
-        <a href="https://status.claude.com/" target="_blank" rel="noreferrer noopener"
-          >Claude is down</a
-        >, the run <b>waits</b> mid-workflow and picks up where it left off.
-      </p>
+        <div class="toolbar">
+          <button id="wf-new" class="primary" type="button">New workflow</button>
+        </div>
 
-      <hr class="divider" />
+        <div id="wf-form-mount" class="job-form"></div>
 
-      <div class="head">
-        <div class="dot"></div>
-        <h1>Daily Usage</h1>
-      </div>
-      <p class="sub">
-        How much of your <b>weekly limit</b> you spend on each day of the week.
-        Each day shows your <b>running average</b> and <b>this week's actual</b>
-        (as a share of your whole weekly allowance). The week starts Tuesday, and
-        the totals at the bottom compare a typical week with this one so far.
-      </p>
-      <p id="daily-empty" class="empty">
-        Not enough data yet. Days fill in as the extension watches your weekly
-        usage rise — check back after using Claude across a few days.
-      </p>
-      <div id="daily-chart" class="daily-chart" hidden></div>
-      <p id="daily-note" class="footnote" hidden></p>
+        <div id="wf-list" class="job-list"></div>
+        <p id="wf-empty" class="empty" hidden>
+          No workflows yet. <b>New workflow</b> starts one from scratch.
+        </p>
 
-      <hr class="divider" />
+        <p class="sub" style="margin-top: 22px">Runs</p>
+        <div id="wf-runs" class="job-list"></div>
+        <p id="wf-runs-empty" class="empty" hidden>
+          No runs yet. Start one from a workflow above — it opens its own Chrome
+          window, walks the steps, and waits for each reply before sending the
+          next.
+        </p>
 
-      <div class="head">
-        <div class="dot"></div>
-        <h1>Chat vs Claude Code</h1>
-      </div>
-      <p class="sub">
-        The share of your weekly usage spent in the <b>Home</b> (chat) tab
-        versus the <b>Code</b> tab, tracked across all your usage.
-      </p>
-      <p id="split-empty" class="empty">
-        Not enough data yet. This fills in as the extension watches your usage
-        across chat and Claude Code.
-      </p>
-      <div id="split-wrap" class="split-wrap" hidden>
-        <div id="split-pie" class="split-pie"></div>
-        <div id="split-legend" class="split-legend"></div>
-      </div>
-      <div class="toolbar" id="split-tools" hidden>
-        <button id="split-reset" type="button">Reset chart data</button>
-      </div>
+        <p class="footnote">
+          A run drives the real UI, so it needs your browser open and logged into
+          claude.ai, and it leaves each chat's conversation open so you can read
+          it. Claude's reply travels between chats the way you would move it: the
+          <b>copy box</b> under the finished answer, which copies the answer
+          without the thinking. If
+          <a href="https://status.claude.com/" target="_blank" rel="noreferrer noopener"
+            >Claude is down</a
+          >, the run <b>waits</b> mid-workflow and picks up where it left off.
+        </p>
+      </section>
     </div>
 
     <script src="log.js"></script>

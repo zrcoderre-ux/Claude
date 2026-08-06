@@ -2,6 +2,60 @@
 (function () {
   "use strict";
 
+  // ======================================================================
+  // Sections
+  // ======================================================================
+  // Three panels in one page. Which one you were last on is remembered, so
+  // reopening Options puts you back where you were working rather than at the
+  // top of a page you have to scroll.
+  const TAB_KEY = "cum_options_tab";
+  const DEFAULT_TAB = "usage";
+
+  function showTab(name, remember) {
+    const tabs = Array.from(document.querySelectorAll(".tab"));
+    const panels = Array.from(document.querySelectorAll(".panel"));
+    const known = tabs.some((t) => t.getAttribute("data-panel") === name);
+    const want = known ? name : DEFAULT_TAB;
+    for (const t of tabs) {
+      const on = t.getAttribute("data-panel") === want;
+      t.classList.toggle("on", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+    }
+    for (const p of panels) p.hidden = p.getAttribute("data-panel") !== want;
+    if (remember) {
+      try {
+        chrome.storage.local.set({ [TAB_KEY]: want });
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }
+
+  document.querySelectorAll(".tab").forEach((t) =>
+    t.addEventListener("click", () => showTab(t.getAttribute("data-panel"), true))
+  );
+  // Left/right across the tab strip, as a tablist is expected to behave.
+  document.querySelector(".tabs")?.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const tabs = Array.from(document.querySelectorAll(".tab"));
+    const at = tabs.findIndex((t) => t.classList.contains("on"));
+    const next = tabs[(at + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+    if (!next) return;
+    e.preventDefault();
+    showTab(next.getAttribute("data-panel"), true);
+    next.focus();
+  });
+
+  // Show something immediately, then correct it once storage answers — the
+  // alternative is a blank page for a frame.
+  showTab(DEFAULT_TAB, false);
+  try {
+    chrome.storage.local.get(TAB_KEY, (res) => showTab((res && res[TAB_KEY]) || DEFAULT_TAB, false));
+  } catch (e) {
+    /* ignore */
+  }
+
   const LOG_KEY = "cum_log";
 
   const el = {
