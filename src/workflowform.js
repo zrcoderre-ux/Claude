@@ -135,11 +135,13 @@
     el.hidden = true;
     el.innerHTML =
       `<label class="cumwf-label">Workflow name</label>` +
-      `<input class="cumwf-name" type="text" placeholder="e.g. Demurrer — Smith v. Jones" />` +
-      `<p class="cumwf-hint">Name it for the matter in front of you. Starting a run gives the run this ` +
-      `name, then puts the template back to its resting name below and clears its documents, ready for the next one.</p>` +
-      `<label class="cumwf-label">Resting name (the template's own)</label>` +
       `<input class="cumwf-template" type="text" placeholder="e.g. Tentative ruling — 3× devil's advocate" />` +
+      `<p class="cumwf-hint">The template's own name. It keeps this one — it's what the workflow goes back ` +
+      `to after each run starts.</p>` +
+      `<label class="cumwf-label">Run name</label>` +
+      `<input class="cumwf-name" type="text" placeholder="e.g. Demurrer — Smith v. Jones" />` +
+      `<p class="cumwf-hint">This matter, this run. Starting a run gives it this name along with the ` +
+      `documents below, then clears both from the template. Leave it blank to use the workflow name.</p>` +
       `<label class="cumwf-label">What it does (optional)</label>` +
       `<input class="cumwf-desc" type="text" placeholder="One line, for the list" />` +
 
@@ -431,8 +433,11 @@
       wf = workflow;
       originalDocIds = (wf.docs || []).map((d) => d.id);
       pendingFiles.clear();
-      ui.name.value = wf.name || "";
       ui.template.value = wf.templateName || wf.name || "";
+      // Only show a run name when one has actually been set — a template at
+      // rest carries its own name in both fields, and echoing it here would
+      // read as "this run is called the same as the template".
+      ui.name.value = wf.name && wf.name !== ui.template.value ? wf.name : "";
       ui.desc.value = wf.description || "";
       ui.count.value = (wf.chats || []).length || 1;
       ui.problems.hidden = true;
@@ -471,10 +476,11 @@
 
     ui.save.addEventListener("click", async () => {
       if (!wf) return;
-      wf.name = ui.name.value;
-      // Left blank, the resting name is whatever it's called now — so a
-      // workflow that is never renamed per matter simply keeps its name.
-      wf.templateName = ui.template.value.trim() || ui.name.value;
+      // The workflow's own name is the durable one; the run name is this
+      // matter's, and a template sitting idle simply wears its own.
+      const template = ui.template.value.trim() || ui.name.value.trim();
+      wf.templateName = template;
+      wf.name = ui.name.value.trim() || template;
       wf.description = ui.desc.value;
       const candidate = W.newWorkflow(wf, wf.id, Date.now());
       const problems = W.validate(candidate);
