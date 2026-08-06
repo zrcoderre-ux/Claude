@@ -533,6 +533,10 @@
       },
       close,
       isOpen: () => !el.hidden,
+      // Which workflow is open for editing, if any. Changes live in the form
+      // until Save, so a run started while this is open would use the STORED
+      // version — the caller warns rather than letting the two quietly differ.
+      editingId: () => (el.hidden || !wf ? null : wf.id),
       destroy() {
         try {
           if (onStorage) chrome.storage.onChanged.removeListener(onStorage);
