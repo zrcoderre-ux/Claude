@@ -210,9 +210,11 @@ continue** on the run's row opens a small panel:
   automatically when the run stopped that way, because stopping deliberately
   remembers it.
 
-  Waiting here means waiting. If the chat's last turn is still the **human's**,
-  Claude hasn't started answering, so the step sits until a genuinely new reply
-  arrives — however long that takes. Only when an answer is already sitting under
+  Waiting here means waiting. Claude counts as **still working** if a Stop
+  control is on screen or a response stream is open — neither of which depends on
+  guessing at markup — or, failing those, if the chat's last turn is still the
+  **human's**. In any of those cases the step sits until a genuinely new reply
+  arrives, however long that takes. Only when an answer is already sitting under
   that message does it read what's there. Getting this wrong the other way would
   hand the *previous* question's answer to the next chat and call the step a
   success.
