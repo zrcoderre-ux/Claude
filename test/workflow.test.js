@@ -208,6 +208,82 @@ test("a chat can be pointed at an existing conversation, and that goes with the 
   assert.ok(W.validate(wrong).some((p) => /doesn't look like a claude\.ai conversation/.test(p)));
 });
 
+test("an existing chat can stand in as step 0", () => {
+  const url = "https://claude.ai/chat/2f1c7a9e-0b44-4a2e-9f61-5d8c3e77b012";
+  // Chat A already holds a draft written by hand, so the run should begin by
+  // taking that across to B rather than drafting again.
+  const wf = W.newWorkflow(
+    Object.assign({}, twoChatWorkflow(), {
+      chats: [
+        { id: "a", name: "Drafting", startUrl: url, seedFromLatest: true },
+        { id: "b", name: "Critic" },
+      ],
+    }),
+    "w1",
+    NOW
+  );
+  const run = W.newRun(wf, "r1", NOW, { type: "now" }, wf.docs);
+  assert.equal(run.stepIndex, 1, "step 1 was chat A's — already done by hand");
+  assert.equal(run.seedFrom, "a", "and its latest reply is the opening hand-off");
+  assert.deepEqual(run.chats, { a: { url } });
+  // The step it starts on is the one that pastes into B.
+  const plan = W.planRun(W.runSource(run, wf));
+  assert.equal(plan[run.stepIndex].chatName, "Critic");
+  assert.equal(plan[run.stepIndex].carry, true);
+  assert.match(W.composeStepText(plan[run.stepIndex], "THE HAND-WRITTEN DRAFT"), /THE HAND-WRITTEN DRAFT/);
+
+  // Leading steps are skipped as a group, not just one.
+  const twoLeading = W.newWorkflow(
+    Object.assign({}, wf, {
+      steps: [
+        { id: "s1", chatId: "a", prompt: "draft" },
+        { id: "s2", chatId: "a", prompt: "verify" },
+        { id: "s3", chatId: "b", prompt: "attack" },
+      ],
+    }),
+    "w2",
+    NOW
+  );
+  assert.equal(W.seedPlan(twoLeading).stepIndex, 2);
+
+  // Without the tick it's just a chat to start in: step 1 still runs, there.
+  const plain = W.newWorkflow(
+    Object.assign({}, wf, { chats: [{ id: "a", name: "Drafting", startUrl: url }, { id: "b", name: "Critic" }] }),
+    "w3",
+    NOW
+  );
+  const plainRun = W.newRun(plain, "r2", NOW, { type: "now" });
+  assert.equal(plainRun.stepIndex, 0);
+  assert.equal(plainRun.seedFrom, null);
+});
+
+test("step 0 is flagged when it would leave nothing to do, or has no chat", () => {
+  const url = "https://claude.ai/chat/2f1c7a9e-0b44-4a2e-9f61-5d8c3e77b012";
+  const allOneChat = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "Only", startUrl: url, seedFromLatest: true }],
+      steps: [{ chatId: "a", prompt: "go" }],
+    },
+    "w",
+    NOW
+  );
+  assert.ok(W.validate(allOneChat).some((p) => /leaves nothing to do/.test(p)));
+  assert.equal(W.seedPlan(allOneChat).stepIndex, 0, "and it never runs off the end");
+
+  const noLink = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "Drafting", seedFromLatest: true }, { id: "b", name: "Critic" }],
+      steps: [{ chatId: "a", prompt: "draft" }, { chatId: "b", prompt: "attack" }],
+    },
+    "w2",
+    NOW
+  );
+  assert.ok(W.validate(noLink).some((p) => /has no chat link/.test(p)));
+  assert.equal(W.seedPlan(noLink).seedFrom, null, "no link, no step 0");
+});
+
 test("a run's papers aren't deleted with the template that started it", () => {
   const wf = twoChatWorkflow();
   const run = W.newRun(wf, "r1", NOW, { type: "now" }, wf.docs);

@@ -72,6 +72,11 @@
       // opening a fresh one. Matter-specific like the papers are, so Start
       // hands it to the run and clears it from the template.
       startUrl: trimmed(f.startUrl) || null,
+      // ...and let that conversation stand in for the steps that would have
+      // produced it. Its latest reply becomes the hand-off, and the run begins
+      // at the first step that isn't in this chat — a step 0 that already
+      // happened, by hand.
+      seedFromLatest: !!f.seedFromLatest,
     };
   }
 
@@ -278,6 +283,19 @@
         break;
       }
     }
+    for (const c of (wf && wf.chats) || []) {
+      if (!c.seedFromLatest) continue;
+      if (!c.startUrl) {
+        problems.push("“" + c.name + "” is set to start from its latest reply, but has no chat link.");
+        break;
+      }
+      if (((wf && wf.steps) || []).every((s) => s.chatId === c.id)) {
+        problems.push(
+          "Every step runs in “" + c.name + "”, so starting from its latest reply leaves nothing to do."
+        );
+        break;
+      }
+    }
     return problems;
   }
 
@@ -332,7 +350,9 @@
       // A conversation to start in belonged to that matter too — leaving it
       // behind would silently point the next matter's run at the last one's
       // chat, which is the kind of mistake you'd only notice afterwards.
-      chats: (wf.chats || []).map((c) => Object.assign({}, c, { startUrl: null })),
+      chats: (wf.chats || []).map((c) =>
+        Object.assign({}, c, { startUrl: null, seedFromLatest: false })
+      ),
       updatedAt: now,
     });
   }
@@ -433,6 +453,20 @@
 
   // ---- runs ---------------------------------------------------------------
 
+  // A chat standing in as "step 0": which chat to take the opening hand-off
+  // from, and the step the run therefore starts at — the first one that isn't
+  // in that chat, because the steps that are have already been done by hand.
+  function seedPlan(wf) {
+    const seeded = ((wf && wf.chats) || []).find((c) => c && c.startUrl && c.seedFromLatest);
+    if (!seeded) return { seedFrom: null, stepIndex: 0 };
+    const steps = (wf && wf.steps) || [];
+    let i = 0;
+    while (i < steps.length && steps[i] && steps[i].chatId === seeded.id) i++;
+    // Never skip past the end: a workflow whose every step is in the seeded
+    // chat has nothing left to do, and validate() says so.
+    return { seedFrom: seeded.id, stepIndex: Math.min(i, Math.max(0, steps.length - 1)) };
+  }
+
   function startChats(wf) {
     const map = {};
     for (const c of (wf && wf.chats) || []) {
@@ -444,6 +478,7 @@
 
   function newRun(wf, id, now, trigger, docs) {
     const t = trigger || {};
+    const seed = seedPlan(wf);
     return {
       id: id,
       workflowId: wf ? wf.id : null,
@@ -469,7 +504,13 @@
           ? { type: "reset" }
           : { type: "now" },
       status: "pending", // pending | waiting | running | done | error | canceled
-      stepIndex: 0,
+      // Normally 0. A chat standing in as step 0 starts the run past the steps
+      // that chat has already done by hand.
+      stepIndex: seed.stepIndex,
+      // The chat whose latest reply is the opening hand-off, read just before
+      // the first step runs (not now — the run may be scheduled for hours away,
+      // and what matters is what's in that chat when it goes).
+      seedFrom: seed.seedFrom,
       phase: "idle", // idle | sending | awaiting-reply
       // chatId -> { url }. Seeded from any chat told to start in a conversation
       // that already exists — the same field the run fills in as it goes, so
@@ -1110,6 +1151,7 @@
     newChatSlot,
     looksLikeChatUrl,
     startChats,
+    seedPlan,
     getChat,
     chatName,
     newStep,

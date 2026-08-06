@@ -118,6 +118,13 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   next matter can't inherit the last one's chat. (A chat resumed this way keeps
   its own model — the model setting only applies to a conversation the run
   opens.)
+- **That chat as step 0** — tick it and the conversation stands in for the steps
+  that would have produced it: its **latest reply becomes the opening hand-off**,
+  and the run begins at the first step that isn't in that chat. Point chat A at a
+  draft you wrote by hand and the pre-built workflow starts at step 2, carrying
+  that draft into the devil's advocate chat, exactly as though it had drafted it
+  itself. The reply is read **when the run goes**, not when you press Start, so a
+  run scheduled for the small hours takes whatever is in that chat by then.
 - **Documents** — dropped in once, with a tick per chat saying **who gets them**.
   A chat's documents upload with its **first** message, which is the one that
   opens the conversation. A document assigned to nobody isn't uploaded, and the
