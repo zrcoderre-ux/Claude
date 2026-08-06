@@ -120,8 +120,21 @@
   // conversation is the human's message — the reply hasn't been written yet, so
   // waiting is the only correct thing to do.
   function replyPending() {
+    // Claude visibly working is the strongest answer and needs no guess about
+    // markup: a Stop control on screen, or a response stream still open.
+    try {
+      if (C.isGenerating()) return true;
+    } catch (e) {
+      /* fall through to the transcript */
+    }
+    if (streamStartedAt > streamDoneAt) return true;
+
+    // Otherwise ask whose turn it is. This leans on a selector for the human's
+    // messages, which is why it isn't the primary test — if claude.ai renames
+    // it, the two signals above still catch the case that matters (a message
+    // sent moments ago, being answered right now).
     const h = lastHuman();
-    if (!h) return false; // can't tell whose turn it is; don't invent patience
+    if (!h) return false;
     const a = lastAssistant();
     if (!a) return true; // a message with no answer under it
     try {
