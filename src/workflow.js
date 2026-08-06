@@ -99,15 +99,20 @@
   // ---- documents ----------------------------------------------------------
 
   // A file stored under cum_file_<id>, plus the chats that should receive it.
+  // `addedAt` marks a document handed to a run ALREADY UNDER WAY: it can't ride
+  // the chat's opening message, that having been sent, so it goes up with the
+  // next step in each of its chats from that point on.
   function newDoc(fields, id) {
     const f = fields || {};
-    return {
+    const doc = {
       id: id,
       name: trimmed(f.name) || "file",
       type: str(f.type),
       size: typeof f.size === "number" ? f.size : 0,
       chats: Array.isArray(f.chats) ? f.chats.slice() : [],
     };
+    if (typeof f.addedAt === "number") doc.addedAt = f.addedAt;
+    return doc;
   }
 
   // A workflow's own documents plus the ones belonging to the run in hand. A
@@ -317,10 +322,40 @@
   }
 
   function planRun(wf, extraDocs) {
+    const steps = (wf && wf.steps) || [];
+    const docs = allDocs(wf, extraDocs);
+
+    // Documents added mid-run ride the next step in each chat they're for,
+    // counting from the step the run had reached when they arrived.
+    const late = new Map(); // step index -> [docId]
+    for (const d of docs) {
+      if (!d || typeof d.addedAt !== "number") continue;
+      for (const cid of d.chats || []) {
+        for (let i = Math.max(0, d.addedAt); i < steps.length; i++) {
+          if (steps[i].chatId !== cid) continue;
+          if (!late.has(i)) late.set(i, []);
+          if (late.get(i).indexOf(d.id) === -1) late.get(i).push(d.id);
+          break;
+        }
+      }
+    }
+
     const seen = new Set();
-    return ((wf && wf.steps) || []).map((s, i) => {
+    return steps.map((s, i) => {
       const firstInChat = !seen.has(s.chatId);
       seen.add(s.chatId);
+      const opening = firstInChat
+        ? docs
+            .filter(
+              (d) =>
+                d &&
+                typeof d.addedAt !== "number" &&
+                Array.isArray(d.chats) &&
+                d.chats.indexOf(s.chatId) !== -1
+            )
+            .map((d) => d.id)
+        : [];
+      const added = (late.get(i) || []).filter((id) => opening.indexOf(id) === -1);
       return {
         index: i,
         id: s.id,
@@ -330,7 +365,7 @@
         carry: i > 0 && s.carry !== false,
         carryLabel: trimmed(s.carryLabel) || "material from the previous step",
         firstInChat: firstInChat,
-        docIds: firstInChat ? docsForChat(wf, s.chatId, extraDocs).map((d) => d.id) : [],
+        docIds: opening.concat(added),
       };
     });
   }
@@ -385,6 +420,14 @@
       // This matter's papers, handed over at Start so the template can be
       // cleared and re-armed while this run is still going.
       docs: (docs || (wf && wf.docs) || []).map((d) => newDoc(d, d && d.id)),
+      // And its own copy of the chats and steps. A run executes THIS, not the
+      // template — so the template can be edited, re-armed or deleted without
+      // changing what a run in flight does, and so a run can be edited (a step
+      // inserted, a prompt fixed) without touching every future run.
+      plan: {
+        chats: ((wf && wf.chats) || []).map((c, i) => newChatSlot(c, c && c.id, i)),
+        steps: ((wf && wf.steps) || []).map((s) => newStep(s, s && s.id)),
+      },
       totalSteps: wf && wf.steps ? wf.steps.length : 0,
       trigger:
         t.type === "time"
@@ -433,6 +476,90 @@
       !!run &&
       (run.status === "pending" || run.status === "waiting" || run.status === "running")
     );
+  }
+
+  // What a run is actually executing: its own snapshot if it has one, otherwise
+  // the workflow (runs created before runs carried their own). Everything that
+  // walks a run's steps goes through here, so a run edited mid-flight and a
+  // template edited behind it can't be confused for each other.
+  function runSource(run, wf) {
+    const plan = run && run.plan;
+    if (plan && Array.isArray(plan.steps) && plan.steps.length)
+      return { chats: plan.chats || [], steps: plan.steps, docs: (run && run.docs) || [] };
+    return {
+      chats: (wf && wf.chats) || [],
+      steps: (wf && wf.steps) || [],
+      docs: ((wf && wf.docs) || []).concat((run && run.docs) || []),
+    };
+  }
+
+  // Turn a run back into a template. A run carries its own steps, so one that
+  // was edited mid-flight — or whose workflow has since been re-armed, rewritten
+  // or deleted — is the only remaining record of how that work was actually
+  // done. Fresh ids throughout: the result is a new template, not a reference
+  // back to whatever it came from. Documents are left out; the papers belonged
+  // to that matter, and a template starts empty by design.
+  function workflowFromRun(run, wf, id, now, mkId) {
+    const src = runSource(run, wf);
+    const mk = typeof mkId === "function" ? mkId : () => null;
+    const chatMap = {};
+    const chats = (src.chats || []).map((c, i) => {
+      const nid = mk() || c.id;
+      chatMap[c.id] = nid;
+      return newChatSlot(c, nid, i);
+    });
+    const name = trimmed(run && run.name) || "Workflow from a run";
+    return newWorkflow(
+      {
+        name: name,
+        templateName: name,
+        description: (wf && wf.description) || "",
+        chats: chats,
+        docs: [],
+        steps: (src.steps || []).map((s) =>
+          newStep(Object.assign({}, s, { chatId: chatMap[s.chatId] || null }), mk() || s.id)
+        ),
+      },
+      id,
+      now
+    );
+  }
+
+  // Stop at the next step boundary, keeping everything else — where it is, what
+  // it's carrying, which conversations it's in. A step already in flight is
+  // allowed to finish; pausing is not cancelling.
+  function markPaused(run, now) {
+    return Object.assign({}, run, { status: "paused", lastProgressAt: now });
+  }
+
+  // Apply an edit to a run in progress: steps inserted or reworded, chats
+  // renamed, documents added. Documents new to the run are marked with the step
+  // it has reached, so they go up with the next step in their chats rather than
+  // trying to ride an opening message that has already been sent.
+  function applyRunEdit(run, patch, now) {
+    if (!run) return run;
+    const p = patch || {};
+    const prior = new Set(((run.docs || []).map((d) => d && d.id)).filter(Boolean));
+    const src = runSource(run, null);
+    const shaped = normalize({
+      chats: (Array.isArray(p.chats) ? p.chats : src.chats).map((c, i) =>
+        newChatSlot(c, c && c.id, i)
+      ),
+      steps: (Array.isArray(p.steps) ? p.steps : src.steps).map((s) => newStep(s, s && s.id)),
+      docs: (Array.isArray(p.docs) ? p.docs : src.docs).map((d) => {
+        const doc = newDoc(d, d && d.id);
+        if (!prior.has(doc.id) && typeof doc.addedAt !== "number") doc.addedAt = run.stepIndex;
+        return doc;
+      }),
+    });
+    return Object.assign({}, run, {
+      name: trimmed(p.name) || run.name,
+      plan: { chats: shaped.chats, steps: shaped.steps },
+      docs: shaped.docs,
+      totalSteps: shaped.steps.length,
+      lastProgressAt: now,
+      updatedAt: now,
+    });
   }
 
   // Runs whose trigger has fired and are waiting only on the runner.
@@ -661,12 +788,14 @@
 
   function progressText(run, wf) {
     if (!run) return "";
-    const total = run.totalSteps || (wf && wf.steps ? wf.steps.length : 0);
+    const src = runSource(run, wf);
+    const total = run.totalSteps || src.steps.length;
     if (run.status === "done") return "Finished all " + total + " steps";
     if (run.status === "canceled") return "Canceled at step " + (run.stepIndex + 1);
+    if (run.status === "paused") return "Paused before step " + (run.stepIndex + 1) + " of " + total;
     if (run.status === "error") return "Failed at step " + (run.stepIndex + 1) + " of " + total;
     if (run.status === "pending") return "Queued · " + total + " steps";
-    const plan = wf ? planRun(wf) : [];
+    const plan = planRun(src);
     const step = plan[run.stepIndex];
     const where = step ? " · " + step.chatName : "";
     const verb = run.phase === "awaiting-reply" ? "waiting for Claude" : "sending";
@@ -987,6 +1116,10 @@
     markError,
     resumePlan,
     reviseRun,
+    runSource,
+    workflowFromRun,
+    markPaused,
+    applyRunEdit,
     markHeld,
     markCanceled,
     progressText,

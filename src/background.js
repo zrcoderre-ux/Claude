@@ -674,7 +674,8 @@ async function sendStep(tabId, payload) {
 // that is what makes "continue from step N" work without the operator copying
 // anything across. Returns { ok, text } or { ok:false, error }.
 async function refetchCarry(run, wf) {
-  const src = W.carrySource(wf, run.stepIndex);
+  const source = W.runSource(run, wf);
+  const src = W.carrySource(source, run.stepIndex);
   if (!src.needed) return { ok: true, text: null, skipped: true };
   const url = (run.chats && run.chats[src.chatId] && run.chats[src.chatId].url) || null;
   if (!url)
@@ -684,7 +685,7 @@ async function refetchCarry(run, wf) {
         "this run has no conversation recorded for " + src.chatName +
         " — paste its chat link in, or resume without re-reading it",
     };
-  const { tab, windowId } = await stepTab(run, url, W.getChat(wf, src.chatId) || {});
+  const { tab, windowId } = await stepTab(run, url, W.getChat(source, src.chatId) || {});
   if (!tab) return { ok: false, error: "could not open " + src.chatName };
   if (windowId != null && windowId !== run.windowId) await saveRun(W.withWindow(run, windowId));
   let res = await sendStep(tab.id, { type: "cum-wf-harvest", runId: run.id });
@@ -717,9 +718,11 @@ async function driveRun(runId, opts) {
         notify("Workflow stopped", (run.name || "A workflow") + " — its definition is gone.");
         return;
       }
-      // The run's own documents count as much as the template's — after the
-      // first Start they ARE the papers, the template having been cleared.
-      const plan = W.planRun(wf, run.docs);
+      // A run executes its OWN snapshot of chats, steps and papers. The
+      // template it came from may since have been re-armed for another matter,
+      // edited, or deleted; none of that may change what this run does.
+      const src = W.runSource(run, wf);
+      const plan = W.planRun(src);
       const step = plan[run.stepIndex];
       if (!step) {
         await saveRun(
@@ -759,7 +762,7 @@ async function driveRun(runId, opts) {
         )
       );
 
-      const chat = W.getChat(wf, step.chatId) || {};
+      const chat = W.getChat(src, step.chatId) || {};
       const saved = (run.chats && run.chats[step.chatId]) || {};
       const { tab, windowId } = await stepTab(run, saved.url, chat);
       if (windowId != null && windowId !== run.windowId)
@@ -770,7 +773,7 @@ async function driveRun(runId, opts) {
         return;
       }
 
-      const docs = W.allDocs(wf, run.docs)
+      const docs = W.allDocs(src)
         .filter((d) => step.docIds.indexOf(d.id) !== -1)
         .map((d) => ({ id: d.id, name: d.name, type: d.type }));
 
@@ -986,6 +989,36 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await reschedule();
       if (run.trigger.type === "now") driveRun(run.id); // long-running: don't await
       return { ok: true, runId: run.id };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
+  // Pause at the next step boundary. The page driving the current step lets go
+  // on its next poll, keeping the run's place — so an edit can be made and
+  // Resume picks up from exactly there.
+  if (msg && msg.type === "cum-wf-pause" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "run not found" };
+      await saveRun(W.markPaused(run, Date.now()));
+      await reschedule();
+      return { ok: true };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
+  // Edit a run in progress — insert a step, fix a prompt, add this matter's
+  // extra papers. It edits the RUN's own copy, never the template it came from.
+  if (msg && msg.type === "cum-wf-edit-run" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "run not found" };
+      if (run.status === "running")
+        return { ok: false, error: "pause the run before editing it" };
+      await saveRun(W.applyRunEdit(run, msg.patch || {}, Date.now()));
+      return { ok: true };
     })()
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));

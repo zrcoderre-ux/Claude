@@ -331,6 +331,7 @@
     pending: "Queued",
     waiting: "Waiting out an outage",
     running: "Running",
+    paused: "Paused",
     done: "Finished",
     error: "Stopped",
     canceled: "Canceled",
@@ -513,7 +514,8 @@
   let fixDraft = null;
 
   function openFix(run, wf) {
-    const plan = wf ? WF.planRun(wf) : [];
+    const source = WF.runSource(run, wf);
+    const plan = WF.planRun(source);
     // Default to the step it stopped on, and to re-reading the hand-off — the
     // common case is "that step went wrong, do it again with what's in the
     // other chat now".
@@ -521,19 +523,21 @@
     fixingRunId = run.id;
     fixDraft = {
       stepIndex,
-      refetchCarry: !!(wf && WF.carrySource(wf, stepIndex).needed),
+      refetchCarry: !!WF.carrySource(source, stepIndex).needed,
       sent: run.phase === "awaiting-reply",
       chats: {},
     };
-    for (const c of (wf && wf.chats) || [])
+    for (const c of source.chats || [])
       fixDraft.chats[c.id] = ((run.chats || {})[c.id] || {}).url || "";
     renderRuns();
   }
 
   function fixPanel(run, wf) {
     if (!fixDraft) return "";
-    const plan = wf ? WF.planRun(wf) : [];
-    const src = wf ? WF.carrySource(wf, fixDraft.stepIndex) : { needed: false };
+    // A run's own steps, not the template's — they may have diverged.
+    const source = WF.runSource(run, wf);
+    const plan = WF.planRun(source);
+    const src = WF.carrySource(source, fixDraft.stepIndex);
     const opts = plan
       .map(
         (s, i) =>
@@ -576,8 +580,9 @@
         fixDraft.stepIndex = parseInt(stepSel.value, 10) || 0;
         // Whether there's anything to carry — and from which chat — changes with
         // the step, so the panel has to be redrawn.
-        const wf = fixWorkflow();
-        fixDraft.refetchCarry = !!(wf && WF.carrySource(wf, fixDraft.stepIndex).needed);
+        const run = (lastRuns || []).find((r) => r.id === fixingRunId);
+        const source = WF.runSource(run, fixWorkflow());
+        fixDraft.refetchCarry = !!WF.carrySource(source, fixDraft.stepIndex).needed;
         fixDraft.sent = false; // a different step's message hasn't gone out
         renderRuns();
       });
@@ -652,7 +657,7 @@
           .map((cid) => {
             const url = (run.chats[cid] || {}).url;
             if (!url) return "";
-            const name = wf ? WF.chatName(wf, cid) : "chat";
+            const name = WF.chatName(WF.runSource(run, wf), cid);
             return `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(
               name
             )}</a>`;
@@ -688,7 +693,7 @@
           (fixingRunId === run.id ? fixPanel(run, wf) : "") +
           `</div>` +
           `<div class="job-btns">` +
-          (run.status === "error" || run.status === "waiting"
+          (run.status === "error" || run.status === "waiting" || run.status === "paused"
             ? `<button class="job-run wf-run-resume" data-id="${run.id}" title="${escapeHtml(
                 WF.resumePlan(run).action
               )}">Resume</button>`
@@ -697,8 +702,15 @@
             ? ""
             : `<button class="job-edit wf-run-fix" data-id="${run.id}" title="Choose where to carry on from">Fix &amp; continue</button>`) +
           (WF.isRunActive(run)
-            ? `<button class="job-edit wf-run-cancel" data-id="${run.id}" title="Stop here">Cancel</button>`
+            ? `<button class="job-edit wf-run-pause" data-id="${run.id}" title="Stop at the next step so you can change something">Pause</button>`
             : "") +
+          (run.status !== "running" && run.status !== "done"
+            ? `<button class="job-edit wf-run-edit" data-id="${run.id}" title="Add a step, fix a prompt, add documents — this run only">Edit run</button>`
+            : "") +
+          (WF.isRunActive(run) || run.status === "paused"
+            ? `<button class="job-edit wf-run-cancel" data-id="${run.id}" title="Stop here for good">Cancel</button>`
+            : "") +
+          `<button class="job-edit wf-run-save" data-id="${run.id}" title="Keep this run's steps as a new workflow">Save as workflow</button>` +
           (!WF.isRunActive(run) && typeof run.windowId === "number"
             ? `<button class="job-edit wf-run-closewin" data-id="${run.id}" title="Close this run's Chrome window and its chats">Close window</button>`
             : "") +
@@ -719,6 +731,69 @@
           b.disabled = true;
           b.textContent = "Resuming…";
           chrome.runtime.sendMessage({ type: "cum-wf-resume", runId: b.getAttribute("data-id") }, renderRuns);
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-run-save").forEach((b) =>
+        b.addEventListener("click", () => {
+          const run = runs.find((r) => r.id === b.getAttribute("data-id"));
+          if (!run) return;
+          const wf = WF.getWorkflow(workflows, run.workflowId);
+          const name = prompt(
+            "Save this run's chats and steps as a new workflow, called:",
+            run.name || "Workflow from a run"
+          );
+          if (name === null) return;
+          const made = WF.workflowFromRun(
+            Object.assign({}, run, { name: name.trim() || run.name }),
+            wf,
+            crypto.randomUUID(),
+            Date.now(),
+            () => crypto.randomUUID()
+          );
+          chrome.storage.local.get(WORKFLOWS_KEY, (r2) => {
+            const list = (r2 && r2[WORKFLOWS_KEY]) || [];
+            chrome.storage.local.set(
+              { [WORKFLOWS_KEY]: WF.upsertWorkflow(list, made) },
+              () => {
+                renderWorkflows();
+                showTab("workflows", true);
+              }
+            );
+          });
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-run-pause").forEach((b) =>
+        b.addEventListener("click", () => {
+          b.disabled = true;
+          b.textContent = "Pausing…";
+          chrome.runtime.sendMessage({ type: "cum-wf-pause", runId: b.getAttribute("data-id") }, renderRuns);
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-run-edit").forEach((b) =>
+        b.addEventListener("click", () => {
+          const run = runs.find((r) => r.id === b.getAttribute("data-id"));
+          if (!run) return;
+          wfForm.editRun(run, (edited) => {
+            // Documents new to the run are stamped with the step it has reached,
+            // so they go up with the next step in their chats rather than trying
+            // to ride an opening message that has already been sent.
+            chrome.runtime.sendMessage(
+              {
+                type: "cum-wf-edit-run",
+                runId: run.id,
+                patch: {
+                  name: edited.name,
+                  chats: edited.chats,
+                  steps: edited.steps,
+                  docs: edited.docs,
+                },
+              },
+              (res) => {
+                if (res && !res.ok) alert("Could not save: " + (res.error || "unknown error"));
+                renderRuns();
+              }
+            );
+          });
         })
       );
       wfui.runs.querySelectorAll(".wf-run-closewin").forEach((b) =>
