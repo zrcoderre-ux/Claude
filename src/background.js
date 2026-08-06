@@ -557,21 +557,26 @@ async function ensureWindowSize(windowId) {
   // combined with bounds at create time, and a create that rejects the
   // combination takes the whole window with it. Updating afterwards is
   // unconditional and doesn't focus the window.
-  try {
-    await chrome.windows.update(windowId, { state: "maximized" });
-    const after = await new Promise((resolve) => {
-      try {
-        chrome.windows.get(windowId, (w) => {
-          void chrome.runtime.lastError;
-          resolve(w || null);
-        });
-      } catch (e) {
-        resolve(null);
-      }
-    });
-    if (after && after.state === "maximized") return;
-  } catch (e) {
-    /* fall through to bounds */
+  // Twice, with a pause. A window that has only just been created can swallow
+  // the first request; the second lands.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await chrome.windows.update(windowId, { state: "maximized" });
+      const after = await new Promise((resolve) => {
+        try {
+          chrome.windows.get(windowId, (w) => {
+            void chrome.runtime.lastError;
+            resolve(w || null);
+          });
+        } catch (e) {
+          resolve(null);
+        }
+      });
+      if (after && after.state === "maximized") return;
+    } catch (e) {
+      /* try again, then fall through to bounds */
+    }
+    await sleep(600);
   }
   // A window manager that won't maximize on request still honours bounds.
   // Asking for more than the screen is fine — Chrome clamps it — and that's
@@ -625,7 +630,13 @@ async function runTab(run, url) {
       // Filling the screen puts the layout as far from that breakpoint as the
       // display allows.
       const win = await chrome.windows.create({ url, focused: false });
-      if (win && win.id != null) await ensureWindowSize(win.id);
+      // A beat before maximizing. Asked for immediately the request is ignored
+      // — the giveaway being that the same call lands perfectly well later,
+      // when the run opens its second tab.
+      if (win && win.id != null) {
+        await sleep(300);
+        await ensureWindowSize(win.id);
+      }
       const tab = win && win.tabs && win.tabs[0];
       return tab ? { tab, windowId: win.id, created: true } : { tab: null, windowId: null };
     } catch (e) {
