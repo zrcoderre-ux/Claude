@@ -68,7 +68,19 @@
         codeRepo: trimmed(f.codeRepo || (f.target && f.target.codeRepo)) || null,
       },
       model: trimmed(f.model) || null,
+      // Start this chat in a conversation that already exists, rather than
+      // opening a fresh one. Matter-specific like the papers are, so Start
+      // hands it to the run and clears it from the template.
+      startUrl: trimmed(f.startUrl) || null,
     };
+  }
+
+  // A claude.ai conversation link, near enough to warn about a wrong paste
+  // without refusing a shape claude.ai might legitimately use.
+  function looksLikeChatUrl(url) {
+    const u = trimmed(url);
+    if (!u) return false;
+    return /^https?:\/\/claude\.ai\/(chat|code|cowork)\//i.test(u);
   }
 
   function getChat(wf, chatId) {
@@ -258,6 +270,14 @@
       problems.push(
         orphan.length + " document(s) aren't assigned to a chat — they won't be uploaded."
       );
+    for (const c of (wf && wf.chats) || []) {
+      if (c.startUrl && !looksLikeChatUrl(c.startUrl)) {
+        problems.push(
+          "“" + c.name + "” starts in a link that doesn't look like a claude.ai conversation."
+        );
+        break;
+      }
+    }
     return problems;
   }
 
@@ -309,6 +329,10 @@
     return Object.assign({}, wf, {
       name: trimmed(wf.templateName) || wf.name,
       docs: [],
+      // A conversation to start in belonged to that matter too — leaving it
+      // behind would silently point the next matter's run at the last one's
+      // chat, which is the kind of mistake you'd only notice afterwards.
+      chats: (wf.chats || []).map((c) => Object.assign({}, c, { startUrl: null })),
       updatedAt: now,
     });
   }
@@ -409,6 +433,15 @@
 
   // ---- runs ---------------------------------------------------------------
 
+  function startChats(wf) {
+    const map = {};
+    for (const c of (wf && wf.chats) || []) {
+      const url = trimmed(c && c.startUrl);
+      if (url) map[c.id] = { url: url };
+    }
+    return map;
+  }
+
   function newRun(wf, id, now, trigger, docs) {
     const t = trigger || {};
     return {
@@ -438,7 +471,10 @@
       status: "pending", // pending | waiting | running | done | error | canceled
       stepIndex: 0,
       phase: "idle", // idle | sending | awaiting-reply
-      chats: {}, // chatId -> { url }
+      // chatId -> { url }. Seeded from any chat told to start in a conversation
+      // that already exists — the same field the run fills in as it goes, so
+      // the first step simply finds itself already "returning" to that chat.
+      chats: startChats(wf),
       // A run gets its own Chrome window, holding only its chats. Created
       // unfocused, so a run never takes the screen away from what you're doing.
       windowId: null,
@@ -1072,6 +1108,8 @@
     STALE_MS,
     defaultChatName,
     newChatSlot,
+    looksLikeChatUrl,
+    startChats,
     getChat,
     chatName,
     newStep,

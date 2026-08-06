@@ -377,6 +377,14 @@
           `<div class="job-meta${WF.totalUploads(wf) ? "" : " job-err"}">${escapeHtml(
             WF.uploadSummary(wf)
           )}</div>` +
+          (() => {
+            const armed = (wf.chats || []).filter((c) => c.startUrl);
+            return armed.length
+              ? `<div class="job-meta">starts in an existing chat: ${escapeHtml(
+                  armed.map((c) => c.name).join(", ")
+                )}</div>`
+              : "";
+          })() +
           `<div class="job-meta wf-run-bar">` +
           `<select class="wf-when" data-id="${wf.id}">` +
           `<option value="now">Run now</option>` +

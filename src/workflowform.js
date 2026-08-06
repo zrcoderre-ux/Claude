@@ -256,7 +256,12 @@
           `<select class="wf-chat-model">${modelOpts}</select></div>` +
           `<input class="wf-chat-repo" type="text" placeholder="owner/name" value="${esc(
             (chat.target && chat.target.codeRepo) || ""
-          )}" hidden />`;
+          )}" hidden />` +
+          `<input class="wf-chat-start" type="text" placeholder="Or start in an existing chat — paste its link" value="${esc(
+            chat.startUrl || ""
+          )}" />` +
+          `<p class="cumwf-hint">Matter-specific, like the documents: starting a run hands this to the run ` +
+          `and clears it here, so the next matter doesn't inherit this one's conversation.</p>`;
         const nameEl = card.querySelector(".wf-chat-name");
         const targetEl = card.querySelector(".wf-chat-target");
         const modelEl = card.querySelector(".wf-chat-model");
@@ -288,6 +293,8 @@
           if (targetEl.value === "code") chat.target.codeRepo = repoEl.value.trim() || null;
         });
         modelEl.addEventListener("change", () => (chat.model = modelEl.value || null));
+        const startEl = card.querySelector(".wf-chat-start");
+        startEl.addEventListener("input", () => (chat.startUrl = startEl.value.trim() || null));
         ui.chats.appendChild(card);
       });
     }
