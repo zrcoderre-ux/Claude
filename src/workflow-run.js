@@ -93,6 +93,43 @@
     const list = assistantMessages();
     return list.length ? list[list.length - 1] : null;
   }
+
+  // Human turns — needed to tell "Claude hasn't answered yet" apart from "the
+  // answer is already here", which is the whole question when re-attaching to a
+  // message that went out while nobody was watching.
+  const HUMAN_SELECTORS = [
+    '[data-testid="user-message"]',
+    ".font-user-message",
+    '[data-testid="human-message"]',
+  ];
+  function lastHuman() {
+    for (const sel of HUMAN_SELECTORS) {
+      let nodes;
+      try {
+        nodes = document.querySelectorAll(sel);
+      } catch (e) {
+        continue;
+      }
+      const list = Array.from(nodes).filter((el) => !C.isOurs(el));
+      if (list.length) return list[list.length - 1];
+    }
+    return null;
+  }
+
+  // Is Claude's answer still to come? True when the last thing in the
+  // conversation is the human's message — the reply hasn't been written yet, so
+  // waiting is the only correct thing to do.
+  function replyPending() {
+    const h = lastHuman();
+    if (!h) return false; // can't tell whose turn it is; don't invent patience
+    const a = lastAssistant();
+    if (!a) return true; // a message with no answer under it
+    try {
+      return !!(h.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_PRECEDING);
+    } catch (e) {
+      return false;
+    }
+  }
   // textContent, not innerText: innerText is computed from layout, and a
   // background tab may not lay out at all — which makes a still-growing reply
   // look frozen, exactly the wrong answer for a stability check.
@@ -445,10 +482,28 @@
         W.markSent(r, { chatId: msg.chatId, url, now: sentAt })
       );
     } else {
-      // Re-attaching to a step whose message already went out: the reply may
-      // have arrived while nobody was watching, so there is no "before" to
-      // compare against — take the newest turn and let the settled check decide.
-      before = { count: -1, text: null };
+      // Re-attaching to a step whose message already went out. Two very
+      // different situations, and taking the wrong one is how a step "succeeds"
+      // by handing on an answer to the PREVIOUS question:
+      //
+      //   the reply is already there  → take the newest turn;
+      //   the last turn is still the human's → Claude hasn't started yet, so
+      //     wait for a genuinely new reply, however long that takes.
+      //
+      // Let the page finish rendering before judging which it is — a tab that
+      // has only just loaded shows neither.
+      await C.waitFor(C.findEditor, 20000);
+      await C.sleep(1500);
+      const list = assistantMessages();
+      if (replyPending()) {
+        before = {
+          count: list.length,
+          text: list.length ? renderedText(list[list.length - 1]) : "",
+        };
+        notes.push("waited for Claude to answer the message already in the chat");
+      } else {
+        before = { count: -1, text: null };
+      }
       // The message went out before this tab took the step over; anything the
       // stream signals from here on is fair game.
       sentAt = typeof run.sentAt === "number" ? run.sentAt : 0;
@@ -501,7 +556,12 @@
     const url = location.href;
     const updated = await updateRun(runId, (r) => {
       const next = W.applyStepResult(r, {
-        stepIndex: r.stepIndex,
+        // The step the WORKER asked for, not wherever the run has got to. If
+        // this message was delivered twice (the send retries when the page
+        // doesn't answer), the second copy finds the run already advanced and
+        // is ignored — rather than advancing it again and silently skipping a
+        // step.
+        stepIndex: typeof msg.stepIndex === "number" ? msg.stepIndex : r.stepIndex,
         chatId: msg.chatId,
         chatName: msg.chatName || null,
         reply: text,

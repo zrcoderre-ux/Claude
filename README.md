@@ -205,9 +205,17 @@ continue** on the run's row opens a small panel:
   producing that reply was the tail end of the earlier step: what matters is
   what's in the chat now, not what the run last managed to capture.
 - **This step's message already went out** — for a step that sent but never got
-  its reply back. Resuming then *waits* rather than posting the same message a
-  second time. It's ticked automatically when the run stopped that way, because
-  stopping deliberately remembers it.
+  its reply back, or for a message you pasted into the chat yourself. Resuming
+  then *waits* rather than posting the same message a second time. It's ticked
+  automatically when the run stopped that way, because stopping deliberately
+  remembers it.
+
+  Waiting here means waiting. If the chat's last turn is still the **human's**,
+  Claude hasn't started answering, so the step sits until a genuinely new reply
+  arrives — however long that takes. Only when an answer is already sitting under
+  that message does it read what's there. Getting this wrong the other way would
+  hand the *previous* question's answer to the next chat and call the step a
+  success.
 - **Conversations this run is using** — each chat's link, editable, for when a
   run lost track of one (a first step that never settled to a `/chat/` URL, say).
 
