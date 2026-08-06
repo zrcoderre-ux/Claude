@@ -111,6 +111,13 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   its own destination (new chat, a **Project**, or a **Claude Code** session on a
   repo) and its own **model**. Reducing the count moves any orphaned steps to the
   last remaining chat rather than throwing their prompts away.
+- **Starting in a conversation you already have** — paste its link into a chat
+  and the run picks up there instead of opening a fresh one, which is how a
+  workflow continues work you began by hand. It's matter-specific like the
+  documents, so Start hands it to the run and clears it from the template; the
+  next matter can't inherit the last one's chat. (A chat resumed this way keeps
+  its own model — the model setting only applies to a conversation the run
+  opens.)
 - **Documents** — dropped in once, with a tick per chat saying **who gets them**.
   A chat's documents upload with its **first** message, which is the one that
   opens the conversation. A document assigned to nobody isn't uploaded, and the

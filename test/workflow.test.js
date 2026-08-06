@@ -172,6 +172,42 @@ test("starting a run empties the template and hands it this matter's papers", ()
   assert.equal(W.totalUploads(rested), 0, "the emptied template would upload nothing");
 });
 
+test("a chat can be pointed at an existing conversation, and that goes with the run", () => {
+  const url = "https://claude.ai/chat/2f1c7a9e-0b44-4a2e-9f61-5d8c3e77b012";
+  const armed = W.newWorkflow(
+    Object.assign({}, twoChatWorkflow(), {
+      chats: [
+        { id: "a", name: "Drafting", startUrl: url },
+        { id: "b", name: "Critic" },
+      ],
+    }),
+    "w1",
+    NOW
+  );
+  // The run starts already "returning" to that conversation — the same field it
+  // fills in for itself as it goes — so step 1 goes there instead of opening one.
+  const run = W.newRun(armed, "r1", NOW, { type: "now" }, armed.docs);
+  assert.deepEqual(run.chats, { a: { url } });
+
+  // And the template forgets it, so the next matter doesn't inherit this chat.
+  const rested = W.resetToTemplate(armed, NOW + 1);
+  assert.equal(rested.chats[0].startUrl, null);
+  assert.deepEqual(W.newRun(rested, "r2", NOW + 2, { type: "now" }).chats, {});
+
+  // A link that isn't a conversation is worth saying so about.
+  assert.ok(W.looksLikeChatUrl(url));
+  assert.equal(W.looksLikeChatUrl("https://example.com/notes"), false);
+  assert.equal(W.looksLikeChatUrl(""), false);
+  const wrong = W.newWorkflow(
+    Object.assign({}, twoChatWorkflow(), {
+      chats: [{ id: "a", name: "Drafting", startUrl: "https://example.com/x" }, { id: "b", name: "Critic" }],
+    }),
+    "w2",
+    NOW
+  );
+  assert.ok(W.validate(wrong).some((p) => /doesn't look like a claude\.ai conversation/.test(p)));
+});
+
 test("a run's papers aren't deleted with the template that started it", () => {
   const wf = twoChatWorkflow();
   const run = W.newRun(wf, "r1", NOW, { type: "now" }, wf.docs);
