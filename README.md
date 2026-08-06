@@ -180,6 +180,31 @@ A reply also has to differ from what was on screen before the step's message wen
 out — the transcript can hold just the newest turn in the DOM, so counting
 rendered messages is not on its own enough to know a new answer arrived.
 
+### Fixing a partial run
+
+A ten-step run that stops at step six shouldn't have to start again. **Fix &
+continue** on the run's row opens a small panel:
+
+- **Continue from** — any step, not only the one it stopped on. Go back a step to
+  redo one that went badly, or forward to skip one you've handled by hand.
+- **Re-read the previous chat's latest reply** — the conversation the step before
+  ran in is still open, and its last answer *is* the hand-off. Ticking this reads
+  it fresh (through the same copy box) and carries it into the step being
+  resumed, so nothing has to be copied across by hand. That's true even though
+  producing that reply was the tail end of the earlier step: what matters is
+  what's in the chat now, not what the run last managed to capture.
+- **This step's message already went out** — for a step that sent but never got
+  its reply back. Resuming then *waits* rather than posting the same message a
+  second time. It's ticked automatically when the run stopped that way, because
+  stopping deliberately remembers it.
+- **Conversations this run is using** — each chat's link, editable, for when a
+  run lost track of one (a first step that never settled to a `/chat/` URL, say).
+
+Plain **Resume** does the same thing with the defaults, which is usually what you
+want. Neither is confused by other open chats: a run addresses a conversation by
+its URL, so unrelated claude.ai tabs — including other workflows' — are invisible
+to it.
+
 **When things go wrong.** A run is driven through the real UI, so it needs your
 browser open and logged in. If Claude is down it **waits mid-workflow** and picks
 up where it left off (same gate, same 6-hour ceiling as a scheduled send). If the

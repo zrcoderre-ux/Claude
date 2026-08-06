@@ -190,6 +190,64 @@ test("a duplicate step result cannot advance the run twice", () => {
   assert.equal(again.transcript.length, 1);
 });
 
+test("carrySource points at the chat that produced the hand-off", () => {
+  const wf = twoChatWorkflow();
+  // Step 3 (revise, in A) carries what step 2 (attack, in B) produced.
+  const src = W.carrySource(wf, 2);
+  assert.deepEqual(
+    { needed: src.needed, chatName: src.chatName, fromStep: src.fromStep },
+    { needed: true, chatName: "Critic", fromStep: 1 }
+  );
+  assert.equal(W.carrySource(wf, 0).needed, false, "the first step carries nothing");
+  const noCarry = W.normalize(
+    Object.assign({}, wf, { steps: wf.steps.map((s, i) => Object.assign({}, s, { carry: false })) })
+  );
+  assert.equal(W.carrySource(noCarry, 2).needed, false);
+});
+
+test("reviseRun continues from a chosen step without re-sending what already went out", () => {
+  const { wf, run } = startedRun();
+  // Two steps done, then it died waiting on step 3's reply.
+  let r = W.applyStepResult(run, { stepIndex: 0, chatId: "a", reply: "DRAFT", now: NOW, total: 3 });
+  r = W.applyStepResult(r, { stepIndex: 1, chatId: "b", reply: "REPORT", now: NOW + 1, total: 3 });
+  r = W.markSent(r, { chatId: "a", url: "https://claude.ai/chat/u1", now: NOW + 2 });
+  r = W.markError(r, "Claude did not finish replying in time", NOW + 3);
+  assert.equal(r.phase, "awaiting-reply", "stopping remembers the message went out");
+  assert.equal(W.resumePlan(r).alreadySent, true);
+
+  // Resume as-is: wait for the reply rather than posting it again.
+  const asIs = W.reviseRun(r, { stepIndex: r.stepIndex, phase: "awaiting-reply" }, NOW + 4);
+  assert.equal(asIs.status, "running");
+  assert.equal(asIs.phase, "awaiting-reply");
+  assert.equal(asIs.error, null);
+  assert.equal(asIs.stepIndex, 2);
+
+  // Or go back a step and run it again from scratch, with a corrected link.
+  const back = W.reviseRun(
+    r,
+    { stepIndex: 1, phase: "idle", lastReply: "FIXED DRAFT", chats: { b: { url: "https://claude.ai/chat/u9" } } },
+    NOW + 5
+  );
+  assert.equal(back.stepIndex, 1);
+  assert.equal(back.phase, "idle", "it will send this step's message");
+  assert.equal(back.lastReply, "FIXED DRAFT");
+  assert.equal(back.chats.b.url, "https://claude.ai/chat/u9");
+  assert.equal(back.chats.a.url, "https://claude.ai/chat/u1", "untouched chats keep their link");
+  assert.deepEqual(
+    back.transcript.map((t) => t.stepIndex),
+    [0],
+    "history from the resume point on is dropped — it hasn't happened again yet"
+  );
+  assert.equal(back.sentAt, null);
+});
+
+test("reviseRun clamps a step index that isn't a step", () => {
+  const { run } = startedRun();
+  assert.equal(W.reviseRun(run, { stepIndex: 99 }, NOW).stepIndex, 2, "last step");
+  assert.equal(W.reviseRun(run, { stepIndex: -4 }, NOW).stepIndex, 0);
+  assert.equal(W.reviseRun(run, {}, NOW).stepIndex, run.stepIndex);
+});
+
 test("held runs keep their original heldSince so the wait has a ceiling", () => {
   const { run } = startedRun();
   const held = W.markHeld(run, "Claude.ai major outage", NOW);

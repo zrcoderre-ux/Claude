@@ -493,11 +493,49 @@
     };
   }
 
+  // Read this conversation's latest reply without sending anything. Used when a
+  // run is restarted part-way: the chat the previous step ran in is still open,
+  // and its last answer is the text to carry into the step being resumed —
+  // which spares the operator copying it across by hand.
+  async function harvestLatest(msg) {
+    const stop = msg.runId ? startHeartbeat(msg.runId) : () => {};
+    try {
+      // The chat may still be mid-answer (that's often WHY the run stopped), so
+      // wait it out first — `before` is open-ended because anything on screen
+      // here is fair game.
+      const { el, canceled, timedOut } = await waitForReply(
+        msg.runId,
+        { count: -1, text: null },
+        msg.timeoutMs || 15 * 60 * 1000,
+        0
+      );
+      if (canceled) return { ok: false, canceled: true, error: "canceled" };
+      if (!el)
+        return {
+          ok: false,
+          error: timedOut ? "that chat is still replying" : "no reply found in that chat",
+        };
+      const { text, via } = await harvestReply(el);
+      if (!text) return { ok: false, error: "could not read that chat's last reply" };
+      return { ok: true, text, chars: text.length, via };
+    } finally {
+      stop();
+    }
+  }
+
   chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
-    if (!msg || msg.type !== "cum-wf-step") return;
-    runStep(msg)
-      .then((res) => sendResponse(res))
-      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
-    return true; // async response
+    if (!msg) return;
+    if (msg.type === "cum-wf-step") {
+      runStep(msg)
+        .then((res) => sendResponse(res))
+        .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+      return true; // async response
+    }
+    if (msg.type === "cum-wf-harvest") {
+      harvestLatest(msg)
+        .then((res) => sendResponse(res))
+        .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+      return true;
+    }
   });
 })();

@@ -440,6 +440,126 @@
       .join(" ");
   }
 
+  // ---- fixing a partial run ----
+  // Which run has its "continue from" panel open, and the choices made in it so
+  // far (kept out here so a re-render doesn't wipe them).
+  let fixingRunId = null;
+  let fixDraft = null;
+
+  function openFix(run, wf) {
+    const plan = wf ? WF.planRun(wf) : [];
+    // Default to the step it stopped on, and to re-reading the hand-off — the
+    // common case is "that step went wrong, do it again with what's in the
+    // other chat now".
+    const stepIndex = Math.min(run.stepIndex, Math.max(0, plan.length - 1));
+    fixingRunId = run.id;
+    fixDraft = {
+      stepIndex,
+      refetchCarry: !!(wf && WF.carrySource(wf, stepIndex).needed),
+      sent: run.phase === "awaiting-reply",
+      chats: {},
+    };
+    for (const c of (wf && wf.chats) || [])
+      fixDraft.chats[c.id] = ((run.chats || {})[c.id] || {}).url || "";
+    renderRuns();
+  }
+
+  function fixPanel(run, wf) {
+    if (!fixDraft) return "";
+    const plan = wf ? WF.planRun(wf) : [];
+    const src = wf ? WF.carrySource(wf, fixDraft.stepIndex) : { needed: false };
+    const opts = plan
+      .map(
+        (s, i) =>
+          `<option value="${i}"${i === fixDraft.stepIndex ? " selected" : ""}>` +
+          `Step ${i + 1} — ${escapeHtml(s.chatName)}</option>`
+      )
+      .join("");
+    const chatRows = ((wf && wf.chats) || [])
+      .map(
+        (c) =>
+          `<label class="wf-fix-chat"><span>${escapeHtml(c.name)}</span>` +
+          `<input type="text" class="wf-fix-url" data-chat="${escapeHtml(c.id)}" ` +
+          `value="${escapeHtml(fixDraft.chats[c.id] || "")}" placeholder="https://claude.ai/chat/…" /></label>`
+      )
+      .join("");
+    return (
+      `<div class="wf-fix">` +
+      `<div class="wf-fix-row"><b>Continue from</b> <select class="wf-fix-step">${opts}</select></div>` +
+      (src.needed
+        ? `<label class="wf-fix-check"><input type="checkbox" class="wf-fix-refetch"${
+            fixDraft.refetchCarry ? " checked" : ""
+          } /> Re-read <b>${escapeHtml(src.chatName)}</b>'s latest reply and carry it into this step` +
+          `</label>`
+        : `<div class="wf-fix-note">This step carries nothing in — it just runs its own prompt.</div>`) +
+      `<label class="wf-fix-check"><input type="checkbox" class="wf-fix-sent"${
+        fixDraft.sent ? " checked" : ""
+      } /> This step's message already went out — wait for the reply instead of sending it again</label>` +
+      `<div class="wf-fix-note">Conversations this run is using (edit if it lost track of one):</div>` +
+      chatRows +
+      `<div class="wf-fix-row"><button class="job-run wf-fix-go" data-id="${run.id}">Continue run</button>` +
+      `<button class="job-edit wf-fix-cancel" data-id="${run.id}">Cancel</button></div>` +
+      `</div>`
+    );
+  }
+
+  function wireFixPanel() {
+    const stepSel = wfui.runs.querySelector(".wf-fix-step");
+    if (stepSel)
+      stepSel.addEventListener("change", () => {
+        fixDraft.stepIndex = parseInt(stepSel.value, 10) || 0;
+        // Whether there's anything to carry — and from which chat — changes with
+        // the step, so the panel has to be redrawn.
+        const wf = fixWorkflow();
+        fixDraft.refetchCarry = !!(wf && WF.carrySource(wf, fixDraft.stepIndex).needed);
+        fixDraft.sent = false; // a different step's message hasn't gone out
+        renderRuns();
+      });
+    const refetch = wfui.runs.querySelector(".wf-fix-refetch");
+    if (refetch)
+      refetch.addEventListener("change", () => (fixDraft.refetchCarry = refetch.checked));
+    const sent = wfui.runs.querySelector(".wf-fix-sent");
+    if (sent) sent.addEventListener("change", () => (fixDraft.sent = sent.checked));
+    wfui.runs.querySelectorAll(".wf-fix-url").forEach((i) =>
+      i.addEventListener("input", () => (fixDraft.chats[i.getAttribute("data-chat")] = i.value.trim()))
+    );
+    const cancel = wfui.runs.querySelector(".wf-fix-cancel");
+    if (cancel)
+      cancel.addEventListener("click", () => {
+        fixingRunId = null;
+        fixDraft = null;
+        renderRuns();
+      });
+    const go = wfui.runs.querySelector(".wf-fix-go");
+    if (go)
+      go.addEventListener("click", () => {
+        const id = go.getAttribute("data-id");
+        const chats = {};
+        for (const cid of Object.keys(fixDraft.chats)) chats[cid] = { url: fixDraft.chats[cid] };
+        const patch = {
+          stepIndex: fixDraft.stepIndex,
+          phase: fixDraft.sent ? "awaiting-reply" : "idle",
+          refetchCarry: !!fixDraft.refetchCarry && !fixDraft.sent,
+          chats,
+        };
+        go.disabled = true;
+        go.textContent = fixDraft.refetchCarry ? "Reading the other chat…" : "Continuing…";
+        chrome.runtime.sendMessage({ type: "cum-wf-resume", runId: id, patch }, (res) => {
+          fixingRunId = null;
+          fixDraft = null;
+          if (res && !res.ok) alert("Could not continue: " + (res.error || "unknown error"));
+          renderRuns();
+        });
+      });
+  }
+
+  let lastWorkflows = [];
+  let lastRuns = [];
+  function fixWorkflow() {
+    const run = (lastRuns || []).find((r) => r.id === fixingRunId);
+    return run ? WF.getWorkflow(lastWorkflows, run.workflowId) : null;
+  }
+
   function runHoldText(run) {
     const S = window.CUMStatus;
     const waited =
@@ -456,6 +576,8 @@
     chrome.storage.local.get([RUNS_KEY, WORKFLOWS_KEY], (res) => {
       const runs = (res && res[RUNS_KEY]) || [];
       const workflows = (res && res[WORKFLOWS_KEY]) || [];
+      lastRuns = runs;
+      lastWorkflows = workflows;
       const sorted = runs.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
       wfui.runs.innerHTML = "";
       for (const run of sorted) {
@@ -492,11 +614,17 @@
           (run.error ? `<div class="job-err">${escapeHtml(run.error)}</div>` : "") +
           (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
           (run.note ? `<div class="job-meta">${escapeHtml(run.note)}</div>` : "") +
+          (fixingRunId === run.id ? fixPanel(run, wf) : "") +
           `</div>` +
           `<div class="job-btns">` +
           (run.status === "error" || run.status === "waiting"
-            ? `<button class="job-run wf-run-resume" data-id="${run.id}" title="Carry on from this step">Resume</button>`
+            ? `<button class="job-run wf-run-resume" data-id="${run.id}" title="${escapeHtml(
+                WF.resumePlan(run).action
+              )}">Resume</button>`
             : "") +
+          (WF.isRunActive(run) && run.status !== "waiting"
+            ? ""
+            : `<button class="job-edit wf-run-fix" data-id="${run.id}" title="Choose where to carry on from">Fix &amp; continue</button>`) +
           (WF.isRunActive(run)
             ? `<button class="job-edit wf-run-cancel" data-id="${run.id}" title="Stop here">Cancel</button>`
             : "") +
@@ -519,6 +647,19 @@
           chrome.runtime.sendMessage({ type: "cum-wf-resume", runId: b.getAttribute("data-id") }, renderRuns);
         })
       );
+      wfui.runs.querySelectorAll(".wf-run-fix").forEach((b) =>
+        b.addEventListener("click", () => {
+          const id = b.getAttribute("data-id");
+          if (fixingRunId === id) {
+            fixingRunId = null;
+            fixDraft = null;
+            return renderRuns();
+          }
+          const run = runs.find((r) => r.id === id);
+          if (run) openFix(run, WF.getWorkflow(workflows, run.workflowId));
+        })
+      );
+      if (fixingRunId) wireFixPanel();
       wfui.runs.querySelectorAll(".wf-run-del").forEach((b) =>
         b.addEventListener("click", () => {
           const id = b.getAttribute("data-id");
