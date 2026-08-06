@@ -90,6 +90,28 @@ test("composeStepText leaves a non-carrying step (and an empty reply) alone", ()
   assert.equal(W.composeStepText(plan[1], "   "), "attack it");
 });
 
+test("uploadSummary says, per chat, what will actually go up", () => {
+  const wf = twoChatWorkflow();
+  assert.equal(W.totalUploads(wf), 1);
+  assert.equal(W.uploadSummary(wf), "uploads: Drafting 1 · Critic 0");
+  // The failure this exists to make visible: prompts about "the attached
+  // papers" with nothing attached anywhere.
+  const bare = W.newWorkflow({ name: "x", chats: [{ id: "a", name: "A" }], steps: [{ chatId: "a", prompt: "read the attached" }] }, "w", NOW);
+  assert.equal(W.totalUploads(bare), 0);
+  assert.equal(W.uploadSummary(bare), "no documents will be uploaded");
+  // Documents that exist but are ticked for nobody count as zero, not as one.
+  const stray = W.normalize(Object.assign({}, bare, { docs: [W.newDoc({ name: "a.pdf", chats: [] }, "d")] }));
+  assert.equal(W.totalUploads(stray), 0);
+});
+
+test("a step's transcript entry records how many documents went up with it", () => {
+  const { run } = startedRun();
+  const r = W.applyStepResult(run, { stepIndex: 0, chatId: "a", reply: "DRAFT", now: NOW, total: 3, docs: 5 });
+  assert.equal(r.transcript[0].docs, 5);
+  const none = W.applyStepResult(run, { stepIndex: 0, chatId: "a", reply: "DRAFT", now: NOW, total: 3 });
+  assert.equal(none.transcript[0].docs, 0, "zero is recorded, not omitted");
+});
+
 test("validate flags the things that make a run pointless", () => {
   assert.deepEqual(W.validate(W.newWorkflow({ name: "x", chats: [{ id: "a" }] }, "w", NOW)), [
     "Add at least one step.",

@@ -241,6 +241,29 @@
     return problems;
   }
 
+  // What each chat will actually receive, per chat. A workflow whose prompts
+  // talk about "the attached papers" while nothing is assigned anywhere is the
+  // failure this makes visible before you start rather than after.
+  function uploadPlan(wf) {
+    return ((wf && wf.chats) || []).map((c) => ({
+      chatId: c.id,
+      name: c.name,
+      docs: docsForChat(wf, c.id).length,
+    }));
+  }
+
+  function totalUploads(wf) {
+    return uploadPlan(wf).reduce((n, c) => n + c.docs, 0);
+  }
+
+  function uploadSummary(wf) {
+    const plan = uploadPlan(wf);
+    if (!plan.length) return "no chats";
+    const total = plan.reduce((n, c) => n + c.docs, 0);
+    if (!total) return "no documents will be uploaded";
+    return "uploads: " + plan.map((c) => c.name + " " + c.docs).join(" · ");
+  }
+
   function summarize(wf) {
     const chats = (wf && wf.chats ? wf.chats.length : 0);
     const steps = (wf && wf.steps ? wf.steps.length : 0);
@@ -469,6 +492,10 @@
           chatName: i.chatName || null,
           at: i.now,
           chars: reply.length,
+          // What went up with this step. Recorded even when it's zero: a step
+          // that was meant to carry the papers and didn't must be visible after
+          // the fact, not only in the moment.
+          docs: typeof i.docs === "number" ? i.docs : 0,
         },
       ]),
       lastProgressAt: i.now,
@@ -711,6 +738,9 @@
     fileIdsInUse,
     validate,
     summarize,
+    uploadPlan,
+    totalUploads,
+    uploadSummary,
     planRun,
     composeStepText,
     newRun,
