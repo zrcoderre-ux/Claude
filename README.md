@@ -214,8 +214,25 @@ seconds. A step whose message has already gone out is **re-attached to, never
 re-sent**, so nothing is ever posted twice. A run that can't finish fails loudly
 (a notification, and the error on the row) rather than going quiet.
 
-Each chat's tab is left open when the run finishes — the conversations are the
-point.
+### A run gets its own window
+
+Each run opens **its own Chrome window**, created **unfocused**, containing only
+that run's chats. Nothing is ever activated or brought forward, so a nine-step
+workflow can grind away for an hour while you work in your own windows — the run
+never takes the screen, and its tabs never pile into whatever you're using.
+
+That scoping is also what keeps runs out of each other's way. A step looks for
+its conversation **only inside its own window**: a chat you happen to have open
+elsewhere is yours, and driving a message into a tab you're reading would be a
+nasty surprise. Two workflows running at once each have their own window and
+can't see the other's tabs. (A run addresses conversations by URL and stream
+signals are page-scoped, so nothing crosses over even when the same chat is open
+twice.)
+
+If you close a run's window mid-run, the next step opens a fresh one rather than
+scattering tabs into the window in front of you. When a run finishes its window
+stays — the conversations are the point — and **Close window** on the run's row
+disposes of it when you've read them.
 
 ## Outage detection
 

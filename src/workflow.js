@@ -357,6 +357,9 @@
       stepIndex: 0,
       phase: "idle", // idle | sending | awaiting-reply
       chats: {}, // chatId -> { url }
+      // A run gets its own Chrome window, holding only its chats. Created
+      // unfocused, so a run never takes the screen away from what you're doing.
+      windowId: null,
       lastReply: "",
       transcript: [], // { stepIndex, chatId, chatName, at, chars }
       createdAt: now,
@@ -482,6 +485,15 @@
 
   function heartbeat(run, now) {
     return Object.assign({}, run, { lastProgressAt: now });
+  }
+
+  // Remember which window this run's chats live in. Null when the window has
+  // gone (the operator closed it) — the next step opens a fresh one rather than
+  // scattering tabs into whatever window happens to be in front.
+  function withWindow(run, windowId) {
+    return Object.assign({}, run, {
+      windowId: typeof windowId === "number" ? windowId : null,
+    });
   }
 
   // A step finished and gave us its reply: carry it forward, and finish the run
@@ -872,6 +884,7 @@
     markSending,
     markSent,
     heartbeat,
+    withWindow,
     applyStepResult,
     markError,
     resumePlan,
