@@ -134,14 +134,27 @@ under **Runs**, where a run can be **cancelled** or **resumed** from the step it
 stopped on.
 
 **How the reply is read.** The way you would do it: the **copy box** under the
-finished answer, which copies the answer *without* the thinking. The extension
-clicks it and captures what the page writes to the clipboard (hooked in
-`src/inject.js`) — so it needs no clipboard permission, works in a background
-tab, and gets Claude's own markdown. If that comes back implausibly short (a code
-block has its own copy button) it falls back to the conversation payload from
-claude.ai's API, text blocks only, and finally to the rendered message text.
-A step is only read once Claude has stopped generating **and** the text has held
-still for a few seconds, so a half-streamed answer never travels.
+finished answer (an icon-only button, `aria-label="Copy"`, in the action bar
+beside Read aloud / Retry), which copies the answer *without* the thinking. The
+extension clicks it and captures what the page writes to the clipboard, hooked in
+`src/inject.js` — so it needs no clipboard permission, works in a background tab,
+and gets Claude's own markdown. All three write paths are hooked
+(`Clipboard.prototype.write` with a ClipboardItem, which is the one claude.ai
+uses today; `writeText`; and the `copy` event), on the prototype rather than the
+`navigator.clipboard` instance, because which one the app reaches for is not ours
+to rely on.
+
+If the copy comes back implausibly short — a code block has its own Copy button —
+it's rejected in favour of the conversation payload from claude.ai's API, text
+blocks only. The rendered message text is the last resort. **The run does not
+depend on the copy box working**: if the hook never fires, harvesting falls
+through to the API and the workflow still completes.
+
+A step's reply is only taken once Claude has stopped generating **and** the text
+has held still for a few seconds, and only if it differs from what was on screen
+before the step's message went out — the transcript can hold just the newest turn
+in the DOM, so counting rendered messages is not on its own enough to know a new
+answer arrived.
 
 **When things go wrong.** A run is driven through the real UI, so it needs your
 browser open and logged in. If Claude is down it **waits mid-workflow** and picks

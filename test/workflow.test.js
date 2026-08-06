@@ -271,6 +271,25 @@ test("plausibleCopy rejects a code block's copy button hijacking the reply", () 
   assert.ok(W.plausibleCopy("ok", "short reply"), "too short on screen to judge");
 });
 
+test("isNewReply spots a new answer even when the rendered count never grows", () => {
+  // claude.ai can keep only the newest turn in the DOM, so count stays at 1.
+  const virtualized = { count: 1, beforeCount: 1, beforeText: "OLD ANSWER" };
+  assert.ok(W.isNewReply(Object.assign({ text: "NEW ANSWER" }, virtualized)));
+  assert.equal(
+    W.isNewReply(Object.assign({ text: " OLD ANSWER " }, virtualized)),
+    false,
+    "the reply that was already there is not a new one"
+  );
+  // The ordinary case: a turn was appended.
+  assert.ok(W.isNewReply({ count: 3, beforeCount: 2, text: "X", beforeText: "X" }));
+  // A fresh chat has nothing before it.
+  assert.ok(W.isNewReply({ count: 1, beforeCount: 0, text: "FIRST", beforeText: "" }));
+  // Re-attaching to a step already sent passes beforeCount -1: take what's there.
+  assert.ok(W.isNewReply({ count: 1, beforeCount: -1, text: "WHATEVER", beforeText: null }));
+  assert.equal(W.isNewReply({ count: 1, beforeCount: 0, text: "   " }), false);
+  assert.equal(W.isNewReply(null), false);
+});
+
 test("turnSettled waits for generation to stop AND the text to hold still", () => {
   const base = { text: "an answer", generating: false, unchangedMs: 3000, minStableMs: 2500 };
   assert.ok(W.turnSettled(base));
