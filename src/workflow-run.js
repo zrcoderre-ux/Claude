@@ -80,8 +80,12 @@
     );
   }
   // The copy control for a message lives in the action bar BELOW it, outside the
-  // rendered message. Searching outward from the message (and never inside it)
-  // is what keeps a code block's own Copy button out of the running.
+  // rendered message (confirmed live: an icon-only button whose only label is
+  // aria-label="Copy", a sibling of Read aloud / Good response / Retry).
+  // Searching outward from the message and never inside it keeps a code block's
+  // own Copy button out of the running; preferring one that FOLLOWS the message
+  // in document order keeps the preceding user message's Copy out of it too,
+  // for the widths of scope where both are in view.
   function findCopyButton(msgEl) {
     if (!msgEl) return null;
     let scope = msgEl.parentElement;
@@ -89,7 +93,13 @@
       const btns = Array.from(scope.querySelectorAll('button,[role="button"]')).filter(
         (b) => !msgEl.contains(b) && copyish(b)
       );
-      if (btns.length) return btns[0];
+      if (btns.length) {
+        const following = btns.find(
+          (b) =>
+            msgEl.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
+        return following || btns[0];
+      }
       scope = scope.parentElement;
     }
     return null;
@@ -236,9 +246,11 @@
     return () => clearInterval(id);
   }
 
-  // Wait for the turn that follows `baselineCount` assistant messages to finish.
-  // Returns the message element, or null on timeout/cancel.
-  async function waitForReply(runId, baselineCount, timeoutMs) {
+  // Wait for a reply that wasn't there before this step's message went out, and
+  // for it to finish. `before` is { count, text } sampled just before sending —
+  // the transcript can hold only the newest turn in the DOM, so a grown count is
+  // one signal for "something new arrived", not the only one.
+  async function waitForReply(runId, before, timeoutMs) {
     const deadline = Date.now() + (timeoutMs || W.STEP_TIMEOUT_MS);
     let lastText = "";
     let lastChangeAt = Date.now();
@@ -247,14 +259,21 @@
       if (!run || run.status === "canceled") return { el: null, canceled: true };
       const now = Date.now();
       const list = assistantMessages();
-      const el = list.length > baselineCount ? list[list.length - 1] : null;
+      const el = list.length ? list[list.length - 1] : null;
       if (el) {
         const text = renderedText(el);
         if (text !== lastText) {
           lastText = text;
           lastChangeAt = now;
         }
+        const fresh = W.isNewReply({
+          count: list.length,
+          beforeCount: before.count,
+          text,
+          beforeText: before.text,
+        });
         if (
+          fresh &&
           W.turnSettled({
             text,
             generating: streaming(el),
@@ -288,7 +307,13 @@
       return { ok: false, error: "step already moved on" };
 
     const notes = [];
-    let baseline = assistantMessages().length;
+    // What the transcript looked like BEFORE we sent, so the reply we take can't
+    // be the one that was already on screen.
+    const priorList = assistantMessages();
+    let before = {
+      count: priorList.length,
+      text: priorList.length ? renderedText(priorList[priorList.length - 1]) : "",
+    };
 
     if (!msg.awaitOnly) {
       const { files, missing } = await C.filesFromStorage(msg.files || []);
@@ -307,13 +332,13 @@
         W.markSent(r, { chatId: msg.chatId, url, now: Date.now() })
       );
     } else {
-      // Re-attaching to a step whose message already went out: we can't know how
-      // many assistant turns preceded it, so take the last one and let the
-      // settled check decide.
-      baseline = Math.max(0, assistantMessages().length - 1);
+      // Re-attaching to a step whose message already went out: the reply may
+      // have arrived while nobody was watching, so there is no "before" to
+      // compare against — take the newest turn and let the settled check decide.
+      before = { count: -1, text: null };
     }
 
-    const { el, canceled, timedOut } = await waitForReply(runId, baseline, W.STEP_TIMEOUT_MS);
+    const { el, canceled, timedOut } = await waitForReply(runId, before, W.STEP_TIMEOUT_MS);
     if (canceled) return { ok: false, canceled: true, error: "canceled" };
     if (!el)
       return {

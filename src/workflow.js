@@ -581,6 +581,20 @@
     return c.length >= r.length * 0.3;
   }
 
+  // Is what's on screen now a NEW reply, rather than the one that was already
+  // there when we sent? Counting rendered assistant turns is not enough on its
+  // own: claude.ai's transcript can have only the newest turn in the DOM, so the
+  // count sits at 1 however many replies arrive. Either the count growing or the
+  // text differing from what was last there means a new answer — and a step that
+  // waits on the count alone would hang until it timed out.
+  function isNewReply(sample) {
+    const s = sample || {};
+    const text = trimmed(s.text);
+    if (!text) return false;
+    if ((s.count || 0) > (s.beforeCount == null ? 0 : s.beforeCount)) return true;
+    return text !== trimmed(s.beforeText);
+  }
+
   // Has this turn finished? True only when Claude has stopped generating AND the
   // text has held still for a moment — streaming pauses between blocks, and a
   // reply read mid-stream would be pasted into the next chat half-written.
@@ -723,6 +737,7 @@
     isCopyLabel,
     COPY_LABELS,
     plausibleCopy,
+    isNewReply,
     turnSettled,
     builtinWorkflow,
   };

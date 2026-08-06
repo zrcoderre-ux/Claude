@@ -369,31 +369,63 @@
   // wrote, so the text can be read out of a background tab with no clipboard
   // permission and no focus requirement (navigator.clipboard.readText() has
   // both). Read-only: the original write still happens, untouched.
+  // There are three ways a page can put text on the clipboard and claude.ai is
+  // free to change which it uses, so all three are covered. The one that
+  // actually fires today is `write()` with a ClipboardItem — the rich-text form,
+  // which carries text/plain alongside text/html. Patching Clipboard.prototype
+  // rather than the navigator.clipboard instance means a call that went through
+  // a captured prototype reference is caught too.
   function hookClipboard() {
+    const report = (text) => {
+      const s = String(text == null ? "" : text);
+      if (s) post({ clipboardWrite: { text: s, at: Date.now() } });
+    };
     try {
-      const clip = navigator.clipboard;
-      if (clip && typeof clip.writeText === "function") {
-        const orig = clip.writeText.bind(clip);
-        clip.writeText = function (text) {
+      const proto =
+        (window.Clipboard && window.Clipboard.prototype) ||
+        (navigator.clipboard && Object.getPrototypeOf(navigator.clipboard));
+      if (proto && typeof proto.writeText === "function") {
+        const orig = proto.writeText;
+        proto.writeText = function (text) {
           try {
-            post({ clipboardWrite: { text: String(text == null ? "" : text), at: Date.now() } });
+            report(text);
           } catch (e) {
             /* ignore */
           }
-          return orig(text);
+          return orig.apply(this, arguments);
+        };
+      }
+      if (proto && typeof proto.write === "function") {
+        const origWrite = proto.write;
+        proto.write = function (items) {
+          try {
+            for (const item of items || []) {
+              if (!item || !item.types || item.types.indexOf("text/plain") === -1) continue;
+              // getType resolves a Blob; reading it is async, which is fine —
+              // the runner waits a few seconds for the text after clicking.
+              item
+                .getType("text/plain")
+                .then((b) => b.text())
+                .then(report)
+                .catch(() => {});
+            }
+          } catch (e) {
+            /* ignore */
+          }
+          return origWrite.apply(this, arguments);
         };
       }
     } catch (e) {
       /* ignore */
     }
     try {
-      // Copies done the old way (execCommand) surface as a copy event; listening
-      // in the bubble phase means the page's own handler has already filled in
-      // the data by the time we read it.
+      // Copies done the old way (execCommand, or a hidden textarea) surface as a
+      // copy event; listening in the bubble phase means the page's own handler
+      // has already filled in the data by the time we read it.
       document.addEventListener("copy", (e) => {
         try {
           const t = e.clipboardData && e.clipboardData.getData("text/plain");
-          if (t) post({ clipboardWrite: { text: t, at: Date.now() } });
+          if (t) report(t);
         } catch (err) {
           /* ignore */
         }
