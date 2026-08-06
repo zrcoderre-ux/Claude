@@ -56,7 +56,9 @@
       border:1px solid rgba(0,0,0,0.1); border-radius:9px; padding:7px 10px; font-size:12.5px; }
     .cumwf-doc-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px; }
     .cumwf-doc-size { color:#8a8a8a; }
-    .cumwf-doc-chats { display:flex; gap:10px; flex-wrap:wrap; margin-left:auto; }
+    .cumwf-doc-chats { display:flex; gap:10px; flex-wrap:wrap; margin-left:auto; align-items:center; }
+    .cumwf-doc-head { background:rgba(0,0,0,0.03); border-style:dashed; }
+    .cumwf-doc-head .cumwf-doc-name { font-weight:700; color:#6b6b6b; }
     .cumwf-check { display:inline-flex; align-items:center; gap:4px; font-size:12px; }
     .cumwf-check input { margin:0; }
     .cumwf-hint { font-size:12px; color:#8a8a8a; margin:0; }
@@ -73,6 +75,8 @@
       .cumwf-btn:hover { background:#403f39; }
       .cumwf-btn.primary { background:#c96442; border-color:#c96442; color:#fff; }
       .cumwf-card, .cumwf-doc { border-color:rgba(255,255,255,0.14); background:rgba(255,255,255,0.03); }
+      .cumwf-doc-head { background:rgba(255,255,255,0.06); }
+      .cumwf-doc-head .cumwf-doc-name { color:#a5a29a; }
       .cumwf-drop { border-color:rgba(255,255,255,0.22); }
     }`;
 
@@ -319,11 +323,12 @@
       for (const f of list || []) {
         const id = uuid();
         pendingFiles.set(id, f);
-        // A new document starts assigned to the first chat — the common case is
-        // "the papers go to the drafting chat", and it's one tick to change.
+        // A new document goes to EVERY chat. A chat that has the papers can
+        // always ignore them; a chat that needed them and didn't get them
+        // answers from nothing, which is the failure worth defaulting against.
         wf.docs.push(
           W.newDoc(
-            { name: f.name, type: f.type, size: f.size, chats: wf.chats.length ? [wf.chats[0].id] : [] },
+            { name: f.name, type: f.type, size: f.size, chats: wf.chats.map((c) => c.id) },
             id
           )
         );
@@ -332,6 +337,38 @@
     }
     function renderDocs() {
       ui.docs.innerHTML = "";
+      // A column toggle per chat: tick every document for that chat, or clear
+      // them all. With five papers and three chats, doing it a box at a time is
+      // fifteen clicks and an easy one to miss.
+      if ((wf.docs || []).length && (wf.chats || []).length) {
+        const head = doc.createElement("div");
+        head.className = "cumwf-doc cumwf-doc-head";
+        head.innerHTML =
+          `<span class="cumwf-doc-name">All documents →</span>` +
+          `<span class="cumwf-doc-chats">` +
+          (wf.chats || [])
+            .map((c) => {
+              const all = wf.docs.every((d) => (d.chats || []).indexOf(c.id) !== -1);
+              return `<button class="cumwf-btn mini wf-doc-all" type="button" data-chat="${esc(
+                c.id
+              )}">${all ? "Clear" : "All"} ${esc(c.name)}</button>`;
+            })
+            .join("") +
+          `</span>`;
+        head.querySelectorAll(".wf-doc-all").forEach((b) =>
+          b.addEventListener("click", () => {
+            const id = b.getAttribute("data-chat");
+            const all = wf.docs.every((d) => (d.chats || []).indexOf(id) !== -1);
+            for (const d of wf.docs) {
+              const has = (d.chats || []).indexOf(id) !== -1;
+              if (all && has) d.chats = d.chats.filter((x) => x !== id);
+              else if (!all && !has) d.chats.push(id);
+            }
+            renderDocs();
+          })
+        );
+        ui.docs.appendChild(head);
+      }
       for (const d of wf.docs || []) {
         const row = doc.createElement("div");
         row.className = "cumwf-doc";

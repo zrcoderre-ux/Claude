@@ -126,8 +126,12 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   itself. The reply is read **when the run goes**, not when you press Start, so a
   run scheduled for the small hours takes whatever is in that chat by then.
 - **Documents** — dropped in once, with a tick per chat saying **who gets them**.
-  A chat's documents upload with its **first** message, which is the one that
-  opens the conversation. A document assigned to nobody isn't uploaded, and the
+  They default to **every chat**: a chat that has the papers can ignore them,
+  where a chat that needed them and didn't get them answers from nothing. Each
+  chat also has an **All / Clear** toggle across every document, because doing
+  five papers by three chats a box at a time is fifteen clicks and an easy one to
+  miscount. A chat's documents upload with its **first** message, the one that
+  opens the conversation; a document assigned to nobody isn't uploaded, and the
   editor says so.
 - **Steps** — ordered, each naming the chat it runs in and the prompt to send. A
   step can **carry the previous step's reply** under its prompt (this is the
