@@ -437,6 +437,81 @@ td .approx {
   cursor: default;
 }
 
+/* "Continue from step N" — fixing a partial run in place. */
+.wf-fix {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.02);
+  font-size: 12px;
+}
+
+.wf-fix-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wf-fix-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.wf-fix-note {
+  color: #8a8a8a;
+}
+
+.wf-fix-chat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-fix-chat span {
+  flex: 0 0 140px;
+  color: #6b6b6b;
+}
+
+.wf-fix select,
+.wf-fix input[type="text"] {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 7px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 7px;
+  background: #fff;
+  color: #1f1f1f;
+}
+
+.wf-fix input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .wf-fix {
+    border-color: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .wf-fix-note,
+  .wf-fix-chat span {
+    color: #8a877f;
+  }
+  .wf-fix select,
+  .wf-fix input[type="text"] {
+    background: #1f1e1c;
+    border-color: rgba(255, 255, 255, 0.16);
+    color: #f0efea;
+  }
+}
+
 /* The "run this workflow" bar inside a workflow row. */
 .wf-run-bar {
   display: flex;

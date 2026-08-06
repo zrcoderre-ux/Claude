@@ -301,6 +301,25 @@
     });
   }
 
+  // Where the text carried into `stepIndex` comes from: the chat the PREVIOUS
+  // step ran in. Restarting a run mid-way doesn't need the operator to paste
+  // anything — that conversation is still open, and its latest reply is the
+  // hand-off, even though producing it was the tail end of the step before.
+  function carrySource(wf, stepIndex) {
+    const plan = planRun(wf);
+    const step = plan[stepIndex];
+    if (!step || !step.carry || stepIndex <= 0)
+      return { needed: false, chatId: null, chatName: null, label: null };
+    const prev = plan[stepIndex - 1];
+    return {
+      needed: true,
+      chatId: prev.chatId,
+      chatName: prev.chatName,
+      label: step.carryLabel,
+      fromStep: stepIndex - 1,
+    };
+  }
+
   // The message actually typed into the composer: the step's prompt, with the
   // previous chat's reply pasted underneath between markers. This is the
   // copy-and-paste the workflow automates, so the markers are explicit — Claude
@@ -505,13 +524,68 @@
     });
   }
 
+  // Stopping keeps `phase` and `sentAt` deliberately. A step that failed AFTER
+  // its message went out (the reply never came back, the tab went quiet) must
+  // not be resumed by posting the same message again — the conversation would
+  // carry it twice. The phase is the only record that it already went out.
   function markError(run, message, now) {
     return Object.assign({}, run, {
       status: "error",
-      phase: "idle",
       error: str(message) || "unknown error",
       lastProgressAt: now,
       finishedAt: now,
+    });
+  }
+
+  // What resuming this run would do, in the words a person needs to decide:
+  // which step, and whether that step's message still has to be sent.
+  function resumePlan(run) {
+    const sent = !!run && run.phase === "awaiting-reply";
+    return {
+      stepIndex: run ? run.stepIndex : 0,
+      alreadySent: sent,
+      action: sent ? "read Claude's reply to the message already sent" : "send this step's message",
+    };
+  }
+
+  // Fix a partial run and point it at where to carry on. Everything here is
+  // something only the operator can know: which step to pick up from, whether
+  // the message for it is already sitting in the chat, what text should travel
+  // into it, and which conversation each chat actually ended up in.
+  function reviseRun(run, patch, now) {
+    if (!run) return run;
+    const p = patch || {};
+    const total = run.totalSteps || 0;
+    let stepIndex = typeof p.stepIndex === "number" ? Math.floor(p.stepIndex) : run.stepIndex;
+    if (!(stepIndex >= 0)) stepIndex = 0;
+    if (total > 0 && stepIndex > total - 1) stepIndex = total - 1;
+    const phase = p.phase === "awaiting-reply" ? "awaiting-reply" : "idle";
+
+    const chats = Object.assign({}, run.chats);
+    if (p.chats && typeof p.chats === "object") {
+      for (const id of Object.keys(p.chats)) {
+        const url = trimmed(p.chats[id] && p.chats[id].url);
+        if (url) chats[id] = Object.assign({}, chats[id] || {}, { url: url });
+        else if (chats[id]) chats[id] = Object.assign({}, chats[id], { url: null });
+      }
+    }
+
+    return Object.assign({}, run, {
+      status: "running",
+      phase: phase,
+      stepIndex: stepIndex,
+      lastReply: typeof p.lastReply === "string" ? p.lastReply : run.lastReply,
+      chats: chats,
+      // Steps from the resume point on have not happened (again) yet, so their
+      // history would misreport what this run did.
+      transcript: (run.transcript || []).filter((t) => t && t.stepIndex < stepIndex),
+      // Only meaningful while we're waiting on a message that already went out.
+      sentAt: phase === "awaiting-reply" ? (typeof run.sentAt === "number" ? run.sentAt : now) : null,
+      error: null,
+      finishedAt: null,
+      lastProgressAt: now,
+      heldSince: null,
+      holdReason: null,
     });
   }
 
@@ -781,6 +855,7 @@
     totalUploads,
     uploadSummary,
     planRun,
+    carrySource,
     composeStepText,
     newRun,
     upsertRun,
@@ -799,6 +874,8 @@
     heartbeat,
     applyStepResult,
     markError,
+    resumePlan,
+    reviseRun,
     markHeld,
     markCanceled,
     progressText,

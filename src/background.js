@@ -565,6 +565,39 @@ async function sendStep(tabId, payload) {
   return { ok: false, error: "no response from page (content script not ready?)" };
 }
 
+// Pick the hand-off text back up from the chat that produced it. Resuming a run
+// at step N means step N-1's chat is still open with its answer in it; reading
+// that is what makes "continue from step N" work without the operator copying
+// anything across. Returns { ok, text } or { ok:false, error }.
+async function refetchCarry(run, wf) {
+  const src = W.carrySource(wf, run.stepIndex);
+  if (!src.needed) return { ok: true, text: null, skipped: true };
+  const url = (run.chats && run.chats[src.chatId] && run.chats[src.chatId].url) || null;
+  if (!url)
+    return {
+      ok: false,
+      error:
+        "this run has no conversation recorded for " + src.chatName +
+        " — paste its chat link in, or resume without re-reading it",
+    };
+  const { tab } = await stepTab(url, W.getChat(wf, src.chatId) || {});
+  if (!tab) return { ok: false, error: "could not open " + src.chatName };
+  let res = await sendStep(tab.id, { type: "cum-wf-harvest", runId: run.id });
+  if (res && !res.ok && /no response from page/.test(res.error || "")) {
+    try {
+      await chrome.tabs.reload(tab.id);
+      await waitTabComplete(tab.id, 30000);
+      await sleep(3000);
+      res = await sendStep(tab.id, { type: "cum-wf-harvest", runId: run.id });
+    } catch (e) {
+      /* keep the original failure */
+    }
+  }
+  if (!res || !res.ok)
+    return { ok: false, error: (res && res.error) || "could not read " + src.chatName };
+  return { ok: true, text: res.text, from: src.chatName, chars: res.chars };
+}
+
 async function driveRun(runId, opts) {
   if (drivingRuns.has(runId)) return;
   drivingRuns.add(runId);
@@ -632,7 +665,7 @@ async function driveRun(runId, opts) {
         .filter((d) => step.docIds.indexOf(d.id) !== -1)
         .map((d) => ({ id: d.id, name: d.name, type: d.type }));
 
-      const res = await sendStep(tab.id, {
+      const payload = {
         type: "cum-wf-step",
         runId: runId,
         stepIndex: run.stepIndex,
@@ -646,7 +679,30 @@ async function driveRun(runId, opts) {
         // Claude Code session has a repo to pick — so both are first-step only.
         model: step.firstInChat && !saved.url ? chat.model || null : null,
         codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
-      });
+      };
+      let res = await sendStep(tab.id, payload);
+
+      // A page that never answers usually has a stale content script: the
+      // extension was reloaded (or updated) while this tab stayed open, which
+      // orphans it. Reload the tab to inject fresh scripts and try once more.
+      if (res && !res.ok && /no response from page/.test(res.error || "")) {
+        // But re-read the run first. If the page managed to send before it went
+        // quiet, the retry must WAIT for the reply rather than post the message
+        // a second time.
+        const mid = await readRun(runId);
+        const alreadySent = !!(mid && mid.phase === "awaiting-reply");
+        try {
+          await chrome.tabs.reload(tab.id);
+          await waitTabComplete(tab.id, 30000);
+          await sleep(3000);
+          res = await sendStep(
+            tab.id,
+            alreadySent ? Object.assign({}, payload, { awaitOnly: true, files: [] }) : payload
+          );
+        } catch (e) {
+          /* keep the original failure */
+        }
+      }
 
       const after = await readRun(runId);
       if (!after || after.status === "canceled") return;
@@ -820,16 +876,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;
   }
-  // Retry a stopped run from the step it died on, or resume a held one now.
+  // Carry a stopped run on. With no patch it picks up exactly where it stopped
+  // — including waiting for a reply to a message that already went out, rather
+  // than posting it twice. With a patch, the operator has said where to resume
+  // from, what text to carry in, and which conversation each chat is in.
   if (msg && msg.type === "cum-wf-resume" && msg.runId) {
     (async () => {
       const run = await readRun(msg.runId);
       if (!run) return { ok: false, error: "run not found" };
-      await saveRun(
-        Object.assign({}, W.markStarted(run, Date.now()), { phase: "idle", finishedAt: null })
-      );
+      const patch = msg.patch || {
+        stepIndex: run.stepIndex,
+        phase: run.phase === "awaiting-reply" ? "awaiting-reply" : "idle",
+      };
+      let revised = W.reviseRun(run, patch, Date.now());
+      let note = null;
+      // Re-read the hand-off from the previous chat before starting, so the
+      // resumed step carries what's actually in that conversation now — not
+      // whatever this run last managed to capture.
+      if (patch.refetchCarry) {
+        const wf = W.getWorkflow((await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], run.workflowId);
+        if (!wf) return { ok: false, error: "its workflow was deleted" };
+        await saveRun(revised); // so the harvest can heartbeat against it
+        const got = await refetchCarry(revised, wf);
+        if (!got.ok) {
+          await saveRun(W.markError(revised, got.error, Date.now()));
+          return { ok: false, error: got.error };
+        }
+        if (!got.skipped) {
+          revised = Object.assign({}, revised, { lastReply: got.text });
+          note = "carried " + got.chars + " chars re-read from " + got.from;
+        }
+      }
+      await saveRun(note ? Object.assign({}, revised, { note }) : revised);
       driveRun(msg.runId, { force: true }); // long-running: don't await
-      return { ok: true };
+      return { ok: true, note };
     })()
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
