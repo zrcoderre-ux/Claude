@@ -225,38 +225,38 @@
   }
 
   async function harvestReply(msgEl) {
-    const rendered = renderedText(msgEl);
-    const copied = (await copyViaButton(msgEl)).trim();
+    // Every source is cleaned of claude.ai's "not supported on your current
+    // device" placeholders before it is judged or carried. Where the page
+    // couldn't draw a block, the copy box copies that notice verbatim; the
+    // prose around it is still the answer, but the shells say nothing and must
+    // not travel to the next chat as material to work from.
+    const rendered = W.stripPlaceholders(renderedText(msgEl));
+    const copied = W.stripPlaceholders(await copyViaButton(msgEl));
 
-    // The copy box is first choice, but not when what came back is claude.ai's
-    // "this block is not supported" placeholder: that's an empty shell, and
-    // handing it to the next chat as the report to revise produces confident
-    // work built on nothing.
-    if (copied && W.plausibleCopy(copied, rendered) && !W.hasUnsupportedBlocks(copied))
-      return { text: copied, via: "copy" };
+    // The copy box stays first choice — Claude's own markdown, minus the
+    // thinking. Both sides of the length comparison are stripped, so a reply
+    // that was largely unrenderable doesn't make an honest copy look suspect.
+    if (copied && W.plausibleCopy(copied, rendered)) return { text: copied, via: "copy" };
 
     let api = "";
     const uuid = conversationUuid();
-    if (uuid) api = W.lastAssistantText(await fetchConversation(uuid)) || "";
-    if (api && !W.hasUnsupportedBlocks(api)) return { text: api, via: "api" };
+    if (uuid) api = W.stripPlaceholders(W.lastAssistantText(await fetchConversation(uuid)));
+    if (api) return { text: api, via: "api" };
 
-    // Nothing came back clean. Take the longest source that still says
-    // something once the placeholders are discounted — and if none of them do,
-    // say so rather than passing the shells along.
+    // Whichever survivor says the most.
     const best = [
       { text: copied, via: "copy" },
-      { text: api, via: "api" },
       { text: rendered, via: "dom" },
     ]
-      .filter((c) => c.text && !W.isMostlyPlaceholder(c.text))
-      .sort((a, b) => W.usableLength(a.text) - W.usableLength(b.text))
+      .filter((c) => c.text)
+      .sort((a, b) => a.text.length - b.text.length)
       .pop();
     if (best) return { text: best.text, via: best.via };
     return {
       text: "",
       via: "none",
       reason:
-        "the reply is blocks this page couldn't render (“not supported on your current device”)",
+        "every block in that reply is one this page couldn't render (“not supported on your current device”)",
     };
   }
 

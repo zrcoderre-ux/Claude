@@ -144,19 +144,20 @@ uses today; `writeText`; and the `copy` event), on the prototype rather than the
 `navigator.clipboard` instance, because which one the app reaches for is not ours
 to rely on.
 
-The copy is rejected in two cases. If it comes back **implausibly short**, a code
-block's own Copy button probably answered instead of the message's. And if it
-contains claude.ai's **"this block is not supported on your current device"**
-placeholder, the page couldn't draw part of the reply and the copy box duly
-copied the empty shell — handing *that* to the next chat as the report to revise
-produces confident work built on nothing.
+**Unrenderable blocks are stripped, never carried.** Where claude.ai can't draw
+part of a reply it renders *"This block is not supported on your current device
+yet"*, and the copy box copies that notice verbatim. Every source is cleaned of
+those blocks before it is judged or carried, so a reply that is part prose and
+part unrenderable travels as its prose — handing the shells to the next chat as
+the report to revise would produce confident work built on nothing.
 
-Either way it falls back to the conversation payload from claude.ai's API, which
-takes the prose **and any artifacts** (an artifact is a tool call whose payload
-is the answer; a report written into one would otherwise be dropped). Thinking
-and tool results stay out. The rendered message text is the last resort, and if
-every source is placeholder, the step **fails** and says so rather than passing
-the shells along. **The run does not
+The copy is rejected outright if it comes back **implausibly short**, which
+usually means a code block's own Copy button answered instead of the message's.
+It then falls back to the conversation payload from claude.ai's API, which takes
+the prose **and any artifacts** (an artifact is a tool call whose payload is the
+answer; a report written into one would otherwise be dropped). Thinking and tool
+results stay out. The rendered message text is the last resort, and if every
+source is nothing but placeholder, the step **fails** and says so. **The run does not
 depend on the copy box working**: if the hook never fires, harvesting falls
 through to the API and the workflow still completes.
 
@@ -226,8 +227,15 @@ re-sent**, so nothing is ever posted twice. A run that can't finish fails loudly
 
 ### A run gets its own window
 
-Each run opens **its own Chrome window**, created **unfocused**, containing only
-that run's chats. Nothing is ever activated or brought forward, so a nine-step
+Each run opens **its own Chrome window**, created **unfocused** and at a
+**desktop size** (1440×900, clamped to your screen), containing only that run's
+chats. The size is not cosmetic: claude.ai is responsive, and below its
+breakpoint it serves a compact client that can't render every block type,
+substituting *"This block is not supported on your current device"* where the
+content should be. The copy box then copies that notice, and the shell travels
+to the next chat as the material to work from. A window created without
+dimensions gets Chrome's default, which is easily narrow enough to trip it, so a
+run asks for a proper one — and grows a run window that's been left too narrow. Nothing is ever activated or brought forward, so a nine-step
 workflow can grind away for an hour while you work in your own windows — the run
 never takes the screen, and its tabs never pile into whatever you're using.
 

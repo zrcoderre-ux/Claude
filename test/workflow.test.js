@@ -374,6 +374,28 @@ test("a reply of unrenderable-block placeholders is not a reply", () => {
   assert.equal(W.isMostlyPlaceholder(""), false);
 });
 
+test("stripPlaceholders removes the shells and keeps the report", () => {
+  // What the copy box actually handed back: four unrenderable blocks, then the
+  // real verification report and ruling underneath.
+  const shell = "```\nThis block is not supported on your current device yet.\n```";
+  const mixed =
+    [shell, shell, shell, shell].join("\n\n") +
+    "\n\nI ran the verification pass against the four uploaded papers.\n\n" +
+    "1. Argument omitted. The Demurrer argues…";
+  const out = W.stripPlaceholders(mixed);
+  assert.equal(out.indexOf("not supported"), -1, "no shells travel");
+  assert.match(out, /^I ran the verification pass/, "and no blank run-up either");
+  assert.match(out, /Argument omitted/);
+  // All shells and nothing else leaves nothing to carry.
+  assert.equal(W.stripPlaceholders([shell, shell].join("\n\n")), "");
+  assert.equal(W.stripPlaceholders("a normal reply"), "a normal reply");
+  // The bare notice, unfenced, goes too.
+  assert.equal(
+    W.stripPlaceholders("Before.\nThis block is not supported on your current device yet.\nAfter."),
+    "Before.\n\nAfter."
+  );
+});
+
 test("lastAssistantText keeps a report Claude wrote into an artifact", () => {
   const conv = {
     chat_messages: [
