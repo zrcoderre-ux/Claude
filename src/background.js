@@ -717,7 +717,9 @@ async function driveRun(runId, opts) {
         notify("Workflow stopped", (run.name || "A workflow") + " — its definition is gone.");
         return;
       }
-      const plan = W.planRun(wf);
+      // The run's own documents count as much as the template's — after the
+      // first Start they ARE the papers, the template having been cleared.
+      const plan = W.planRun(wf, run.docs);
       const step = plan[run.stepIndex];
       if (!step) {
         await saveRun(
@@ -768,7 +770,7 @@ async function driveRun(runId, opts) {
         return;
       }
 
-      const docs = (wf.docs || [])
+      const docs = W.allDocs(wf, run.docs)
         .filter((d) => step.docIds.indexOf(d.id) !== -1)
         .map((d) => ({ id: d.id, name: d.name, type: d.type }));
 
@@ -972,8 +974,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!wf) return { ok: false, error: "workflow not found" };
       const problems = W.validate(wf).filter((p) => !/aren't assigned to a chat/.test(p));
       if (problems.length) return { ok: false, error: problems[0] };
-      const run = W.newRun(wf, crypto.randomUUID(), Date.now(), msg.trigger);
+      const now = Date.now();
+      // A workflow is a template. The run takes this matter's name and its
+      // papers; the template goes straight back to its resting name with no
+      // documents, ready to be armed for the next matter — even while this run
+      // is still going, which is why the run owns the documents from here.
+      const run = W.newRun(wf, crypto.randomUUID(), now, msg.trigger, wf.docs);
       await saveRun(run);
+      const workflows = (await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [];
+      await set({ [WORKFLOWS_KEY]: W.upsertWorkflow(workflows, W.resetToTemplate(wf, now)) });
       await reschedule();
       if (run.trigger.type === "now") driveRun(run.id); // long-running: don't await
       return { ok: true, runId: run.id };

@@ -147,6 +147,47 @@ test("fileIdsInUse protects a copy's documents when the original is deleted", ()
   assert.equal(W.fileIdsInUse([wf], wf.id).size, 0);
 });
 
+test("starting a run empties the template and hands it this matter's papers", () => {
+  // Named and armed for the matter in hand.
+  const armed = W.newWorkflow(
+    Object.assign({}, twoChatWorkflow(), {
+      name: "Demurrer — Smith v. Jones",
+      templateName: "Tentative ruling — 3× devil's advocate",
+    }),
+    "w1",
+    NOW
+  );
+  const run = W.newRun(armed, "r1", NOW, { type: "now" }, armed.docs);
+  assert.equal(run.name, "Demurrer — Smith v. Jones", "the run keeps the matter's name");
+  assert.equal(run.docs.length, 1, "and its papers");
+
+  const rested = W.resetToTemplate(armed, NOW + 1);
+  assert.equal(rested.name, "Tentative ruling — 3× devil's advocate");
+  assert.deepEqual(rested.docs, [], "ready to be armed for the next matter");
+  assert.equal(rested.steps.length, armed.steps.length, "the workflow itself is untouched");
+
+  // The run still uploads, from its own copy, though the template has none.
+  const plan = W.planRun(rested, run.docs);
+  assert.deepEqual(plan[0].docIds, ["d1"]);
+  assert.equal(W.totalUploads(rested), 0, "the emptied template would upload nothing");
+});
+
+test("a run's papers aren't deleted with the template that started it", () => {
+  const wf = twoChatWorkflow();
+  const run = W.newRun(wf, "r1", NOW, { type: "now" }, wf.docs);
+  const rested = W.resetToTemplate(wf, NOW);
+  // Deleting the (now empty) template must not take the running job's bytes.
+  assert.equal(W.fileIdsInUse([rested], rested.id).size, 0);
+  assert.ok(W.runFileIds([run]).has("d1"), "the run is still holding them");
+  assert.equal(W.runFileIds([]).size, 0);
+});
+
+test("templateName defaults to the name, so an unrenamed workflow keeps it", () => {
+  const wf = W.newWorkflow({ name: "Just a workflow", chats: [{ id: "a" }], steps: [{ chatId: "a", prompt: "go" }] }, "w", NOW);
+  assert.equal(wf.templateName, "Just a workflow");
+  assert.equal(W.resetToTemplate(wf, NOW).name, "Just a workflow");
+});
+
 test("upsert / remove / get for workflows", () => {
   let list = [];
   const wf = twoChatWorkflow();
