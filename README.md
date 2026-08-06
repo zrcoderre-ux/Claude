@@ -128,8 +128,9 @@ Pick **Run now**, **When usage resets**, or **At a set time** on the workflow's
 row and press **Start** — the same three triggers a scheduled send has, sharing
 the same alarms. The run then walks its steps: open (or return to) the step's
 chat, attach that chat's documents if it's the chat's first message, type the
-composed prompt, send, **wait for Claude to finish**, take the reply, and carry
-it into the next step. Progress, the conversation links, and any failure show up
+composed prompt, send, **wait for Claude to finish** — up to **an hour** per
+step, since one step can be a long ruling with several tool calls — take the
+reply, and carry it into the next step. Progress, the conversation links, and any failure show up
 under **Runs**, where a run can be **cancelled** or **resumed** from the step it
 stopped on.
 
@@ -173,7 +174,7 @@ otherwise park a step until it times out.
 
 Failing everything else, a reply that hasn't changed **in three minutes** is
 treated as finished whatever the page claims, and the run says that's what it
-did. A step that waits three quarters of an hour to report nothing is worse than
+did. A step that waits out the whole hour to report nothing is worse than
 one that moves on and tells you how it decided.
 
 Failing that, it falls back to the reply text holding still — and that reading is
