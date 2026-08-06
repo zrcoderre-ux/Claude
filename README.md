@@ -154,8 +154,16 @@ through to the API and the workflow still completes.
 stream closing, reported from the network layer (`inject.js` finishes reading the
 `text/event-stream` body exactly when the turn ends). That can't be faked by a
 pause mid-answer and doesn't care whether the tab is focused, rendered or
-throttled. Only a stream that closed *after* this step's message went out counts,
-so a leftover signal from the previous turn can't release the next step.
+throttled. Only a stream from the **completion** endpoint counts, and only one
+that closed *after* this step's message went out — so neither an unrelated SSE
+nor a leftover signal from the previous turn can release the next step. When it
+arrives it **outranks the page**: a Stop control the UI never takes down would
+otherwise park a step until it times out.
+
+Failing everything else, a reply that hasn't changed **in three minutes** is
+treated as finished whatever the page claims, and the run says that's what it
+did. A step that waits three quarters of an hour to report nothing is worse than
+one that moves on and tells you how it decided.
 
 Failing that, it falls back to the reply text holding still — and that reading is
 weak in a background tab, where Chrome throttles timers to about once a minute

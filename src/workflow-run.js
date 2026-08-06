@@ -36,6 +36,10 @@
   // consecutive looks — see the visibility note in waitForReply.
   const STABLE_MS = 6000;
   const STABLE_POLLS = 3;
+  // A reply that hasn't changed in this long is finished, whatever a lingering
+  // Stop control claims. Without this a wrong DOM reading parks a step for the
+  // full step timeout and reports nothing useful.
+  const STALLED_MS = 3 * 60 * 1000;
   const COPY_WAIT_MS = 4000;
 
   // ---- the assistant's response stream ------------------------------------
@@ -44,12 +48,19 @@
   // load so a stream that closes between polls is never missed.
   let streamStartedAt = 0;
   let streamDoneAt = 0;
+  let anyStreamSeen = false;
+  // claude.ai streams more than the assistant's answer over SSE, so only the
+  // completion endpoint counts — some other stream closing must not release a
+  // step whose reply is still being written.
+  const COMPLETION_RE = /completion|\/retry|\/messages(\?|$)/i;
   try {
     window.addEventListener("message", (event) => {
       if (event.source !== window) return;
       const m = event.data;
       const p = m && m.__channel === C.CHANNEL ? m.payload : null;
-      if (!p) return;
+      if (!p || (!p.streamStart && !p.streamDone)) return;
+      anyStreamSeen = true;
+      if (!COMPLETION_RE.test(String(p.url || ""))) return;
       if (p.streamStart) streamStartedAt = p.at || Date.now();
       if (p.streamDone) streamDoneAt = p.at || Date.now();
     });
@@ -284,6 +295,9 @@
     let lastText = "";
     let lastChangeAt = Date.now();
     let stablePolls = 0;
+    // The last thing this loop saw, so a timeout can say what it was looking at
+    // rather than only that it gave up.
+    let last = { fresh: false, noMessage: true };
 
     // Clicking into the tab is the moment the poll loop stops being throttled
     // and starts running every poll interval again. Everything measured while
@@ -331,24 +345,26 @@
           // and only if a stream actually opened for it — a "done" left over
           // from the previous turn must not release this one.
           const streamDone = streamDoneAt > since && streamDoneAt >= streamStartedAt;
-          if (
-            fresh &&
-            W.turnSettled({
-              text,
-              generating: streaming(el),
-              unchangedMs: now - lastChangeAt,
-              stablePolls,
-              streamDone,
-              minSettleMs: SETTLE_MS,
-              minStableMs: STABLE_MS,
-              minStablePolls: STABLE_POLLS,
-            })
-          )
-            return { el, canceled: false, via: streamDone ? "stream" : "text" };
+          const generating = streaming(el);
+          const reason = W.settleReason({
+            text,
+            generating,
+            unchangedMs: now - lastChangeAt,
+            stablePolls,
+            streamDone,
+            minSettleMs: SETTLE_MS,
+            minStableMs: STABLE_MS,
+            minStablePolls: STABLE_POLLS,
+            stalledMs: STALLED_MS,
+          });
+          last = { fresh, generating, streamDone, chars: text.length, stablePolls };
+          if (fresh && reason) return { el, canceled: false, via: reason };
+        } else {
+          last = { fresh: false, noMessage: true };
         }
         await C.sleep(POLL_MS);
       }
-      return { el: null, canceled: false, timedOut: true };
+      return { el: null, canceled: false, timedOut: true, state: last };
     } finally {
       try {
         if (onVisible) document.removeEventListener("visibilitychange", onVisible);
@@ -415,19 +431,36 @@
       sentAt = typeof run.sentAt === "number" ? run.sentAt : 0;
     }
 
-    const { el, canceled, timedOut } = await waitForReply(
+    const { el, canceled, timedOut, via: settledVia, state } = await waitForReply(
       runId,
       before,
       W.STEP_TIMEOUT_MS,
       sentAt
     );
     if (canceled) return { ok: false, canceled: true, error: "canceled" };
-    if (!el)
+    if (!el) {
+      // Say what the wait was actually looking at. "Did not finish in time" on
+      // its own is unactionable, and this step costs a whole Claude turn to
+      // retry.
+      const s = state || {};
+      const seen = s.noMessage
+        ? "no assistant message ever appeared"
+        : (s.chars || 0) + " chars, " +
+          (s.fresh ? "recognised as new" : "NOT recognised as new (same as before the send)") + ", " +
+          (s.generating ? "page still says generating" : "page says idle") + ", " +
+          (s.streamDone ? "response stream closed" : anyStreamSeen ? "no completion stream seen for this turn" : "no stream events at all");
       return {
         ok: false,
-        error: timedOut ? "Claude did not finish replying in time" : "no reply found",
+        error: (timedOut ? "Claude did not finish replying in time" : "no reply found") + " — " + seen,
         note: notes.join("; ") || null,
       };
+    }
+    if (settledVia && settledVia !== "stream")
+      notes.push(
+        settledVia === "stalled"
+          ? "took the reply after 3 minutes unchanged (the page still claimed it was generating)"
+          : "turn end judged from the text holding still (no completion stream seen)"
+      );
 
     const { text, via } = await harvestReply(el);
     if (!text) return { ok: false, error: "could not read Claude's reply", note: notes.join("; ") || null };
