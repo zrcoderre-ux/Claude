@@ -654,19 +654,61 @@
     return "";
   }
 
-  function messageText(m) {
-    const parts = [];
+  // Split a message into the prose Claude wrote and the artifacts it produced.
+  // Thinking and tool RESULTS are scratch work and stay out — but an artifact is
+  // a tool call whose payload IS the answer, and a report written into one would
+  // otherwise be dropped on the floor.
+  function messageParts(m) {
+    const text = [];
+    const artifacts = [];
     if (Array.isArray(m.content)) {
       for (const blk of m.content) {
         if (!blk || typeof blk !== "object") continue;
         const type = str(blk.type);
-        if (type && type !== "text") continue; // skip thinking / tool_use / tool_result
-        if (typeof blk.text === "string") parts.push(blk.text);
+        if (!type || type === "text") {
+          if (typeof blk.text === "string") text.push(blk.text);
+          continue;
+        }
+        if (type === "tool_use" && blk.input && typeof blk.input.content === "string") {
+          const body = blk.input.content.trim();
+          if (body) artifacts.push(body);
+        }
       }
     }
-    const joined = parts.join("\n").trim();
-    if (joined) return joined;
-    return str(m.text).trim();
+    return { text: text.join("\n").trim() || str(m.text).trim(), artifacts: artifacts };
+  }
+
+  function messageText(m) {
+    const parts = messageParts(m);
+    // Only append an artifact the prose doesn't already contain, so a reply that
+    // quotes its own artifact isn't delivered twice.
+    const extra = parts.artifacts.filter(
+      (a) => !parts.text || parts.text.indexOf(a.slice(0, 80)) === -1
+    );
+    return [parts.text].concat(extra).filter(Boolean).join("\n\n").trim();
+  }
+
+  // claude.ai renders a placeholder where it can't draw a block — which the copy
+  // box then dutifully copies. Pasting THAT into the next chat hands Claude
+  // three empty shells and asks it to revise them, and the result looks like
+  // work. Text that is mostly placeholder is not a reply.
+  const UNSUPPORTED_RE = /this block is not supported on your current device(?: yet)?\.?/gi;
+  function hasUnsupportedBlocks(text) {
+    UNSUPPORTED_RE.lastIndex = 0;
+    return UNSUPPORTED_RE.test(str(text));
+  }
+  // What's left once the placeholders (and the empty fences around them) are
+  // taken out — the part that actually says something.
+  function usableLength(text) {
+    return str(text)
+      .replace(UNSUPPORTED_RE, "")
+      .replace(/```[a-z]*\s*```/gi, "")
+      .replace(/\s+/g, " ")
+      .trim().length;
+  }
+  function isMostlyPlaceholder(text) {
+    if (!hasUnsupportedBlocks(text)) return false;
+    return usableLength(text) < 200;
   }
 
   // The control under a finished reply that copies it. Claude's copy box hands
@@ -893,6 +935,10 @@
     markCanceled,
     progressText,
     lastAssistantText,
+    messageParts,
+    hasUnsupportedBlocks,
+    isMostlyPlaceholder,
+    usableLength,
     isCopyLabel,
     COPY_LABELS,
     plausibleCopy,

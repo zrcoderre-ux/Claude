@@ -144,9 +144,19 @@ uses today; `writeText`; and the `copy` event), on the prototype rather than the
 `navigator.clipboard` instance, because which one the app reaches for is not ours
 to rely on.
 
-If the copy comes back implausibly short — a code block has its own Copy button —
-it's rejected in favour of the conversation payload from claude.ai's API, text
-blocks only. The rendered message text is the last resort. **The run does not
+The copy is rejected in two cases. If it comes back **implausibly short**, a code
+block's own Copy button probably answered instead of the message's. And if it
+contains claude.ai's **"this block is not supported on your current device"**
+placeholder, the page couldn't draw part of the reply and the copy box duly
+copied the empty shell — handing *that* to the next chat as the report to revise
+produces confident work built on nothing.
+
+Either way it falls back to the conversation payload from claude.ai's API, which
+takes the prose **and any artifacts** (an artifact is a tool call whose payload
+is the answer; a report written into one would otherwise be dropped). Thinking
+and tool results stay out. The rendered message text is the last resort, and if
+every source is placeholder, the step **fails** and says so rather than passing
+the shells along. **The run does not
 depend on the copy box working**: if the hook never fires, harvesting falls
 through to the API and the workflow still completes.
 

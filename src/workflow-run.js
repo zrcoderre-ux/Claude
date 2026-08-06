@@ -226,15 +226,38 @@
 
   async function harvestReply(msgEl) {
     const rendered = renderedText(msgEl);
-    const copied = await copyViaButton(msgEl);
-    if (W.plausibleCopy(copied, rendered)) return { text: copied.trim(), via: "copy" };
+    const copied = (await copyViaButton(msgEl)).trim();
+
+    // The copy box is first choice, but not when what came back is claude.ai's
+    // "this block is not supported" placeholder: that's an empty shell, and
+    // handing it to the next chat as the report to revise produces confident
+    // work built on nothing.
+    if (copied && W.plausibleCopy(copied, rendered) && !W.hasUnsupportedBlocks(copied))
+      return { text: copied, via: "copy" };
+
+    let api = "";
     const uuid = conversationUuid();
-    if (uuid) {
-      const conv = await fetchConversation(uuid);
-      const text = W.lastAssistantText(conv);
-      if (text) return { text, via: "api" };
-    }
-    return { text: rendered, via: "dom" };
+    if (uuid) api = W.lastAssistantText(await fetchConversation(uuid)) || "";
+    if (api && !W.hasUnsupportedBlocks(api)) return { text: api, via: "api" };
+
+    // Nothing came back clean. Take the longest source that still says
+    // something once the placeholders are discounted — and if none of them do,
+    // say so rather than passing the shells along.
+    const best = [
+      { text: copied, via: "copy" },
+      { text: api, via: "api" },
+      { text: rendered, via: "dom" },
+    ]
+      .filter((c) => c.text && !W.isMostlyPlaceholder(c.text))
+      .sort((a, b) => W.usableLength(a.text) - W.usableLength(b.text))
+      .pop();
+    if (best) return { text: best.text, via: best.via };
+    return {
+      text: "",
+      via: "none",
+      reason:
+        "the reply is blocks this page couldn't render (“not supported on your current device”)",
+    };
   }
 
   // ---- run state ---------------------------------------------------------
@@ -462,9 +485,18 @@
           : "turn end judged from the text holding still (no completion stream seen)"
       );
 
-    const { text, via } = await harvestReply(el);
-    if (!text) return { ok: false, error: "could not read Claude's reply", note: notes.join("; ") || null };
-    if (via !== "copy") notes.push("reply read from the " + (via === "api" ? "conversation API" : "page") + " (copy box not usable)");
+    const { text, via, reason } = await harvestReply(el);
+    if (!text)
+      return {
+        ok: false,
+        error: "could not read Claude's reply" + (reason ? " — " + reason : ""),
+        note: notes.join("; ") || null,
+      };
+    if (via !== "copy")
+      notes.push(
+        "reply read from the " + (via === "api" ? "conversation API" : "page") +
+          " (the copy box gave nothing usable)"
+      );
 
     const url = location.href;
     const updated = await updateRun(runId, (r) => {
@@ -515,8 +547,12 @@
           ok: false,
           error: timedOut ? "that chat is still replying" : "no reply found in that chat",
         };
-      const { text, via } = await harvestReply(el);
-      if (!text) return { ok: false, error: "could not read that chat's last reply" };
+      const { text, via, reason } = await harvestReply(el);
+      if (!text)
+        return {
+          ok: false,
+          error: "could not read that chat's last reply" + (reason ? " — " + reason : ""),
+        };
       return { ok: true, text, chars: text.length, via };
     } finally {
       stop();

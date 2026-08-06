@@ -353,6 +353,63 @@ test("isCopyLabel matches the message copy box, never a code block's", () => {
   assert.equal(W.isCopyLabel(""), false);
 });
 
+test("a reply of unrenderable-block placeholders is not a reply", () => {
+  // What the copy box actually handed back on a re-run: three empty shells.
+  const shells =
+    "```\nThis block is not supported on your current device yet.\n```\n\n" +
+    "```\nThis block is not supported on your current device yet.\n```\n\n" +
+    "```\nThis block is not supported on your current device yet.\n```";
+  assert.ok(W.hasUnsupportedBlocks(shells));
+  assert.ok(W.isMostlyPlaceholder(shells), "pasting this asks the next chat to revise nothing");
+  assert.equal(W.usableLength(shells), 0);
+
+  // A real report that happens to contain one unrenderable block is still a
+  // report — flag it, don't discard it.
+  const mostlyReal = "The demurrer analysis rests on two premises. " + "x".repeat(400) +
+    "\n\nThis block is not supported on your current device yet.";
+  assert.ok(W.hasUnsupportedBlocks(mostlyReal));
+  assert.equal(W.isMostlyPlaceholder(mostlyReal), false);
+
+  assert.equal(W.hasUnsupportedBlocks("a normal reply"), false);
+  assert.equal(W.isMostlyPlaceholder(""), false);
+});
+
+test("lastAssistantText keeps a report Claude wrote into an artifact", () => {
+  const conv = {
+    chat_messages: [
+      {
+        sender: "assistant",
+        content: [
+          { type: "thinking", thinking: "considering the demurrer" },
+          { type: "text", text: "Here's the report:" },
+          {
+            type: "tool_use",
+            input: { command: "create", title: "Devil's advocate", content: "CHALLENGE ONE: the premise fails." },
+          },
+        ],
+      },
+    ],
+  };
+  const text = W.lastAssistantText(conv);
+  assert.match(text, /Here's the report:/);
+  assert.match(text, /CHALLENGE ONE/, "the artifact IS the answer, not scratch work");
+  assert.equal(/considering the demurrer/.test(text), false, "thinking still stays out");
+
+  // A reply that quotes its own artifact shouldn't deliver it twice.
+  const dup = {
+    chat_messages: [
+      {
+        sender: "assistant",
+        content: [
+          { type: "text", text: "CHALLENGE ONE: the premise fails. And more besides." },
+          { type: "tool_use", input: { content: "CHALLENGE ONE: the premise fails. And more besides." } },
+        ],
+      },
+    ],
+  };
+  assert.equal(W.lastAssistantText(dup), "CHALLENGE ONE: the premise fails. And more besides.");
+});
+
 test("plausibleCopy rejects a code block's copy button hijacking the reply", () => {
   const ruling = "x".repeat(4000);
   assert.ok(W.plausibleCopy(ruling, ruling));
