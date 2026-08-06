@@ -20,6 +20,53 @@ body {
   margin: 0 auto;
 }
 
+/* Section tabs. Sticky, because the panels below them are long and the way
+   back to another section shouldn't be a scroll to the top. */
+.tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 4px;
+  margin: -28px -20px 22px;
+  padding: 14px 20px 0;
+  background: #faf9f5;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.tab {
+  padding: 9px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 8px 8px 0 0;
+  background: none;
+  color: #6b6b6b;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: #1f1f1f;
+}
+
+.tab.on {
+  color: #c96442;
+  border-bottom-color: #c96442;
+  background: none;
+}
+
+.tab:focus-visible {
+  outline: 2px solid #c96442;
+  outline-offset: -2px;
+}
+
+.panel[hidden] {
+  display: none;
+}
+
 .head {
   display: flex;
   align-items: center;
@@ -753,6 +800,25 @@ td .approx {
   body {
     background: #1c1c1a;
     color: #f0efea;
+  }
+
+  .tabs {
+    background: #1c1c1a;
+    border-bottom-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .tab {
+    color: #a5a29a;
+  }
+
+  .tab:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #f0efea;
+  }
+
+  .tab.on {
+    color: #e08765;
+    border-bottom-color: #e08765;
   }
   .sub {
     color: #a5a29a;
