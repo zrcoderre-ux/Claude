@@ -260,6 +260,10 @@
           `<input class="wf-chat-start" type="text" placeholder="Or start in an existing chat — paste its link" value="${esc(
             chat.startUrl || ""
           )}" />` +
+          `<label class="cumwf-check"><input class="wf-chat-seed" type="checkbox" ${
+            chat.seedFromLatest ? "checked" : ""
+          } /> Treat that chat as step 0 — take its latest reply as the opening hand-off, and skip this ` +
+          `chat's steps at the start</label>` +
           `<p class="cumwf-hint">Matter-specific, like the documents: starting a run hands this to the run ` +
           `and clears it here, so the next matter doesn't inherit this one's conversation.</p>`;
         const nameEl = card.querySelector(".wf-chat-name");
@@ -295,6 +299,8 @@
         modelEl.addEventListener("change", () => (chat.model = modelEl.value || null));
         const startEl = card.querySelector(".wf-chat-start");
         startEl.addEventListener("input", () => (chat.startUrl = startEl.value.trim() || null));
+        const seedEl = card.querySelector(".wf-chat-seed");
+        seedEl.addEventListener("change", () => (chat.seedFromLatest = seedEl.checked));
         ui.chats.appendChild(card);
       });
     }

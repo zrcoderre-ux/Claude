@@ -669,24 +669,20 @@ async function sendStep(tabId, payload) {
   return { ok: false, error: "no response from page (content script not ready?)" };
 }
 
-// Pick the hand-off text back up from the chat that produced it. Resuming a run
-// at step N means step N-1's chat is still open with its answer in it; reading
-// that is what makes "continue from step N" work without the operator copying
-// anything across. Returns { ok, text } or { ok:false, error }.
-async function refetchCarry(run, wf) {
-  const source = W.runSource(run, wf);
-  const src = W.carrySource(source, run.stepIndex);
-  if (!src.needed) return { ok: true, text: null, skipped: true };
-  const url = (run.chats && run.chats[src.chatId] && run.chats[src.chatId].url) || null;
+// Read one chat's latest reply, without sending anything. Used both to re-read
+// the hand-off when resuming, and to take the opening hand-off from a chat that
+// stands in as step 0.
+async function harvestChat(run, source, chatId, chatName) {
+  const url = (run.chats && run.chats[chatId] && run.chats[chatId].url) || null;
   if (!url)
     return {
       ok: false,
       error:
-        "this run has no conversation recorded for " + src.chatName +
-        " — paste its chat link in, or resume without re-reading it",
+        "this run has no conversation recorded for " + chatName +
+        " — paste its chat link in, or carry on without re-reading it",
     };
-  const { tab, windowId } = await stepTab(run, url, W.getChat(source, src.chatId) || {});
-  if (!tab) return { ok: false, error: "could not open " + src.chatName };
+  const { tab, windowId } = await stepTab(run, url, W.getChat(source, chatId) || {});
+  if (!tab) return { ok: false, error: "could not open " + chatName };
   if (windowId != null && windowId !== run.windowId) await saveRun(W.withWindow(run, windowId));
   let res = await sendStep(tab.id, { type: "cum-wf-harvest", runId: run.id });
   if (res && !res.ok && /no response from page/.test(res.error || "")) {
@@ -700,8 +696,24 @@ async function refetchCarry(run, wf) {
     }
   }
   if (!res || !res.ok)
-    return { ok: false, error: (res && res.error) || "could not read " + src.chatName };
-  return { ok: true, text: res.text, from: src.chatName, chars: res.chars };
+    return { ok: false, error: (res && res.error) || "could not read " + chatName };
+  return {
+    ok: true,
+    text: res.text,
+    from: chatName + (res.earlier ? " (an earlier reply — the newest one wouldn't render)" : ""),
+    chars: res.chars,
+  };
+}
+
+// Pick the hand-off back up from the chat that produced it. Resuming a run at
+// step N means step N-1's chat is still open with its answer in it; reading
+// that is what makes "continue from step N" work without copying anything
+// across by hand.
+async function refetchCarry(run, wf) {
+  const source = W.runSource(run, wf);
+  const src = W.carrySource(source, run.stepIndex);
+  if (!src.needed) return { ok: true, text: null, skipped: true };
+  return harvestChat(run, source, src.chatId, src.chatName);
 }
 
 async function driveRun(runId, opts) {
@@ -750,6 +762,29 @@ async function driveRun(runId, opts) {
       const heldNote = gate.expired
         ? "step " + (run.stepIndex + 1) + " sent after waiting " + S.fmtWaited(gate.waitedMs)
         : null;
+
+      // A chat standing in as step 0: take its latest reply as the opening
+      // hand-off. Read here rather than at Start, because a scheduled run may
+      // have been queued hours ago and what matters is what's in that chat when
+      // it actually goes.
+      if (run.seedFrom && !(run.lastReply || "").trim()) {
+        const from = W.chatName(src, run.seedFrom);
+        const got = await harvestChat(run, src, run.seedFrom, from);
+        if (!got.ok) {
+          await saveRun(
+            W.markError(run, "couldn't read " + from + " to start from — " + got.error, Date.now())
+          );
+          notify("Workflow stopped", (run.name || "Workflow") + " — " + got.error);
+          return;
+        }
+        run = await saveRun(
+          Object.assign({}, run, {
+            lastReply: got.text,
+            seedFrom: null,
+            note: "started from " + got.from + "'s latest reply (" + got.chars + " chars)",
+          })
+        );
+      }
 
       // Re-attaching to a step whose message already went out must NOT send it
       // again — it waits for the reply that is already coming.
