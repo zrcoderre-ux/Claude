@@ -611,7 +611,9 @@
       const { el, canceled, timedOut } = await waitForReply(
         msg.runId,
         { count: -1, text: null },
-        msg.timeoutMs || 15 * 60 * 1000,
+        // Same hour of patience as a step: re-reading a chat that is still
+        // mid-answer is the same wait, just from the other side.
+        msg.timeoutMs || W.STEP_TIMEOUT_MS,
         0
       );
       if (canceled) return { ok: false, canceled: true, error: "canceled" };

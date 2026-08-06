@@ -30,10 +30,11 @@
   const WORKFLOWS_KEY = "cum_workflows";
   const RUNS_KEY = "cum_wf_runs";
   const MAX_CHATS = 6;
-  // A single step is one whole Claude turn: a long ruling with three tool calls
-  // is normal, so this is generous. Past it the step fails loudly rather than
-  // leaving the run parked forever.
-  const STEP_TIMEOUT_MS = 45 * 60 * 1000;
+  // A single step is one whole Claude turn: a long ruling with three tool calls,
+  // or a verification pass over four uploaded papers, so an hour of patience is
+  // the point rather than the exception. Past it the step fails loudly rather
+  // than leaving the run parked forever.
+  const STEP_TIMEOUT_MS = 60 * 60 * 1000;
   // No heartbeat for this long means whoever was driving the step is gone (the
   // tab was closed, the worker died mid-await) — the watchdog takes it back.
   const STALE_MS = 3 * 60 * 1000;
@@ -797,7 +798,7 @@
     if (s.generating) {
       // The page says Claude is still going. Believe it — up to a point. A
       // reply that hasn't changed in minutes is finished whatever the Stop
-      // button claims, and a step that waits 45 minutes to say nothing is worse
+      // button claims, and a step that waits out the whole hour to say nothing is worse
       // than one that moves on and says how it decided.
       const stalled = typeof s.stalledMs === "number" ? s.stalledMs : 180000;
       return unchanged >= stalled ? "stalled" : null;
