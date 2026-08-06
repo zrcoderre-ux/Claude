@@ -238,15 +238,15 @@ re-sent**, so nothing is ever posted twice. A run that can't finish fails loudly
 
 ### A run gets its own window
 
-Each run opens **its own Chrome window**, created **unfocused** and at a
-**desktop size** (1440×900, clamped to your screen), containing only that run's
-chats. The size is not cosmetic: claude.ai is responsive, and below its
-breakpoint it serves a compact client that can't render every block type,
-substituting *"This block is not supported on your current device"* where the
-content should be. The copy box then copies that notice, and the shell travels
-to the next chat as the material to work from. A window created without
-dimensions gets Chrome's default, which is easily narrow enough to trip it, so a
-run asks for a proper one — and grows a run window that's been left too narrow. Nothing is ever activated or brought forward, so a nine-step
+Each run opens **its own Chrome window**, **maximized** but **unfocused**,
+containing only that run's chats. The size is not cosmetic: claude.ai is
+responsive, and below its breakpoint it serves a compact client that can't render
+every block type, substituting *"This block is not supported on your current
+device"* where the content should be. The copy box then copies that notice, and
+the shell travels to the next chat as the material to work from. Filling the
+screen puts the layout as far from that breakpoint as the display allows, and a
+run window left smaller is maximized again before a step uses it. Maximizing
+doesn't focus a window, so this stays out of your way. Nothing is ever activated or brought forward, so a nine-step
 workflow can grind away for an hour while you work in your own windows — the run
 never takes the screen, and its tabs never pile into whatever you're using.
 
