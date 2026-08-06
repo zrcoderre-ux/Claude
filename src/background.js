@@ -41,9 +41,11 @@ const STATUS_FIRE_FRESH_MS = 60 * 1000;
 // A run's window is maximized: claude.ai's compact layout can't render every
 // block type and substitutes "This block is not supported on your current
 // device", which the copy box then copies as if it were the reply. These
-// dimensions are only the fallback for a platform that refuses to maximize.
-const RUN_WINDOW_W = 1440;
-const RUN_WINDOW_H = 900;
+// bounds are the fallback for a window manager that won't maximize on request
+// — deliberately larger than any ordinary display, because Chrome clamps them
+// to the screen and that saves having to measure it.
+const RUN_WINDOW_W = 4096;
+const RUN_WINDOW_H = 2304;
 
 const J = self.CUMJobs;
 const S = self.CUMStatus;
@@ -551,19 +553,38 @@ async function ensureWindowSize(windowId) {
     }
   });
   if (!win || win.state === "maximized" || win.state === "fullscreen") return;
+  // Maximize as a SEPARATE update rather than at creation: `state` can't be
+  // combined with bounds at create time, and a create that rejects the
+  // combination takes the whole window with it. Updating afterwards is
+  // unconditional and doesn't focus the window.
   try {
     await chrome.windows.update(windowId, { state: "maximized" });
+    const after = await new Promise((resolve) => {
+      try {
+        chrome.windows.get(windowId, (w) => {
+          void chrome.runtime.lastError;
+          resolve(w || null);
+        });
+      } catch (e) {
+        resolve(null);
+      }
+    });
+    if (after && after.state === "maximized") return;
   } catch (e) {
-    // Some platforms refuse the state change; a wide window is still better
-    // than a narrow one.
-    try {
-      await chrome.windows.update(windowId, {
-        width: RUN_WINDOW_W,
-        height: Math.max(win.height || 0, RUN_WINDOW_H),
-      });
-    } catch (e2) {
-      /* ignore */
-    }
+    /* fall through to bounds */
+  }
+  // A window manager that won't maximize on request still honours bounds.
+  // Asking for more than the screen is fine — Chrome clamps it — and that's
+  // the point: fill whatever display this is on without needing to measure it.
+  try {
+    await chrome.windows.update(windowId, {
+      left: 0,
+      top: 0,
+      width: RUN_WINDOW_W,
+      height: RUN_WINDOW_H,
+    });
+  } catch (e) {
+    /* ignore */
   }
 }
 
@@ -592,27 +613,19 @@ async function runTab(run, url) {
       // focused:false — a run must never take the screen away from what you're
       // doing. Its window opens behind, holding only this run's chats.
       //
-      // Maximized, and the size is not cosmetic. claude.ai is responsive, and
-      // below its breakpoint it serves a compact client that cannot render some
-      // block types — showing "This block is not supported on your current
-      // device" where the content should be. The copy box then copies that
-      // notice, and the shell travels to the next chat as the material to work
-      // from. Filling the screen puts the layout as far from that breakpoint as
-      // the display allows.
+      // Created plainly, then maximized as its own step. Asking for a state at
+      // creation is the fragile version — it can't be combined with bounds, and
+      // a create that rejects the combination takes the window with it.
       //
-      // Chrome rejects `state` combined with explicit dimensions, so the
-      // fallback below is a separate call rather than extra properties here.
-      let win = null;
-      try {
-        win = await chrome.windows.create({ url, focused: false, state: "maximized" });
-      } catch (e) {
-        win = await chrome.windows.create({
-          url,
-          focused: false,
-          width: RUN_WINDOW_W,
-          height: RUN_WINDOW_H,
-        });
-      }
+      // The size is not cosmetic. claude.ai is responsive, and below its
+      // breakpoint it serves a compact client that cannot render some block
+      // types — showing "This block is not supported on your current device"
+      // where the content should be. The copy box then copies that notice, and
+      // the shell travels to the next chat as the material to work from.
+      // Filling the screen puts the layout as far from that breakpoint as the
+      // display allows.
+      const win = await chrome.windows.create({ url, focused: false });
+      if (win && win.id != null) await ensureWindowSize(win.id);
       const tab = win && win.tabs && win.tabs[0];
       return tab ? { tab, windowId: win.id, created: true } : { tab: null, windowId: null };
     } catch (e) {
