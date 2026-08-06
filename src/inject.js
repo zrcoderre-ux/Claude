@@ -160,7 +160,7 @@
               // Headers arrive when the stream OPENS, so this marks a turn
               // starting, not finishing.
               const isStream = /text\/event-stream/i.test(ct);
-              if (isStream) post({ turnEnded: true, streamStart: true, at: Date.now() });
+              if (isStream) post({ turnEnded: true, streamStart: true, url, at: Date.now() });
               const headerData = H && H.harvestHeaders(response.headers);
               if (H && H.hasData(headerData)) emit("fetch:headers", headerData, url);
               response
@@ -176,12 +176,12 @@
                   // authoritative "done" signal available: it comes from the
                   // network, so it doesn't care whether the tab is focused,
                   // rendered, or throttled, and a pause mid-turn can't fake it.
-                  if (isStream) post({ streamDone: true, at: Date.now() });
+                  if (isStream) post({ streamDone: true, url, at: Date.now() });
                 })
                 .catch(() => {
                   // A stream that errored or was aborted is also no longer
                   // running; saying so beats leaving a waiter hanging.
-                  if (isStream) post({ streamDone: true, aborted: true, at: Date.now() });
+                  if (isStream) post({ streamDone: true, aborted: true, url, at: Date.now() });
                 });
               // Scheduled-send: report file-upload completion so the executor
               // knows when it's safe to click Send.

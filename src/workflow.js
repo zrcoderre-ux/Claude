@@ -635,17 +635,40 @@
   // taken across a throttled gap says nothing, so several consecutive ones are
   // required. This is what stops a run from bolting to the next step the moment
   // you click into the tab and the poll loop speeds back up.
-  function turnSettled(sample) {
+  // Why we believe the turn is over — "stream", "stable", "stalled", or null if
+  // we don't yet. Returning the reason rather than a bare boolean means a run
+  // can say which evidence it acted on, which is the difference between a
+  // diagnosable failure and another round of guessing.
+  function settleReason(sample) {
     const s = sample || {};
-    if (s.generating) return false;
-    if (!trimmed(s.text)) return false;
+    if (!trimmed(s.text)) return null;
     const unchanged = s.unchangedMs || 0;
+
+    // The response stream for THIS message closed. Authoritative, and
+    // deliberately outranks the DOM: if a Stop control is still on screen after
+    // the stream ended, the DOM is wrong, and waiting on it hangs the run.
     if (s.streamDone)
-      return unchanged >= (typeof s.minSettleMs === "number" ? s.minSettleMs : 1200);
-    return (
-      unchanged >= (typeof s.minStableMs === "number" ? s.minStableMs : 6000) &&
+      return unchanged >= (typeof s.minSettleMs === "number" ? s.minSettleMs : 1200)
+        ? "stream"
+        : null;
+
+    if (s.generating) {
+      // The page says Claude is still going. Believe it — up to a point. A
+      // reply that hasn't changed in minutes is finished whatever the Stop
+      // button claims, and a step that waits 45 minutes to say nothing is worse
+      // than one that moves on and says how it decided.
+      const stalled = typeof s.stalledMs === "number" ? s.stalledMs : 180000;
+      return unchanged >= stalled ? "stalled" : null;
+    }
+
+    return unchanged >= (typeof s.minStableMs === "number" ? s.minStableMs : 6000) &&
       (s.stablePolls || 0) >= (typeof s.minStablePolls === "number" ? s.minStablePolls : 3)
-    );
+      ? "stable"
+      : null;
+  }
+
+  function turnSettled(sample) {
+    return !!settleReason(sample);
   }
 
   // ---- the pre-built workflow --------------------------------------------
@@ -784,6 +807,7 @@
     COPY_LABELS,
     plausibleCopy,
     isNewReply,
+    settleReason,
     turnSettled,
     builtinWorkflow,
   };

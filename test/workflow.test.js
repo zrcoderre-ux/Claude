@@ -320,11 +320,35 @@ test("turnSettled takes the network's word for it when the stream has closed", (
     false,
     "still give the DOM a moment to finish rendering"
   );
-  assert.equal(
+  assert.ok(
     W.turnSettled(Object.assign({}, done, { generating: true })),
-    false,
-    "a Stop control still on screen outranks a stale stream signal"
+    "the closed stream outranks the page: a Stop control that never comes down " +
+      "would otherwise park the step until it times out"
   );
+});
+
+test("a reply that stops changing is finished, whatever the page claims", () => {
+  // A Stop control the page never takes down must not park a step until the
+  // step timeout: minutes of an unchanging reply outrank it, and the run says
+  // that's what it did.
+  const stuck = { text: "the ruling", generating: true, unchangedMs: 200000, stalledMs: 180000 };
+  assert.equal(W.settleReason(stuck), "stalled");
+  assert.equal(
+    W.settleReason(Object.assign({}, stuck, { unchangedMs: 20000 })),
+    null,
+    "still generating and recently changed — keep waiting"
+  );
+  assert.equal(W.settleReason({ text: "x", generating: false, streamDone: true, unchangedMs: 2000 }), "stream");
+  assert.equal(
+    W.settleReason({ text: "x", generating: true, streamDone: true, unchangedMs: 2000 }),
+    "stream",
+    "the closed stream outranks the DOM, so a wrong Stop reading can't hang the run"
+  );
+  assert.equal(
+    W.settleReason({ text: "x", generating: false, unchangedMs: 9000, stablePolls: 5 }),
+    "stable"
+  );
+  assert.equal(W.settleReason({ text: "", streamDone: true, unchangedMs: 9000 }), null);
 });
 
 test("without a stream signal, one quiet reading is not enough to advance", () => {
