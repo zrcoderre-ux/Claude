@@ -360,6 +360,17 @@
 
   function startWorkflow(btn, id) {
     const wf = workflowsById[id];
+    // The editor holds changes in memory until Save, so a tick you just made is
+    // not part of the run unless it was saved.
+    if (wfForm.editingId() === id) {
+      if (
+        !confirm(
+          "This workflow is open in the editor. The run uses the SAVED version — " +
+            "any changes you haven't saved won't be included. Start anyway?"
+        )
+      )
+        return;
+    }
     // Don't let a run that uploads nothing start silently. These prompts talk
     // about "the attached papers"; Claude will answer anyway, from nothing, and
     // the result looks like work.
@@ -480,7 +491,7 @@
             : "") +
           (run.error ? `<div class="job-err">${escapeHtml(run.error)}</div>` : "") +
           (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
-          (run.note ? `<div class="job-meta">⚠ ${escapeHtml(run.note)}</div>` : "") +
+          (run.note ? `<div class="job-meta">${escapeHtml(run.note)}</div>` : "") +
           `</div>` +
           `<div class="job-btns">` +
           (run.status === "error" || run.status === "waiting"

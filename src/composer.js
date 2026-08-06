@@ -238,28 +238,53 @@
     }
   }
 
+  // The composer's own container — the scope attachment chips live in. Counting
+  // page-wide is not safe: on a PROJECT page the project's knowledge files
+  // render as buttons with headings, so "enough chips are showing" can be true
+  // before a single file has been attached, and the prompt then sends with
+  // nothing on it.
+  function composerScope() {
+    const ed = findEditor();
+    if (!ed) return document;
+    return (
+      ed.closest("form") ||
+      ed.closest('[class*="composer" i]') ||
+      (ed.parentElement && ed.parentElement.parentElement) ||
+      document
+    );
+  }
+
   // How many attachment chips the composer is showing. The markup is
   // unversioned, so take the best of several shapes rather than trusting one.
   function countChips() {
+    const root = composerScope();
     const counts = [
-      document.querySelectorAll("button h3").length,
-      document.querySelectorAll('[data-testid="file-thumbnail"]').length,
-      document.querySelectorAll('[data-testid*="attachment" i]').length,
-      document.querySelectorAll('[data-testid*="file-chip" i]').length,
+      root.querySelectorAll("button h3").length,
+      root.querySelectorAll('[data-testid="file-thumbnail"]').length,
+      root.querySelectorAll('[data-testid*="attachment" i]').length,
+      root.querySelectorAll('[data-testid*="file-chip" i]').length,
     ];
     return Math.max.apply(null, counts);
   }
 
-  // Wait until `expected` uploads have reported success (via inject.js), or a
-  // fallback: `expected` attachment chips are present, or we time out. Resolves
-  // { ok, uploads, chips } so a caller can say WHY it gave up — an upload that
-  // silently doesn't happen is the failure mode that matters here.
+  // Chips are the WEAKER signal and must never be the fast path. The upload
+  // responses reported by inject.js are the real confirmation; a chip count is
+  // only consulted after this much time has passed, so a page that already
+  // happens to show matching markup can't wave the attachment through in the
+  // first 400ms — which is exactly how a message goes out with nothing on it.
+  const CHIP_GRACE_MS = 8000;
+
+  // Wait until `expected` uploads have reported success (via inject.js), or —
+  // after the grace period — that many NEW attachment chips are showing.
+  // Resolves { ok, uploads, chips } so a caller can say WHY it gave up: an
+  // upload that silently doesn't happen is the failure mode that matters here.
   function waitUploads(expected, timeoutMs) {
     return new Promise((resolve) => {
       if (expected <= 0) return resolve({ ok: true, uploads: 0, chips: 0 });
-      const baseChips = countChips(); // a conversation may already show some
+      const baseChips = countChips(); // this composer may already show some
+      const startedAt = Date.now();
       let done = 0;
-      const deadline = Date.now() + (timeoutMs || 120000);
+      const deadline = startedAt + (timeoutMs || 120000);
       function onMsg(event) {
         if (event.source !== window) return;
         const m = event.data;
@@ -271,7 +296,8 @@
       window.addEventListener("message", onMsg);
       const timer = setInterval(() => {
         const chips = countChips() - baseChips;
-        if (done >= expected || chips >= expected) return finish(true);
+        if (done >= expected) return finish(true);
+        if (chips >= expected && Date.now() - startedAt >= CHIP_GRACE_MS) return finish(true);
         if (Date.now() > deadline) return finish(done > 0 || chips > 0);
       }, 400);
       function finish(ok) {
@@ -286,13 +312,9 @@
   // the page. claude.ai accepts dropped files as well as picked ones, which is
   // the second way in when the hidden input can't be found or React ignores it.
   function findDropTarget() {
-    const ed = findEditor();
-    if (ed) {
-      const form = ed.closest("form") || ed.closest('[class*="composer" i]') || ed.parentElement;
-      if (form) return form;
-      return ed;
-    }
-    return document.body;
+    const scope = composerScope();
+    if (scope && scope !== document) return scope;
+    return findEditor() || document.body;
   }
 
   function dropFiles(el, files) {
@@ -318,6 +340,7 @@
   // `detail` names what was actually observed, so a failure can say more than
   // "uploads did not complete".
   async function attachFiles(files, timeoutMs) {
+    const baseChips = countChips(); // before anything is attached
     const input = findFileInput();
     let how = null;
     let res = { ok: false, uploads: 0, chips: 0 };
@@ -335,10 +358,18 @@
         res = await waitUploads(files.length, Math.min(timeoutMs || 120000, 60000));
       }
     }
+    // Bounded settle: let the chips catch up with the uploads, so the send that
+    // follows cannot beat the attachments onto the composer. Not fatal if the
+    // chip markup never matches — the upload responses already confirmed it.
+    if (res.ok) {
+      const settleBy = Date.now() + 10000;
+      while (countChips() - baseChips < files.length && Date.now() < settleBy) await sleep(400);
+    }
+    const visible = Math.max(0, countChips() - baseChips);
     const detail =
       (input ? "" : "no file input found; ") +
-      res.uploads + "/" + files.length + " uploads confirmed, " + res.chips + " attachment(s) visible";
-    return { ok: res.ok, how, detail };
+      res.uploads + "/" + files.length + " uploads confirmed, " + visible + " attachment(s) visible";
+    return { ok: res.ok, how, detail, uploads: res.uploads, visible };
   }
 
   // ---- Model selection ---------------------------------------------------
@@ -610,7 +641,10 @@
             (att.how ? " (tried: " + att.how + ")" : ""),
           notes,
         };
-      notes.push("attached " + files.length + " document(s) via " + att.how);
+      notes.push(
+        "attached " + files.length + " document(s) via " + att.how +
+          " (" + att.uploads + " upload(s) confirmed)"
+      );
       await sleep(600);
     }
 

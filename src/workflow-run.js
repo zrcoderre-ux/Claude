@@ -352,8 +352,8 @@
     if (via !== "copy") notes.push("reply read from the " + (via === "api" ? "conversation API" : "page") + " (copy box not usable)");
 
     const url = location.href;
-    const updated = await updateRun(runId, (r) =>
-      W.applyStepResult(r, {
+    const updated = await updateRun(runId, (r) => {
+      const next = W.applyStepResult(r, {
         stepIndex: r.stepIndex,
         chatId: msg.chatId,
         chatName: msg.chatName || null,
@@ -362,8 +362,12 @@
         now: Date.now(),
         total: msg.total,
         docs: (msg.files || []).length,
-      })
-    );
+      });
+      // What this step actually did — how the documents went up, and whether
+      // the reply had to be read some way other than the copy box. Kept on the
+      // run so it's readable after the fact, not just in the moment.
+      return notes.length ? Object.assign({}, next, { note: notes.join("; ") }) : next;
+    });
     return {
       ok: true,
       url,
