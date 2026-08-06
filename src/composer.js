@@ -29,8 +29,22 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const isCodePage = () => /^\/code(\/|$)/.test(location.pathname);
 
+  // Deliberately NOT offsetParent: that is null for any position:fixed element,
+  // and claude.ai's composer bar — Stop button included — is fixed. Reading the
+  // Stop control as absent means reading a turn that is still generating as
+  // finished, which is how a workflow steps on its own reply.
   function isVisible(el) {
-    return !!el && el.offsetParent !== null;
+    if (!el) return false;
+    try {
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return false;
+      const cs = window.getComputedStyle(el);
+      if (!cs) return true;
+      if (cs.display === "none" || cs.visibility === "hidden") return false;
+      return Number(cs.opacity) !== 0;
+    } catch (e) {
+      return true; // can't tell — assume it's there rather than ignore it
+    }
   }
   // Skip elements that belong to our own injected UI so we never drive them by
   // accident.

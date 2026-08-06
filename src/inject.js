@@ -157,7 +157,10 @@
               // content script can refresh the Code context panel afterward.
               const ct =
                 (response.headers && response.headers.get && response.headers.get("content-type")) || "";
-              if (/text\/event-stream/i.test(ct)) post({ turnEnded: true });
+              // Headers arrive when the stream OPENS, so this marks a turn
+              // starting, not finishing.
+              const isStream = /text\/event-stream/i.test(ct);
+              if (isStream) post({ turnEnded: true, streamStart: true, at: Date.now() });
               const headerData = H && H.harvestHeaders(response.headers);
               if (H && H.hasData(headerData)) emit("fetch:headers", headerData, url);
               response
@@ -168,8 +171,18 @@
                   if (H && H.hasData(bodyData)) emit("fetch:body", bodyData, url);
                   maybeEmitProjects(url, text);
                   maybeEmitConversations(url, text);
+                  // Reading the whole body resolves exactly when the stream
+                  // closes — the assistant's turn is over. This is the only
+                  // authoritative "done" signal available: it comes from the
+                  // network, so it doesn't care whether the tab is focused,
+                  // rendered, or throttled, and a pause mid-turn can't fake it.
+                  if (isStream) post({ streamDone: true, at: Date.now() });
                 })
-                .catch(() => {});
+                .catch(() => {
+                  // A stream that errored or was aborted is also no longer
+                  // running; saying so beats leaving a waiter hanging.
+                  if (isStream) post({ streamDone: true, aborted: true, at: Date.now() });
+                });
               // Scheduled-send: report file-upload completion so the executor
               // knows when it's safe to click Send.
               if (/upload-file/i.test(url)) {

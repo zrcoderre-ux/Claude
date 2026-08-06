@@ -622,14 +622,30 @@
     return text !== trimmed(s.beforeText);
   }
 
-  // Has this turn finished? True only when Claude has stopped generating AND the
-  // text has held still for a moment — streaming pauses between blocks, and a
-  // reply read mid-stream would be pasted into the next chat half-written.
+  // Has this turn finished? Two ways to know, and they are not equally good.
+  //
+  // `streamDone` is the assistant's own response stream closing, reported from
+  // the network layer. It cannot be faked by a pause mid-turn and does not care
+  // whether the tab is focused or being rendered, so when it's there the DOM
+  // only has to have caught up.
+  //
+  // Without it we fall back to the text holding still — and that reading is
+  // weak in a background tab, where timers are throttled to about once a minute
+  // and layout may not run at all. A single "it hasn't changed" observation
+  // taken across a throttled gap says nothing, so several consecutive ones are
+  // required. This is what stops a run from bolting to the next step the moment
+  // you click into the tab and the poll loop speeds back up.
   function turnSettled(sample) {
     const s = sample || {};
     if (s.generating) return false;
     if (!trimmed(s.text)) return false;
-    return (s.unchangedMs || 0) >= (typeof s.minStableMs === "number" ? s.minStableMs : 2500);
+    const unchanged = s.unchangedMs || 0;
+    if (s.streamDone)
+      return unchanged >= (typeof s.minSettleMs === "number" ? s.minSettleMs : 1200);
+    return (
+      unchanged >= (typeof s.minStableMs === "number" ? s.minStableMs : 6000) &&
+      (s.stablePolls || 0) >= (typeof s.minStablePolls === "number" ? s.minStablePolls : 3)
+    );
   }
 
   // ---- the pre-built workflow --------------------------------------------

@@ -150,11 +150,27 @@ blocks only. The rendered message text is the last resort. **The run does not
 depend on the copy box working**: if the hook never fires, harvesting falls
 through to the API and the workflow still completes.
 
-A step's reply is only taken once Claude has stopped generating **and** the text
-has held still for a few seconds, and only if it differs from what was on screen
-before the step's message went out — the transcript can hold just the newest turn
-in the DOM, so counting rendered messages is not on its own enough to know a new
-answer arrived.
+**Knowing the turn is over.** The signal that counts is the assistant's response
+stream closing, reported from the network layer (`inject.js` finishes reading the
+`text/event-stream` body exactly when the turn ends). That can't be faked by a
+pause mid-answer and doesn't care whether the tab is focused, rendered or
+throttled. Only a stream that closed *after* this step's message went out counts,
+so a leftover signal from the previous turn can't release the next step.
+
+Failing that, it falls back to the reply text holding still — and that reading is
+weak in a background tab, where Chrome throttles timers to about once a minute
+and may not run layout at all. So the fallback needs the text unchanged across
+several **consecutive** looks, not just a long-looking gap, and **clicking into
+the tab resets the window**: everything measured while the tab was hidden was
+measured across minute-wide gaps, and cashing that in the moment the poll loop
+speeds back up is exactly how a run steps on a half-written answer. The text
+itself is read with `textContent` rather than `innerText`, because `innerText`
+is computed from layout, and an unrendered tab makes a still-growing reply look
+frozen.
+
+A reply also has to differ from what was on screen before the step's message went
+out — the transcript can hold just the newest turn in the DOM, so counting
+rendered messages is not on its own enough to know a new answer arrived.
 
 **When things go wrong.** A run is driven through the real UI, so it needs your
 browser open and logged in. If Claude is down it **waits mid-workflow** and picks
