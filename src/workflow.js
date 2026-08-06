@@ -693,18 +693,32 @@
   // three empty shells and asks it to revise them, and the result looks like
   // work. Text that is mostly placeholder is not a reply.
   const UNSUPPORTED_RE = /this block is not supported on your current device(?: yet)?\.?/gi;
+  // The same placeholder wrapped in the code fence the copy box puts round it.
+  const UNSUPPORTED_FENCE_RE =
+    /```[a-z]*[ \t]*\r?\n?[ \t]*this block is not supported on your current device(?: yet)?\.?[ \t]*\r?\n?[ \t]*```/gi;
+
   function hasUnsupportedBlocks(text) {
     UNSUPPORTED_RE.lastIndex = 0;
     return UNSUPPORTED_RE.test(str(text));
   }
-  // What's left once the placeholders (and the empty fences around them) are
-  // taken out — the part that actually says something.
-  function usableLength(text) {
+
+  // Take the placeholders out and keep everything else. A reply is often part
+  // prose and part blocks this page couldn't draw — the prose is the answer and
+  // should travel; the shells say nothing and must not.
+  function stripPlaceholders(text) {
+    UNSUPPORTED_FENCE_RE.lastIndex = 0;
+    UNSUPPORTED_RE.lastIndex = 0;
     return str(text)
+      .replace(UNSUPPORTED_FENCE_RE, "")
       .replace(UNSUPPORTED_RE, "")
-      .replace(/```[a-z]*\s*```/gi, "")
-      .replace(/\s+/g, " ")
-      .trim().length;
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  // What's left once the placeholders are taken out — the part that actually
+  // says something.
+  function usableLength(text) {
+    return stripPlaceholders(text).replace(/\s+/g, " ").trim().length;
   }
   function isMostlyPlaceholder(text) {
     if (!hasUnsupportedBlocks(text)) return false;
@@ -938,6 +952,7 @@
     messageParts,
     hasUnsupportedBlocks,
     isMostlyPlaceholder,
+    stripPlaceholders,
     usableLength,
     isCopyLabel,
     COPY_LABELS,

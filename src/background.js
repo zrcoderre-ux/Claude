@@ -38,6 +38,12 @@ const STATUS_POLL_HOT_MIN = 1; // while an outage is live or a job is held
 const STATUS_GRACE_MS = 15 * 60 * 1000;
 // At fire time a poll-cadence-old reading isn't good enough; re-read if older.
 const STATUS_FIRE_FRESH_MS = 60 * 1000;
+// A run's window must be wide enough for claude.ai's DESKTOP layout. Its
+// compact layout can't render every block type and substitutes "This block is
+// not supported on your current device", which the copy box then copies as if
+// it were the reply.
+const RUN_WINDOW_W = 1440;
+const RUN_WINDOW_H = 900;
 
 const J = self.CUMJobs;
 const S = self.CUMStatus;
@@ -530,6 +536,32 @@ function windowExists(id) {
   });
 }
 
+// Grow a run's window if it's too narrow for claude.ai's desktop layout — a
+// window the operator resized, or one from before this mattered. Resizing does
+// not focus it, so this can't interrupt anything.
+async function ensureWindowSize(windowId) {
+  const win = await new Promise((resolve) => {
+    try {
+      chrome.windows.get(windowId, (w) => {
+        void chrome.runtime.lastError;
+        resolve(w || null);
+      });
+    } catch (e) {
+      resolve(null);
+    }
+  });
+  if (!win || win.state === "maximized" || win.state === "fullscreen") return;
+  if (typeof win.width === "number" && win.width >= RUN_WINDOW_W) return;
+  try {
+    await chrome.windows.update(windowId, {
+      width: RUN_WINDOW_W,
+      height: Math.max(win.height || 0, RUN_WINDOW_H),
+    });
+  } catch (e) {
+    /* ignore */
+  }
+}
+
 async function tabsInWindow(windowId) {
   return new Promise((resolve) => {
     try {
@@ -554,7 +586,21 @@ async function runTab(run, url) {
     try {
       // focused:false — a run must never take the screen away from what you're
       // doing. Its window opens behind, holding only this run's chats.
-      const win = await chrome.windows.create({ url, focused: false });
+      //
+      // The size is not cosmetic. claude.ai is responsive, and below its
+      // breakpoint it serves a compact client that cannot render some block
+      // types — showing "This block is not supported on your current device"
+      // where the content should be. The copy box then copies that notice, and
+      // the shell travels to the next chat as the material to work from. A
+      // window created without dimensions gets Chrome's default, which is
+      // easily narrow enough to trip that, so ask for a desktop-sized one.
+      // (Chrome clamps to the screen if it doesn't fit.)
+      const win = await chrome.windows.create({
+        url,
+        focused: false,
+        width: RUN_WINDOW_W,
+        height: RUN_WINDOW_H,
+      });
       const tab = win && win.tabs && win.tabs[0];
       return tab ? { tab, windowId: win.id, created: true } : { tab: null, windowId: null };
     } catch (e) {
@@ -562,6 +608,7 @@ async function runTab(run, url) {
     }
   }
 
+  await ensureWindowSize(windowId);
   for (const t of await tabsInWindow(windowId)) {
     if (t && t.url && J.sameConversationUrl(t.url, url)) return { tab: t, windowId, created: false };
   }
