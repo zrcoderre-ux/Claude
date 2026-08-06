@@ -190,6 +190,17 @@ test("a duplicate step result cannot advance the run twice", () => {
   assert.equal(again.transcript.length, 1);
 });
 
+test("a run remembers its own window, and forgets one that's gone", () => {
+  const { run } = startedRun();
+  assert.equal(run.windowId, null);
+  const placed = W.withWindow(run, 42);
+  assert.equal(placed.windowId, 42);
+  assert.equal(W.withWindow(placed, null).windowId, null, "closed window → open a fresh one");
+  assert.equal(W.withWindow(placed, undefined).windowId, null);
+  // Fixing a partial run keeps it pointed at the same window.
+  assert.equal(W.reviseRun(placed, { stepIndex: 1 }, NOW).windowId, 42);
+});
+
 test("carrySource points at the chat that produced the hand-off", () => {
   const wf = twoChatWorkflow();
   // Step 3 (revise, in A) carries what step 2 (attack, in B) produced.

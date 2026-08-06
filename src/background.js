@@ -520,18 +520,64 @@ async function seedWorkflows() {
   await set({ [WORKFLOWS_KEY]: W.upsertWorkflow(list, wf), [WF_SEEDED_KEY]: true });
 }
 
-// The tab a step should run in: the chat's existing conversation if it has one
-// (that's the whole point — chat A comes back to its own thread), otherwise a
-// fresh composer at the chat's configured destination.
-async function stepTab(savedUrl, chat) {
-  if (savedUrl) {
+function windowExists(id) {
+  return new Promise((resolve) => {
     try {
-      const existing = await findChatTab(savedUrl);
-      if (existing) return { tab: existing, created: false };
+      chrome.windows.get(id, () => resolve(!chrome.runtime.lastError));
     } catch (e) {
-      /* fall through and open one */
+      resolve(false);
+    }
+  });
+}
+
+async function tabsInWindow(windowId) {
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.query({ windowId }, (t) => {
+        void chrome.runtime.lastError;
+        resolve(t || []);
+      });
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+
+// A tab showing `url` inside this run's own window. Deliberately scoped to that
+// window: a conversation the operator happens to have open elsewhere is theirs,
+// and driving a message into the tab they're reading would be a nasty surprise.
+async function runTab(run, url) {
+  let windowId = typeof run.windowId === "number" ? run.windowId : null;
+  if (windowId != null && !(await windowExists(windowId))) windowId = null;
+
+  if (windowId == null) {
+    try {
+      // focused:false — a run must never take the screen away from what you're
+      // doing. Its window opens behind, holding only this run's chats.
+      const win = await chrome.windows.create({ url, focused: false });
+      const tab = win && win.tabs && win.tabs[0];
+      return tab ? { tab, windowId: win.id, created: true } : { tab: null, windowId: null };
+    } catch (e) {
+      return { tab: null, windowId: null };
     }
   }
+
+  for (const t of await tabsInWindow(windowId)) {
+    if (t && t.url && J.sameConversationUrl(t.url, url)) return { tab: t, windowId, created: false };
+  }
+  try {
+    const tab = await chrome.tabs.create({ url, windowId, active: false });
+    return { tab, windowId, created: true };
+  } catch (e) {
+    return { tab: null, windowId };
+  }
+}
+
+// The tab a step should run in: the chat's existing conversation if it has one
+// (that's the whole point — chat A comes back to its own thread), otherwise a
+// fresh composer at the chat's configured destination. Always inside the run's
+// own window.
+async function stepTab(run, savedUrl, chat) {
   const url =
     savedUrl ||
     J.targetUrl({
@@ -539,14 +585,13 @@ async function stepTab(savedUrl, chat) {
       projectUuid: (chat.target && chat.target.projectUuid) || null,
       codeRepo: (chat.target && chat.target.codeRepo) || null,
     });
-  try {
-    const tab = await chrome.tabs.create({ url, active: false });
+  const { tab, windowId, created } = await runTab(run, url);
+  if (!tab) return { tab: null, windowId: null };
+  if (created) {
     await waitTabComplete(tab.id, 30000);
     await sleep(2500); // the SPA needs a moment to render the composer
-    return { tab, created: true };
-  } catch (e) {
-    return { tab: null, created: false };
   }
+  return { tab, windowId };
 }
 
 // Hand the step to the page. Only the "content script isn't listening yet" case
@@ -580,8 +625,9 @@ async function refetchCarry(run, wf) {
         "this run has no conversation recorded for " + src.chatName +
         " — paste its chat link in, or resume without re-reading it",
     };
-  const { tab } = await stepTab(url, W.getChat(wf, src.chatId) || {});
+  const { tab, windowId } = await stepTab(run, url, W.getChat(wf, src.chatId) || {});
   if (!tab) return { ok: false, error: "could not open " + src.chatName };
+  if (windowId != null && windowId !== run.windowId) await saveRun(W.withWindow(run, windowId));
   let res = await sendStep(tab.id, { type: "cum-wf-harvest", runId: run.id });
   if (res && !res.ok && /no response from page/.test(res.error || "")) {
     try {
@@ -654,7 +700,9 @@ async function driveRun(runId, opts) {
 
       const chat = W.getChat(wf, step.chatId) || {};
       const saved = (run.chats && run.chats[step.chatId]) || {};
-      const { tab } = await stepTab(saved.url, chat);
+      const { tab, windowId } = await stepTab(run, saved.url, chat);
+      if (windowId != null && windowId !== run.windowId)
+        run = await saveRun(W.withWindow(run, windowId));
       if (!tab) {
         await saveRun(W.markError(await readRun(runId), "could not open a claude.ai tab", Date.now()));
         notify("Workflow stopped", "Could not open a claude.ai tab.");
@@ -910,6 +958,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await saveRun(note ? Object.assign({}, revised, { note }) : revised);
       driveRun(msg.runId, { force: true }); // long-running: don't await
       return { ok: true, note };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
+  // Close a finished run's window — its chats have been read and the window is
+  // just taking up space now.
+  if (msg && msg.type === "cum-wf-close-window" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "run not found" };
+      if (typeof run.windowId !== "number") return { ok: false, error: "no window to close" };
+      try {
+        await chrome.windows.remove(run.windowId);
+      } catch (e) {
+        /* already gone */
+      }
+      await saveRun(W.withWindow(await readRun(msg.runId), null));
+      return { ok: true };
     })()
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));

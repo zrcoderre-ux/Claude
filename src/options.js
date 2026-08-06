@@ -628,6 +628,9 @@
           (WF.isRunActive(run)
             ? `<button class="job-edit wf-run-cancel" data-id="${run.id}" title="Stop here">Cancel</button>`
             : "") +
+          (!WF.isRunActive(run) && typeof run.windowId === "number"
+            ? `<button class="job-edit wf-run-closewin" data-id="${run.id}" title="Close this run's Chrome window and its chats">Close window</button>`
+            : "") +
           `<button class="job-del wf-run-del" data-id="${run.id}" title="Remove from the list">✕</button>` +
           `</div>`;
         wfui.runs.appendChild(row);
@@ -645,6 +648,15 @@
           b.disabled = true;
           b.textContent = "Resuming…";
           chrome.runtime.sendMessage({ type: "cum-wf-resume", runId: b.getAttribute("data-id") }, renderRuns);
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-run-closewin").forEach((b) =>
+        b.addEventListener("click", () => {
+          b.disabled = true;
+          chrome.runtime.sendMessage(
+            { type: "cum-wf-close-window", runId: b.getAttribute("data-id") },
+            renderRuns
+          );
         })
       );
       wfui.runs.querySelectorAll(".wf-run-fix").forEach((b) =>
