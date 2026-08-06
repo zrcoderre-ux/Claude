@@ -38,10 +38,10 @@ const STATUS_POLL_HOT_MIN = 1; // while an outage is live or a job is held
 const STATUS_GRACE_MS = 15 * 60 * 1000;
 // At fire time a poll-cadence-old reading isn't good enough; re-read if older.
 const STATUS_FIRE_FRESH_MS = 60 * 1000;
-// A run's window must be wide enough for claude.ai's DESKTOP layout. Its
-// compact layout can't render every block type and substitutes "This block is
-// not supported on your current device", which the copy box then copies as if
-// it were the reply.
+// A run's window is maximized: claude.ai's compact layout can't render every
+// block type and substitutes "This block is not supported on your current
+// device", which the copy box then copies as if it were the reply. These
+// dimensions are only the fallback for a platform that refuses to maximize.
 const RUN_WINDOW_W = 1440;
 const RUN_WINDOW_H = 900;
 
@@ -536,9 +536,9 @@ function windowExists(id) {
   });
 }
 
-// Grow a run's window if it's too narrow for claude.ai's desktop layout — a
-// window the operator resized, or one from before this mattered. Resizing does
-// not focus it, so this can't interrupt anything.
+// Maximize a run's window if it isn't already — one the operator resized, or one
+// from before this mattered. Maximizing does not focus it, so this can't
+// interrupt anything.
 async function ensureWindowSize(windowId) {
   const win = await new Promise((resolve) => {
     try {
@@ -551,14 +551,19 @@ async function ensureWindowSize(windowId) {
     }
   });
   if (!win || win.state === "maximized" || win.state === "fullscreen") return;
-  if (typeof win.width === "number" && win.width >= RUN_WINDOW_W) return;
   try {
-    await chrome.windows.update(windowId, {
-      width: RUN_WINDOW_W,
-      height: Math.max(win.height || 0, RUN_WINDOW_H),
-    });
+    await chrome.windows.update(windowId, { state: "maximized" });
   } catch (e) {
-    /* ignore */
+    // Some platforms refuse the state change; a wide window is still better
+    // than a narrow one.
+    try {
+      await chrome.windows.update(windowId, {
+        width: RUN_WINDOW_W,
+        height: Math.max(win.height || 0, RUN_WINDOW_H),
+      });
+    } catch (e2) {
+      /* ignore */
+    }
   }
 }
 
@@ -587,20 +592,27 @@ async function runTab(run, url) {
       // focused:false — a run must never take the screen away from what you're
       // doing. Its window opens behind, holding only this run's chats.
       //
-      // The size is not cosmetic. claude.ai is responsive, and below its
-      // breakpoint it serves a compact client that cannot render some block
-      // types — showing "This block is not supported on your current device"
-      // where the content should be. The copy box then copies that notice, and
-      // the shell travels to the next chat as the material to work from. A
-      // window created without dimensions gets Chrome's default, which is
-      // easily narrow enough to trip that, so ask for a desktop-sized one.
-      // (Chrome clamps to the screen if it doesn't fit.)
-      const win = await chrome.windows.create({
-        url,
-        focused: false,
-        width: RUN_WINDOW_W,
-        height: RUN_WINDOW_H,
-      });
+      // Maximized, and the size is not cosmetic. claude.ai is responsive, and
+      // below its breakpoint it serves a compact client that cannot render some
+      // block types — showing "This block is not supported on your current
+      // device" where the content should be. The copy box then copies that
+      // notice, and the shell travels to the next chat as the material to work
+      // from. Filling the screen puts the layout as far from that breakpoint as
+      // the display allows.
+      //
+      // Chrome rejects `state` combined with explicit dimensions, so the
+      // fallback below is a separate call rather than extra properties here.
+      let win = null;
+      try {
+        win = await chrome.windows.create({ url, focused: false, state: "maximized" });
+      } catch (e) {
+        win = await chrome.windows.create({
+          url,
+          focused: false,
+          width: RUN_WINDOW_W,
+          height: RUN_WINDOW_H,
+        });
+      }
       const tab = win && win.tabs && win.tabs[0];
       return tab ? { tab, windowId: win.id, created: true } : { tab: null, windowId: null };
     } catch (e) {
