@@ -222,10 +222,14 @@ nor a leftover signal from the previous turn can release the next step. When it
 arrives it **outranks the page**: a Stop control the UI never takes down would
 otherwise park a step until it times out.
 
-Failing everything else, a reply that hasn't changed **in three minutes** is
+Failing everything else, a reply that hasn't changed **in fifteen minutes** is
 treated as finished whatever the page claims, and the run says that's what it
-did. A step that waits out the whole hour to report nothing is worse than
-one that moves on and tells you how it decided.
+did — a step that waits out the whole hour to report nothing is worse than one
+that moves on and tells you how it decided. That backstop is **suppressed while a
+response stream is open**, because then the turn demonstrably hasn't finished:
+text standing still means a tool call or a long search, and a skill that verifies
+authority by live retrieval can sit silent for many minutes without being stalled
+at all.
 
 Failing that, it falls back to the reply text holding still — and that reading is
 weak in a background tab, where Chrome throttles timers to about once a minute

@@ -1080,11 +1080,17 @@
         : null;
 
     if (s.generating) {
-      // The page says Claude is still going. Believe it — up to a point. A
-      // reply that hasn't changed in minutes is finished whatever the Stop
-      // button claims, and a step that waits out the whole hour to say nothing is worse
-      // than one that moves on and says how it decided.
-      const stalled = typeof s.stalledMs === "number" ? s.stalledMs : 180000;
+      // The page says Claude is still going. If a response stream is open, that
+      // isn't a guess — it IS still going, and text standing still means a tool
+      // call or a long search, not a finished answer. Wait for the stream to
+      // close; it will, and then we'll know.
+      if (s.streamOpen) return null;
+      // With no stream to consult, believe the page up to a point: a reply that
+      // hasn't changed in a long while is finished whatever a lingering Stop
+      // control claims. Long, because research pauses are long — a skill that
+      // verifies authority by live retrieval can sit silent for many minutes —
+      // and being early here means handing on half an answer.
+      const stalled = typeof s.stalledMs === "number" ? s.stalledMs : 900000;
       return unchanged >= stalled ? "stalled" : null;
     }
 

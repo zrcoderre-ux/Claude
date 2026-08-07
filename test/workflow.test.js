@@ -818,14 +818,22 @@ test("turnSettled takes the network's word for it when the stream has closed", (
 
 test("a reply that stops changing is finished, whatever the page claims", () => {
   // A Stop control the page never takes down must not park a step until the
-  // step timeout: minutes of an unchanging reply outrank it, and the run says
-  // that's what it did.
-  const stuck = { text: "the ruling", generating: true, unchangedMs: 200000, stalledMs: 180000 };
+  // step timeout: a long spell of unchanging reply outranks it, and the run
+  // says that's what it did.
+  const stuck = { text: "the ruling", generating: true, unchangedMs: 1000000, stalledMs: 900000 };
   assert.equal(W.settleReason(stuck), "stalled");
   assert.equal(
     W.settleReason(Object.assign({}, stuck, { unchangedMs: 20000 })),
     null,
     "still generating and recently changed — keep waiting"
+  );
+  // ...but an OPEN response stream is not a guess about markup, it's the turn
+  // still running. A skill verifying authority by live retrieval sits silent
+  // for many minutes and is not stalled at all.
+  assert.equal(
+    W.settleReason(Object.assign({}, stuck, { streamOpen: true })),
+    null,
+    "a stream still open outranks any amount of silence"
   );
   assert.equal(W.settleReason({ text: "x", generating: false, streamDone: true, unchangedMs: 2000 }), "stream");
   assert.equal(
