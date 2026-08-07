@@ -644,6 +644,27 @@ async function tabsInWindow(windowId) {
   });
 }
 
+// The Options page, pinned at the left edge of a run's own window. A run's
+// window is where you watch it happen, and the controls for it — Steps, Pause,
+// Fix & continue — were a window away in a tab you had to go and find. Pinned
+// so it reads as this window's control panel rather than another chat, opened
+// on the Workflows section, and never made active: the chat stays in front.
+async function ensureOptionsTab(windowId) {
+  if (windowId == null) return;
+  const url = chrome.runtime.getURL("src/options.html") + "#workflows";
+  try {
+    const here = await tabsInWindow(windowId);
+    // Any Options tab counts, whatever section it's on — the operator may well
+    // have clicked away to Usage, and a second copy would be clutter.
+    const base = chrome.runtime.getURL("src/options.html");
+    if (here.some((t) => t && t.url && t.url.indexOf(base) === 0)) return;
+    await chrome.tabs.create({ url, windowId, active: false, pinned: true, index: 0 });
+  } catch (e) {
+    /* a window that vanished mid-open, or a tab Chrome declined — not worth
+       failing the run over */
+  }
+}
+
 // A tab showing `url` inside this run's own window. Deliberately scoped to that
 // window: a conversation the operator happens to have open elsewhere is theirs,
 // and driving a message into the tab they're reading would be a nasty surprise.
@@ -674,6 +695,7 @@ async function runTab(run, url) {
       if (win && win.id != null) {
         await sleep(300);
         await ensureWindowSize(win.id);
+        await ensureOptionsTab(win.id);
       }
       const tab = win && win.tabs && win.tabs[0];
       return tab ? { tab, windowId: win.id, created: true } : { tab: null, windowId: null };
@@ -1277,6 +1299,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await saveRun(W.withWindow(await readRun(msg.runId), win.id));
           await sleep(300);
           await ensureWindowSize(win.id);
+          await ensureOptionsTab(win.id);
         }
         return { ok: true, opened: urls.length, missing };
       } catch (e) {

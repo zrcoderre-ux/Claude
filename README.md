@@ -323,6 +323,25 @@ done marked as such and the next one up marked `next`. It opens nothing and
 changes nothing, so a paused or stopped run can be looked over before deciding
 whether it needs fixing at all; the editor is for when it does.
 
+### How long steps take
+
+Every finished step records its own time, split into the two things that can be
+slow: **sending** (composing the message, getting its documents up) and
+**waiting** (Claude answering, which is where the hours go). The chips under a
+run show each step's total, hover gives the split, **Steps** spells it out per
+step, and the run's row carries the whole: total working time, the **typical**
+step, and the longest with its number. Median rather than mean, because one step
+that stalled for an hour shouldn't get to describe the other eight. The in-chat
+pill counts the current step up as it goes.
+
+The clock **stops when the run does**. A step paused overnight, or held through
+an outage, or stopped on an error and fixed the next morning, spent that time
+stopped — not working — and the figure says so, with the excluded time shown
+separately where it's more than a moment. A step the run never sent itself (one
+you told it had already gone out) has no honest moment to measure from, so it
+reports what it can — the wait — and nothing where it would be guessing. Re-doing
+a step times the attempt that produced the reply, not every attempt stacked up.
+
 ### Fixing a partial run
 
 A ten-step run that stops at step six shouldn't have to start again. **Fix &
@@ -387,6 +406,13 @@ run window left smaller is maximized again before a step uses it. Maximizing
 doesn't focus a window, so this stays out of your way. Nothing is ever activated or brought forward, so a nine-step
 workflow can grind away for an hour while you work in your own windows — the run
 never takes the screen, and its tabs never pile into whatever you're using.
+
+The window also gets **Options, pinned at its left edge**, opened on the
+Workflows section — the run's controls in the window where you watch it happen,
+rather than a tab away in whatever window you were in when you started it. Steps,
+Pause, Edit run and Fix & continue are all there. It opens unfocused like
+everything else, so the chat stays in front; close it and it stays closed, since
+a window a run reopens later only puts its **chats** back.
 
 ### Running several at once
 

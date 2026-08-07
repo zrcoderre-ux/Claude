@@ -780,6 +780,7 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 .cum-wfp-text:hover { text-decoration: underline; }
 .cum-wfp-name { font-weight: 700; }
 .cum-wfp-where { color: #6b6b6b; }
+.cum-wfp-took { color: #8a8a8a; font-variant-numeric: tabular-nums; }
 
 .cum-wfp-btn {
   flex: 0 0 auto;
@@ -810,6 +811,7 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
     color: #f0efea;
   }
   .cum-wfp-where { color: #a5a29a; }
+  .cum-wfp-took { color: #8a877f; }
   .cum-wfp-btn {
     background: #35342f;
     border-color: rgba(255, 255, 255, 0.16);

@@ -644,6 +644,113 @@ test("reviseRun continues from a chosen step without re-sending what already wen
   assert.equal(back.sentAt, null);
 });
 
+const MIN = 60_000;
+
+test("a step records how long it took, split into sending and waiting", () => {
+  const { run } = startedRun();
+  let r = W.markSending(run, NOW);
+  r = W.markSent(r, { chatId: "a", url: "https://claude.ai/chat/u1", now: NOW + 2 * MIN });
+  r = W.applyStepResult(r, {
+    stepIndex: 0,
+    chatId: "a",
+    reply: "DRAFT",
+    now: NOW + 14 * MIN,
+    total: 3,
+  });
+  const t = r.transcript[0];
+  assert.equal(t.sendMs, 2 * MIN, "composing the message and getting its documents up");
+  assert.equal(t.replyMs, 12 * MIN, "and Claude answering");
+  assert.equal(t.ms, 14 * MIN);
+  assert.equal(t.ms, t.sendMs + t.replyMs, "the legs add up to the whole");
+  assert.equal(t.stoppedMs, 0);
+  assert.equal(r.stepStartedAt, null, "the clock is cleared for the next step");
+});
+
+test("time a run spends stopped is not charged to the step", () => {
+  const { run } = startedRun();
+  let r = W.markSending(run, NOW);
+  r = W.markSent(r, { chatId: "a", url: "https://claude.ai/chat/u1", now: NOW + MIN });
+  // Paused a minute in, picked back up an hour later.
+  r = W.markPaused(r, NOW + 2 * MIN);
+  assert.equal(r.stepStoppedAt, NOW + 2 * MIN);
+  r = W.reviseRun(r, { stepIndex: 0, phase: "awaiting-reply" }, NOW + 62 * MIN);
+  assert.equal(r.stepStoppedAt, null);
+  assert.equal(r.stepStoppedMs, 60 * MIN);
+  r = W.applyStepResult(r, { stepIndex: 0, chatId: "a", reply: "DRAFT", now: NOW + 65 * MIN, total: 3 });
+  const t = r.transcript[0];
+  assert.equal(t.stoppedMs, 60 * MIN);
+  assert.equal(t.ms, 5 * MIN, "an hour paused is an hour stopped, not an hour of work");
+  assert.equal(t.replyMs, 4 * MIN);
+});
+
+test("re-attaching to a sent step keeps the record that it was sent", () => {
+  // A worker that dies mid-wait comes back and calls markSending again. If that
+  // overwrote the phase, the retry would post the same message a second time.
+  const { run } = startedRun();
+  let r = W.markSending(run, NOW);
+  r = W.markSent(r, { chatId: "a", url: "https://claude.ai/chat/u1", now: NOW + MIN });
+  r = W.markSending(r, NOW + 5 * MIN);
+  assert.equal(r.phase, "awaiting-reply");
+  assert.equal(r.status, "running");
+  assert.equal(r.stepStartedAt, NOW, "and its clock keeps running from the first attempt");
+  r = W.applyStepResult(r, { stepIndex: 0, chatId: "a", reply: "DRAFT", now: NOW + 20 * MIN, total: 3 });
+  assert.equal(r.transcript[0].ms, 20 * MIN);
+});
+
+test("a step with no honest start reports nothing rather than guessing", () => {
+  // Told its message already went out — this run never sent it, so it has no
+  // moment to measure from.
+  const { run } = startedRun();
+  let r = W.reviseRun(run, { stepIndex: 0, phase: "awaiting-reply" }, NOW);
+  r = W.applyStepResult(r, { stepIndex: 0, chatId: "a", reply: "DRAFT", now: NOW + 9 * MIN, total: 3 });
+  assert.equal(r.transcript[0].ms, null);
+  assert.equal(r.transcript[0].sendMs, null);
+  assert.equal(r.transcript[0].replyMs, 9 * MIN, "what it can say, it says");
+});
+
+test("re-sending a step times the attempt that worked, not every attempt", () => {
+  const { run } = startedRun();
+  let r = W.markSending(run, NOW);
+  r = W.markError(r, "Claude did not finish replying in time", NOW + 40 * MIN);
+  r = W.reviseRun(r, { stepIndex: 0, phase: "idle" }, NOW + 100 * MIN);
+  r = W.markSending(r, NOW + 100 * MIN);
+  r = W.markSent(r, { chatId: "a", url: "https://claude.ai/chat/u1", now: NOW + 101 * MIN });
+  r = W.applyStepResult(r, { stepIndex: 0, chatId: "a", reply: "DRAFT", now: NOW + 110 * MIN, total: 3 });
+  assert.equal(r.transcript[0].ms, 10 * MIN);
+  assert.equal(r.transcript[0].stoppedMs, 0, "the failed attempt's clock went with it");
+});
+
+test("timingSummary describes a run by its median step, not its worst", () => {
+  const empty = W.timingSummary({ transcript: [] });
+  assert.equal(empty.steps, 0);
+  assert.equal(empty.totalMs, null);
+
+  const t = W.timingSummary({
+    transcript: [
+      { stepIndex: 0, ms: 5 * MIN },
+      { stepIndex: 1, ms: 60 * MIN },
+      { stepIndex: 2, ms: 7 * MIN },
+      { stepIndex: 3, ms: null }, // still running, or never measured
+    ],
+  });
+  assert.equal(t.steps, 3, "only steps that reported a time");
+  assert.equal(t.totalMs, 72 * MIN);
+  assert.equal(t.medianMs, 7 * MIN, "the hour-long outlier doesn't get to speak for the rest");
+  assert.equal(t.longestMs, 60 * MIN);
+  assert.equal(t.longest.stepIndex, 1);
+});
+
+test("formatMs says the useful thing at each scale", () => {
+  assert.equal(W.formatMs(0), "0s");
+  assert.equal(W.formatMs(42_000), "42s");
+  assert.equal(W.formatMs(90_000), "1m 30s");
+  assert.equal(W.formatMs(12 * MIN), "12m");
+  assert.equal(W.formatMs(60 * MIN), "1h");
+  assert.equal(W.formatMs(95 * MIN), "1h 35m");
+  assert.equal(W.formatMs(null), "");
+  assert.equal(W.formatMs(-5), "");
+});
+
 test("re-reading the previous reply and 'already sent' are alternatives", () => {
   // Either alone is left exactly as it is.
   assert.deepEqual(W.exclusiveFix({ refetchCarry: true, sent: false }), {
