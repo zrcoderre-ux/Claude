@@ -1073,6 +1073,14 @@
     return text !== trimmed(s.beforeText);
   }
 
+  // claude.ai's notice that a reply was cut off part-way. Whatever caused it,
+  // the answer on screen is a fragment — handing it to the next chat means the
+  // rest of the run builds on half a ruling, convincingly.
+  const INTERRUPTED_RE = /(claude['’`]?s\s+)?response\s+was\s+interrupted/i;
+  function looksInterrupted(text) {
+    return INTERRUPTED_RE.test(str(text).replace(/\s+/g, " "));
+  }
+
   // Has this turn finished? Two ways to know, and they are not equally good.
   //
   // `streamDone` is the assistant's own response stream closing, reported from
@@ -1286,6 +1294,7 @@
     hasUnsupportedBlocks,
     isMostlyPlaceholder,
     stripPlaceholders,
+    looksInterrupted,
     usableLength,
     isCopyLabel,
     COPY_LABELS,

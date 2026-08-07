@@ -116,6 +116,16 @@
     return null;
   }
 
+  // claude.ai puts "Claude's response was interrupted" beside the fragment it
+  // managed to write, so look at the message and the block around it — not the
+  // whole page, where an older interrupted turn would keep tripping this.
+  function interruptedAt(el) {
+    if (!el) return false;
+    if (W.looksInterrupted(el.textContent || "")) return true;
+    const near = el.parentElement;
+    return !!(near && W.looksInterrupted(near.textContent || ""));
+  }
+
   // Is Claude's answer still to come? True when the last thing in the
   // conversation is the human's message — the reply hasn't been written yet, so
   // waiting is the only correct thing to do.
@@ -410,6 +420,10 @@
         const el = list.length ? list[list.length - 1] : null;
         if (el) {
           const text = renderedText(el);
+          // A cut-off reply, whatever cut it off. Stop here rather than settle:
+          // what's on screen is a fragment, and the rest of the run would build
+          // on it without ever saying so.
+          if (interruptedAt(el)) return { el, canceled: false, interrupted: true };
           if (text !== lastText) {
             lastText = text;
             lastChangeAt = now;
@@ -555,7 +569,7 @@
       sentAt = typeof run.sentAt === "number" ? run.sentAt : 0;
     }
 
-    const { el, canceled, timedOut, via: settledVia, state } = await waitForReply(
+    const { el, canceled, timedOut, interrupted, via: settledVia, state } = await waitForReply(
       runId,
       before,
       W.STEP_TIMEOUT_MS,
@@ -563,6 +577,20 @@
       msg.marker || null
     );
     if (canceled) return { ok: false, canceled: true, error: "canceled" };
+    // Pause rather than fail: the message went out, the reply is a fragment, and
+    // what happens next is a judgement call. The run keeps its place and its
+    // phase, so Resume waits for a fresh reply instead of sending again.
+    if (interrupted) {
+      await updateRun(runId, (r) =>
+        Object.assign({}, W.markPaused(r, Date.now()), {
+          note:
+            "paused at step " + (r.stepIndex + 1) +
+            " — Claude's response was interrupted, so the reply is only part of one. " +
+            "Read the chat, then Resume (or ask Claude to continue there first).",
+        })
+      );
+      return { ok: false, paused: true, error: "Claude's response was interrupted" };
+    }
     if (!el) {
       // Say what the wait was actually looking at. "Did not finish in time" on
       // its own is unactionable, and this step costs a whole Claude turn to
