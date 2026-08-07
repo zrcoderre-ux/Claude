@@ -224,6 +224,17 @@ source is nothing but placeholder, the step **fails** and says so. **The run doe
 depend on the copy box working**: if the hook never fires, harvesting falls
 through to the API and the workflow still completes.
 
+**The conversation is the record, not the page.** In a long chat claude.ai
+unmounts messages that scroll out of view, so a reply can finish with nothing
+about it in the DOM at all — the step then waits out its hour watching an element
+that never changes, while the answer sits in the conversation the whole time. So
+once the response stream has closed (or the page has been unhelpful for ninety
+seconds) the run **asks claude.ai's API directly**, comparing what the
+conversation says is the latest reply against what it said before the message
+went out. That comparison works whether or not the page is showing anything. The
+transcript is also kept scrolled to the bottom, which is what a person watching
+would do and keeps the DOM path working for longer.
+
 **Knowing the turn is over.** The signal that counts is the assistant's response
 stream closing, reported from the network layer (`inject.js` finishes reading the
 `text/event-stream` body exactly when the turn ends). That can't be faked by a
