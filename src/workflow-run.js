@@ -37,9 +37,10 @@
   const STABLE_MS = 6000;
   const STABLE_POLLS = 3;
   // A reply that hasn't changed in this long is finished, whatever a lingering
-  // Stop control claims. Without this a wrong DOM reading parks a step for the
-  // full step timeout and reports nothing useful.
-  const STALLED_MS = 3 * 60 * 1000;
+  // Stop control claims — but only when no response stream is open to say
+  // otherwise. Generous, because a turn that verifies authority by live
+  // retrieval can sit silent for many minutes and is not stalled at all.
+  const STALLED_MS = 15 * 60 * 1000;
   const COPY_WAIT_MS = 4000;
 
   // ---- the assistant's response stream ------------------------------------
@@ -431,6 +432,9 @@
             unchangedMs: now - lastChangeAt,
             stablePolls,
             streamDone,
+            // A completion stream still open for this turn — proof it hasn't
+            // finished, whatever the text is doing.
+            streamOpen: streamStartedAt > streamDoneAt && streamStartedAt > since,
             minSettleMs: SETTLE_MS,
             minStableMs: STABLE_MS,
             minStablePolls: STABLE_POLLS,
