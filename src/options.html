@@ -102,6 +102,32 @@
         <div class="toolbar" id="split-tools" hidden>
           <button id="split-reset" type="button">Reset chart data</button>
         </div>
+
+        <hr class="divider" />
+
+        <div class="head">
+          <div class="dot"></div>
+          <h1>Workflows</h1>
+        </div>
+        <p class="sub">
+          How much of your weekly usage goes through <b>workflow runs</b> rather
+          than chats you drive yourself — measured the same way as Daily Usage,
+          from the rise in the weekly meter while a run's step was working.
+        </p>
+        <p id="wfu-empty" class="empty">
+          Nothing measured yet. This fills in as workflow runs finish steps.
+        </p>
+        <div id="wfu-wrap" hidden>
+          <div class="wfu-bar"><i id="wfu-fill"></i></div>
+          <p id="wfu-figures" class="wfu-figures"></p>
+          <div id="wfu-list" class="wfu-list"></div>
+        </div>
+        <p id="wfu-note" class="footnote" hidden>
+          Measured by difference, so anything else you were doing while a run was
+          working counts towards it: read this as usage <b>during</b> runs rather
+          than usage provably <b>by</b> them. Steps whose weekly window reset
+          part-way through can't be differenced and are left out entirely.
+        </p>
       </section>
 
       <!-- ============ Scheduled sends ============ -->
@@ -188,6 +214,7 @@
 
     <script src="log.js"></script>
     <script src="daily.js"></script>
+    <script src="wfusage.js"></script>
     <script src="split.js"></script>
     <script src="jobstore.js"></script>
     <script src="jobform.js"></script>

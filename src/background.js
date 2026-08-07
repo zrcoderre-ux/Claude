@@ -14,13 +14,15 @@
  *
  * MV3 workers are short-lived, so a chrome.alarm keeps things ticking.
  */
-importScripts("jobstore.js", "status.js", "workflow.js"); // self.CUMJobs / CUMStatus / CUMWorkflow
+// self.CUMJobs / CUMStatus / CUMWorkflow / CUMWfUsage
+importScripts("jobstore.js", "status.js", "workflow.js", "wfusage.js");
 
 const CFG_KEY = "cum_autocontinue";
 const JOBS_KEY = "cum_jobs";
 const WORKFLOWS_KEY = "cum_workflows";
 const RUNS_KEY = "cum_wf_runs";
 const WF_SEEDED_KEY = "cum_wf_seeded";
+const WF_USAGE_KEY = "cum_wf_usage"; // workflow-attributed usage, by date
 const STATE_KEY = "cum_state";
 const STATUS_KEY = "cum_status"; // last status.claude.com snapshot
 const STATUS_CFG_KEY = "cum_status_cfg"; // { warn, holdSends } — both default on
@@ -50,6 +52,7 @@ const RUN_WINDOW_H = 2304;
 const J = self.CUMJobs;
 const S = self.CUMStatus;
 const W = self.CUMWorkflow;
+const U = self.CUMWfUsage;
 
 // ---- storage helpers ----------------------------------------------------
 function get(keys) {
@@ -524,6 +527,49 @@ async function saveRun(run) {
   if (ids.indexOf(run.id) === -1) await set({ [W.RUN_IDS_KEY]: ids.concat([run.id]) });
   return run;
 }
+function localDateStr(ms) {
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+// Book a finished step's usage into the ledger the Usage tab divides by the
+// daily totals. Written HERE rather than in the page that ran the step: this is
+// one shared key, and two runs finishing a step in the same instant would each
+// read it, add their own, and write back over the other. The worker is one
+// thread, so its read-modify-write can't lose an increment.
+async function recordStepUsage(prev, run) {
+  if (!run) return;
+  const rows = run.transcript || [];
+  const t = rows[rows.length - 1];
+  if (!t || typeof t.usedWeekly !== "number" || t.usedWeekly <= 0) return;
+  // Only when this call is looking at a step that has just landed.
+  if (prev && (prev.transcript || []).length >= rows.length) return;
+  const wf = W.getWorkflow((await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], run.workflowId);
+  const ledger = (await get(WF_USAGE_KEY))[WF_USAGE_KEY] || U.EMPTY;
+  await set({
+    [WF_USAGE_KEY]: U.observe(ledger, {
+      dateStr: localDateStr(Date.now()),
+      pct: t.usedWeekly,
+      workflowId: run.workflowId || run.id,
+      // The template's name, not the run's — a run is named for the matter, and
+      // a breakdown by matter would grow a line every time you started one.
+      workflowName: (wf && (wf.templateName || wf.name)) || run.name || null,
+    }),
+  });
+}
+
+// A finished run's total goes into its workflow's running average, so the next
+// time you're about to start one it can say what it usually costs.
+async function noteRunUsage(run) {
+  if (!run || !run.workflowId) return;
+  const list = (await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [];
+  const wf = W.getWorkflow(list, run.workflowId);
+  if (!wf) return; // the template was deleted or replaced — nothing to average
+  const next = W.noteRunUsage(wf, run);
+  if (next !== wf) await set({ [WORKFLOWS_KEY]: W.upsertWorkflow(list, next) });
+}
+
 // Each run's heartbeat, written only by the page that holds its current step.
 async function readBeats(ids) {
   if (!ids.length) return {};
@@ -874,10 +920,14 @@ async function driveRun(runId, opts) {
       // again — it waits for the reply that is already coming.
       const awaitOnly = run.phase === "awaiting-reply";
       const now = Date.now();
+      // The meter as it stands before this step. What it reads when the step
+      // lands, less this, is what your usage did while the step ran.
+      const usageBefore = W.usageSample((await get(STATE_KEY))[STATE_KEY]);
       run = await saveRun(
         W.markSending(
           Object.assign({}, W.markStarted(run, now), heldNote ? { note: heldNote } : {}),
-          now
+          now,
+          usageBefore
         )
       );
 
@@ -962,7 +1012,9 @@ async function driveRun(runId, opts) {
         );
         return;
       }
+      await recordStepUsage(run, after);
       if (after.status === "done") {
+        await noteRunUsage(after);
         notify(
           "Workflow finished",
           (after.name || "Workflow") + " — all " + plan.length + " steps done."

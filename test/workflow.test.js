@@ -751,6 +751,116 @@ test("formatMs says the useful thing at each scale", () => {
   assert.equal(W.formatMs(-5), "");
 });
 
+const SAMPLE = { percent: 0.2, resetAt: 5000, weeklyPercent: 0.4, weeklyResetAt: 90000, updatedAt: 1 };
+
+test("a step records what your usage did while it ran", () => {
+  const before = W.usageSample(SAMPLE);
+  assert.equal(before.session, 20);
+  assert.equal(before.weekly, 40);
+
+  const { run } = startedRun();
+  let r = W.markSending(run, NOW, before);
+  r = W.markSent(r, { chatId: "a", url: "https://claude.ai/chat/u1", now: NOW + 1 });
+  r = W.applyStepResult(r, {
+    stepIndex: 0,
+    chatId: "a",
+    reply: "DRAFT",
+    now: NOW + 2,
+    total: 3,
+    usage: W.usageSample(Object.assign({}, SAMPLE, { percent: 0.235, weeklyPercent: 0.412 })),
+  });
+  assert.equal(r.transcript[0].usedSession, 3.5);
+  assert.equal(r.transcript[0].usedWeekly, 1.2);
+  assert.equal(r.stepUsage, null, "the baseline is cleared with the rest of the step's state");
+});
+
+test("a window that reset mid-step can't be differenced", () => {
+  const before = W.usageSample(SAMPLE);
+  // The 5-hour window rolled over — new resetAt, and the meter back near zero.
+  const after = W.usageSample(
+    Object.assign({}, SAMPLE, { percent: 0.03, resetAt: 6000, weeklyPercent: 0.44 })
+  );
+  const cost = W.usageCost(before, after);
+  assert.equal(cost.session, null, "what it had already spent in the old window is gone");
+  assert.equal(cost.weekly, 4, "the weekly window didn't roll, so it still counts");
+
+  // A drop with no new reset time is a reset we didn't see. Same answer.
+  assert.equal(
+    W.usageCost(before, W.usageSample(Object.assign({}, SAMPLE, { weeklyPercent: 0.1 }))).weekly,
+    null
+  );
+  // And nothing to compare against reads as unmeasured, not as free.
+  assert.equal(W.usageCost(null, after).weekly, null);
+  assert.equal(W.usageCost(before, W.usageSample({})).weekly, null);
+});
+
+test("runUsage totals a run and says how much of it was measured", () => {
+  const run = {
+    transcript: [
+      { stepIndex: 0, usedWeekly: 1.2, usedSession: 3 },
+      { stepIndex: 1, usedWeekly: 0.8, usedSession: 2 },
+      { stepIndex: 2, usedWeekly: null, usedSession: null }, // window reset here
+    ],
+  };
+  const u = W.runUsage(run);
+  assert.equal(u.steps, 3);
+  assert.equal(u.measured, 2);
+  assert.equal(u.weekly, 2);
+  assert.equal(u.session, 5);
+  assert.equal(u.complete, false, "so the total can't be passed off as the whole run");
+
+  assert.equal(W.runUsage({ transcript: [] }).weekly, null, "nothing measured is null, not zero");
+  assert.equal(W.runUsage(null).complete, false);
+});
+
+test("a workflow averages the runs it can, and ignores the ones it can't", () => {
+  const wf = W.newWorkflow({ name: "x", chats: [{ id: "a", name: "A" }] }, "w1", NOW);
+  assert.equal(wf.usage, null);
+
+  const complete = (weekly) => ({ transcript: [{ stepIndex: 0, usedWeekly: weekly }] });
+  let w = W.noteRunUsage(wf, complete(4));
+  assert.equal(w.usage.runs, 1);
+  assert.equal(w.usage.weekly, 4);
+
+  w = W.noteRunUsage(w, complete(6));
+  assert.equal(w.usage.runs, 2);
+  assert.equal(w.usage.weekly, 5, "the running mean");
+  assert.equal(w.usage.lastWeekly, 6);
+
+  // A run with an unmeasured step would drag the average down for a reason
+  // nothing on the face of it explains, so it's left out.
+  const partial = { transcript: [{ stepIndex: 0, usedWeekly: 4 }, { stepIndex: 1, usedWeekly: null }] };
+  assert.equal(W.noteRunUsage(w, partial), w, "unchanged, same object");
+  assert.equal(W.noteRunUsage(w, { transcript: [] }), w);
+  assert.equal(W.noteRunUsage(null, complete(4)), null);
+});
+
+test("editing a workflow doesn't erase what its runs cost", () => {
+  const wf = W.newWorkflow({ name: "x", chats: [{ id: "a", name: "A" }] }, "w1", NOW);
+  const measured = W.noteRunUsage(wf, { transcript: [{ stepIndex: 0, usedWeekly: 4 }] });
+  const list = W.upsertWorkflow([], measured);
+
+  // The editor rebuilds the workflow from its form, which has no field for this.
+  const edited = W.newWorkflow({ name: "x renamed", chats: [{ id: "a", name: "A" }] }, "w1", NOW + 1);
+  assert.equal(edited.usage, null);
+  const after = W.upsertWorkflow(list, edited);
+  assert.equal(after[0].name, "x renamed");
+  assert.equal(after[0].usage.weekly, 4, "measurement survives an edit");
+
+  // But a workflow that carries its own figure keeps it — this is a fallback,
+  // not an override.
+  const withOwn = Object.assign({}, edited, { usage: { runs: 9, weekly: 1 } });
+  assert.equal(W.upsertWorkflow(list, withOwn)[0].usage.runs, 9);
+});
+
+test("formatPct never rounds real work down to nothing", () => {
+  assert.equal(W.formatPct(0), "0%");
+  assert.equal(W.formatPct(0.04), "<0.1%");
+  assert.equal(W.formatPct(1.24), "1.2%");
+  assert.equal(W.formatPct(12), "12%");
+  assert.equal(W.formatPct(null), "");
+});
+
 test("re-reading the previous reply and 'already sent' are alternatives", () => {
   // Either alone is left exactly as it is.
   assert.deepEqual(W.exclusiveFix({ refetchCarry: true, sent: false }), {

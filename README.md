@@ -47,8 +47,9 @@ bottom-right corner of [claude.ai](https://claude.ai).
   Options page or the **＋ Schedule a send** button in the pill's panel.
 - **Workflows** — run one piece of work through **several chats that hand it
   back and forth**: A drafts, B attacks the draft, A revises, round and round,
-  then a final pass. Editable, copyable, deletable, with one pre-built. See
-  [Workflows](#workflows).
+  then a final pass. Editable, copyable, deletable, with one pre-built. Each run
+  is timed and measured against your usage, and **Usage → Workflows** shows what
+  share of your weekly usage they account for. See [Workflows](#workflows).
 
 ## Scheduled sends
 
@@ -349,6 +350,35 @@ separately where it's more than a moment. A step the run never sent itself (one
 you told it had already gone out) has no honest moment to measure from, so it
 reports what it can — the wait — and nothing where it would be guessing. Re-doing
 a step times the attempt that produced the reply, not every attempt stacked up.
+
+### What a run costs
+
+Each step is also measured against the **usage meter**: the reading before it
+goes out, and again when its reply lands. The difference is in **percentage
+points of the weekly limit** — the same units as Daily Usage, so it divides
+cleanly into the totals there.
+
+- Each step's cost shows in **Steps**, beside its time.
+- Each **run** carries its total on its row: `4.6% of weekly used`. If some steps
+  couldn't be measured it says how many were, because a total quietly missing
+  three steps would read as a cheap matter.
+- Each **workflow** carries the **average across its runs**: `~5.1% of weekly per
+  run (over 4 runs, last 4.8%)` — what to expect before you start another one.
+  Only runs measured end to end are averaged in; a partial one would drag the
+  figure down for a reason nothing on the row explains. It's measured rather than
+  authored, so editing a workflow keeps it.
+- **Usage → Workflows** puts the two ledgers together: what share of your weekly
+  usage over the last 7 days went through runs rather than chats you drove
+  yourself, plus an all-time breakdown by workflow.
+
+Two honest limits, stated wherever the figures appear. claude.ai publishes no
+per-conversation cost, so this is measured by **difference** — anything else you
+were doing while a step ran counts towards it, which makes it usage *during* runs
+rather than usage provably *by* them. And a step whose window **reset part-way**
+can't be differenced at all (the meter went back to zero and what it had counted
+is gone), so it's left out rather than guessed at. The weekly window is the one
+reported for exactly that reason: it rolls over once a week, where the 5-hour
+session window can roll over twice inside a single run.
 
 ### Fixing a partial run
 
