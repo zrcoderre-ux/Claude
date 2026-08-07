@@ -264,6 +264,15 @@
           `<input class="wf-chat-start" type="text" placeholder="Or start in an existing chat — paste its link" value="${esc(
             chat.startUrl || ""
           )}" />` +
+          `<label class="cumwf-check"><input class="wf-chat-ruling" type="checkbox" ${
+            chat.expectsRuling ? "checked" : ""
+          } /> Its output is a tentative ruling — don't hand it to another chat unless the reply contains</label>` +
+          `<input class="wf-chat-marker" type="text" placeholder="${esc(W.DEFAULT_OUTPUT_MARKER)}" value="${esc(
+            chat.outputMarker || ""
+          )}"${chat.expectsRuling ? "" : " hidden"} />` +
+          `<p class="cumwf-hint"${chat.expectsRuling ? "" : " hidden"}>A clarifying question, a note that a paper ` +
+          `is missing, or an offer to continue are all real replies — none of them the ruling. This waits for the ` +
+          `one that is, which is usually the reply after auto-continue clicks Continue.</p>` +
           `<label class="cumwf-check"><input class="wf-chat-seed" type="checkbox" ${
             chat.seedFromLatest ? "checked" : ""
           } /> Treat that chat as step 0 — take its latest reply as the opening hand-off, and skip this ` +
@@ -305,6 +314,15 @@
         startEl.addEventListener("input", () => (chat.startUrl = startEl.value.trim() || null));
         const seedEl = card.querySelector(".wf-chat-seed");
         seedEl.addEventListener("change", () => (chat.seedFromLatest = seedEl.checked));
+        const rulingEl = card.querySelector(".wf-chat-ruling");
+        const markerEl = card.querySelector(".wf-chat-marker");
+        const markerHint = markerEl.nextElementSibling;
+        rulingEl.addEventListener("change", () => {
+          chat.expectsRuling = rulingEl.checked;
+          markerEl.hidden = !rulingEl.checked;
+          if (markerHint) markerHint.hidden = !rulingEl.checked;
+        });
+        markerEl.addEventListener("input", () => (chat.outputMarker = markerEl.value.trim() || null));
         ui.chats.appendChild(card);
       });
     }
@@ -437,6 +455,9 @@
           )}</textarea>` +
           (i === 0
             ? `<p class="cumwf-hint">The first step opens its chat — nothing to carry into it yet.</p>`
+            : wf.steps[i - 1] && wf.steps[i - 1].chatId === step.chatId
+            ? `<p class="cumwf-hint">Same chat as the step before it — that conversation already has this, ` +
+              `so nothing is pasted in.</p>`
             : `<div class="cumwf-row"><label class="cumwf-check"><input class="wf-step-carry" type="checkbox" ${
                 step.carry !== false ? "checked" : ""
               } /> Paste the previous step's reply under this prompt</label>` +
@@ -449,6 +470,10 @@
         card.querySelector(".wf-step-prompt").addEventListener("input", function () {
           step.prompt = this.value;
         });
+        // Changing a step's chat can make the carry control appear or vanish
+        // (two steps in one chat never paste), so redraw rather than leave a
+        // tick showing that no longer applies.
+        chatEl.addEventListener("change", renderSteps);
         const carryEl = card.querySelector(".wf-step-carry");
         if (carryEl) carryEl.addEventListener("change", () => (step.carry = carryEl.checked));
         const labelEl = card.querySelector(".wf-step-label");
