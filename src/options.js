@@ -740,6 +740,9 @@
           (WF.isRunActive(run) || run.status === "paused"
             ? `<button class="job-edit wf-run-cancel" data-id="${run.id}" title="Stop here for good">Cancel</button>`
             : "") +
+          (Object.keys(run.chats || {}).length
+            ? `<button class="job-run wf-run-show" data-id="${run.id}" title="Bring this run's window forward, reopening its chats if they were closed">Open chats</button>`
+            : "") +
           `<button class="job-edit wf-run-save" data-id="${run.id}" title="Keep this run's steps as a new workflow">Save as workflow</button>` +
           (!WF.isRunActive(run) && typeof run.windowId === "number"
             ? `<button class="job-edit wf-run-closewin" data-id="${run.id}" title="Close this run's Chrome window and its chats">Close window</button>`
@@ -824,6 +827,19 @@
               }
             );
           });
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-run-show").forEach((b) =>
+        b.addEventListener("click", () => {
+          b.disabled = true;
+          chrome.runtime.sendMessage(
+            { type: "cum-wf-show-chats", runId: b.getAttribute("data-id") },
+            (res) => {
+              b.disabled = false;
+              if (res && !res.ok) alert("Could not open: " + (res.error || "unknown error"));
+              renderRuns();
+            }
+          );
         })
       );
       wfui.runs.querySelectorAll(".wf-run-closewin").forEach((b) =>
