@@ -161,6 +161,11 @@
       `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-pick" type="button">Choose files…</button></div></div>` +
       `<input class="cumwf-file-input" type="file" multiple hidden />` +
       `<p class="cumwf-hint">Tick the chats that should receive each document — it goes up with that chat's first message.</p>` +
+      `<label class="cumwf-check"><input class="cumwf-bundle" type="checkbox" /> Combine text documents into ` +
+      `one labelled file before uploading</label>` +
+      `<p class="cumwf-hint">Twenty separate attachments is where claude.ai starts showing Claude fewer than ` +
+      `were sent. One file, with each document announced by name inside it, either arrives or doesn't. PDFs and ` +
+      `Word files still go up on their own — only text is combined.</p>` +
       `<div class="cumwf-docs cumwf-list"></div>` +
 
       `<label class="cumwf-label">Steps</label>` +
@@ -183,6 +188,7 @@
       chats: q(".cumwf-chats"),
       drop: q(".cumwf-drop"),
       pick: q(".cumwf-pick"),
+      bundle: q(".cumwf-bundle"),
       fileInput: q(".cumwf-file-input"),
       docs: q(".cumwf-docs"),
       steps: q(".cumwf-steps"),
@@ -519,6 +525,7 @@
       // read as "this run is called the same as the template".
       ui.name.value = wf.name && wf.name !== ui.template.value ? wf.name : "";
       ui.desc.value = wf.description || "";
+      ui.bundle.checked = !!wf.bundleText;
       ui.count.value = (wf.chats || []).length || 1;
       ui.problems.hidden = true;
       renderChats();
@@ -565,6 +572,7 @@
       wf.templateName = template;
       wf.name = ui.name.value.trim() || template;
       wf.description = ui.desc.value;
+      wf.bundleText = ui.bundle.checked;
       const candidate = W.newWorkflow(wf, wf.id, Date.now());
       const problems = W.validate(candidate);
       // An unassigned document is a warning, not a blocker — it just doesn't get

@@ -494,6 +494,35 @@
     }
   }
 
+  // Fold the text documents of a step into a single labelled file, leaving
+  // anything binary (a PDF, a Word file) to go up on its own. Twenty
+  // attachments is where claude.ai starts showing Claude fewer than were sent;
+  // one file is either there or it isn't.
+  async function bundleTextFiles(files, descriptors) {
+    const text = [];
+    const rest = [];
+    files.forEach((file, i) => {
+      const meta = descriptors[i] || { name: file.name, type: file.type };
+      if (W.isTextDoc(meta)) text.push(file);
+      else rest.push(file);
+    });
+    if (text.length < 2) return { files, folded: 0 };
+    const parts = [];
+    for (const f of text) {
+      let body = "";
+      try {
+        body = await f.text();
+      } catch (e) {
+        return { files, folded: 0 }; // unreadable — send them the ordinary way
+      }
+      parts.push({ name: f.name, text: body });
+    }
+    const combined = W.bundleText(parts);
+    if (!combined) return { files, folded: 0 };
+    const bundle = new File([combined], "combined-documents.txt", { type: "text/plain" });
+    return { files: [bundle].concat(rest), folded: text.length };
+  }
+
   // ---- one step ----------------------------------------------------------
   async function runStep(msg) {
     const stop = startHeartbeat(msg.runId);
@@ -525,8 +554,18 @@
     };
 
     if (!msg.awaitOnly) {
-      const { files, missing } = await C.filesFromStorage(msg.files || []);
+      let { files, missing } = await C.filesFromStorage(msg.files || []);
       if (missing) return { ok: false, error: "missing document bytes: " + missing };
+      if (msg.bundleText && files.length > 1) {
+        const bundled = await bundleTextFiles(files, msg.files || []);
+        if (bundled.files.length !== files.length) {
+          notes.push(
+            "combined " + bundled.folded + " text documents into one file (" +
+              bundled.files.length + " upload" + (bundled.files.length === 1 ? "" : "s") + " in total)"
+          );
+          files = bundled.files;
+        }
+      }
       const sent = await C.sendMessage({
         files,
         text: msg.text || "",

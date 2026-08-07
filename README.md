@@ -133,6 +133,14 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   miscount. A chat's documents upload with its **first** message, the one that
   opens the conversation; a document assigned to nobody isn't uploaded, and the
   editor says so.
+- **Combine text documents into one labelled file** (optional) — twenty separate
+  attachments is where claude.ai starts showing Claude fewer than were sent. One
+  file, listing its contents at the top and marking where each document begins
+  and ends, either arrives or doesn't. Only real text is folded in; PDFs and Word
+  files still go up on their own, and a run says how many it combined. This is
+  deliberately **not** a zip: claude.ai makes no promise to read inside an
+  archive, and one attachment it silently ignores is worse than several it
+  might.
 - **Steps** — ordered, each naming the chat it runs in and the prompt to send. A
   step can **carry the previous step's reply** under its prompt (this is the
   hand-off; it's the copy-and-paste the workflow exists to automate), with a

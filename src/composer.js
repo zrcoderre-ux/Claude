@@ -312,7 +312,10 @@
         const chips = countChips() - baseChips;
         if (done >= expected) return finish(true);
         if (chips >= expected && Date.now() - startedAt >= CHIP_GRACE_MS) return finish(true);
-        if (Date.now() > deadline) return finish(done > 0 || chips > 0);
+        // Out of time. ALL of them or none: "some uploaded" was accepted here,
+        // which is how a message goes out with twelve of twenty papers on it
+        // and Claude answers from the twelve without either of us knowing.
+        if (Date.now() > deadline) return finish(done >= expected || chips >= expected);
       }, 400);
       function finish(ok) {
         clearInterval(timer);
@@ -353,6 +356,12 @@
   // file input first, then a synthesized drop. Returns { ok, how, detail } —
   // `detail` names what was actually observed, so a failure can say more than
   // "uploads did not complete".
+  // Twenty papers need more than two minutes. The ceiling scales with how many
+  // are going up, so a big matter isn't cut off by a limit set for a small one.
+  function uploadDeadline(count, given) {
+    return Math.max(given || 120000, (count || 0) * 15000);
+  }
+
   async function attachFiles(files, timeoutMs) {
     const baseChips = countChips(); // before anything is attached
     const input = findFileInput();
@@ -361,7 +370,7 @@
     if (input) {
       setFiles(input, files);
       how = "file input";
-      res = await waitUploads(files.length, timeoutMs || 120000);
+      res = await waitUploads(files.length, uploadDeadline(files.length, timeoutMs));
     }
     if (!res.ok) {
       // Second way in: drop them on the composer.
@@ -369,7 +378,7 @@
       if (target) {
         dropFiles(target, files);
         how = how ? how + ", then drop" : "drop";
-        res = await waitUploads(files.length, Math.min(timeoutMs || 120000, 60000));
+        res = await waitUploads(files.length, Math.min(uploadDeadline(files.length, timeoutMs), 120000));
       }
     }
     // Bounded settle: let the chips catch up with the uploads, so the send that

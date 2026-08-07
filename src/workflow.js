@@ -179,6 +179,43 @@
     return ((wf && wf.docs) || []).concat(extra || []);
   }
 
+  // Can this document be folded into a combined text upload? Only things that
+  // ARE text — a PDF or a Word file has to go up on its own, and pretending
+  // otherwise would deliver mojibake instead of a brief.
+  const TEXT_NAME_RE = /\.(txt|md|markdown|csv|tsv|json|log|xml|ya?ml|htm|html)$/i;
+  function isTextDoc(doc) {
+    const type = str(doc && doc.type).toLowerCase();
+    if (type) {
+      if (type.indexOf("text/") === 0) return true;
+      // Matched at the boundaries, not anywhere in the string: a .docx is
+      // "application/vnd.openxmlformats-…", which contains "xml" and is not
+      // remotely text. Folding one in would deliver mojibake as a brief.
+      if (/^application\/(json|xml|yaml|x-yaml|csv|x-csv|x-ndjson)$/.test(type)) return true;
+      if (/^application\/[\w.-]+\+(json|xml)$/.test(type)) return true;
+      return false; // typed as something else — believe it
+    }
+    return TEXT_NAME_RE.test(str(doc && doc.name));
+  }
+
+  // Several text documents as one, each announced by name. claude.ai does not
+  // promise to read inside an archive, and one attachment it silently ignores
+  // is worse than several it might; a single labelled text file needs nothing
+  // unpacked and can't half-arrive.
+  function bundleText(parts) {
+    const list = (parts || []).filter((p) => p && trimmed(p.text));
+    if (!list.length) return "";
+    const head =
+      "This file contains " + list.length + " documents, one after another. " +
+      "They are, in order: " + list.map((p) => trimmed(p.name) || "untitled").join(", ") + ".";
+    const body = list.map(
+      (p) =>
+        "===== BEGIN FILE: " + (trimmed(p.name) || "untitled") + " =====\n\n" +
+        str(p.text).trim() +
+        "\n\n===== END FILE: " + (trimmed(p.name) || "untitled") + " ====="
+    );
+    return [head].concat(body).join("\n\n");
+  }
+
   function docsForChat(wf, chatId, extra) {
     return allDocs(wf, extra).filter(
       (d) => d && Array.isArray(d.chats) && d.chats.indexOf(chatId) !== -1
@@ -199,6 +236,10 @@
       templateName: trimmed(f.templateName) || trimmed(f.name) || "Untitled workflow",
       description: trimmed(f.description),
       builtin: !!f.builtin,
+      // Send several text documents as one labelled file. claude.ai will accept
+      // twenty attachments and quietly show Claude fewer; one file can't be
+      // partly there.
+      bundleText: !!f.bundleText,
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
       docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
       steps: (f.steps || []).map((s) => newStep(s, s && s.id)),
@@ -546,6 +587,7 @@
       // This matter's papers, handed over at Start so the template can be
       // cleared and re-armed while this run is still going.
       docs: (docs || (wf && wf.docs) || []).map((d) => newDoc(d, d && d.id)),
+      bundleText: !!(wf && wf.bundleText),
       // And its own copy of the chats and steps. A run executes THIS, not the
       // template — so the template can be edited, re-armed or deleted without
       // changing what a run in flight does, and so a run can be edited (a step
@@ -1273,6 +1315,8 @@
     resetToTemplate,
     runFileIds,
     allDocs,
+    isTextDoc,
+    bundleText,
     validate,
     summarize,
     uploadPlan,
