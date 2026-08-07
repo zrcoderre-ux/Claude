@@ -15,9 +15,20 @@ body {
   color: #1f1f1f;
 }
 
+/* 640px was set when this page was a log table and a form. It now holds
+   workflow editors and run rows carrying a dozen facts each, and squeezing
+   those into a narrow column is what makes them stack into a left-hand ribbon
+   with the window empty beside it. */
 .wrap {
-  max-width: 640px;
+  max-width: 980px;
   margin: 0 auto;
+}
+
+/* Prose stays readable at its own width — a 980px line of body text does not. */
+.sub,
+.footnote,
+.empty {
+  max-width: 70ch;
 }
 
 /* Section tabs. Sticky, because the panels below them are long and the way
@@ -396,10 +407,11 @@ td .approx {
   gap: 8px;
 }
 
+/* A row is a header and a body, stacked — NOT text with a column of buttons
+   beside it. Six buttons in a side column squeeze the text into a ribbon and,
+   once they wrap, collide with the row below. */
 .job-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  display: block;
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-left: 3px solid #9a9a9a;
   border-radius: 10px;
@@ -413,14 +425,31 @@ td .approx {
 .job-item.status-done { border-left-color: #1f7a3f; }
 .job-item.status-error { border-left-color: #d23f31; }
 
-.job-main { flex: 1; min-width: 0; }
+.job-main { min-width: 0; }
+
+/* Name on the left, actions on the right, a rule underneath. The actions wrap
+   as a block when the window is narrow rather than pushing into anything. */
+.job-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+  padding-bottom: 9px;
+  margin-bottom: 3px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+}
 
 .job-title {
   font-size: 13.5px;
   font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  flex: 1 1 240px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .job-badge {
@@ -439,6 +468,45 @@ td .approx {
   line-height: 1.55;
   color: #8a8a8a;
   margin-top: 4px;
+}
+
+/* Short facts belong beside each other, not one per line. Each wraps as a unit
+   and the row reflows, so a wide window shows a row's state at a glance
+   instead of a column of fragments. */
+.job-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8a8a8a;
+  margin-top: 5px;
+}
+
+.job-facts .warn {
+  color: #d23f31;
+}
+
+.job-facts b {
+  color: #6b6b6b;
+  font-weight: 600;
+}
+
+.job-desc {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #6b6b6b;
+  margin-top: 5px;
+  max-width: 70ch;
+}
+
+/* The route a workflow takes. Long, and the least urgent thing in the row. */
+.job-chain {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #a0a0a0;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
 }
 
 .job-title {
@@ -506,8 +574,10 @@ td .approx {
 .job-btns {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
 }
 
 .job-run,
@@ -828,6 +898,12 @@ td .approx {
   }
   .ghost { background: none; border-color: rgba(255, 255, 255, 0.18); }
   .job-meta { color: #8a877f; }
+  .job-head { border-bottom-color: rgba(255, 255, 255, 0.1); }
+  .job-facts { color: #8a877f; }
+  .job-facts b { color: #d4d1c9; }
+  .job-facts .warn { color: #e8837a; }
+  .job-desc { color: #a5a29a; }
+  .job-chain { color: #77746d; }
   .run-step { background: rgba(255, 255, 255, 0.08); color: #a5a29a; }
   .run-step b { color: #f0efea; }
   .run-step.has-docs { background: rgba(201, 100, 66, 0.22); }
