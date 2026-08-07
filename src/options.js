@@ -837,6 +837,16 @@
             (res) => {
               b.disabled = false;
               if (res && !res.ok) alert("Could not open: " + (res.error || "unknown error"));
+              // Opening one of two chats and looking like it worked is the
+              // failure worth naming.
+              else if (res && res.missing && res.missing.length)
+                alert(
+                  "Opened " + res.opened + " conversation" + (res.opened === 1 ? "" : "s") +
+                    ". No conversation is recorded for: " + res.missing.join(", ") +
+                    " — the run never got as far as opening " +
+                    (res.missing.length === 1 ? "it" : "them") +
+                    ", or its link was cleared. Fix & continue lets you paste one in."
+                );
               renderRuns();
             }
           );
