@@ -723,3 +723,97 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   transition: none !important;
   pointer-events: none !important;
 }
+
+/* ── Workflow run pill ────────────────────────────────────────────────────
+   Shown in a conversation a workflow run is driving. Bottom-LEFT: the usage
+   pill owns the bottom-right, and it's draggable, so anywhere along that edge
+   may be taken. */
+#cum-wfpill {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2147483645;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(460px, calc(100vw - 32px));
+  padding: 7px 8px 7px 12px;
+  border: 1.5px solid rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 12.5px;
+  color: #1f1f1f;
+}
+
+.cum-wfp-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #d99b1f;
+  box-shadow: 0 0 0 0 rgba(217, 155, 31, 0.55);
+  animation: cum-wfp-pulse 2s ease-out infinite;
+}
+
+@keyframes cum-wfp-pulse {
+  70% { box-shadow: 0 0 0 7px rgba(217, 155, 31, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(217, 155, 31, 0); }
+}
+
+#cum-wfpill.cum-wfp-paused .cum-wfp-dot {
+  background: #8a8a8a;
+  animation: none;
+}
+
+.cum-wfp-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cum-wfp-text:hover { text-decoration: underline; }
+.cum-wfp-name { font-weight: 700; }
+.cum-wfp-where { color: #6b6b6b; }
+
+.cum-wfp-btn {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 999px;
+  background: #f5f4f0;
+  color: #1f1f1f;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cum-wfp-btn:hover { background: #ecebe5; }
+.cum-wfp-btn:disabled { opacity: 0.55; cursor: default; }
+
+#cum-wfpill.cum-wfp-paused .cum-wfp-btn {
+  background: #c96442;
+  border-color: #c96442;
+  color: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  #cum-wfpill {
+    background: #262624;
+    border-color: rgba(255, 255, 255, 0.16);
+    color: #f0efea;
+  }
+  .cum-wfp-where { color: #a5a29a; }
+  .cum-wfp-btn {
+    background: #35342f;
+    border-color: rgba(255, 255, 255, 0.16);
+    color: #f0efea;
+  }
+  .cum-wfp-btn:hover { background: #403f39; }
+}

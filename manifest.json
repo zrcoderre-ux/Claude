@@ -45,7 +45,8 @@
         "src/autocontinue.js",
         "src/composer.js",
         "src/scheduler-run.js",
-        "src/workflow-run.js"
+        "src/workflow-run.js",
+        "src/workflow-pill.js"
       ],
       "css": ["src/content.css"],
       "run_at": "document_idle",
