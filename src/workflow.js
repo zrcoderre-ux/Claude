@@ -77,7 +77,27 @@
       // at the first step that isn't in this chat — a step 0 that already
       // happened, by hand.
       seedFromLatest: !!f.seedFromLatest,
+      // This chat is expected to produce a finished ruling, and a reply that
+      // isn't one must not be handed on. Claude's first answer is often a
+      // clarifying question, a note that a paper is missing, or a prompt to
+      // continue — all perfectly good replies, and none of them the thing the
+      // next chat is being asked to attack.
+      expectsRuling: !!f.expectsRuling,
+      outputMarker: trimmed(f.outputMarker) || null,
     };
+  }
+
+  // The phrase a chat's output must contain before it can travel. Only the
+  // real thing carries it, which makes it a cheap and honest test.
+  const DEFAULT_OUTPUT_MARKER = "NATURE OF PROCEEDINGS";
+  function chatMarker(chat) {
+    if (!chat || !chat.expectsRuling) return null;
+    return trimmed(chat.outputMarker) || DEFAULT_OUTPUT_MARKER;
+  }
+  function hasMarker(text, marker) {
+    const m = trimmed(marker).replace(/\s+/g, " ").toLowerCase();
+    if (!m) return true;
+    return str(text).replace(/\s+/g, " ").toLowerCase().indexOf(m) !== -1;
   }
 
   // A claude.ai conversation link, near enough to warn about a wrong paste
@@ -176,12 +196,24 @@
     if (!wf) return wf;
     const ids = new Set((wf.chats || []).map((c) => c.id));
     const fallback = (wf.chats || []).length ? wf.chats[wf.chats.length - 1].id : null;
-    wf.steps = (wf.steps || []).map((s, i) =>
+    // Chats first, since whether a step carries depends on the one before it
+    // having been resolved.
+    const placed = (wf.steps || []).map((s) =>
       Object.assign({}, s, {
         // A step whose chat was deleted moves to the last remaining chat rather
         // than being thrown away — its prompt is the expensive part.
         chatId: ids.has(s.chatId) ? s.chatId : fallback,
-        carry: i === 0 ? false : s.carry !== false,
+      })
+    );
+    wf.steps = placed.map((s, i) =>
+      Object.assign({}, s, {
+        // Nothing to carry into the first step, and nothing to carry between
+        // two steps in the SAME chat: that conversation already has it, and
+        // pasting it back in wastes the context it's already holding.
+        carry:
+          i === 0 || (placed[i - 1] && placed[i - 1].chatId === s.chatId)
+            ? false
+            : s.carry !== false,
       })
     );
     wf.docs = (wf.docs || []).map((d) =>
@@ -388,6 +420,11 @@
     return steps.map((s, i) => {
       const firstInChat = !seen.has(s.chatId);
       seen.add(s.chatId);
+      // Does this step's reply get pasted into another chat? Only then is it
+      // worth insisting on what the reply must be — a step whose answer stays
+      // where it is can say anything it likes.
+      const next = steps[i + 1];
+      const handsOn = !!(next && next.carry !== false && next.chatId !== s.chatId);
       const opening = firstInChat
         ? docs
             .filter(
@@ -410,6 +447,9 @@
         carryLabel: trimmed(s.carryLabel) || "material from the previous step",
         firstInChat: firstInChat,
         docIds: opening.concat(added),
+        handsOn: handsOn,
+        // The phrase this step's reply must contain before it can be handed on.
+        marker: handsOn ? chatMarker(getChat(wf, s.chatId)) : null,
       };
     });
   }
@@ -1150,6 +1190,9 @@
     defaultChatName,
     newChatSlot,
     looksLikeChatUrl,
+    chatMarker,
+    hasMarker,
+    DEFAULT_OUTPUT_MARKER,
     startChats,
     seedPlan,
     getChat,

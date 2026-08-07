@@ -137,8 +137,18 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   step can **carry the previous step's reply** under its prompt (this is the
   hand-off; it's the copy-and-paste the workflow exists to automate), with a
   label so the pasted material is announced — `----- BEGIN DEVIL'S ADVOCATE
-  REPORT -----`. Steps returning to a chat that already has the material usually
-  don't need to carry anything: the conversation still remembers it.
+  REPORT -----`. Two steps **in the same chat never carry**: that conversation
+  already has the material, and pasting it back wastes the context it's holding.
+  The editor says so rather than offering a tick that would do nothing.
+- **"Its output is a tentative ruling"** — a chat can insist that its reply
+  contain a phrase (`NATURE OF PROCEEDINGS` by default, editable) before it may
+  be handed to another chat. Claude's first answer is often a clarifying
+  question, a note that a paper is missing, or an offer to continue; those are
+  real replies, and none of them is the ruling the next chat is meant to attack.
+  A reply without the phrase is left where it is and the step keeps waiting — so
+  the answer that arrives after auto-continue clicks **Continue** is the one that
+  travels. The check applies **only where something is pasted onward**: a step
+  whose reply stays in its own chat can say anything at all.
 
 ### A workflow is a template
 

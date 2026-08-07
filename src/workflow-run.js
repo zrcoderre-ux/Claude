@@ -361,8 +361,11 @@
   // for it to finish. `before` is { count, text } sampled just before sending —
   // the transcript can hold only the newest turn in the DOM, so a grown count is
   // one signal for "something new arrived", not the only one.
-  async function waitForReply(runId, before, timeoutMs, sentAt) {
+  async function waitForReply(runId, before, timeoutMs, sentAt, marker) {
     const startedAt = Date.now();
+    // Finished replies that weren't what this step is for, so the diagnostics
+    // can say "it answered, three times, but never with the ruling".
+    const skipped = new Set();
     const deadline = startedAt + (timeoutMs || W.STEP_TIMEOUT_MS);
     const since = typeof sentAt === "number" ? sentAt : startedAt;
     let lastText = "";
@@ -433,8 +436,29 @@
             minStablePolls: STABLE_POLLS,
             stalledMs: STALLED_MS,
           });
-          last = { fresh, generating, streamDone, chars: text.length, stablePolls };
-          if (fresh && reason) return { el, canceled: false, via: reason };
+          last = { fresh, generating, streamDone, chars: text.length, stablePolls, marker };
+          if (fresh && reason) {
+            // A finished reply that isn't the thing being asked for. Claude
+            // answers a clarifying question, notes a missing paper, or offers
+            // to continue — all real replies, none of them the ruling the next
+            // chat is meant to attack. Take this one as the new baseline and go
+            // on waiting for the one that is. (Auto-continue, if it's on,
+            // clicks Continue in the meantime; the reply that follows is the
+            // one that counts.)
+            if (marker && !W.hasMarker(text, marker)) {
+              if (!skipped.has(text)) {
+                skipped.add(text);
+                last.skipped = skipped.size;
+              }
+              before = { count: list.length, text: text };
+              lastText = "";
+              lastChangeAt = now;
+              stablePolls = 0;
+              await C.sleep(POLL_MS);
+              continue;
+            }
+            return { el, canceled: false, via: reason };
+          }
         } else {
           last = { fresh: false, noMessage: true };
         }
@@ -529,7 +553,8 @@
       runId,
       before,
       W.STEP_TIMEOUT_MS,
-      sentAt
+      sentAt,
+      msg.marker || null
     );
     if (canceled) return { ok: false, canceled: true, error: "canceled" };
     if (!el) {
@@ -542,7 +567,11 @@
         : (s.chars || 0) + " chars, " +
           (s.fresh ? "recognised as new" : "NOT recognised as new (same as before the send)") + ", " +
           (s.generating ? "page still says generating" : "page says idle") + ", " +
-          (s.streamDone ? "response stream closed" : anyStreamSeen ? "no completion stream seen for this turn" : "no stream events at all");
+          (s.streamDone ? "response stream closed" : anyStreamSeen ? "no completion stream seen for this turn" : "no stream events at all") +
+          (s.skipped
+            ? ' — and ' + s.skipped + " finished repl" + (s.skipped === 1 ? "y" : "ies") +
+              ' never contained “' + s.marker + '”, so nothing was handed on'
+            : "");
       return {
         ok: false,
         error: (timedOut ? "Claude did not finish replying in time" : "no reply found") + " — " + seen,

@@ -464,6 +464,84 @@ test("pausing keeps a run's place; resuming picks it up", () => {
   assert.equal(W.pickupRuns([paused], NOW + W.STALE_MS + 1, W.STALE_MS).length, 0);
 });
 
+test("two steps in the same chat never paste into each other", () => {
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "A" }, { id: "b", name: "B" }],
+      steps: [
+        { chatId: "a", prompt: "draft" },
+        { chatId: "a", prompt: "verify", carry: true }, // ticked, but pointless
+        { chatId: "b", prompt: "attack", carry: true },
+      ],
+    },
+    "w",
+    NOW
+  );
+  assert.equal(wf.steps[1].carry, false, "that conversation already has it");
+  assert.equal(wf.steps[2].carry, true);
+  const plan = W.planRun(wf);
+  assert.equal(W.composeStepText(plan[1], "THE DRAFT"), "verify", "nothing pasted");
+  assert.match(W.composeStepText(plan[2], "THE DRAFT"), /THE DRAFT/);
+});
+
+test("a chat whose output is a ruling only hands on a reply that is one", () => {
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [
+        { id: "a", name: "Drafting", expectsRuling: true },
+        { id: "b", name: "Critic" },
+      ],
+      steps: [
+        { chatId: "a", prompt: "draft" },
+        { chatId: "b", prompt: "attack" },
+        { chatId: "a", prompt: "revise" },
+      ],
+    },
+    "w",
+    NOW
+  );
+  const plan = W.planRun(wf);
+  assert.equal(plan[0].handsOn, true);
+  assert.equal(plan[0].marker, "NATURE OF PROCEEDINGS", "step 1's reply goes to chat B");
+  assert.equal(plan[1].marker, null, "chat B isn't marked as producing a ruling");
+  assert.equal(plan[2].marker, null, "the last step's reply goes nowhere");
+
+  // The gate itself.
+  assert.ok(W.hasMarker("…\nNATURE OF PROCEEDINGS: Hearing on Demurrer\n…", "NATURE OF PROCEEDINGS"));
+  assert.ok(W.hasMarker("nature   of\nproceedings", "NATURE OF PROCEEDINGS"), "spacing and case are noise");
+  assert.equal(
+    W.hasMarker("I need the reply brief before I can draft this. Shall I continue?", "NATURE OF PROCEEDINGS"),
+    false,
+    "a clarifying question is a real reply, but not the ruling"
+  );
+  assert.equal(W.hasMarker("anything", null), true, "no marker, no gate");
+});
+
+test("the ruling gate is off wherever nothing is pasted onward", () => {
+  // Same chat twice: the second step's reply isn't handed anywhere, so a chat
+  // marked as producing rulings imposes nothing on it.
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "Drafting", expectsRuling: true }, { id: "b", name: "B" }],
+      steps: [
+        { chatId: "a", prompt: "draft" },
+        { chatId: "a", prompt: "style pass" },
+        { chatId: "b", prompt: "attack", carry: false },
+      ],
+    },
+    "w",
+    NOW
+  );
+  const plan = W.planRun(wf);
+  assert.equal(plan[0].marker, null, "next step is the same chat — nothing travels");
+  assert.equal(plan[1].marker, null, "the step after doesn't carry");
+  assert.equal(W.chatMarker({ expectsRuling: true, outputMarker: "  CONCLUSION " }), "CONCLUSION");
+  assert.equal(W.chatMarker({ expectsRuling: false, outputMarker: "CONCLUSION" }), null);
+});
+
 test("carrySource points at the chat that produced the hand-off", () => {
   const wf = twoChatWorkflow();
   // Step 3 (revise, in A) carries what step 2 (attack, in B) produced.
