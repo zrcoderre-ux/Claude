@@ -919,7 +919,18 @@ async function driveRun(runId, opts) {
       const after = await readRun(runId);
       if (!after || after.status === "canceled") return;
       if (!res || !res.ok) {
-        if (res && res.canceled) return;
+        // Cancelled, or paused because the reply came back cut off — the page
+        // has already recorded why. Neither is an error to report over the top
+        // of it.
+        if (res && (res.canceled || res.paused)) {
+          if (res.paused)
+            notify(
+              "Workflow paused",
+              (run.name || "Workflow") + " — Claude's response was interrupted at step " +
+                (run.stepIndex + 1) + ". Read the chat, then Resume."
+            );
+          return;
+        }
         await saveRun(W.markError(after, (res && res.error) || "unknown", Date.now()));
         notify(
           "Workflow stopped",

@@ -742,6 +742,18 @@ test("a reply of unrenderable-block placeholders is not a reply", () => {
   assert.equal(W.isMostlyPlaceholder(""), false);
 });
 
+test("an interrupted response is spotted, whichever way it's worded", () => {
+  assert.ok(W.looksInterrupted("Claude's response was interrupted"));
+  assert.ok(W.looksInterrupted("Claude’s response was interrupted"), "curly apostrophe");
+  assert.ok(W.looksInterrupted("…half a ruling\n\nResponse was interrupted"));
+  assert.ok(W.looksInterrupted("claude's  response   was interrupted"), "spacing is noise");
+  // Not every mention of an interruption is one of these notices, but the
+  // phrase is specific enough that a ruling won't produce it by accident.
+  assert.equal(W.looksInterrupted("The hearing was interrupted by counsel."), false);
+  assert.equal(W.looksInterrupted("NATURE OF PROCEEDINGS: Hearing on Demurrer"), false);
+  assert.equal(W.looksInterrupted(""), false);
+});
+
 test("stripPlaceholders removes the shells and keeps the report", () => {
   // What the copy box actually handed back: four unrenderable blocks, then the
   // real verification report and ruling underneath.

@@ -253,6 +253,13 @@ with. The template can be re-armed for the next matter, edited, or deleted
 without changing what a run in flight does — and the run itself can be changed
 without touching every future run.
 
+A run **pauses itself** if claude.ai reports that *"Claude's response was
+interrupted"*. Whatever cut the reply off, what's on screen is a fragment, and
+carrying it onward would have the rest of the run build on half a ruling —
+convincingly. The run keeps its place and its phase, so once you've looked at the
+chat (and asked Claude to continue there, if that's what it needs), **Resume**
+waits for a fresh reply rather than sending the message again.
+
 **Pause** stops it at the next step boundary, keeping its place, what it's
 carrying, and which conversations it's in. A step already in flight is allowed to
 finish; pausing is not cancelling. **Edit run** then opens the same editor the
