@@ -1191,9 +1191,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!run) return { ok: false, error: "run not found" };
       const wf = W.getWorkflow((await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], run.workflowId);
       const src = W.runSource(run, wf);
-      const urls = (src.chats || [])
-        .map((c) => ((run.chats || {})[c.id] || {}).url)
-        .filter(Boolean);
+      const recorded = run.chats || {};
+      // Take the conversations in the run's own order first, then anything else
+      // it recorded. That second part matters: a run made before runs carried
+      // their own chats falls back to the workflow's, and if the workflow has
+      // since been edited those ids no longer match — the conversation is still
+      // in the run, and would otherwise be silently skipped.
+      const named = (src.chats || []).map((c) => ({
+        name: c.name,
+        url: (recorded[c.id] || {}).url || null,
+      }));
+      const seenIds = new Set((src.chats || []).map((c) => c.id));
+      const orphaned = Object.keys(recorded)
+        .filter((id) => !seenIds.has(id))
+        .map((id) => ({ name: "a chat this run recorded", url: (recorded[id] || {}).url || null }));
+
+      const urls = [];
+      for (const c of named.concat(orphaned)) {
+        if (c.url && urls.indexOf(c.url) === -1) urls.push(c.url);
+      }
+      // Chats the run never got as far as opening — worth saying, since the
+      // alternative is opening one of two and looking like it worked.
+      const missing = named.filter((c) => !c.url).map((c) => c.name);
       if (!urls.length)
         return { ok: false, error: "this run hasn't opened any conversations yet" };
 
@@ -1215,7 +1234,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           /* ignore */
         }
         await ensureWindowSize(id);
-        return { ok: true, focused: true };
+        return { ok: true, focused: true, opened: urls.length, missing };
       }
 
       // Gone entirely — open all of its conversations in a fresh window, and
@@ -1227,7 +1246,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await sleep(300);
           await ensureWindowSize(win.id);
         }
-        return { ok: true, opened: urls.length };
+        return { ok: true, opened: urls.length, missing };
       } catch (e) {
         return { ok: false, error: String((e && e.message) || e) };
       }
