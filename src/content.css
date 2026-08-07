@@ -118,10 +118,14 @@
 }
 
 /* Detail panel */
+/* The panel opens clear of the indicator stack rather than under it. --cum-stack
+   is the stack's measured height (0 when nothing is showing), set in placePanel:
+   without it an outage warning — or a run's pill, which carries a Pause you may
+   well be reaching for — would sit on top of the panel you just opened. */
 #cum-panel {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 10px);
+  bottom: calc(100% + 10px + var(--cum-stack, 0px));
   width: 220px;
 }
 
@@ -132,7 +136,7 @@
 }
 
 #cum-root.cum-below #cum-panel {
-  top: calc(100% + 10px);
+  top: calc(100% + 10px + var(--cum-stack, 0px));
   bottom: auto;
 }
 
@@ -725,9 +729,11 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 }
 
 /* ── Workflow run pill ────────────────────────────────────────────────────
-   Shown in a conversation a workflow run is driving. Bottom-LEFT: the usage
-   pill owns the bottom-right, and it's draggable, so anywhere along that edge
-   may be taken. */
+   Shown in a conversation a workflow run is driving. Normally DOCKED into the
+   meter's indicator stack (see .cum-wfp-docked below), so its Pause rides with
+   the meter you already look at. The rules here are the undocked fallback, for
+   a page where the meter hasn't built yet or isn't running at all: bottom-LEFT,
+   since the meter owns the bottom-right and is draggable. */
 #cum-wfpill {
   position: fixed;
   left: 16px;
@@ -747,6 +753,20 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   -webkit-font-smoothing: antialiased;
   font-size: 12.5px;
   color: #1f1f1f;
+}
+
+/* Docked into #cum-pills: a flex item in the meter's stack, sitting closest to
+   the meter itself. The stack turns pointer events off (it's mostly decoration
+   that shouldn't eat clicks meant for the page) — this one has a button, so it
+   turns them back on. Narrower than the loose version so it doesn't tower over
+   the meter it's attached to. */
+#cum-wfpill.cum-wfp-docked {
+  position: static;
+  left: auto;
+  bottom: auto;
+  pointer-events: auto;
+  max-width: min(340px, calc(100vw - 32px));
+  padding: 5px 6px 5px 12px;
 }
 
 .cum-wfp-dot {

@@ -629,6 +629,9 @@
     // other chat now".
     const stepIndex = Math.min(run.stepIndex, Math.max(0, plan.length - 1));
     fixingRunId = run.id;
+    // Reading the steps is what you do before deciding to fix. Once you've
+    // decided, the prompts are just a wall of text between you and the panel.
+    showingStepsFor = null;
     fixDraft = Object.assign(
       {
         stepIndex,
