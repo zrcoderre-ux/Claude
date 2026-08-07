@@ -316,6 +316,13 @@ improvised run becomes the way you do it next time. It takes the chats and steps
 with fresh ids so the new template stands alone, and no documents: those papers
 belonged to that matter.
 
+**Steps** just reads them out. Every step of the run as it actually stands —
+number, chat, what it carries in, how many documents ride with it, whether it has
+to see a marker before handing on, and the prompt in full — with the ones already
+done marked as such and the next one up marked `next`. It opens nothing and
+changes nothing, so a paused or stopped run can be looked over before deciding
+whether it needs fixing at all; the editor is for when it does.
+
 ### Fixing a partial run
 
 A ten-step run that stops at step six shouldn't have to start again. **Fix &
@@ -345,6 +352,13 @@ continue** on the run's row opens a small panel:
   success.
 - **Conversations this run is using** — each chat's link, editable, for when a
   run lost track of one (a first step that never settled to a `/chat/` URL, say).
+
+Those first two boxes are **alternatives**, and behave like radio buttons: a
+message that has already gone out carries whatever it carries, so re-reading the
+other chat would only compose text nobody is going to send. Ticking either one
+clears the other. Where the run stopped waiting on a reply, that's the box that
+opens ticked — it's an observation about the chat rather than a preference about
+it.
 
 Plain **Resume** does the same thing with the defaults, which is usually what you
 want. Neither is confused by other open chats: a run addresses a conversation by

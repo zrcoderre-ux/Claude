@@ -644,6 +644,36 @@ test("reviseRun continues from a chosen step without re-sending what already wen
   assert.equal(back.sentAt, null);
 });
 
+test("re-reading the previous reply and 'already sent' are alternatives", () => {
+  // Either alone is left exactly as it is.
+  assert.deepEqual(W.exclusiveFix({ refetchCarry: true, sent: false }), {
+    refetchCarry: true,
+    sent: false,
+  });
+  assert.deepEqual(W.exclusiveFix({ refetchCarry: false, sent: true }), {
+    refetchCarry: false,
+    sent: true,
+  });
+  assert.deepEqual(W.exclusiveFix({}), { refetchCarry: false, sent: false });
+
+  // Ticking one clears the other, whichever way round.
+  assert.deepEqual(W.exclusiveFix({ refetchCarry: true, sent: true }, "refetch"), {
+    refetchCarry: true,
+    sent: false,
+  });
+  assert.deepEqual(W.exclusiveFix({ refetchCarry: true, sent: true }, "sent"), {
+    refetchCarry: false,
+    sent: true,
+  });
+
+  // With nobody having clicked — the panel's opening defaults — the observation
+  // about the chat beats the preference about it.
+  assert.deepEqual(W.exclusiveFix({ refetchCarry: true, sent: true }), {
+    refetchCarry: false,
+    sent: true,
+  });
+});
+
 test("reviseRun clamps a step index that isn't a step", () => {
   const { run } = startedRun();
   assert.equal(W.reviseRun(run, { stepIndex: 99 }, NOW).stepIndex, 2, "last step");
