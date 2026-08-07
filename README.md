@@ -364,21 +364,33 @@ cleanly into the totals there.
   three steps would read as a cheap matter.
 - Each **workflow** carries the **average across its runs**: `~5.1% of weekly per
   run (over 4 runs, last 4.8%)` — what to expect before you start another one.
-  Only runs measured end to end are averaged in; a partial one would drag the
-  figure down for a reason nothing on the row explains. It's measured rather than
+  Only runs measured end to end are averaged in. It's measured rather than
   authored, so editing a workflow keeps it.
 - **Usage → Workflows** puts the two ledgers together: what share of your weekly
   usage over the last 7 days went through runs rather than chats you drove
   yourself, plus an all-time breakdown by workflow.
 
-Two honest limits, stated wherever the figures appear. claude.ai publishes no
-per-conversation cost, so this is measured by **difference** — anything else you
-were doing while a step ran counts towards it, which makes it usage *during* runs
-rather than usage provably *by* them. And a step whose window **reset part-way**
-can't be differenced at all (the meter went back to zero and what it had counted
-is gone), so it's left out rather than guessed at. The weekly window is the one
-reported for exactly that reason: it rolls over once a week, where the 5-hour
-session window can roll over twice inside a single run.
+**A step is only measured when it had Claude to itself.** claude.ai publishes no
+per-conversation cost, so the only instrument available is a browser-wide meter —
+which means a step that ran while you were working in another chat would be
+credited with your work as well as its own. So every claude.ai tab records the
+**span of each assistant turn** it sees, by conversation, and a step that
+overlapped a turn in any other conversation is **left out entirely**: not
+estimated, not apportioned, not recorded as zero. Yours, a scheduled send,
+another run — all the same. Steps under a run's own idle chats are its own and
+don't count against it.
+
+The other refusal: a step whose usage window **reset part-way through** can't be
+differenced at all (the meter went back to zero and what it had counted is gone),
+so it's left out too. The weekly window is the one reported for exactly that
+reason — it rolls over once a week, where the 5-hour session window can roll over
+twice inside a single run.
+
+Both refusals push the same way, which is the direction that can't mislead you:
+every figure here is a **floor**. Runs cost at least this much, workflows account
+for at least this share. Where a run has steps it couldn't measure, its row says
+how many — and a run with any such step stays out of its workflow's average
+rather than dragging it down for a reason nothing on the row explains.
 
 ### Fixing a partial run
 

@@ -383,8 +383,9 @@
   // bar, not six percent of what you have left.
   const USAGE_NOTE =
     "Percentage points of your weekly limit, measured by watching the meter " +
-    "across each step. It counts anything else you were doing at the same time, " +
-    "so read it as usage during the run rather than usage by it.";
+    "across each step — and counted only for steps that had Claude to " +
+    "themselves. A step that ran while any other chat was busy is left out " +
+    "rather than credited with somebody else's work.";
 
   function workflowUsageFact(wf) {
     const u = wf && wf.usage;
@@ -411,7 +412,7 @@
       `${escapeHtml(WF.formatPct(u.weekly))} of weekly used` +
       (u.complete
         ? ""
-        : ` <span class="job-dim">(${u.measured} of ${u.steps} steps measured)</span>`) +
+        : ` <span class="job-dim">(${u.measured} of ${u.steps} steps had Claude to themselves)</span>`) +
       `</span>`
     );
   }
@@ -622,6 +623,7 @@
     if (t.stoppedMs > 30000) bits.push(`${escapeHtml(WF.formatMs(t.stoppedMs))} stopped, not counted`);
     if (typeof t.usedWeekly === "number")
       bits.push(`${escapeHtml(WF.formatPct(t.usedWeekly))} of weekly`);
+    else if (t.usageShared) bits.push("usage not measured — other chats were busy");
     if (typeof t.chars === "number") bits.push(`${t.chars.toLocaleString()} chars back`);
     return `<div class="wf-step-timing">${bits.join(" · ")}</div>`;
   }
@@ -1363,9 +1365,10 @@
           ? `<b>${escapeHtml(pts(s.workflow))}</b> of your weekly limit went through workflow runs ` +
             `in the last ${WFU_WINDOW} days. <span class="job-dim">No overall total recorded for those ` +
             `days yet, so there's nothing to compare it against.</span>`
-          : `<b>${Math.round(s.share)}%</b> of your usage in the last ${WFU_WINDOW} days went through ` +
-            `workflow runs — <b>${escapeHtml(pts(s.workflow))}</b> of ${escapeHtml(pts(s.total))} ` +
-            `of the weekly limit.`;
+          : `At least <b>${Math.round(s.share)}%</b> of your usage in the last ${WFU_WINDOW} days went ` +
+            `through workflow runs — <b>${escapeHtml(pts(s.workflow))}</b> of ${escapeHtml(pts(s.total))} ` +
+            `of the weekly limit. <span class="job-dim">Steps that shared Claude with another chat ` +
+            `aren't counted, so the real figure is higher.</span>`;
 
       // All-time by workflow: which of them the spending actually went to.
       const rows = UU.byWorkflow(model).slice(0, 8);
