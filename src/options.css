@@ -436,8 +436,57 @@ td .approx {
 
 .job-meta {
   font-size: 12px;
+  line-height: 1.55;
   color: #8a8a8a;
-  margin-top: 2px;
+  margin-top: 4px;
+}
+
+.job-title {
+  margin-bottom: 2px;
+}
+
+/* A run's finished steps, as separated chips rather than one long line of
+   punctuation — at nine steps the run-on version is unreadable. */
+.run-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-top: 6px;
+}
+
+.run-step {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #6b6b6b;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 5px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.run-step b {
+  font-weight: 700;
+  color: #1f1f1f;
+}
+
+/* A step that carried documents, and one that came back with next to nothing —
+   both worth spotting at a glance. */
+.run-step.has-docs {
+  background: rgba(201, 100, 66, 0.1);
+}
+
+.run-step.thin {
+  background: rgba(210, 63, 49, 0.12);
+  color: #a33227;
+}
+
+.job-note {
+  font-size: 12px;
+  line-height: 1.55;
+  color: #8a8a8a;
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(0, 0, 0, 0.1);
 }
 
 .job-err {
@@ -779,6 +828,11 @@ td .approx {
   }
   .ghost { background: none; border-color: rgba(255, 255, 255, 0.18); }
   .job-meta { color: #8a877f; }
+  .run-step { background: rgba(255, 255, 255, 0.08); color: #a5a29a; }
+  .run-step b { color: #f0efea; }
+  .run-step.has-docs { background: rgba(201, 100, 66, 0.22); }
+  .run-step.thin { background: rgba(210, 63, 49, 0.22); color: #f0b5ad; }
+  .job-note { color: #8a877f; border-left-color: rgba(255, 255, 255, 0.14); }
   .job-hold { color: #7fb0e8; }
   .job-badge { color: #a5a29a; background: rgba(255, 255, 255, 0.08); }
   .job-run, .job-edit { background: #35342f; border-color: rgba(255, 255, 255, 0.16); color: #f0efea; }

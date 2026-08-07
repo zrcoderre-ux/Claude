@@ -517,14 +517,27 @@
   // ---- runs ----
   // What each finished step actually did — including how many documents went up
   // with it, so an upload that didn't happen is visible after the fact.
-  function transcriptText(run) {
-    return (run.transcript || [])
-      .map(
-        (t) =>
-          "· " + (t.stepIndex + 1) + (t.docs ? " (" + t.docs + " doc)" : "") +
-          " → " + Math.round((t.chars || 0) / 100) / 10 + "k chars"
-      )
-      .join(" ");
+  // "0k chars" for a 40-character reply is worse than useless — it hides the
+  // very thing worth noticing, which is that a step handed on almost nothing.
+  function fmtChars(n) {
+    const c = n || 0;
+    if (c < 1000) return c + " chars";
+    return Math.round(c / 100) / 10 + "k chars";
+  }
+
+  function transcriptHtml(run) {
+    const steps = (run.transcript || [])
+      .map((t) => {
+        const thin = (t.chars || 0) < 400; // a reply this short is rarely the work
+        const cls = "run-step" + (t.docs ? " has-docs" : "") + (thin ? " thin" : "");
+        return (
+          `<span class="${cls}"><b>${t.stepIndex + 1}</b> · ${escapeHtml(fmtChars(t.chars))}` +
+          (t.docs ? ` · ${t.docs} doc${t.docs === 1 ? "" : "s"}` : "") +
+          `</span>`
+        );
+      })
+      .join("");
+    return `<div class="run-steps">${steps}</div>`;
   }
 
   // ---- fixing a partial run ----
@@ -691,12 +704,10 @@
           `<div class="job-main">` +
           `<div class="job-title">${escapeHtml(run.name || "Workflow")}` +
           `<span class="job-badge">${RUN_STATUS_LABEL[run.status] || run.status}</span></div>` +
-          (run.docs && run.docs.length
-            ? `<div class="job-meta">${run.docs.length} document${
-                run.docs.length === 1 ? "" : "s"
-              } — this run's own copy</div>`
-            : "") +
           `<div class="job-meta">${escapeHtml(WF.progressText(run, wf))}` +
+          (run.docs && run.docs.length
+            ? " · " + run.docs.length + " document" + (run.docs.length === 1 ? "" : "s")
+            : "") +
           (run.trigger && run.trigger.type === "time" && run.status === "pending"
             ? " · at " + escapeHtml(new Date(run.trigger.at).toLocaleString())
             : "") +
@@ -705,12 +716,10 @@
             : "") +
           `</div>` +
           (links ? `<div class="job-meta">Chats: ${links}</div>` : "") +
-          (run.transcript && run.transcript.length
-            ? `<div class="job-meta">${escapeHtml(transcriptText(run))}</div>`
-            : "") +
+          (run.transcript && run.transcript.length ? transcriptHtml(run) : "") +
           (run.error ? `<div class="job-err">${escapeHtml(run.error)}</div>` : "") +
           (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
-          (run.note ? `<div class="job-meta">${escapeHtml(run.note)}</div>` : "") +
+          (run.note ? `<div class="job-note">${escapeHtml(run.note)}</div>` : "") +
           (fixingRunId === run.id ? fixPanel(run, wf) : "") +
           `</div>` +
           `<div class="job-btns">` +
