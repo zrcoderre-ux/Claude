@@ -794,6 +794,67 @@ test("a window that reset mid-step can't be differenced", () => {
   assert.equal(W.usageCost(before, W.usageSample({})).weekly, null);
 });
 
+test("a step only counts when it had Claude to itself", () => {
+  const win = { from: 1000, to: 2000, conv: "mine" };
+  const busy = (start, end) => ({ mine: { start: 900, end: 1900 }, other: { start, end } });
+
+  assert.equal(W.soleActor({ mine: { start: 1100, end: 1900 } }, win), true, "its own turn");
+  assert.equal(W.soleActor({}, win), true, "an empty ledger is clean, not unknown");
+
+  // Any overlap at all disqualifies it, from either side.
+  assert.equal(W.soleActor(busy(1200, 1300), win), false, "wholly inside");
+  assert.equal(W.soleActor(busy(500, 1200), win), false, "started before, ran into it");
+  assert.equal(W.soleActor(busy(1900, 2500), win), false, "started inside, ran past");
+  assert.equal(W.soleActor(busy(500, 2500), win), false, "spanned the whole step");
+  assert.equal(W.soleActor(busy(1500, null), win), false, "still running when we looked");
+  assert.equal(W.soleActor(busy(500, null), win), false, "started before and never ended");
+
+  // Outside it entirely is fine.
+  assert.equal(W.soleActor(busy(200, 800), win), true, "finished before the step began");
+  assert.equal(W.soleActor(busy(2200, 2400), win), true, "began after it ended");
+
+  // A run's other chats are its own — they're idle while this step runs, and a
+  // run must not be able to contaminate itself.
+  assert.equal(
+    W.soleActor({ chatB: { start: 1200, end: 1300 } }, { from: 1000, to: 2000, conv: ["mine", "chatB"] }),
+    true
+  );
+
+  // Can't say is never yes.
+  assert.equal(W.soleActor(null, win), false, "no ledger at all");
+  assert.equal(W.soleActor({}, { from: null, to: 2000, conv: "mine" }), false, "no step start");
+  assert.equal(W.soleActor({}, {}), false);
+});
+
+test("a shared step records a refusal, not a zero", () => {
+  const { run } = startedRun();
+  let r = W.markSending(run, NOW, W.usageSample(SAMPLE));
+  r = W.markSent(r, { chatId: "a", url: "https://claude.ai/chat/u1", now: NOW + 1 });
+  r = W.applyStepResult(r, {
+    stepIndex: 0,
+    chatId: "a",
+    reply: "DRAFT",
+    now: NOW + 2,
+    total: 3,
+    usage: W.usageSample(Object.assign({}, SAMPLE, { weeklyPercent: 0.9 })),
+    usageClean: false,
+  });
+  const t = r.transcript[0];
+  assert.equal(t.usedWeekly, null, "50 points of somebody else's work is not this step's");
+  assert.equal(t.usedSession, null);
+  assert.equal(t.usageShared, true, "and the row can say why it's blank");
+  assert.equal(W.runUsage(r).measured, 0);
+  assert.equal(W.runUsage(r).complete, false, "so it can't reach the workflow's average");
+});
+
+test("conversationKey names a conversation the same way from any URL shape", () => {
+  const id = "0198fe12-3456-7890-abcd-ef0123456789";
+  assert.equal(W.conversationKey("https://claude.ai/chat/" + id), id);
+  assert.equal(W.conversationKey("https://claude.ai/chat/" + id + "?foo=1#x"), id);
+  assert.equal(W.conversationKey("https://claude.ai/new"), "/new");
+  assert.equal(W.conversationKey(""), "");
+});
+
 test("runUsage totals a run and says how much of it was measured", () => {
   const run = {
     transcript: [

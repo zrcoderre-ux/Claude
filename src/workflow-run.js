@@ -748,7 +748,20 @@
     // the reading current, and by the time the worker hears about the step the
     // reply has been sitting there for a moment already.
     const usageNow = W.usageSample((await C.storageGet("cum_state")).cum_state);
+    // …and who else was using Claude while this step ran. The meter is
+    // browser-wide, so a step that shared the window with another chat — yours,
+    // a scheduled send, another run — can't be measured, and says so rather
+    // than reporting somebody else's work as its own.
+    const activity = (await C.storageGet("cum_activity")).cum_activity || null;
     const updated = await updateRun(runId, (r) => {
+      // This conversation, plus the run's other chats — they're idle while this
+      // step runs, and a run must not be able to contaminate itself.
+      const mine = [W.conversationKey(location.href)].concat(
+        Object.keys(r.chats || {})
+          .map((cid) => (r.chats[cid] || {}).url)
+          .filter(Boolean)
+          .map(W.conversationKey)
+      );
       const next = W.applyStepResult(r, {
         // The step the WORKER asked for, not wherever the run has got to. If
         // this message was delivered twice (the send retries when the page
@@ -764,6 +777,11 @@
         total: msg.total,
         docs: (msg.files || []).length,
         usage: usageNow,
+        usageClean: W.soleActor(activity, {
+          from: r.stepStartedAt,
+          to: Date.now(),
+          conv: mine,
+        }),
       });
       // What this step actually did — how the documents went up, and whether
       // the reply had to be read some way other than the copy box. Kept on the

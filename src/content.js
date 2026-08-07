@@ -239,10 +239,70 @@
   }
 
   function convKey() {
+    // One definition, shared with the workflow model — a run has to recognise
+    // its own turns in the activity ledger below, and two regexes that drifted
+    // apart would make every step look contaminated.
+    if (window.CUMWorkflow && window.CUMWorkflow.conversationKey)
+      return window.CUMWorkflow.conversationKey(location.href);
     const m = location.href.match(
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
     );
     return m ? m[0] : location.pathname;
+  }
+
+  // ---- Activity ledger ---------------------------------------------------
+  // The span of every assistant turn, by conversation, across all your claude.ai
+  // tabs. Workflow runs use it to decide whether a step is worth measuring: the
+  // usage meter is browser-wide, so a step that ran while you were working in
+  // another chat tells you nothing about what the step cost. Read-modify-write
+  // like the other shared tallies here; each turn writes twice (start and end),
+  // so a lost write rarely loses the whole turn.
+  const ACTIVITY_KEY = "cum_activity";
+  const ACTIVITY_MAX = 40; // bound it; conversations are transient
+  const ACTIVITY_TTL = 6 * 60 * 60 * 1000; // and forget yesterday's entirely
+
+  function noteActivity(kind) {
+    const key = convKey();
+    if (!key) return;
+    try {
+      chrome.storage?.local.get(ACTIVITY_KEY, (res) => {
+        const now = Date.now();
+        const src = (res && res[ACTIVITY_KEY]) || {};
+        const out = {};
+        for (const k of Object.keys(src)) {
+          const t = src[k];
+          if (t && typeof t.start === "number" && now - t.start < ACTIVITY_TTL) out[k] = t;
+        }
+        // A turn in a brand-new chat opens while the URL is still /new and ends
+        // once claude.ai has swapped in the conversation's own id. Left alone
+        // that leaves a stray "/new" turn behind, which every later run would
+        // read as somebody else working. So when a turn ends under an id and an
+        // unfinished one is sitting under a path, it's the same turn: move it.
+        if (kind === "end" && key.indexOf("/") !== 0) {
+          for (const k of Object.keys(out)) {
+            if (k.indexOf("/") !== 0) continue;
+            const t = out[k];
+            if (t && t.end == null && now - t.start < 15 * 60 * 1000) {
+              if (!out[key] || out[key].end != null) out[key] = { start: t.start, end: null };
+              delete out[k];
+            }
+          }
+        }
+        const was = out[key];
+        out[key] =
+          kind === "start"
+            ? { start: now, end: null }
+            : // An end with no start we saw still marks the conversation busy;
+              // guessing a start of `now` would understate the span, so it takes
+              // whatever start we have.
+              { start: was && typeof was.start === "number" ? was.start : now, end: now };
+        const keys = Object.keys(out).sort((a, b) => (out[a].start || 0) - (out[b].start || 0));
+        for (const k of keys.slice(0, Math.max(0, keys.length - ACTIVITY_MAX))) delete out[k];
+        chrome.storage?.local.set({ [ACTIVITY_KEY]: out });
+      });
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   // How much (model-weighted tokens) the active Home conversation grew since the
@@ -1631,7 +1691,13 @@
     if (p.homeActivityAt != null && (lastHomeActivityAt == null || p.homeActivityAt > lastHomeActivityAt))
       lastHomeActivityAt = p.homeActivityAt;
     if (p.homeWeighted != null) lastHomeWeighted = p.homeWeighted;
-    if (p.turnEnded) scheduleTurnRead();
+    // `turnEnded` is posted when the completion stream OPENS (its name predates
+    // the streamDone signal below); together the two bracket the turn.
+    if (p.turnEnded) {
+      noteActivity("start");
+      scheduleTurnRead();
+    }
+    if (p.streamDone) noteActivity("end");
   });
 
   // Fold harvested projects (from the page's own API) into the cached list the

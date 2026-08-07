@@ -988,6 +988,55 @@
     };
   }
 
+  // Which conversation a claude.ai URL is. The uuid where there is one; the path
+  // otherwise, so /new and the Code surface are still distinguishable from each
+  // other. Shared with content.js's activity recorder, which has to agree with
+  // this exactly or a run would fail to recognise its own turns.
+  function conversationKey(href) {
+    const s = str(href);
+    const m = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (m) return m[0];
+    try {
+      return new URL(s).pathname;
+    } catch (e) {
+      return s;
+    }
+  }
+
+  // Was this step the ONLY thing happening in Claude while it ran?
+  //
+  // Measuring a step by the movement of a browser-wide meter is only worth
+  // anything when nothing else moved it. Every claude.ai tab records the span of
+  // each assistant turn it sees (see the activity ledger in content.js); if any
+  // conversation other than this step's own overlapped the step's window, the
+  // difference is somebody else's work as much as this step's, and the honest
+  // answer is that we don't know.
+  //
+  // Defaults to false, in every direction: no window, no ledger, a turn still
+  // running when we looked — all of them mean "can't say", and can't say must
+  // not be recorded as a measurement.
+  function soleActor(activity, win) {
+    const w = win || {};
+    if (typeof w.from !== "number" || typeof w.to !== "number") return false;
+    const a = activity && typeof activity === "object" ? activity : null;
+    if (!a) return false;
+    // This step's own conversation, and the run's other chats: a run takes one
+    // step at a time, so its own idle conversations are never the thing that
+    // moved the meter, and counting them would make a run contaminate itself.
+    const mine = (Array.isArray(w.conv) ? w.conv : [w.conv]).filter(Boolean);
+    for (const key of Object.keys(a)) {
+      if (mine.indexOf(key) !== -1) continue;
+      const t = a[key] || {};
+      const start = typeof t.start === "number" ? t.start : null;
+      if (start == null) continue;
+      // A turn with no end is still going, so it reaches to the end of the
+      // window rather than stopping at the moment it began.
+      const end = typeof t.end === "number" ? t.end : w.to;
+      if (end >= w.from && start <= w.to) return false;
+    }
+    return true;
+  }
+
   // A run's total, and how much of it was actually measured — a total that
   // quietly skipped three steps would read as a cheap run.
   function runUsage(run) {
@@ -1107,7 +1156,10 @@
     const reply = str(i.reply);
     const done = next >= total;
     const timing = stepTiming(run, i.now);
-    const cost = usageCost(run.stepUsage, i.usage);
+    // A step that shared the browser with other Claude work isn't measurable —
+    // see soleActor. Recorded as a refusal, not as a zero.
+    const shared = i.usageClean === false;
+    const cost = shared ? { session: null, weekly: null } : usageCost(run.stepUsage, i.usage);
     return Object.assign({}, clearStepClock(run), {
       status: done ? "done" : "running",
       phase: "idle",
@@ -1139,6 +1191,9 @@
           // stopped meaning anything.
           usedWeekly: cost.weekly,
           usedSession: cost.session,
+          // Why it's blank, when it is: other Claude chats were busy at the same
+          // time, so the meter's movement isn't this step's to claim.
+          usageShared: shared,
         },
       ]),
       lastProgressAt: i.now,
@@ -1609,6 +1664,8 @@
     formatMs,
     usageSample,
     usageCost,
+    conversationKey,
+    soleActor,
     runUsage,
     noteRunUsage,
     formatPct,
