@@ -544,6 +544,40 @@
     return `<div class="run-steps">${steps}</div>`;
   }
 
+  // ---- reading a run's steps ----
+  // Which run has its steps open for reading. Separate from the editor: seeing
+  // what a stopped run was about to send shouldn't mean opening it for edit and
+  // risking a change you didn't intend.
+  let showingStepsFor = null;
+
+  function stepsPanel(run, wf) {
+    const plan = WF.planRun(WF.runSource(run, wf));
+    if (!plan.length) return "";
+    const rows = plan
+      .map((s) => {
+        const done = s.index < run.stepIndex;
+        const here = s.index === run.stepIndex;
+        const cls = "wf-step-row" + (done ? " done" : "") + (here ? " here" : "");
+        const state = done ? "done" : here ? "next" : "";
+        return (
+          `<div class="${cls}">` +
+          `<div class="wf-step-no"><b>${s.index + 1}</b>${
+            state ? `<span class="wf-step-state">${state}</span>` : ""
+          }</div>` +
+          `<div class="wf-step-body">` +
+          `<div class="wf-step-meta">${escapeHtml(s.chatName)}` +
+          (s.carry ? ` · carries the previous reply as “${escapeHtml(s.carryLabel)}”` : "") +
+          (s.docIds.length ? ` · ${s.docIds.length} document${s.docIds.length === 1 ? "" : "s"}` : "") +
+          (s.marker ? ` · must contain “${escapeHtml(s.marker)}”` : "") +
+          `</div>` +
+          `<pre class="wf-step-prompt-view">${escapeHtml(s.prompt || "(no prompt)")}</pre>` +
+          `</div></div>`
+        );
+      })
+      .join("");
+    return `<div class="wf-steps-panel">${rows}</div>`;
+  }
+
   // ---- fixing a partial run ----
   // Which run has its "continue from" panel open, and the choices made in it so
   // far (kept out here so a re-render doesn't wipe them).
@@ -558,12 +592,16 @@
     // other chat now".
     const stepIndex = Math.min(run.stepIndex, Math.max(0, plan.length - 1));
     fixingRunId = run.id;
-    fixDraft = {
-      stepIndex,
-      refetchCarry: !!WF.carrySource(source, stepIndex).needed,
-      sent: run.phase === "awaiting-reply",
-      chats: {},
-    };
+    fixDraft = Object.assign(
+      {
+        stepIndex,
+        chats: {},
+      },
+      WF.exclusiveFix({
+        refetchCarry: !!WF.carrySource(source, stepIndex).needed,
+        sent: run.phase === "awaiting-reply",
+      })
+    );
     for (const c of source.chats || [])
       fixDraft.chats[c.id] = ((run.chats || {})[c.id] || {}).url || "";
     renderRuns();
@@ -602,6 +640,10 @@
       `<label class="wf-fix-check"><input type="checkbox" class="wf-fix-sent"${
         fixDraft.sent ? " checked" : ""
       } /> This step's message already went out — wait for the reply instead of sending it again</label>` +
+      (src.needed
+        ? `<div class="wf-fix-note">Those two are alternatives — a message that has already gone ` +
+          `out carries whatever it carries, so ticking one clears the other.</div>`
+        : "") +
       `<div class="wf-fix-note">Conversations this run is using (edit if it lost track of one):</div>` +
       chatRows +
       `<div class="wf-fix-row"><button class="job-run wf-fix-go" data-id="${run.id}">Continue run</button>` +
@@ -625,9 +667,18 @@
       });
     const refetch = wfui.runs.querySelector(".wf-fix-refetch");
     if (refetch)
-      refetch.addEventListener("change", () => (fixDraft.refetchCarry = refetch.checked));
+      refetch.addEventListener("change", () => {
+        fixDraft.refetchCarry = refetch.checked;
+        Object.assign(fixDraft, WF.exclusiveFix(fixDraft, "refetch"));
+        renderRuns();
+      });
     const sent = wfui.runs.querySelector(".wf-fix-sent");
-    if (sent) sent.addEventListener("change", () => (fixDraft.sent = sent.checked));
+    if (sent)
+      sent.addEventListener("change", () => {
+        fixDraft.sent = sent.checked;
+        Object.assign(fixDraft, WF.exclusiveFix(fixDraft, "sent"));
+        renderRuns();
+      });
     wfui.runs.querySelectorAll(".wf-fix-url").forEach((i) =>
       i.addEventListener("input", () => (fixDraft.chats[i.getAttribute("data-chat")] = i.value.trim()))
     );
@@ -644,10 +695,11 @@
         const id = go.getAttribute("data-id");
         const chats = {};
         for (const cid of Object.keys(fixDraft.chats)) chats[cid] = { url: fixDraft.chats[cid] };
+        const choice = WF.exclusiveFix(fixDraft, "sent");
         const patch = {
           stepIndex: fixDraft.stepIndex,
-          phase: fixDraft.sent ? "awaiting-reply" : "idle",
-          refetchCarry: !!fixDraft.refetchCarry && !fixDraft.sent,
+          phase: choice.sent ? "awaiting-reply" : "idle",
+          refetchCarry: choice.refetchCarry,
           chats,
         };
         go.disabled = true;
@@ -737,6 +789,9 @@
         const row = document.createElement("div");
         row.className = "job-item status-" + (run.status || "pending");
         const btns =
+          `<button class="job-edit wf-run-steps" data-id="${run.id}" title="Read this run's prompts">${
+            showingStepsFor === run.id ? "Hide steps" : "Steps"
+          }</button>` +
           (run.status === "error" || run.status === "waiting" || run.status === "paused"
             ? `<button class="job-run wf-run-resume" data-id="${run.id}" title="${escapeHtml(
                 WF.resumePlan(run).action
@@ -787,6 +842,7 @@
           (run.error ? `<div class="job-err">${escapeHtml(run.error)}</div>` : "") +
           (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
           (run.note ? `<div class="job-note">${escapeHtml(run.note)}</div>` : "") +
+          (showingStepsFor === run.id ? stepsPanel(run, wf) : "") +
           (fixingRunId === run.id ? fixPanel(run, wf) : "") +
           `</div>`;
         wfui.runs.appendChild(row);
@@ -867,6 +923,13 @@
               }
             );
           });
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-run-steps").forEach((b) =>
+        b.addEventListener("click", () => {
+          const id = b.getAttribute("data-id");
+          showingStepsFor = showingStepsFor === id ? null : id;
+          renderRuns();
         })
       );
       wfui.runs.querySelectorAll(".wf-when-run").forEach((sel) =>

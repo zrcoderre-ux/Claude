@@ -928,6 +928,23 @@
     };
   }
 
+  // "Re-read the previous chat's reply" and "this step's message already went
+  // out" describe states that cannot both be true. If the message has gone,
+  // whatever it was going to carry is already in it, and re-reading would only
+  // compose a message nobody is going to send. So the two behave like radio
+  // buttons: ticking one clears the other. `changed` names the box the operator
+  // just touched, so their click is the one that wins; with nothing named — the
+  // panel's own opening defaults — "already sent" wins, because that is an
+  // observation about the chat rather than a preference about it.
+  function exclusiveFix(draft, changed) {
+    const d = draft || {};
+    const refetchCarry = !!d.refetchCarry;
+    const sent = !!d.sent;
+    if (!(refetchCarry && sent)) return { refetchCarry: refetchCarry, sent: sent };
+    if (changed === "refetch") return { refetchCarry: true, sent: false };
+    return { refetchCarry: false, sent: true };
+  }
+
   // Fix a partial run and point it at where to carry on. Everything here is
   // something only the operator can know: which step to pick up from, whether
   // the message for it is already sitting in the chat, what text should travel
@@ -1344,6 +1361,7 @@
     applyStepResult,
     markError,
     resumePlan,
+    exclusiveFix,
     reviseRun,
     runSource,
     canRetrigger,
