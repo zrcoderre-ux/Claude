@@ -271,10 +271,16 @@ rendered messages is not on its own enough to know a new answer arrived.
 
 ### Watching one from inside the chat
 
-A conversation a run is driving carries its own small pill in the bottom-left
-corner — the usage pill owns the bottom-right, and is draggable, so that whole
-edge may be taken. It says which run, which step of how many, which chat, and
-whether it's waiting on Claude, updating as the run moves.
+A conversation a run is driving carries a small pill saying which run, which step
+of how many, which chat, whether it's waiting on Claude, and how long the current
+step has been going — updating as the run moves.
+
+It **docks onto the usage meter**, in the same stack as the outage warning and
+the context alarm, so it rides along wherever you've dragged the meter and the
+corner holds one thing rather than two. (The meter builds on its own schedule; a
+run pill that arrives first stands at the bottom left and moves in as soon as the
+meter appears.) The meter's panel now opens **clear of that stack** instead of
+under it, so opening it doesn't bury the Pause you were reaching for.
 
 Beside it is **Pause**. That's the point of it: when something goes wrong you
 notice it *here*, in the chat — a prompt in the wrong place, an answer going
@@ -321,7 +327,9 @@ number, chat, what it carries in, how many documents ride with it, whether it ha
 to see a marker before handing on, and the prompt in full — with the ones already
 done marked as such and the next one up marked `next`. It opens nothing and
 changes nothing, so a paused or stopped run can be looked over before deciding
-whether it needs fixing at all; the editor is for when it does.
+whether it needs fixing at all; the editor is for when it does. Pressing **Fix &
+continue** closes it — reading the prompts is what you do *before* deciding to
+fix, and once you have, they're a wall of text between you and the panel.
 
 ### How long steps take
 

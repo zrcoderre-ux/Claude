@@ -853,7 +853,12 @@
     setupDrag();
     window.addEventListener("resize", () => {
       if (pos) applyPosition(pos, false);
+      placePills();
     });
+    // The workflow pill docks itself into this stack, and does it long after
+    // this runs — it appears and disappears with the run driving the tab. This
+    // is how it tells the meter the stack changed height.
+    window.CUMPills = { measure: placePills };
 
     render();
     startTicking();
@@ -898,6 +903,22 @@
     if (!els || !els.pills || !els.root) return;
     const r = els.root.getBoundingClientRect();
     els.root.classList.toggle("cum-pills-below", r.top < els.pills.offsetHeight + 12);
+    reserveStack();
+  }
+
+  // How much room the panel must leave for the indicator stack. Only when the
+  // two are on the same side of the button, which they usually but not always
+  // are — they flip at different thresholds. Nothing showing, nothing reserved.
+  //
+  // Without this the stack sits on top of the panel, and one of those pills is a
+  // run's, carrying a Pause you may well be reaching for.
+  function reserveStack() {
+    if (!els || !els.pills || !els.root) return;
+    const h = els.pills.offsetHeight;
+    const sameSide =
+      els.root.classList.contains("cum-pills-below") ===
+      els.root.classList.contains("cum-below");
+    els.root.style.setProperty("--cum-stack", (h && sameSide ? h + 8 : 0) + "px");
   }
 
   // Open the panel toward whatever space is available around the pill.
@@ -908,6 +929,7 @@
       "cum-align-left",
       r.left + r.width / 2 < window.innerWidth / 2
     );
+    reserveStack();
   }
 
   function setupDrag() {

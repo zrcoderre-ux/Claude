@@ -12,8 +12,12 @@
  * can. Pausing takes effect at the next step boundary and keeps the run's
  * place, so Resume carries on rather than starting over.
  *
- * It sits bottom-LEFT because the usage pill owns the bottom-right (and is
- * draggable, so it may be anywhere along that edge).
+ * It docks into the usage meter's own indicator stack (#cum-pills), the same
+ * place the outage warning and the context alarm live, so it rides along when
+ * the meter is dragged and the corner holds one thing instead of two — and so
+ * the Pause is wherever you already look. If the meter isn't there (it builds on
+ * its own schedule, and can be turned off), the pill stands on its own at the
+ * bottom left and moves in as soon as the meter appears.
  */
 (function () {
   "use strict";
@@ -64,30 +68,53 @@
   }
 
   function build() {
-    if (el) return el;
-    el = document.createElement("div");
-    el.id = ID;
-    el.innerHTML =
-      `<span class="cum-wfp-dot"></span>` +
-      `<span class="cum-wfp-text"><b class="cum-wfp-name"></b><span class="cum-wfp-where"></span>` +
-      `<span class="cum-wfp-took"></span></span>` +
-      `<button class="cum-wfp-btn" type="button"></button>`;
-    (document.body || document.documentElement).appendChild(el);
-    // The body opens Options, where the rest of the run's controls live.
-    el.querySelector(".cum-wfp-text").addEventListener("click", () => {
-      try {
-        chrome.runtime.sendMessage({ type: "cum-open-options" });
-      } catch (e) {
-        /* ignore */
-      }
-    });
+    if (!el) {
+      el = document.createElement("div");
+      el.id = ID;
+      el.innerHTML =
+        `<span class="cum-wfp-dot"></span>` +
+        `<span class="cum-wfp-text"><b class="cum-wfp-name"></b><span class="cum-wfp-where"></span>` +
+        `<span class="cum-wfp-took"></span></span>` +
+        `<button class="cum-wfp-btn" type="button"></button>`;
+      // The body opens Options, where the rest of the run's controls live.
+      el.querySelector(".cum-wfp-text").addEventListener("click", () => {
+        try {
+          chrome.runtime.sendMessage({ type: "cum-open-options" });
+        } catch (e) {
+          /* ignore */
+        }
+      });
+    }
+    // Re-checked every tick rather than once: the meter may not exist yet when
+    // the first run arrives, and the page can replace body wholesale.
+    const stack = document.getElementById("cum-pills");
+    const home = stack || document.body || document.documentElement;
+    if (home && el.parentNode !== home) {
+      home.appendChild(el);
+      // Docked, it's a flex item in the meter's stack and positions itself;
+      // loose, it's fixed to the bottom-left corner on its own.
+      el.classList.toggle("cum-wfp-docked", !!stack);
+      measureStack();
+    }
     return el;
   }
 
+  // The stack just got taller or shorter, which decides whether it hangs above
+  // or below the meter and how much room the meter's panel has to leave it.
+  function measureStack() {
+    try {
+      if (window.CUMPills) window.CUMPills.measure();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
   function remove() {
-    if (el) el.remove();
+    if (!el) return;
+    el.remove();
     el = null;
     lastKey = "";
+    measureStack();
   }
 
   function render(run, wf, chatId) {
