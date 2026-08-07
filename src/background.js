@@ -1110,6 +1110,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;
   }
+  // Change when a queued run goes off — a different time, or across to "when
+  // usage resets" or straight away.
+  if (msg && msg.type === "cum-wf-retrigger" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "run not found" };
+      if (!W.canRetrigger(run))
+        return { ok: false, error: "this run has already started — pause it instead" };
+      const t = msg.trigger || {};
+      if (t.type === "time" && !(typeof t.at === "number" && t.at > Date.now()))
+        return { ok: false, error: "pick a time in the future" };
+      const next = await saveRun(W.retrigger(run, t, Date.now()));
+      await reschedule();
+      if (next.trigger.type === "now") driveRun(next.id); // long-running: don't await
+      return { ok: true };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
   // Pause at the next step boundary. The page driving the current step lets go
   // on its next poll, keeping the run's place — so an edit can be made and
   // Resume picks up from exactly there.

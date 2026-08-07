@@ -176,7 +176,11 @@ points at them.
 
 Pick **Run now**, **When usage resets**, or **At a set time** on the workflow's
 row and press **Start** — the same three triggers a scheduled send has, sharing
-the same alarms. The run then walks its steps: open (or return to) the step's
+the same alarms. A run that hasn't gone yet keeps that control on **its own** row,
+so a queued run can be moved to a different time, switched to the next usage
+reset, or sent straight away, without cancelling it and setting the whole thing
+up again. Once a run has started its trigger is history, and **Pause** is the
+tool instead. The run then walks its steps: open (or return to) the step's
 chat, attach that chat's documents if it's the chat's first message, type the
 composed prompt, send, **wait for Claude to finish** — up to **an hour** per
 step, since one step can be a long ruling with several tool calls — take the

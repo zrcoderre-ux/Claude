@@ -660,6 +660,25 @@
     );
   }
 
+  // Change when a queued run goes off. Only meaningful before it has started —
+  // once a run is under way its trigger is history, and the thing you want then
+  // is Pause or Fix & continue.
+  function canRetrigger(run) {
+    return !!run && run.status === "pending";
+  }
+
+  function retrigger(run, trigger, now) {
+    if (!run) return run;
+    const t = trigger || {};
+    const next =
+      t.type === "time"
+        ? { type: "time", at: t.at }
+        : t.type === "reset"
+        ? { type: "reset" }
+        : { type: "now" };
+    return Object.assign({}, run, { trigger: next, lastProgressAt: now });
+  }
+
   // Stop at the next step boundary, keeping everything else — where it is, what
   // it's carrying, which conversations it's in. A step already in flight is
   // allowed to finish; pausing is not cancelling.
@@ -1283,6 +1302,8 @@
     resumePlan,
     reviseRun,
     runSource,
+    canRetrigger,
+    retrigger,
     workflowFromRun,
     markPaused,
     applyRunEdit,
