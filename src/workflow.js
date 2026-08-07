@@ -148,6 +148,11 @@
       // nothing to carry yet).
       carry: f.carry !== false,
       carryLabel: trimmed(f.carryLabel) || "",
+      // Which model answers THIS step. Null means the chat's own choice, which
+      // is what nearly every step wants; setting it lets one conversation be
+      // drafted by one model and criticised by another, which is the whole
+      // point of being able to try combinations.
+      model: trimmed(f.model) || null,
     };
   }
 
@@ -428,6 +433,12 @@
       steps + " step" + (steps === 1 ? "" : "s"),
     ];
     if (docs) bits.push(docs + " document" + (docs === 1 ? "" : "s"));
+    // Worth saying on the row: a workflow that switches models part-way is doing
+    // something you'd want to be reminded of before starting it again.
+    const models = [];
+    for (const s of planRun(wf))
+      if (s.modelOn && models.indexOf(s.modelOn) === -1) models.push(s.modelOn);
+    if (models.length > 1) bits.push(models.join(" → "));
     return bits.join(" · ");
   }
 
@@ -482,9 +493,18 @@
     }
 
     const seen = new Set();
+    // What model each chat is currently on, so a step only has to switch when
+    // it actually wants something different — and so a step that DOES switch
+    // leaves the chat on that model for the steps after it, exactly as it would
+    // if you had picked it yourself.
+    const on = new Map();
     return steps.map((s, i) => {
       const firstInChat = !seen.has(s.chatId);
       seen.add(s.chatId);
+      const chat = getChat(wf, s.chatId) || {};
+      const model = trimmed(s.model) || (firstInChat ? trimmed(chat.model) : null) || null;
+      const was = on.get(s.chatId) || null;
+      if (model) on.set(s.chatId, model);
       // Does this step's reply get pasted into another chat? Only then is it
       // worth insisting on what the reply must be — a step whose answer stays
       // where it is can say anything it likes.
@@ -511,6 +531,14 @@
         carry: i > 0 && s.carry !== false,
         carryLabel: trimmed(s.carryLabel) || "material from the previous step",
         firstInChat: firstInChat,
+        // The model to pick before sending. Null when the chat is already on the
+        // right one — switching to the model you're on is a menu opened for
+        // nothing, and one more thing to go wrong.
+        model: model && model !== was ? model : null,
+        // What it will answer on either way, for the surfaces that report it.
+        modelOn: model || was || null,
+        // A step that deliberately differs from its chat's own setting.
+        modelOverride: !!trimmed(s.model),
         docIds: opening.concat(added),
         handsOn: handsOn,
         // The phrase this step's reply must contain before it can be handed on.

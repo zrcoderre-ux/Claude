@@ -960,9 +960,13 @@ async function driveRun(runId, opts) {
         bundleText: !!run.bundleText,
         text: W.composeStepText(step, run.lastReply),
         files: awaitOnly ? [] : docs,
-        // A conversation keeps the model it started with, and only a fresh
-        // Claude Code session has a repo to pick — so both are first-step only.
-        model: step.firstInChat && !saved.url ? chat.model || null : null,
+        // The model this step answers on. A step that names its own switches to
+        // it wherever it is — claude.ai's picker works inside an existing
+        // conversation, which is what lets one chat draft on one model and
+        // revise on another. A chat's own setting stays first-message-only:
+        // changing the model of a conversation the run didn't open would reach
+        // into work that was already there.
+        model: step.model && (step.modelOverride || !saved.url) ? step.model : null,
         codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
       };
       let res = await sendStep(tab.id, payload);

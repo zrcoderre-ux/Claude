@@ -315,7 +315,11 @@
         repoEl.addEventListener("input", () => {
           if (targetEl.value === "code") chat.target.codeRepo = repoEl.value.trim() || null;
         });
-        modelEl.addEventListener("change", () => (chat.model = modelEl.value || null));
+        modelEl.addEventListener("change", () => {
+          chat.model = modelEl.value || null;
+          // Each step shows what it inherits, so those labels are now stale.
+          renderSteps();
+        });
         const startEl = card.querySelector(".wf-chat-start");
         startEl.addEventListener("input", () => (chat.startUrl = startEl.value.trim() || null));
         const seedEl = card.querySelector(".wf-chat-seed");
@@ -450,9 +454,28 @@
         const chatOpts = (wf.chats || [])
           .map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`)
           .join("");
+        // Per-step model. Blank inherits the chat's, which is what nearly every
+        // step wants; naming one here switches the conversation to it for this
+        // step and leaves it there, so a chat can draft on one model and revise
+        // on another.
+        const chat = (wf.chats || []).find((c) => c.id === step.chatId) || {};
+        const inherited = chat.model || "whatever the chat is on";
+        const known = models.length ? models : SEED_MODELS;
+        const stepModelOpts = [""]
+          // A model that has since left claude.ai's picker still has to show, or
+          // the select would fall back to blank and silently lose the choice.
+          .concat(step.model && known.indexOf(step.model) === -1 ? [step.model] : [])
+          .concat(known)
+          .map((m) =>
+            m
+              ? `<option value="${esc(m)}">${esc(m)}</option>`
+              : `<option value="">Model: ${esc(inherited)}</option>`
+          )
+          .join("");
         card.innerHTML =
           `<div class="cumwf-card-head"><span class="cumwf-card-title">Step ${i + 1}</span>` +
           `<select class="wf-step-chat" style="width:auto">${chatOpts}</select>` +
+          `<select class="wf-step-model" style="width:auto" title="Which model answers this step">${stepModelOpts}</select>` +
           `<button class="cumwf-btn mini wf-up" type="button" title="Move up">↑</button>` +
           `<button class="cumwf-btn mini wf-down" type="button" title="Move down">↓</button>` +
           `<button class="cumwf-btn mini wf-del" type="button" title="Delete step">✕</button></div>` +
@@ -473,6 +496,9 @@
         const chatEl = card.querySelector(".wf-step-chat");
         chatEl.value = step.chatId || (wf.chats[0] && wf.chats[0].id) || "";
         chatEl.addEventListener("change", () => (step.chatId = chatEl.value));
+        const stepModelEl = card.querySelector(".wf-step-model");
+        stepModelEl.value = step.model || "";
+        stepModelEl.addEventListener("change", () => (step.model = stepModelEl.value || null));
         card.querySelector(".wf-step-prompt").addEventListener("input", function () {
           step.prompt = this.value;
         });
