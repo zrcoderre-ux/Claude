@@ -664,6 +664,38 @@
     return run ? WF.getWorkflow(lastWorkflows, run.workflowId) : null;
   }
 
+  // What a datetime-local input wants: local time, "YYYY-MM-DDTHH:mm".
+  function toLocalDatetime(ms) {
+    const d = new Date(ms);
+    const p = (n) => String(n).padStart(2, "0");
+    return (
+      d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+      "T" + p(d.getHours()) + ":" + p(d.getMinutes())
+    );
+  }
+
+  // A queued run's trigger, changeable in place — a hearing moves, or you want
+  // it to go now rather than at the next reset.
+  function retriggerBar(run) {
+    const t = run.trigger || {};
+    const at = t.type === "time" && typeof t.at === "number" ? toLocalDatetime(t.at) : "";
+    const opt = (v, label) =>
+      `<option value="${v}"${t.type === v ? " selected" : ""}>${label}</option>`;
+    return (
+      `<div class="job-meta wf-run-bar">` +
+      `<select class="wf-when-run" data-id="${run.id}">` +
+      opt("now", "Run now") +
+      opt("reset", "When usage resets") +
+      opt("time", "At a set time") +
+      `</select> ` +
+      `<input class="wf-at-run" type="datetime-local" data-id="${run.id}" value="${at}"${
+        t.type === "time" ? "" : " disabled"
+      } /> ` +
+      `<button class="job-run wf-retrigger" data-id="${run.id}">Change</button>` +
+      `</div>`
+    );
+  }
+
   function runHoldText(run) {
     const S = window.CUMStatus;
     const waited =
@@ -716,6 +748,7 @@
             : "") +
           `</div>` +
           (links ? `<div class="job-meta">Chats: ${links}</div>` : "") +
+          (WF.canRetrigger(run) ? retriggerBar(run) : "") +
           (run.transcript && run.transcript.length ? transcriptHtml(run) : "") +
           (run.error ? `<div class="job-err">${escapeHtml(run.error)}</div>` : "") +
           (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
@@ -827,6 +860,36 @@
               }
             );
           });
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-when-run").forEach((sel) =>
+        sel.addEventListener("change", () => {
+          const at = sel.parentElement.querySelector(".wf-at-run");
+          at.disabled = sel.value !== "time";
+          if (!at.disabled && !at.value) at.value = toLocalDatetime(Date.now() + 3600000);
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-retrigger").forEach((b) =>
+        b.addEventListener("click", () => {
+          const bar = b.parentElement;
+          const when = bar.querySelector(".wf-when-run").value;
+          let trigger = { type: when === "reset" ? "reset" : "now" };
+          if (when === "time") {
+            const raw = bar.querySelector(".wf-at-run").value;
+            const at = raw ? new Date(raw).getTime() : NaN;
+            if (!Number.isFinite(at)) return alert("Pick a valid date & time.");
+            if (at <= Date.now()) return alert("Pick a time in the future.");
+            trigger = { type: "time", at };
+          }
+          b.disabled = true;
+          chrome.runtime.sendMessage(
+            { type: "cum-wf-retrigger", runId: b.getAttribute("data-id"), trigger },
+            (res) => {
+              b.disabled = false;
+              if (res && !res.ok) alert("Could not change: " + (res.error || "unknown error"));
+              renderRuns();
+            }
+          );
         })
       );
       wfui.runs.querySelectorAll(".wf-run-show").forEach((b) =>

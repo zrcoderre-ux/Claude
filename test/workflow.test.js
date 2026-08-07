@@ -452,6 +452,29 @@ test("an edited run can be saved back as a new workflow", () => {
   assert.equal(orphan.steps.length, 4);
 });
 
+test("a queued run's trigger can be changed, a started one's can't", () => {
+  const wf = twoChatWorkflow();
+  const queued = W.newRun(wf, "r1", NOW, { type: "reset" });
+  assert.ok(W.canRetrigger(queued));
+
+  const later = W.retrigger(queued, { type: "time", at: NOW + 7200000 }, NOW);
+  assert.deepEqual(later.trigger, { type: "time", at: NOW + 7200000 });
+  assert.deepEqual(W.dueRuns([later], NOW).map((r) => r.id), [], "not yet");
+  assert.deepEqual(W.dueRuns([later], NOW + 7200000).map((r) => r.id), ["r1"]);
+  assert.equal(W.nextRunTrigger([later], NOW), NOW + 7200000);
+
+  // ...and back the other way, or straight to now.
+  assert.deepEqual(W.retrigger(later, { type: "reset" }, NOW).trigger, { type: "reset" });
+  assert.deepEqual(W.retrigger(later, { type: "now" }, NOW).trigger, { type: "now" });
+  assert.deepEqual(W.retrigger(later, {}, NOW).trigger, { type: "now" }, "unknown means now");
+  assert.equal(later.stepIndex, queued.stepIndex, "nothing else moves");
+
+  // Once it's going, the trigger is history — Pause is the tool then.
+  assert.equal(W.canRetrigger(W.markStarted(queued, NOW)), false);
+  assert.equal(W.canRetrigger(W.markPaused(queued, NOW)), false);
+  assert.equal(W.canRetrigger(null), false);
+});
+
 test("pausing keeps a run's place; resuming picks it up", () => {
   const { run } = startedRun();
   const waiting = W.markSent(run, { chatId: "a", url: "u", now: NOW });
