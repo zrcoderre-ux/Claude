@@ -250,6 +250,21 @@ A reply also has to differ from what was on screen before the step's message wen
 out — the transcript can hold just the newest turn in the DOM, so counting
 rendered messages is not on its own enough to know a new answer arrived.
 
+### Watching one from inside the chat
+
+A conversation a run is driving carries its own small pill in the bottom-left
+corner — the usage pill owns the bottom-right, and is draggable, so that whole
+edge may be taken. It says which run, which step of how many, which chat, and
+whether it's waiting on Claude, updating as the run moves.
+
+Beside it is **Pause**. That's the point of it: when something goes wrong you
+notice it *here*, in the chat — a prompt in the wrong place, an answer going
+sideways, papers that didn't attach — and stopping it shouldn't mean hunting for
+the tab that can. Pausing takes effect at the next step boundary and keeps the
+run's place, so **Resume** (from the same pill, or the Options page) carries on
+rather than starting over. Clicking the pill's text opens Options, where the rest
+of the run's controls are.
+
 ### Changing a run while it's going
 
 A run carries **its own copy** of the chats, steps and documents it was started
