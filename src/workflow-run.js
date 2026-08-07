@@ -374,11 +374,28 @@
   // for it to finish. `before` is { count, text } sampled just before sending —
   // the transcript can hold only the newest turn in the DOM, so a grown count is
   // one signal for "something new arrived", not the only one.
+  // Keep the transcript at the bottom. claude.ai unmounts messages that scroll
+  // out of view, so a long turn can finish with its reply nowhere in the DOM —
+  // which is what "23 chars, NOT recognised as new" means when the stream has
+  // already closed. A person watching would have scrolled down.
+  function keepAtBottom(el) {
+    try {
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: "end" });
+      const sc = document.scrollingElement || document.documentElement;
+      if (sc) sc.scrollTop = sc.scrollHeight;
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
   async function waitForReply(runId, before, timeoutMs, sentAt, marker) {
     const startedAt = Date.now();
     // Finished replies that weren't what this step is for, so the diagnostics
     // can say "it answered, three times, but never with the ruling".
     const skipped = new Set();
+    // How often to ask the conversation API, and when we last did.
+    const API_EVERY_MS = 12000;
+    let lastApiAt = 0;
     const deadline = startedAt + (timeoutMs || W.STEP_TIMEOUT_MS);
     const since = typeof sentAt === "number" ? sentAt : startedAt;
     let lastText = "";
@@ -418,6 +435,38 @@
         const now = Date.now();
         const list = assistantMessages();
         const el = list.length ? list[list.length - 1] : null;
+        keepAtBottom(el);
+
+        // Ask the conversation itself. The DOM is a convenience here, not the
+        // record: it can stop showing the newest turn altogether, and then no
+        // amount of waiting will surface it. Only once the stream for this
+        // message has closed, or the DOM has been unhelpful for a while.
+        const streamClosed = streamDoneAt > since && streamDoneAt >= streamStartedAt;
+        if (
+          now - lastApiAt > API_EVERY_MS &&
+          (streamClosed || now - startedAt > 90000)
+        ) {
+          lastApiAt = now;
+          const uuid = conversationUuid();
+          if (uuid) {
+            const apiText = W.stripPlaceholders(
+              W.lastAssistantText(await fetchConversation(uuid, 20000))
+            );
+            const fresh = apiText && apiText !== (before.apiText || "");
+            last = Object.assign({}, last, { apiChars: apiText.length });
+            if (fresh && W.looksInterrupted(apiText))
+              return { el: null, canceled: false, interrupted: true };
+            if (fresh && (!marker || W.hasMarker(apiText, marker)))
+              return { el: el, apiText: apiText, canceled: false, via: "api" };
+            if (fresh && marker && !skipped.has(apiText)) {
+              // A finished reply that isn't the one being waited for; note it
+              // and keep waiting, the same as the on-screen path does.
+              skipped.add(apiText);
+              before = Object.assign({}, before, { apiText: apiText });
+              last = Object.assign({}, last, { skipped: skipped.size, marker: marker });
+            }
+          }
+        }
         if (el) {
           const text = renderedText(el);
           // A cut-off reply, whatever cut it off. Stop here rather than settle:
@@ -551,7 +600,16 @@
     let before = {
       count: priorList.length,
       text: priorList.length ? renderedText(priorList[priorList.length - 1]) : "",
+      // What the conversation itself says is the latest reply, right now. The
+      // DOM can go blind to new turns in a long chat; this is the comparison
+      // that still works when it does.
+      apiText: "",
     };
+    const priorUuid = conversationUuid();
+    if (priorUuid)
+      before.apiText = W.stripPlaceholders(
+        W.lastAssistantText(await fetchConversation(priorUuid, 15000))
+      );
 
     if (!msg.awaitOnly) {
       let { files, missing } = await C.filesFromStorage(msg.files || []);
@@ -595,20 +653,25 @@
       await C.sleep(1500);
       const list = assistantMessages();
       if (replyPending()) {
+        // Claude hasn't answered yet, so what the conversation shows NOW is the
+        // previous reply — keep it as the thing to beat, or the step would take
+        // the answer to the question before this one.
         before = {
           count: list.length,
           text: list.length ? renderedText(list[list.length - 1]) : "",
+          apiText: before.apiText || "",
         };
         notes.push("waited for Claude to answer the message already in the chat");
       } else {
-        before = { count: -1, text: null };
+        // The answer is already sitting there: anything counts.
+        before = { count: -1, text: null, apiText: "" };
       }
       // The message went out before this tab took the step over; anything the
       // stream signals from here on is fair game.
       sentAt = typeof run.sentAt === "number" ? run.sentAt : 0;
     }
 
-    const { el, canceled, timedOut, interrupted, via: settledVia, state } = await waitForReply(
+    const { el, apiText, canceled, timedOut, interrupted, via: settledVia, state } = await waitForReply(
       runId,
       before,
       W.STEP_TIMEOUT_MS,
@@ -630,7 +693,7 @@
       );
       return { ok: false, paused: true, error: "Claude's response was interrupted" };
     }
-    if (!el) {
+    if (!el && !apiText) {
       // Say what the wait was actually looking at. "Did not finish in time" on
       // its own is unactionable, and this step costs a whole Claude turn to
       // retry.
@@ -641,6 +704,9 @@
           (s.fresh ? "recognised as new" : "NOT recognised as new (same as before the send)") + ", " +
           (s.generating ? "page still says generating" : "page says idle") + ", " +
           (s.streamDone ? "response stream closed" : anyStreamSeen ? "no completion stream seen for this turn" : "no stream events at all") +
+          (typeof s.apiChars === "number"
+            ? ", the conversation itself last showed " + s.apiChars + " chars"
+            : ", the conversation was never readable") +
           (s.skipped
             ? ' — and ' + s.skipped + " finished repl" + (s.skipped === 1 ? "y" : "ies") +
               ' never contained “' + s.marker + '”, so nothing was handed on'
@@ -651,14 +717,19 @@
         note: notes.join("; ") || null,
       };
     }
-    if (settledVia && settledVia !== "stream")
+    if (settledVia && settledVia !== "stream" && settledVia !== "api")
       notes.push(
         settledVia === "stalled"
           ? "took the reply after 3 minutes unchanged (the page still claimed it was generating)"
           : "turn end judged from the text holding still (no completion stream seen)"
       );
 
-    const { text, via, reason } = await harvestReply(el);
+    // The conversation itself answered — no need to go back to the page for a
+    // copy of what we already have, and in the case that got us here the page
+    // doesn't have it.
+    const { text, via, reason } = apiText
+      ? { text: apiText, via: "api" }
+      : await harvestReply(el);
     if (!text)
       return {
         ok: false,
