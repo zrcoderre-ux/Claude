@@ -238,7 +238,7 @@ async function ensureStatusAlarm(hot) {
   if (hot == null) {
     const snap = await readStatus();
     const jobs = (await get(JOBS_KEY))[JOBS_KEY] || [];
-    const runs = (await get(RUNS_KEY))[RUNS_KEY] || [];
+    const runs = await readRuns();
     want =
       !!(snap && snap.ok && snap.blocking) ||
       J.hasHeldJobs(jobs) ||
@@ -466,13 +466,9 @@ async function runJobs(kind /* "time" | "reset" | "hold" */) {
 // questions, "what's the soonest clock trigger" and "is anything waiting for the
 // usage window to roll over".
 async function reschedule() {
-  const { [JOBS_KEY]: jobs, [STATE_KEY]: state, [RUNS_KEY]: runsRaw } = await get([
-    JOBS_KEY,
-    STATE_KEY,
-    RUNS_KEY,
-  ]);
+  const { [JOBS_KEY]: jobs, [STATE_KEY]: state } = await get([JOBS_KEY, STATE_KEY]);
   const list = jobs || [];
-  const runs = runsRaw || [];
+  const runs = await readRuns();
 
   const times = [J.nextTimeTrigger(list, Date.now()), W.nextRunTrigger(runs, Date.now())].filter(
     (t) => typeof t === "number"
@@ -507,15 +503,57 @@ async function reschedule() {
 // finds the run again and continues from wherever it actually got to.
 const drivingRuns = new Set();
 
+// Runs live one per storage key (see workflow.js), so two runs going at once
+// can't overwrite each other's progress.
+async function readRunIds() {
+  return (await get(W.RUN_IDS_KEY))[W.RUN_IDS_KEY] || [];
+}
 async function readRuns() {
-  return (await get(RUNS_KEY))[RUNS_KEY] || [];
+  const ids = await readRunIds();
+  if (!ids.length) return [];
+  const store = await get(ids.map(W.runKey));
+  return ids.map((id) => store[W.runKey(id)]).filter(Boolean);
 }
 async function readRun(id) {
-  return W.getRun(await readRuns(), id);
+  const k = W.runKey(id);
+  return (await get(k))[k] || null;
 }
 async function saveRun(run) {
-  await set({ [RUNS_KEY]: W.upsertRun(await readRuns(), run) });
+  await set({ [W.runKey(run.id)]: run });
+  const ids = await readRunIds();
+  if (ids.indexOf(run.id) === -1) await set({ [W.RUN_IDS_KEY]: ids.concat([run.id]) });
   return run;
+}
+// Each run's heartbeat, written only by the page that holds its current step.
+async function readBeats(ids) {
+  if (!ids.length) return {};
+  const store = await get(ids.map(W.beatKey));
+  const out = {};
+  for (const id of ids) out[id] = store[W.beatKey(id)] || 0;
+  return out;
+}
+
+// One-time move from the old single-array store. Runs in flight survive it.
+async function migrateRuns() {
+  const store = await get([RUNS_KEY, W.RUN_IDS_KEY]);
+  const old = store[RUNS_KEY];
+  if (!Array.isArray(old)) return;
+  if (old.length) {
+    const writes = {};
+    const ids = (store[W.RUN_IDS_KEY] || []).slice();
+    for (const r of old) {
+      if (!r || !r.id) continue;
+      writes[W.runKey(r.id)] = r;
+      if (ids.indexOf(r.id) === -1) ids.push(r.id);
+    }
+    writes[W.RUN_IDS_KEY] = ids;
+    await set(writes);
+  }
+  try {
+    chrome.storage.local.remove(RUNS_KEY);
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 // Put the pre-built workflow in place once. The flag means deleting it makes it
@@ -933,9 +971,14 @@ async function startRuns(kind /* "time" | "reset" | "hold" | "pickup" */) {
       : kind === "reset"
       ? W.pendingResetRuns(runs)
       : kind === "pickup"
-      ? W.pickupRuns(runs, now, W.STALE_MS)
+      ? W.pickupRuns(runs, now, W.STALE_MS, await readBeats(runs.map((r) => r.id)))
       : W.dueRuns(runs, now);
-  for (const r of due) await driveRun(r.id);
+  // Concurrently. Runs are independent — their own window, their own
+  // conversations, their own storage keys — and a run is hours long, so driving
+  // them one after another would mean a second matter queued for the same
+  // trigger didn't start until the first had finished. (Pressing Start twice
+  // always ran them side by side; this makes the scheduled path agree.)
+  await Promise.all(due.map((r) => driveRun(r.id)));
   if (due.length) await reschedule();
 }
 
@@ -1185,7 +1228,7 @@ chrome.runtime.onInstalled.addListener(() => {
   ensureKeepalive();
   acBurst();
   seedWorkflows();
-  reschedule();
+  migrateRuns().then(reschedule);
   refreshStatus();
 });
 chrome.runtime.onStartup.addListener(() => {
@@ -1231,7 +1274,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
     ensureKeepalive();
     acBurst();
   }
-  if (changes[JOBS_KEY] || changes[STATE_KEY] || changes[RUNS_KEY]) reschedule();
+  // Heartbeat keys change constantly and change nothing about scheduling, so
+  // they're deliberately not a trigger.
+  const runChanged = Object.keys(changes).some(
+    (k) => k === W.RUN_IDS_KEY || (k.indexOf(W.RUN_PREFIX) === 0 && k.indexOf(W.BEAT_PREFIX) !== 0)
+  );
+  if (changes[JOBS_KEY] || changes[STATE_KEY] || runChanged) reschedule();
   // Turning the gate off should release anything it is holding right now.
   if (changes[STATUS_CFG_KEY]) {
     statusCfg().then((cfg) => {
@@ -1245,6 +1293,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 ensureKeepalive();
 seedWorkflows();
+migrateRuns().then(reschedule);
 reschedule();
 ensureStatusAlarm(null);
 refreshStatusIfStale();

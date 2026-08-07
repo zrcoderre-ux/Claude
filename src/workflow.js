@@ -28,7 +28,25 @@
   "use strict";
 
   const WORKFLOWS_KEY = "cum_workflows";
-  const RUNS_KEY = "cum_wf_runs";
+  const RUNS_KEY = "cum_wf_runs"; // legacy single-array store, migrated on load
+  // Each run lives under its OWN key, with a small list of ids beside it.
+  // Everything writes runs: the worker at step boundaries, each run's page as
+  // it works, the options page when you edit one. Sharing a single array means
+  // read-modify-write from three contexts at once, and with two runs going
+  // that's hundreds of chances for one to overwrite the other's progress with
+  // a copy it read a moment earlier. Separate keys can't collide.
+  const RUN_IDS_KEY = "cum_wf_run_ids";
+  const RUN_PREFIX = "cum_wf_run_";
+  const BEAT_PREFIX = "cum_wf_beat_";
+  function runKey(id) {
+    return RUN_PREFIX + id;
+  }
+  // A run's heartbeat is its own key too: it's written every 20 seconds by the
+  // page, and it must never carry a stale copy of the run back over a status
+  // the worker just set (a pause, say).
+  function beatKey(id) {
+    return BEAT_PREFIX + id;
+  }
   const MAX_CHATS = 6;
   // A single step is one whole Claude turn: a long ruling with three tool calls,
   // or a verification pass over four uploaded papers, so an hour of patience is
@@ -707,17 +725,23 @@
   // (phase "idle") is always free to pick up — nobody is mid-step. A run whose
   // step is in flight is only picked up once its heartbeat has gone quiet, so a
   // worker restart can never re-send a message that is still on its way out.
-  function pickupRuns(runs, now, staleMs) {
+  function pickupRuns(runs, now, staleMs, beats) {
+    const beat = (id) => (beats && typeof beats[id] === "number" ? beats[id] : 0);
     return (runs || []).filter(
       (r) =>
         r &&
         r.status === "running" &&
-        (r.phase === "idle" || !r.phase || isStale(r, now, staleMs))
+        (r.phase === "idle" || !r.phase || isStale(r, now, staleMs, beat(r.id)))
     );
   }
 
-  function isStale(run, now, staleMs) {
-    const at = run && typeof run.lastProgressAt === "number" ? run.lastProgressAt : 0;
+  // `beatAt` is the run's own heartbeat key — the page saying "still mine".
+  // Either signal being recent means someone is on it.
+  function isStale(run, now, staleMs, beatAt) {
+    const at = Math.max(
+      run && typeof run.lastProgressAt === "number" ? run.lastProgressAt : 0,
+      typeof beatAt === "number" ? beatAt : 0
+    );
     return now - at > (staleMs || STALE_MS);
   }
 
@@ -1190,6 +1214,11 @@
   const api = {
     WORKFLOWS_KEY,
     RUNS_KEY,
+    RUN_IDS_KEY,
+    RUN_PREFIX,
+    BEAT_PREFIX,
+    runKey,
+    beatKey,
     MAX_CHATS,
     STEP_TIMEOUT_MS,
     STALE_MS,
