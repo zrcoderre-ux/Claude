@@ -743,6 +743,11 @@
       );
 
     const url = location.href;
+    // The meter as it stands now the step has landed. Read here rather than in
+    // the worker because this is a claude.ai tab: its own content script keeps
+    // the reading current, and by the time the worker hears about the step the
+    // reply has been sitting there for a moment already.
+    const usageNow = W.usageSample((await C.storageGet("cum_state")).cum_state);
     const updated = await updateRun(runId, (r) => {
       const next = W.applyStepResult(r, {
         // The step the WORKER asked for, not wherever the run has got to. If
@@ -758,6 +763,7 @@
         now: Date.now(),
         total: msg.total,
         docs: (msg.files || []).length,
+        usage: usageNow,
       });
       // What this step actually did — how the documents went up, and whether
       // the reply had to be read some way other than the copy box. Kept on the

@@ -243,6 +243,9 @@
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
       docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
       steps: (f.steps || []).map((s) => newStep(s, s && s.id)),
+      // What its runs have cost, averaged over them — measured, not authored,
+      // so it survives an edit rather than being reset by one.
+      usage: f.usage && f.usage.runs > 0 ? f.usage : null,
       createdAt: typeof f.createdAt === "number" ? f.createdAt : now,
       updatedAt: now,
     };
@@ -325,7 +328,10 @@
     const out = (list || []).slice();
     const i = out.findIndex((w) => w && w.id === wf.id);
     if (i === -1) out.push(wf);
-    else out[i] = wf;
+    // What the runs cost is measured, not authored, and the editor has no field
+    // for it — so an edit that doesn't mention it keeps what's already there
+    // rather than erasing a dozen runs' worth of measurement.
+    else out[i] = wf.usage || !out[i].usage ? wf : Object.assign({}, wf, { usage: out[i].usage });
     return out;
   }
 
@@ -627,6 +633,8 @@
       stepStartedAt: null,
       stepStoppedAt: null,
       stepStoppedMs: 0,
+      // The meter as it stood when the current step began (see usageSample).
+      stepUsage: null,
       createdAt: now,
       startedAt: null,
       finishedAt: null,
@@ -870,7 +878,12 @@
   }
 
   function clearStepClock(run) {
-    return Object.assign({}, run, { stepStartedAt: null, stepStoppedAt: null, stepStoppedMs: 0 });
+    return Object.assign({}, run, {
+      stepStartedAt: null,
+      stepStoppedAt: null,
+      stepStoppedMs: 0,
+      stepUsage: null,
+    });
   }
 
   // The three legs of a step, any of which can be unknown:
@@ -930,7 +943,107 @@
     };
   }
 
-  function markSending(run, now) {
+  // ---- what a run costs ---------------------------------------------------
+  //
+  // claude.ai publishes no per-conversation cost, so this is the meter's own
+  // reading taken before a step and again after it: what your usage did while
+  // the run was working. Anything else you did in another tab lands in the same
+  // number, which is why it's usage *during* a run rather than usage *by* one —
+  // and why the figures are described that way everywhere they're shown.
+  //
+  // The weekly window is the one worth reporting. It rolls over once a week,
+  // where the 5-hour session window rolls over perhaps twice during a nine-step
+  // run, and a window that resets between two readings takes the difference
+  // with it.
+  function usageSample(state) {
+    const s = state || {};
+    const pct = (v) => (typeof v === "number" && isFinite(v) ? Math.max(0, v * 100) : null);
+    return {
+      at: typeof s.updatedAt === "number" ? s.updatedAt : null,
+      session: pct(s.percent),
+      sessionResetAt: typeof s.resetAt === "number" ? s.resetAt : null,
+      weekly: pct(s.weeklyPercent),
+      weeklyResetAt: typeof s.weeklyResetAt === "number" ? s.weeklyResetAt : null,
+    };
+  }
+
+  function windowCost(before, after, key, resetKey) {
+    if (!before || !after) return null;
+    const a = before[key];
+    const b = after[key];
+    if (typeof a !== "number" || typeof b !== "number") return null;
+    // A window that reset between the readings can't be differenced: the meter
+    // went back to zero and what it had counted is gone. Reporting `after` alone
+    // would understate the step by however much it had already spent.
+    if (before[resetKey] !== after[resetKey]) return null;
+    const d = b - a;
+    if (d < 0 || d > 100) return null; // a drop is a reset we didn't see
+    return Math.round(d * 100) / 100;
+  }
+
+  function usageCost(before, after) {
+    return {
+      session: windowCost(before, after, "session", "sessionResetAt"),
+      weekly: windowCost(before, after, "weekly", "weeklyResetAt"),
+    };
+  }
+
+  // A run's total, and how much of it was actually measured — a total that
+  // quietly skipped three steps would read as a cheap run.
+  function runUsage(run) {
+    const rows = ((run && run.transcript) || []).filter(Boolean);
+    let weekly = 0;
+    let session = 0;
+    let measured = 0;
+    let sessionMeasured = 0;
+    for (const t of rows) {
+      if (typeof t.usedWeekly === "number") {
+        weekly += t.usedWeekly;
+        measured++;
+      }
+      if (typeof t.usedSession === "number") {
+        session += t.usedSession;
+        sessionMeasured++;
+      }
+    }
+    return {
+      steps: rows.length,
+      measured: measured,
+      weekly: measured ? Math.round(weekly * 100) / 100 : null,
+      session: sessionMeasured ? Math.round(session * 100) / 100 : null,
+      complete: rows.length > 0 && measured === rows.length,
+    };
+  }
+
+  // Fold a finished run into its workflow's running average, so a workflow can
+  // say what it typically costs before you start another one. Only runs whose
+  // every step was measured: a run with three unmeasured steps would drag the
+  // average down and there'd be nothing on the face of it to say why.
+  function noteRunUsage(wf, run) {
+    if (!wf || !run) return wf;
+    const u = runUsage(run);
+    if (!u.complete || u.weekly == null) return wf;
+    const prev = wf.usage && wf.usage.runs > 0 ? wf.usage : { runs: 0, weekly: 0 };
+    const runs = prev.runs + 1;
+    return Object.assign({}, wf, {
+      usage: {
+        runs: runs,
+        weekly: Math.round(((prev.weekly * prev.runs + u.weekly) / runs) * 100) / 100,
+        lastWeekly: u.weekly,
+      },
+    });
+  }
+
+  // Percentage points of a usage window, as they're shown everywhere: two
+  // decimals is noise on a figure this approximate, and a bare "0%" for a step
+  // that plainly did work would be a lie the format tells.
+  function formatPct(n) {
+    if (typeof n !== "number" || !isFinite(n)) return "";
+    if (n > 0 && n < 0.1) return "<0.1%";
+    return (Math.round(n * 10) / 10) + "%";
+  }
+
+  function markSending(run, now, usage) {
     // Re-attaching to a step whose message already went out is not the start of
     // that step. Its clock is left exactly as it is, and — more importantly —
     // so is the phase: "awaiting-reply" is the only record that the message has
@@ -945,6 +1058,9 @@
       status: "running",
       phase: "sending",
       lastProgressAt: now,
+      // The meter as it stood before this step. What it reads when the step
+      // lands, less this, is what the step cost.
+      stepUsage: usage || null,
     });
   }
 
@@ -991,6 +1107,7 @@
     const reply = str(i.reply);
     const done = next >= total;
     const timing = stepTiming(run, i.now);
+    const cost = usageCost(run.stepUsage, i.usage);
     return Object.assign({}, clearStepClock(run), {
       status: done ? "done" : "running",
       phase: "idle",
@@ -1017,6 +1134,11 @@
           stoppedMs: timing.stoppedMs,
           startedAt: timing.startedAt,
           sentAt: timing.sentAt,
+          // And what your usage did while it ran, in percentage points of each
+          // window. Null where a window reset in the middle and the difference
+          // stopped meaning anything.
+          usedWeekly: cost.weekly,
+          usedSession: cost.session,
         },
       ]),
       lastProgressAt: i.now,
@@ -1485,6 +1607,11 @@
     stepTiming,
     timingSummary,
     formatMs,
+    usageSample,
+    usageCost,
+    runUsage,
+    noteRunUsage,
+    formatPct,
     markSent,
     heartbeat,
     withWindow,

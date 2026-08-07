@@ -377,6 +377,45 @@
     );
   }
 
+  // What this workflow usually costs, averaged over the runs of it that were
+  // measured end to end. Percentage points of the weekly limit — the same units
+  // the Usage tab's weekly meter is in, so "6%" here means six points of that
+  // bar, not six percent of what you have left.
+  const USAGE_NOTE =
+    "Percentage points of your weekly limit, measured by watching the meter " +
+    "across each step. It counts anything else you were doing at the same time, " +
+    "so read it as usage during the run rather than usage by it.";
+
+  function workflowUsageFact(wf) {
+    const u = wf && wf.usage;
+    if (!u || !u.runs || typeof u.weekly !== "number") return "";
+    return (
+      `<span title="${escapeHtml(USAGE_NOTE)}">` +
+      `~${escapeHtml(WF.formatPct(u.weekly))} of weekly per run` +
+      ` <span class="job-dim">(over ${u.runs} run${u.runs === 1 ? "" : "s"}` +
+      (typeof u.lastWeekly === "number"
+        ? `, last ${escapeHtml(WF.formatPct(u.lastWeekly))}`
+        : "") +
+      `)</span></span>`
+    );
+  }
+
+  // And what one run cost. Steps whose window reset mid-way can't be measured,
+  // so the count is shown whenever it isn't the whole run — a total quietly
+  // missing three steps would read as a cheap matter.
+  function runUsageFact(run) {
+    const u = WF.runUsage(run);
+    if (!u.measured || typeof u.weekly !== "number") return "";
+    return (
+      `<span title="${escapeHtml(USAGE_NOTE)}">` +
+      `${escapeHtml(WF.formatPct(u.weekly))} of weekly used` +
+      (u.complete
+        ? ""
+        : ` <span class="job-dim">(${u.measured} of ${u.steps} steps measured)</span>`) +
+      `</span>`
+    );
+  }
+
   function renderWorkflows() {
     readWorkflows().then((list) => {
       workflowsById = {};
@@ -414,6 +453,7 @@
                 armed.map((c) => c.name).join(", ")
               )}</span>`
             : "") +
+          workflowUsageFact(wf) +
           `</div>` +
           `<div class="job-chain">${escapeHtml(stepChain(wf))}</div>` +
           `<div class="job-meta wf-run-bar">` +
@@ -580,6 +620,8 @@
         `${escapeHtml(WF.formatMs(t.sendMs))} sending · ${escapeHtml(WF.formatMs(t.replyMs))} waiting`
       );
     if (t.stoppedMs > 30000) bits.push(`${escapeHtml(WF.formatMs(t.stoppedMs))} stopped, not counted`);
+    if (typeof t.usedWeekly === "number")
+      bits.push(`${escapeHtml(WF.formatPct(t.usedWeekly))} of weekly`);
     if (typeof t.chars === "number") bits.push(`${t.chars.toLocaleString()} chars back`);
     return `<div class="wf-step-timing">${bits.join(" · ")}</div>`;
   }
@@ -895,6 +937,7 @@
             ? `<span>when usage resets</span>`
             : "") +
           timingFact(run) +
+          runUsageFact(run) +
           (links ? `<span>Chats: ${links}</span>` : "") +
           `</div>` +
           (WF.canRetrigger(run) ? retriggerBar(run) : "") +
@@ -1271,4 +1314,78 @@
   });
 
   renderSplit();
+
+
+  // ======================================================================
+  // Workflows' share of usage
+  // ======================================================================
+  // The same units as Daily Usage — percentage points of the weekly limit — so
+  // the workflow ledger divides straight into the daily totals. Both are fed by
+  // the rise in the weekly meter; this one only counts the rises that happened
+  // while a run's step was working.
+  const WFU_KEY = "cum_wf_usage";
+  const UU = window.CUMWfUsage;
+  const WFU_WINDOW = 7; // days — the weekly limit's own span
+
+  const wu = {
+    wrap: document.getElementById("wfu-wrap"),
+    empty: document.getElementById("wfu-empty"),
+    fill: document.getElementById("wfu-fill"),
+    figures: document.getElementById("wfu-figures"),
+    list: document.getElementById("wfu-list"),
+    note: document.getElementById("wfu-note"),
+  };
+
+  function renderWfUsage() {
+    if (!wu.wrap || !UU) return;
+    chrome.storage.local.get([WFU_KEY, DAILY_KEY], (res) => {
+      const model = (res && res[WFU_KEY]) || null;
+      const daily = ((res && res[DAILY_KEY]) || {}).days || {};
+      const dates = UU.lastDates(localDateStr(new Date()), WFU_WINDOW);
+      const s = UU.share(model, daily, dates);
+      if (!s.workflow) {
+        wu.wrap.hidden = true;
+        wu.empty.hidden = false;
+        if (wu.note) wu.note.hidden = true;
+        return;
+      }
+      wu.empty.hidden = true;
+      wu.wrap.hidden = false;
+      if (wu.note) wu.note.hidden = false;
+
+      // No total to divide by means the daily ledger hasn't caught up, not that
+      // workflows used everything — so the bar stays empty and says why.
+      const pct = s.share == null ? 0 : s.share;
+      wu.fill.style.width = pct + "%";
+      const pts = (n) => (Math.round(n * 10) / 10) + " pts";
+      wu.figures.innerHTML =
+        s.share == null
+          ? `<b>${escapeHtml(pts(s.workflow))}</b> of your weekly limit went through workflow runs ` +
+            `in the last ${WFU_WINDOW} days. <span class="job-dim">No overall total recorded for those ` +
+            `days yet, so there's nothing to compare it against.</span>`
+          : `<b>${Math.round(s.share)}%</b> of your usage in the last ${WFU_WINDOW} days went through ` +
+            `workflow runs — <b>${escapeHtml(pts(s.workflow))}</b> of ${escapeHtml(pts(s.total))} ` +
+            `of the weekly limit.`;
+
+      // All-time by workflow: which of them the spending actually went to.
+      const rows = UU.byWorkflow(model).slice(0, 8);
+      wu.list.innerHTML = rows.length
+        ? `<div class="wfu-list-head">All time, by workflow</div>` +
+          rows
+            .map(
+              (w) =>
+                `<div class="wfu-row"><span>${escapeHtml(w.name || "(deleted workflow)")}</span>` +
+                `<b>${escapeHtml(pts(w.pct))}</b>` +
+                `<span class="job-dim">${w.steps} step${w.steps === 1 ? "" : "s"}</span></div>`
+            )
+            .join("")
+        : "";
+    });
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && (changes[WFU_KEY] || changes[DAILY_KEY])) renderWfUsage();
+  });
+
+  renderWfUsage();
 })();

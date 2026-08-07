@@ -865,6 +865,86 @@ td .approx {
   .split-key { color: #d4d1c9; }
 }
 
+/* Workflows' share of usage — one bar, the figures under it, then all-time by
+   workflow. A bar rather than a pie: this is one share of a whole, and the
+   comparison that matters is against the empty part of it. */
+.wfu-bar {
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.wfu-bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: #c96442;
+  transition: width 0.3s ease;
+}
+
+.wfu-figures {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #4a4a4a;
+  margin: 10px 0 0;
+  max-width: 78ch;
+}
+
+.wfu-figures b {
+  color: #1f1f1f;
+  font-variant-numeric: tabular-nums;
+}
+
+.wfu-list {
+  margin-top: 16px;
+}
+
+.wfu-list-head {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a8a8a;
+  margin-bottom: 6px;
+}
+
+.wfu-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.9;
+  color: #4a4a4a;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.wfu-row > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wfu-row b {
+  font-variant-numeric: tabular-nums;
+  color: #1f1f1f;
+}
+
+.job-dim {
+  color: #a0a0a0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .wfu-bar { background: rgba(255, 255, 255, 0.12); }
+  .wfu-bar > i { background: #e08765; }
+  .wfu-figures { color: #d4d1c9; }
+  .wfu-figures b, .wfu-row b { color: #f0efea; }
+  .wfu-list-head, .job-dim { color: #8a877f; }
+  .wfu-row { color: #d4d1c9; border-bottom-color: rgba(255, 255, 255, 0.08); }
+}
+
 .job-del {
   border: none;
   background: none;

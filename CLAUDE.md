@@ -38,7 +38,8 @@ changing behaviour.
 The layout that matters for testing: logic with no DOM/`chrome` dependency lives
 in its own module under `src/` and is `require`-able from `test/`
 (`harvest.js`, `estimate.js`, `log.js`, `predict.js`, `daily.js`, `weights.js`,
-`split.js`, `jobstore.js`, `status.js`). Everything else — `content.js`,
+`split.js`, `jobstore.js`, `status.js`, `workflow.js`, `wfusage.js`). Everything
+else — `content.js`,
 `background.js`, `inject.js`, `options.js`, `popup.js` — is wiring around them.
 When adding a decision worth testing, put the decision in a pure module rather
 than inline in the wiring.
