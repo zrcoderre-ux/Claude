@@ -47,13 +47,23 @@
     next.focus();
   });
 
+  // A section named in the URL wins over the remembered one, and is deliberately
+  // not remembered itself: the run window's own copy of this page opens on
+  // #workflows, and that shouldn't quietly decide where Options lands the next
+  // time you open it from the toolbar.
+  const asked = (location.hash || "").replace(/^#/, "");
+
   // Show something immediately, then correct it once storage answers — the
   // alternative is a blank page for a frame.
-  showTab(DEFAULT_TAB, false);
-  try {
-    chrome.storage.local.get(TAB_KEY, (res) => showTab((res && res[TAB_KEY]) || DEFAULT_TAB, false));
-  } catch (e) {
-    /* ignore */
+  showTab(asked || DEFAULT_TAB, false);
+  if (!asked) {
+    try {
+      chrome.storage.local.get(TAB_KEY, (res) =>
+        showTab((res && res[TAB_KEY]) || DEFAULT_TAB, false)
+      );
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   const LOG_KEY = "cum_log";

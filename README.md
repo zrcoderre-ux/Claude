@@ -388,6 +388,13 @@ doesn't focus a window, so this stays out of your way. Nothing is ever activated
 workflow can grind away for an hour while you work in your own windows — the run
 never takes the screen, and its tabs never pile into whatever you're using.
 
+The window also gets **Options, pinned at its left edge**, opened on the
+Workflows section — the run's controls in the window where you watch it happen,
+rather than a tab away in whatever window you were in when you started it. Steps,
+Pause, Edit run and Fix & continue are all there. It opens unfocused like
+everything else, so the chat stays in front; close it and it stays closed, since
+a window a run reopens later only puts its **chats** back.
+
 ### Running several at once
 
 Two runs going together stay out of each other's way, deliberately and at every
