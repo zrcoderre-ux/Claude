@@ -1182,6 +1182,60 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;
   }
+  // Bring a run's chats up: focus its window if it still has one, and reopen
+  // the conversations if it doesn't. This is the one place a run's window is
+  // deliberately given focus — you asked for it.
+  if (msg && msg.type === "cum-wf-show-chats" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "run not found" };
+      const wf = W.getWorkflow((await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], run.workflowId);
+      const src = W.runSource(run, wf);
+      const urls = (src.chats || [])
+        .map((c) => ((run.chats || {})[c.id] || {}).url)
+        .filter(Boolean);
+      if (!urls.length)
+        return { ok: false, error: "this run hasn't opened any conversations yet" };
+
+      const id = typeof run.windowId === "number" ? run.windowId : null;
+      if (id != null && (await windowExists(id))) {
+        // Still there — add back any chat whose tab was closed, then raise it.
+        const tabs = await tabsInWindow(id);
+        for (const u of urls) {
+          if (tabs.some((t) => t && t.url && J.sameConversationUrl(t.url, u))) continue;
+          try {
+            await chrome.tabs.create({ url: u, windowId: id, active: false });
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        try {
+          await chrome.windows.update(id, { focused: true });
+        } catch (e) {
+          /* ignore */
+        }
+        await ensureWindowSize(id);
+        return { ok: true, focused: true };
+      }
+
+      // Gone entirely — open all of its conversations in a fresh window, and
+      // let the run adopt it so later steps go there too.
+      try {
+        const win = await chrome.windows.create({ url: urls, focused: true });
+        if (win && win.id != null) {
+          await saveRun(W.withWindow(await readRun(msg.runId), win.id));
+          await sleep(300);
+          await ensureWindowSize(win.id);
+        }
+        return { ok: true, opened: urls.length };
+      } catch (e) {
+        return { ok: false, error: String((e && e.message) || e) };
+      }
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
   // Close a finished run's window — its chats have been read and the window is
   // just taking up space now.
   if (msg && msg.type === "cum-wf-close-window" && msg.runId) {
