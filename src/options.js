@@ -232,16 +232,9 @@
         if (dest && dest !== "New chat") bits.push(dest);
         if (job.model) bits.push(job.model);
         row.innerHTML =
-          `<div class="job-main">` +
+          `<div class="job-head">` +
           `<div class="job-title">${escapeHtml(job.name || "(untitled)")}` +
           `<span class="job-badge">${STATUS_LABEL[job.status] || job.status}</span></div>` +
-          `<div class="job-meta">${escapeHtml(bits.join(" · "))} · ${escapeHtml(triggerText(job))}</div>` +
-          (job.error ? `<div class="job-err">${escapeHtml(job.error)}</div>` : "") +
-          (job.status === "waiting"
-            ? `<div class="job-hold">${escapeHtml(holdText(job))}</div>`
-            : "") +
-          (job.note ? `<div class="job-meta">⚠ ${escapeHtml(job.note)}</div>` : "") +
-          `</div>` +
           `<div class="job-btns">` +
           // "Run now" on a held job is the override — it sends despite the outage.
           (J.isQueued(job)
@@ -253,6 +246,17 @@
             ? `<button class="job-edit" data-id="${job.id}" title="Edit">Edit</button>`
             : "") +
           `<button class="job-del" data-id="${job.id}" title="Delete">✕</button>` +
+          `</div></div>` +
+          `<div class="job-main">` +
+          `<div class="job-facts">` +
+          bits.map((b) => `<span>${escapeHtml(b)}</span>`).join("") +
+          `<span>${escapeHtml(triggerText(job))}</span>` +
+          `</div>` +
+          (job.error ? `<div class="job-err">${escapeHtml(job.error)}</div>` : "") +
+          (job.status === "waiting"
+            ? `<div class="job-hold">${escapeHtml(holdText(job))}</div>`
+            : "") +
+          (job.note ? `<div class="job-note">${escapeHtml(job.note)}</div>` : "") +
           `</div>`;
         jf.list.appendChild(row);
       }
@@ -372,8 +376,9 @@
       for (const wf of sorted) {
         const row = document.createElement("div");
         row.className = "job-item";
+        const armed = (wf.chats || []).filter((c) => c.startUrl);
         row.innerHTML =
-          `<div class="job-main">` +
+          `<div class="job-head">` +
           `<div class="job-title">${escapeHtml(wf.name || "(untitled)")}` +
           (wf.builtin ? `<span class="job-badge">Pre-built</span>` : "") +
           // Armed for a matter: say so, and name the template it will go back
@@ -382,21 +387,25 @@
             ? `<span class="job-badge">${escapeHtml(wf.templateName)}</span>`
             : "") +
           `</div>` +
-          (wf.description ? `<div class="job-meta">${escapeHtml(wf.description)}</div>` : "") +
-          `<div class="job-meta">${escapeHtml(WF.summarize(wf))} · ${escapeHtml(
-            stepChain(wf)
-          )}</div>` +
-          `<div class="job-meta${WF.totalUploads(wf) ? "" : " job-err"}">${escapeHtml(
+          `<div class="job-btns">` +
+          `<button class="job-edit wf-edit" data-id="${wf.id}" title="Edit">Edit</button>` +
+          `<button class="job-edit wf-copy" data-id="${wf.id}" title="Duplicate">Copy</button>` +
+          `<button class="job-del wf-del" data-id="${wf.id}" title="Delete">✕</button>` +
+          `</div></div>` +
+          `<div class="job-main">` +
+          (wf.description ? `<div class="job-desc">${escapeHtml(wf.description)}</div>` : "") +
+          `<div class="job-facts">` +
+          `<span>${escapeHtml(WF.summarize(wf))}</span>` +
+          `<span${WF.totalUploads(wf) ? "" : ' class="warn"'}>${escapeHtml(
             WF.uploadSummary(wf)
-          )}</div>` +
-          (() => {
-            const armed = (wf.chats || []).filter((c) => c.startUrl);
-            return armed.length
-              ? `<div class="job-meta">starts in an existing chat: ${escapeHtml(
-                  armed.map((c) => c.name).join(", ")
-                )}</div>`
-              : "";
-          })() +
+          )}</span>` +
+          (armed.length
+            ? `<span>starts in an existing chat: ${escapeHtml(
+                armed.map((c) => c.name).join(", ")
+              )}</span>`
+            : "") +
+          `</div>` +
+          `<div class="job-chain">${escapeHtml(stepChain(wf))}</div>` +
           `<div class="job-meta wf-run-bar">` +
           `<select class="wf-when" data-id="${wf.id}">` +
           `<option value="now">Run now</option>` +
@@ -404,12 +413,7 @@
           `<option value="time">At a set time</option></select> ` +
           `<input class="wf-at" type="datetime-local" data-id="${wf.id}" disabled /> ` +
           `<button class="job-run wf-start" data-id="${wf.id}">Start</button>` +
-          `</div></div>` +
-          `<div class="job-btns">` +
-          `<button class="job-edit wf-edit" data-id="${wf.id}" title="Edit">Edit</button>` +
-          `<button class="job-edit wf-copy" data-id="${wf.id}" title="Duplicate">Copy</button>` +
-          `<button class="job-del wf-del" data-id="${wf.id}" title="Delete">✕</button>` +
-          `</div>`;
+          `</div></div>`;
         wfui.list.appendChild(row);
       }
       wfui.empty.hidden = list.length !== 0;
@@ -732,30 +736,7 @@
           .join(" · ");
         const row = document.createElement("div");
         row.className = "job-item status-" + (run.status || "pending");
-        row.innerHTML =
-          `<div class="job-main">` +
-          `<div class="job-title">${escapeHtml(run.name || "Workflow")}` +
-          `<span class="job-badge">${RUN_STATUS_LABEL[run.status] || run.status}</span></div>` +
-          `<div class="job-meta">${escapeHtml(WF.progressText(run, wf))}` +
-          (run.docs && run.docs.length
-            ? " · " + run.docs.length + " document" + (run.docs.length === 1 ? "" : "s")
-            : "") +
-          (run.trigger && run.trigger.type === "time" && run.status === "pending"
-            ? " · at " + escapeHtml(new Date(run.trigger.at).toLocaleString())
-            : "") +
-          (run.trigger && run.trigger.type === "reset" && run.status === "pending"
-            ? " · when usage resets"
-            : "") +
-          `</div>` +
-          (links ? `<div class="job-meta">Chats: ${links}</div>` : "") +
-          (WF.canRetrigger(run) ? retriggerBar(run) : "") +
-          (run.transcript && run.transcript.length ? transcriptHtml(run) : "") +
-          (run.error ? `<div class="job-err">${escapeHtml(run.error)}</div>` : "") +
-          (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
-          (run.note ? `<div class="job-note">${escapeHtml(run.note)}</div>` : "") +
-          (fixingRunId === run.id ? fixPanel(run, wf) : "") +
-          `</div>` +
-          `<div class="job-btns">` +
+        const btns =
           (run.status === "error" || run.status === "waiting" || run.status === "paused"
             ? `<button class="job-run wf-run-resume" data-id="${run.id}" title="${escapeHtml(
                 WF.resumePlan(run).action
@@ -780,7 +761,33 @@
           (!WF.isRunActive(run) && typeof run.windowId === "number"
             ? `<button class="job-edit wf-run-closewin" data-id="${run.id}" title="Close this run's Chrome window and its chats">Close window</button>`
             : "") +
-          `<button class="job-del wf-run-del" data-id="${run.id}" title="Remove from the list">✕</button>` +
+          `<button class="job-del wf-run-del" data-id="${run.id}" title="Remove from the list">✕</button>`;
+
+        row.innerHTML =
+          `<div class="job-head">` +
+          `<div class="job-title">${escapeHtml(run.name || "Workflow")}` +
+          `<span class="job-badge">${RUN_STATUS_LABEL[run.status] || run.status}</span></div>` +
+          `<div class="job-btns">${btns}</div></div>` +
+          `<div class="job-main">` +
+          `<div class="job-facts">` +
+          `<span><b>${escapeHtml(WF.progressText(run, wf))}</b></span>` +
+          (run.docs && run.docs.length
+            ? `<span>${run.docs.length} document${run.docs.length === 1 ? "" : "s"}</span>`
+            : "") +
+          (run.trigger && run.trigger.type === "time" && run.status === "pending"
+            ? `<span>at ${escapeHtml(new Date(run.trigger.at).toLocaleString())}</span>`
+            : "") +
+          (run.trigger && run.trigger.type === "reset" && run.status === "pending"
+            ? `<span>when usage resets</span>`
+            : "") +
+          (links ? `<span>Chats: ${links}</span>` : "") +
+          `</div>` +
+          (WF.canRetrigger(run) ? retriggerBar(run) : "") +
+          (run.transcript && run.transcript.length ? transcriptHtml(run) : "") +
+          (run.error ? `<div class="job-err">${escapeHtml(run.error)}</div>` : "") +
+          (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
+          (run.note ? `<div class="job-note">${escapeHtml(run.note)}</div>` : "") +
+          (fixingRunId === run.id ? fixPanel(run, wf) : "") +
           `</div>`;
         wfui.runs.appendChild(row);
       }
