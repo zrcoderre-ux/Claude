@@ -620,7 +620,13 @@
       // unfocused, so a run never takes the screen away from what you're doing.
       windowId: null,
       lastReply: "",
-      transcript: [], // { stepIndex, chatId, chatName, at, chars }
+      // { stepIndex, chatId, chatName, at, chars, docs, ms, sendMs, replyMs, … }
+      transcript: [],
+      // The current step's clock — see startStepClock. Cleared as each step
+      // lands its timing in the transcript.
+      stepStartedAt: null,
+      stepStoppedAt: null,
+      stepStoppedMs: 0,
       createdAt: now,
       startedAt: null,
       finishedAt: null,
@@ -725,7 +731,7 @@
   // it's carrying, which conversations it's in. A step already in flight is
   // allowed to finish; pausing is not cancelling.
   function markPaused(run, now) {
-    return Object.assign({}, run, { status: "paused", lastProgressAt: now });
+    return Object.assign({}, stopStepClock(run, now), { status: "paused", lastProgressAt: now });
   }
 
   // Apply an edit to a run in progress: steps inserted or reworded, chats
@@ -832,8 +838,114 @@
 
   // About to drive a step. Marked before the message is dispatched so a worker
   // restart mid-send sees "someone is on this" rather than sending it again.
+  // ---- how long a step took ----------------------------------------------
+  //
+  // Wall clock alone lies about a run: a step that sat overnight in an outage
+  // hold, or over a weekend paused, would read as a fourteen-hour step. So the
+  // step's clock stops whenever the run itself stops and starts again when it's
+  // picked back up, and every finished step records both figures — the time it
+  // spent working and the time it spent stopped — rather than one number that
+  // silently mixes them.
+  //
+  // The clock is only ever *started* by sending: a run resumed from an earlier
+  // version of itself, or one told its message already went out, has no start to
+  // resume, and a step that reports null is better than one that reports a
+  // duration measured from the wrong moment.
+  function startStepClock(run, now) {
+    return Object.assign({}, run, { stepStartedAt: now, stepStoppedAt: null, stepStoppedMs: 0 });
+  }
+
+  function stopStepClock(run, now) {
+    if (!run || typeof run.stepStartedAt !== "number") return run;
+    if (typeof run.stepStoppedAt === "number") return run; // already stopped
+    return Object.assign({}, run, { stepStoppedAt: now });
+  }
+
+  function resumeStepClock(run, now) {
+    if (!run || typeof run.stepStoppedAt !== "number") return run;
+    return Object.assign({}, run, {
+      stepStoppedAt: null,
+      stepStoppedMs: (run.stepStoppedMs || 0) + Math.max(0, now - run.stepStoppedAt),
+    });
+  }
+
+  function clearStepClock(run) {
+    return Object.assign({}, run, { stepStartedAt: null, stepStoppedAt: null, stepStoppedMs: 0 });
+  }
+
+  // The three legs of a step, any of which can be unknown:
+  //   sendMs  — composing the message and getting its documents up
+  //   replyMs — Claude answering, which is where the hours actually go
+  //   ms      — the two together, stopped time excluded
+  // Stopped time is charged to the reply leg, since that's where a pause lands
+  // in practice, which keeps ms exactly sendMs + replyMs.
+  function stepTiming(run, endedAt) {
+    const r = run || {};
+    const started = typeof r.stepStartedAt === "number" ? r.stepStartedAt : null;
+    const sent = typeof r.sentAt === "number" ? r.sentAt : null;
+    const end = typeof endedAt === "number" ? endedAt : null;
+    let stopped = Math.max(0, r.stepStoppedMs || 0);
+    if (typeof r.stepStoppedAt === "number" && end != null)
+      stopped += Math.max(0, end - r.stepStoppedAt);
+    return {
+      startedAt: started,
+      sentAt: sent,
+      endedAt: end,
+      stoppedMs: stopped,
+      ms: started != null && end != null ? Math.max(0, end - started - stopped) : null,
+      sendMs: started != null && sent != null ? Math.max(0, sent - started) : null,
+      replyMs: sent != null && end != null ? Math.max(0, end - sent - stopped) : null,
+    };
+  }
+
+  // A short, readable duration. Minutes matter here and milliseconds don't:
+  // these are steps that take a quarter of an hour.
+  function formatMs(ms) {
+    if (typeof ms !== "number" || !isFinite(ms) || ms < 0) return "";
+    const s = Math.round(ms / 1000);
+    if (s < 60) return s + "s";
+    const m = Math.floor(s / 60);
+    if (m < 60) return s % 60 ? m + "m " + (s % 60) + "s" : m + "m";
+    const h = Math.floor(m / 60);
+    return m % 60 ? h + "h " + (m % 60) + "m" : h + "h";
+  }
+
+  // What a run's finished steps add up to. `median` rather than mean because one
+  // step that stalled for an hour shouldn't be allowed to describe the rest.
+  function timingSummary(run) {
+    const rows = ((run && run.transcript) || []).filter(
+      (t) => t && typeof t.ms === "number" && t.ms >= 0
+    );
+    if (!rows.length) return { steps: 0, totalMs: null, medianMs: null, longestMs: null, longest: null };
+    const ms = rows.map((t) => t.ms).sort((a, b) => a - b);
+    const mid = Math.floor(ms.length / 2);
+    let longest = rows[0];
+    for (const t of rows) if (t.ms > longest.ms) longest = t;
+    return {
+      steps: rows.length,
+      totalMs: rows.reduce((a, t) => a + t.ms, 0),
+      medianMs: ms.length % 2 ? ms[mid] : Math.round((ms[mid - 1] + ms[mid]) / 2),
+      longestMs: longest.ms,
+      longest: longest,
+    };
+  }
+
   function markSending(run, now) {
-    return Object.assign({}, run, { status: "running", phase: "sending", lastProgressAt: now });
+    // Re-attaching to a step whose message already went out is not the start of
+    // that step. Its clock is left exactly as it is, and — more importantly —
+    // so is the phase: "awaiting-reply" is the only record that the message has
+    // gone, and overwriting it with "sending" would let a worker that died
+    // mid-wait come back and post the same message a second time.
+    if (run && run.phase === "awaiting-reply")
+      return Object.assign({}, run, { status: "running", lastProgressAt: now });
+    // Otherwise a step starts its clock when its message starts going out.
+    // Re-sending a step that went wrong starts a fresh one: what's being timed
+    // is the attempt that produced the reply, not every attempt stacked up.
+    return Object.assign({}, startStepClock(run, now), {
+      status: "running",
+      phase: "sending",
+      lastProgressAt: now,
+    });
   }
 
   // The step's message is on its way out; from here a retry must NOT re-send it
@@ -878,7 +990,8 @@
     const total = typeof i.total === "number" ? i.total : run.totalSteps;
     const reply = str(i.reply);
     const done = next >= total;
-    return Object.assign({}, run, {
+    const timing = stepTiming(run, i.now);
+    return Object.assign({}, clearStepClock(run), {
       status: done ? "done" : "running",
       phase: "idle",
       stepIndex: next,
@@ -895,6 +1008,15 @@
           // that was meant to carry the papers and didn't must be visible after
           // the fact, not only in the moment.
           docs: typeof i.docs === "number" ? i.docs : 0,
+          // How long it took, split into getting the message out and waiting for
+          // the answer. Nulls where the run can't honestly say (a step it was
+          // told had already been sent has no start of its own).
+          ms: timing.ms,
+          sendMs: timing.sendMs,
+          replyMs: timing.replyMs,
+          stoppedMs: timing.stoppedMs,
+          startedAt: timing.startedAt,
+          sentAt: timing.sentAt,
         },
       ]),
       lastProgressAt: i.now,
@@ -909,7 +1031,9 @@
   // not be resumed by posting the same message again — the conversation would
   // carry it twice. The phase is the only record that it already went out.
   function markError(run, message, now) {
-    return Object.assign({}, run, {
+    // The clock stops here too. A step that failed at midnight and was fixed the
+    // next morning spent the night stopped, not working.
+    return Object.assign({}, stopStepClock(run, now), {
       status: "error",
       error: str(message) || "unknown error",
       lastProgressAt: now,
@@ -967,7 +1091,10 @@
       }
     }
 
-    return Object.assign({}, run, {
+    // Picking the run back up restarts the clock where it stopped: the pause
+    // itself is charged to stopped time, not to the step. A step being redone
+    // from the top gets a fresh clock from markSending a moment later anyway.
+    return Object.assign({}, resumeStepClock(run, now), {
       status: "running",
       phase: phase,
       stepIndex: stepIndex,
@@ -987,7 +1114,7 @@
   }
 
   function markHeld(run, reason, now) {
-    return Object.assign({}, run, {
+    return Object.assign({}, stopStepClock(run, now), {
       status: "waiting",
       phase: "idle",
       heldSince: typeof run.heldSince === "number" ? run.heldSince : now,
@@ -1355,6 +1482,9 @@
     nextRunTrigger,
     markStarted,
     markSending,
+    stepTiming,
+    timingSummary,
+    formatMs,
     markSent,
     heartbeat,
     withWindow,

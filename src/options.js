@@ -544,9 +544,16 @@
       .map((t) => {
         const thin = (t.chars || 0) < 400; // a reply this short is rarely the work
         const cls = "run-step" + (t.docs ? " has-docs" : "") + (thin ? " thin" : "");
+        const took = typeof t.ms === "number" ? WF.formatMs(t.ms) : "";
+        const split =
+          typeof t.sendMs === "number" && typeof t.replyMs === "number"
+            ? ` — ${WF.formatMs(t.sendMs)} sending, ${WF.formatMs(t.replyMs)} waiting for Claude`
+            : "";
         return (
-          `<span class="${cls}"><b>${t.stepIndex + 1}</b> · ${escapeHtml(fmtChars(t.chars))}` +
+          `<span class="${cls}"${took ? ` title="Step ${t.stepIndex + 1} took ${escapeHtml(took)}${escapeHtml(split)}"` : ""}>` +
+          `<b>${t.stepIndex + 1}</b> · ${escapeHtml(fmtChars(t.chars))}` +
           (t.docs ? ` · ${t.docs} doc${t.docs === 1 ? "" : "s"}` : "") +
+          (took ? ` · ${escapeHtml(took)}` : "") +
           `</span>`
         );
       })
@@ -560,9 +567,28 @@
   // risking a change you didn't intend.
   let showingStepsFor = null;
 
+  // What a finished step cost, split into getting the message out (composing it,
+  // uploading its documents) and waiting for the answer — the second being the
+  // figure that varies, and the one worth knowing when a run feels slow. Steps
+  // resumed from an earlier version of the run have no honest start, and say
+  // nothing rather than guessing.
+  function stepTimingLine(t) {
+    if (!t || typeof t.ms !== "number") return "";
+    const bits = [`took <b>${escapeHtml(WF.formatMs(t.ms))}</b>`];
+    if (typeof t.sendMs === "number" && typeof t.replyMs === "number")
+      bits.push(
+        `${escapeHtml(WF.formatMs(t.sendMs))} sending · ${escapeHtml(WF.formatMs(t.replyMs))} waiting`
+      );
+    if (t.stoppedMs > 30000) bits.push(`${escapeHtml(WF.formatMs(t.stoppedMs))} stopped, not counted`);
+    if (typeof t.chars === "number") bits.push(`${t.chars.toLocaleString()} chars back`);
+    return `<div class="wf-step-timing">${bits.join(" · ")}</div>`;
+  }
+
   function stepsPanel(run, wf) {
     const plan = WF.planRun(WF.runSource(run, wf));
     if (!plan.length) return "";
+    const timings = {};
+    for (const t of run.transcript || []) if (t) timings[t.stepIndex] = t;
     const rows = plan
       .map((s) => {
         const done = s.index < run.stepIndex;
@@ -580,6 +606,7 @@
           (s.docIds.length ? ` · ${s.docIds.length} document${s.docIds.length === 1 ? "" : "s"}` : "") +
           (s.marker ? ` · must contain “${escapeHtml(s.marker)}”` : "") +
           `</div>` +
+          stepTimingLine(timings[s.index]) +
           `<pre class="wf-step-prompt-view">${escapeHtml(s.prompt || "(no prompt)")}</pre>` +
           `</div></div>`
         );
@@ -774,6 +801,25 @@
     );
   }
 
+  // What the run has cost in time so far, on the row itself: the total it has
+  // spent working, and the typical step, which is what tells you whether the
+  // next one is nearly done or barely started. Median, not mean — one step that
+  // stalled for an hour shouldn't get to describe the other eight.
+  function timingFact(run) {
+    const t = WF.timingSummary(run);
+    if (!t.steps) return "";
+    return (
+      `<span title="Working time only — time the run spent paused, held or stopped is excluded">` +
+      `${escapeHtml(WF.formatMs(t.totalMs))} of work` +
+      (t.steps > 1
+        ? ` · typical step ${escapeHtml(WF.formatMs(t.medianMs))}` +
+          ` · longest ${escapeHtml(WF.formatMs(t.longestMs))}` +
+          ` (step ${(t.longest.stepIndex || 0) + 1})`
+        : "") +
+      `</span>`
+    );
+  }
+
   function renderRuns() {
     Promise.all([
       readRuns(),
@@ -845,6 +891,7 @@
           (run.trigger && run.trigger.type === "reset" && run.status === "pending"
             ? `<span>when usage resets</span>`
             : "") +
+          timingFact(run) +
           (links ? `<span>Chats: ${links}</span>` : "") +
           `</div>` +
           (WF.canRetrigger(run) ? retriggerBar(run) : "") +

@@ -69,7 +69,8 @@
     el.id = ID;
     el.innerHTML =
       `<span class="cum-wfp-dot"></span>` +
-      `<span class="cum-wfp-text"><b class="cum-wfp-name"></b><span class="cum-wfp-where"></span></span>` +
+      `<span class="cum-wfp-text"><b class="cum-wfp-name"></b><span class="cum-wfp-where"></span>` +
+      `<span class="cum-wfp-took"></span></span>` +
       `<button class="cum-wfp-btn" type="button"></button>`;
     (document.body || document.documentElement).appendChild(el);
     // The body opens Options, where the rest of the run's controls live.
@@ -94,6 +95,13 @@
     const node = build();
     const total = run.totalSteps || 0;
     const here = W.chatName(W.runSource(run, wf), chatId);
+    // How long this step has been going. Updated on every tick, before the
+    // redraw gate — the rest of the pill says the same thing minute to minute,
+    // but this is the part you watch when you're wondering whether to wait.
+    const live = W.stepTiming(run, Date.now());
+    node.querySelector(".cum-wfp-took").textContent =
+      !paused && typeof live.ms === "number" ? " · " + W.formatMs(live.ms) : "";
+
     const key = [run.id, run.status, run.stepIndex, run.phase, here].join("|");
     if (key === lastKey) return;
     lastKey = key;
