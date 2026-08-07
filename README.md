@@ -110,15 +110,19 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
 
 - **Chats worked between** — 1 to 6. Each is its own claude.ai conversation with
   its own destination (new chat, a **Project**, or a **Claude Code** session on a
-  repo) and its own **model**. Reducing the count moves any orphaned steps to the
-  last remaining chat rather than throwing their prompts away.
+  repo) and its own **model**, which is the default every step in it inherits and
+  can override. Reducing the count moves any orphaned steps to the last remaining
+  chat rather than throwing their prompts away.
 - **Starting in a conversation you already have** — paste its link into a chat
   and the run picks up there instead of opening a fresh one, which is how a
   workflow continues work you began by hand. It's matter-specific like the
   documents, so Start hands it to the run and clears it from the template; the
   next matter can't inherit the last one's chat. (A chat resumed this way keeps
-  its own model — the model setting only applies to a conversation the run
-  opens.)
+  whatever model it's on — a chat's own model setting applies only to a
+  conversation the run opens, since changing the model of one you didn't open
+  would reach into work that was already there. A **step** that names a model
+  still switches it: that's an instruction about this step, not an assumption
+  about the chat.)
 - **That chat as step 0** — tick it and the conversation stands in for the steps
   that would have produced it: its **latest reply becomes the opening hand-off**,
   and the run begins at the first step that isn't in that chat. Point chat A at a
@@ -149,6 +153,15 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   REPORT -----`. Two steps **in the same chat never carry**: that conversation
   already has the material, and pasting it back wastes the context it's holding.
   The editor says so rather than offering a tick that would do nothing.
+- **A model per step** — each step has its own model picker, defaulting to
+  *whatever the chat is on*. Set one and the run switches that conversation to it
+  before sending, and **leaves it there** for the steps after it, exactly as
+  though you'd picked it from claude.ai's own menu. So one chat can draft on
+  Opus, be criticised on Sonnet, and be revised back on Opus — the point being
+  that you can try combinations without building a chat per model. A step already
+  on the right model doesn't touch the picker at all. A workflow that switches
+  models says so on its row (`Opus 4.1 → Sonnet 4.5`), and **Steps** names the
+  model each step answers on, marking the ones that differ from their chat.
 - **"Its output is a tentative ruling"** — a chat can insist that its reply
   contain a phrase (`NATURE OF PROCEEDINGS` by default, editable) before it may
   be handed to another chat. Claude's first answer is often a clarifying

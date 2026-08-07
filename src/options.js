@@ -646,6 +646,7 @@
           }</div>` +
           `<div class="wf-step-body">` +
           `<div class="wf-step-meta">${escapeHtml(s.chatName)}` +
+          (s.modelOn ? ` · ${escapeHtml(s.modelOn)}${s.modelOverride ? " (this step only)" : ""}` : "") +
           (s.carry ? ` · carries the previous reply as “${escapeHtml(s.carryLabel)}”` : "") +
           (s.docIds.length ? ` · ${s.docIds.length} document${s.docIds.length === 1 ? "" : "s"}` : "") +
           (s.marker ? ` · must contain “${escapeHtml(s.marker)}”` : "") +

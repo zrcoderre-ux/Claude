@@ -794,6 +794,52 @@ test("a window that reset mid-step can't be differenced", () => {
   assert.equal(W.usageCost(before, W.usageSample({})).weekly, null);
 });
 
+test("a step can name its own model, and the chat keeps it afterwards", () => {
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "A", model: "Opus 4.1" }, { id: "b", name: "B" }],
+      steps: [
+        { chatId: "a", prompt: "draft" }, // inherits Opus 4.1
+        { chatId: "b", prompt: "attack", model: "Sonnet 4.5" }, // B has no model of its own
+        { chatId: "a", prompt: "revise", model: "Haiku 4.5" }, // switches A mid-conversation
+        { chatId: "a", prompt: "final" }, // and A stays there
+      ],
+    },
+    "w1",
+    NOW
+  );
+  const plan = W.planRun(wf);
+
+  assert.equal(plan[0].model, "Opus 4.1", "the chat's own model, picked as it opens");
+  assert.equal(plan[0].modelOverride, false);
+  assert.equal(plan[1].model, "Sonnet 4.5");
+  assert.equal(plan[1].modelOverride, true);
+  assert.equal(plan[2].model, "Haiku 4.5", "switches A part-way through");
+  assert.equal(plan[3].model, null, "already on it — no menu opened for nothing");
+  assert.equal(plan[3].modelOn, "Haiku 4.5", "but the surfaces still know what it answers on");
+  assert.equal(plan[3].modelOverride, false);
+
+  assert.match(W.summarize(wf), /Opus 4\.1 → Sonnet 4\.5 → Haiku 4\.5/);
+});
+
+test("a chat with no model at all leaves every step alone", () => {
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "A" }],
+      steps: [{ chatId: "a", prompt: "one" }, { chatId: "a", prompt: "two" }],
+    },
+    "w1",
+    NOW
+  );
+  const plan = W.planRun(wf);
+  assert.equal(plan[0].model, null, "nothing to pick means nothing is picked");
+  assert.equal(plan[0].modelOn, null);
+  assert.equal(plan[1].model, null);
+  assert.ok(!/→/.test(W.summarize(wf)), "and nothing to say about it on the row");
+});
+
 test("a step only counts when it had Claude to itself", () => {
   const win = { from: 1000, to: 2000, conv: "mine" };
   const busy = (start, end) => ({ mine: { start: 900, end: 1900 }, other: { start, end } });
