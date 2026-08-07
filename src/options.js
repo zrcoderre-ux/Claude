@@ -307,7 +307,19 @@
   // Workflows (multi-chat runs)
   // ======================================================================
   const WORKFLOWS_KEY = "cum_workflows";
-  const RUNS_KEY = "cum_wf_runs";
+  // Runs are stored one per key (see workflow.js) so concurrent runs can't
+  // overwrite each other; this reads them back as a list.
+  function readRuns() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(WF.RUN_IDS_KEY, (r) => {
+        const ids = (r && r[WF.RUN_IDS_KEY]) || [];
+        if (!ids.length) return resolve([]);
+        chrome.storage.local.get(ids.map(WF.runKey), (store) =>
+          resolve(ids.map((id) => store[WF.runKey(id)]).filter(Boolean))
+        );
+      });
+    });
+  }
   const WF = window.CUMWorkflow;
 
   const wfui = {
@@ -488,9 +500,9 @@
       // Only bin document bytes nothing else still needs — a copy of this
       // workflow, or a RUN that took these papers with it and may still be
       // uploading them.
-      chrome.storage.local.get(RUNS_KEY, (r2) => {
+      readRuns().then((allRuns) => {
         const stillUsed = WF.fileIdsInUse(next, null);
-        const heldByRuns = WF.runFileIds((r2 && r2[RUNS_KEY]) || []);
+        const heldByRuns = WF.runFileIds(allRuns);
         const dead = (wf.docs || [])
           .map((d) => d.id)
           .filter((fid) => !stillUsed.has(fid) && !heldByRuns.has(fid));
@@ -652,9 +664,10 @@
   }
 
   function renderRuns() {
-    chrome.storage.local.get([RUNS_KEY, WORKFLOWS_KEY], (res) => {
-      const runs = (res && res[RUNS_KEY]) || [];
-      const workflows = (res && res[WORKFLOWS_KEY]) || [];
+    Promise.all([
+      readRuns(),
+      new Promise((r) => chrome.storage.local.get(WORKFLOWS_KEY, (x) => r((x && x[WORKFLOWS_KEY]) || []))),
+    ]).then(([runs, workflows]) => {
       lastRuns = runs;
       lastWorkflows = workflows;
       const sorted = runs.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -829,20 +842,27 @@
       wfui.runs.querySelectorAll(".wf-run-del").forEach((b) =>
         b.addEventListener("click", () => {
           const id = b.getAttribute("data-id");
-          chrome.storage.local.get([RUNS_KEY, WORKFLOWS_KEY], (r) => {
-            const list = (r && r[RUNS_KEY]) || [];
+          Promise.all([
+            readRuns(),
+            new Promise((r) =>
+              chrome.storage.local.get([WORKFLOWS_KEY, WF.RUN_IDS_KEY], (x) => r(x || {}))
+            ),
+          ]).then(([list, store]) => {
             const run = WF.getRun(list, id);
             const rest = WF.removeRun(list, id);
             // The run owned this matter's papers; with the run gone, so are
             // they — unless another run or a workflow still points at them.
-            const stillUsed = WF.fileIdsInUse((r && r[WORKFLOWS_KEY]) || [], null);
+            const stillUsed = WF.fileIdsInUse(store[WORKFLOWS_KEY] || [], null);
             const heldByRuns = WF.runFileIds(rest);
             const dead = ((run && run.docs) || [])
               .map((d) => d.id)
               .filter((fid) => !stillUsed.has(fid) && !heldByRuns.has(fid));
-            chrome.storage.local.set({ [RUNS_KEY]: rest }, () => {
-              if (dead.length) chrome.storage.local.remove(dead.map((fid) => J.fileKey(fid)));
-              renderRuns();
+            const ids = (store[WF.RUN_IDS_KEY] || []).filter((x) => x !== id);
+            chrome.storage.local.set({ [WF.RUN_IDS_KEY]: ids }, () => {
+              chrome.storage.local.remove(
+                [WF.runKey(id), WF.beatKey(id)].concat(dead.map((fid) => J.fileKey(fid))),
+                renderRuns
+              );
             });
           });
         })
@@ -853,7 +873,14 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes[WORKFLOWS_KEY] && !wfForm.isOpen()) renderWorkflows();
-    if (changes[RUNS_KEY]) renderRuns();
+    // Any run's own key, or the list of them — but not the heartbeats, which
+    // tick every 20 seconds and show nothing.
+    const runChanged = Object.keys(changes).some(
+      (k) =>
+        k === WF.RUN_IDS_KEY ||
+        (k.indexOf(WF.RUN_PREFIX) === 0 && k.indexOf(WF.BEAT_PREFIX) !== 0)
+    );
+    if (runChanged) renderRuns();
   });
 
   renderWorkflows();

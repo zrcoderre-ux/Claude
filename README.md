@@ -329,13 +329,31 @@ doesn't focus a window, so this stays out of your way. Nothing is ever activated
 workflow can grind away for an hour while you work in your own windows — the run
 never takes the screen, and its tabs never pile into whatever you're using.
 
-That scoping is also what keeps runs out of each other's way. A step looks for
-its conversation **only inside its own window**: a chat you happen to have open
-elsewhere is yours, and driving a message into a tab you're reading would be a
-nasty surprise. Two workflows running at once each have their own window and
-can't see the other's tabs. (A run addresses conversations by URL and stream
-signals are page-scoped, so nothing crosses over even when the same chat is open
-twice.)
+### Running several at once
+
+Two runs going together stay out of each other's way, deliberately and at every
+level:
+
+- **Windows and tabs.** Each run has its own window, and a step looks for its
+  conversation **only inside that window**. A chat you happen to have open
+  elsewhere is yours; driving a message into a tab you're reading would be a
+  nasty surprise.
+- **Conversations.** A run addresses chats by URL, so even the same conversation
+  open twice can't confuse it.
+- **Signals.** The response-stream and clipboard hooks are page-scoped — a turn
+  finishing in one run's tab can't release a step in another's.
+- **Storage.** Each run is written under **its own key**, with its heartbeat
+  under another. They were once a single shared array that every writer — the
+  worker, each run's page, the options page — rewrote whole; with two runs going
+  that's hundreds of chances for one to post a copy read a moment earlier and
+  undo the other's progress. Separate keys can't collide, and a heartbeat can
+  never carry a stale run back over a pause.
+
+Runs started together are driven **concurrently**, not one after another, since
+a run is hours long and the second matter shouldn't wait for the first. What
+they do share is your Claude usage: two nine-step workflows are eighteen turns
+against the same limit, and if it runs out mid-run the outage gate parks them
+both until it resets.
 
 If you close a run's window mid-run, the next step opens a fresh one rather than
 scattering tabs into the window in front of you. When a run finishes its window

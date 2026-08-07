@@ -621,6 +621,33 @@ test("trigger selection mirrors the scheduled-send triggers", () => {
   assert.equal(W.nextRunTrigger([now, onReset], NOW), null);
 });
 
+test("two runs at once can't overwrite each other", () => {
+  // Each run has its own key, and its heartbeat has another — so nothing any
+  // run writes is a whole-list rewrite that could carry a stale copy of a
+  // sibling back over its progress.
+  assert.equal(W.runKey("abc"), "cum_wf_run_abc");
+  assert.equal(W.beatKey("abc"), "cum_wf_beat_abc");
+  assert.notEqual(W.runKey("a"), W.runKey("b"));
+  assert.notEqual(W.runKey("a"), W.beatKey("a"));
+  // The ids list is distinguishable from a run's own key, since the change
+  // listeners tell them apart by prefix.
+  assert.equal(W.RUN_IDS_KEY.indexOf(W.RUN_PREFIX), 0);
+  assert.equal(W.beatKey("x").indexOf(W.BEAT_PREFIX), 0);
+});
+
+test("a live heartbeat keeps the watchdog off a step, per run", () => {
+  const { run } = startedRun();
+  const a = Object.assign({}, W.markSending(run, NOW), { id: "a" });
+  const b = Object.assign({}, W.markSending(run, NOW), { id: "b" });
+  const late = NOW + W.STALE_MS + 1;
+  // A's page is still beating; B's has gone quiet. Only B is taken over, and
+  // one run's silence says nothing about the other.
+  const picked = W.pickupRuns([a, b], late, W.STALE_MS, { a: late - 1000, b: NOW });
+  assert.deepEqual(picked.map((r) => r.id), ["b"]);
+  assert.equal(W.isStale(a, late, W.STALE_MS, late - 1000), false);
+  assert.equal(W.isStale(a, late, W.STALE_MS, 0), true, "no beat falls back to the run's own mark");
+});
+
 test("a restarted worker picks up between steps, but never mid-send", () => {
   const { run } = startedRun();
   const between = W.heartbeat(run, NOW); // phase "idle"

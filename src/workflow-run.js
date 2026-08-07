@@ -24,7 +24,6 @@
 (function () {
   "use strict";
 
-  const RUNS_KEY = "cum_wf_runs";
   const C = window.CUMComposer;
   const W = window.CUMWorkflow;
 
@@ -321,18 +320,18 @@
       }
     });
   }
+  // This run's own key — never the whole list. Two runs going at once must not
+  // be able to write over each other by rewriting a shared array.
   async function readRun(runId) {
-    const store = await C.storageGet(RUNS_KEY);
-    return W.getRun(store[RUNS_KEY] || [], runId);
+    const k = W.runKey(runId);
+    return (await C.storageGet(k))[k] || null;
   }
   async function updateRun(runId, fn) {
-    const store = await C.storageGet(RUNS_KEY);
-    const runs = store[RUNS_KEY] || [];
-    const run = W.getRun(runs, runId);
+    const run = await readRun(runId);
     if (!run) return null;
     const next = fn(run);
     if (!next) return run;
-    await storageSet({ [RUNS_KEY]: W.upsertRun(runs, next) });
+    await storageSet({ [W.runKey(runId)]: next });
     return next;
   }
 
@@ -352,7 +351,10 @@
   // whole time a step is in this tab's hands it says so — otherwise a worker
   // restart mid-step would re-send the message and double-post it.
   function startHeartbeat(runId) {
-    const beat = () => updateRun(runId, (r) => W.heartbeat(r, Date.now()));
+    // A timestamp under its own key, not a rewrite of the run. Writing the run
+    // here would mean posting a copy read up to 20 seconds ago — enough to undo
+    // a pause or a cancel the worker set in between.
+    const beat = () => storageSet({ [W.beatKey(runId)]: Date.now() });
     beat();
     const id = setInterval(beat, HEARTBEAT_MS);
     return () => clearInterval(id);
