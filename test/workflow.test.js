@@ -90,6 +90,34 @@ test("composeStepText leaves a non-carrying step (and an empty reply) alone", ()
   assert.equal(W.composeStepText(plan[1], "   "), "attack it");
 });
 
+test("only actual text is folded into a combined upload", () => {
+  assert.ok(W.isTextDoc({ name: "Motion.txt", type: "text/plain" }));
+  assert.ok(W.isTextDoc({ name: "notes.md", type: "" }), "untyped, but named like text");
+  assert.ok(W.isTextDoc({ name: "data.csv", type: "application/csv" }));
+  // A PDF or a Word file has to go up on its own — folding it in would deliver
+  // mojibake instead of a brief.
+  assert.equal(W.isTextDoc({ name: "Motion.pdf", type: "application/pdf" }), false);
+  assert.equal(W.isTextDoc({ name: "Decl.docx", type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), false);
+  assert.equal(W.isTextDoc({ name: "scan.png", type: "image/png" }), false);
+  assert.equal(W.isTextDoc({ name: "mystery", type: "" }), false);
+});
+
+test("bundleText announces what's inside and marks where each document begins", () => {
+  const out = W.bundleText([
+    { name: "Motion.txt", text: "  THE MOTION  " },
+    { name: "Complaint.txt", text: "THE COMPLAINT" },
+  ]);
+  assert.match(out, /^This file contains 2 documents/);
+  assert.match(out, /They are, in order: Motion\.txt, Complaint\.txt\./);
+  assert.match(out, /===== BEGIN FILE: Motion\.txt =====\n\nTHE MOTION\n\n===== END FILE: Motion\.txt =====/);
+  assert.match(out, /===== BEGIN FILE: Complaint\.txt =====/);
+  // An empty document contributes nothing but doesn't break the count.
+  const one = W.bundleText([{ name: "a.txt", text: "A" }, { name: "b.txt", text: "   " }]);
+  assert.match(one, /^This file contains 1 document/);
+  assert.equal(W.bundleText([]), "");
+  assert.equal(W.bundleText(null), "");
+});
+
 test("uploadSummary says, per chat, what will actually go up", () => {
   const wf = twoChatWorkflow();
   assert.equal(W.totalUploads(wf), 1);

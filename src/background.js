@@ -885,6 +885,7 @@ async function driveRun(runId, opts) {
         // Only set when this step's reply gets pasted into another chat: the
         // phrase that reply must contain before it's allowed to travel.
         marker: step.marker || null,
+        bundleText: !!run.bundleText,
         text: W.composeStepText(step, run.lastReply),
         files: awaitOnly ? [] : docs,
         // A conversation keeps the model it started with, and only a fresh
