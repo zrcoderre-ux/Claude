@@ -249,9 +249,17 @@
   }
 
   // ---- the conversation payload (fallback) -------------------------------
+  // The conversation this tab is showing, for the API that is the authority on
+  // whether the reply arrived. Insisting on a literal /chat/ segment made that
+  // authority silently unavailable on every other surface claude.ai serves a
+  // conversation from — a project or a Code session — and an authority that
+  // quietly isn't consulted is worse than one that fails loudly.
+  //
+  // A /chat/ id still wins where there is one. Otherwise the LAST id in the path
+  // is the most specific: /project/<project-id>/… names the project first and
+  // the conversation after it.
   function conversationUuid() {
-    const m = location.pathname.match(/\/chat\/([0-9a-f-]{36})/i);
-    return m ? m[1] : null;
+    return W.conversationId(location.pathname);
   }
   let reqSeq = 0;
   function fetchConversation(uuid, timeoutMs) {
@@ -402,8 +410,13 @@
     let lastChangeAt = Date.now();
     let stablePolls = 0;
     // The last thing this loop saw, so a timeout can say what it was looking at
-    // rather than only that it gave up.
+    // rather than only that it gave up. Two objects, not one: the DOM's story is
+    // rebuilt from scratch every poll, and merging the conversation's into it
+    // meant every API reading was overwritten a few lines later — which made the
+    // timeout report "the conversation was never readable" even when it had been
+    // answering all along, and pointed diagnosis at the wrong half of the code.
     let last = { fresh: false, noMessage: true };
+    let api = {};
 
     // Clicking into the tab is the moment the poll loop stops being throttled
     // and starts running every poll interval again. Everything measured while
@@ -448,12 +461,17 @@
         ) {
           lastApiAt = now;
           const uuid = conversationUuid();
-          if (uuid) {
-            const apiText = W.stripPlaceholders(
-              W.lastAssistantText(await fetchConversation(uuid, 20000))
-            );
+          if (!uuid) {
+            // No conversation id anywhere in the URL, so the authoritative
+            // source can't be asked at all. Worth naming: it's the difference
+            // between "the API said nothing new" and "the API was never
+            // consulted", and only one of those is a claude.ai problem.
+            api = { noConvId: true, path: location.pathname };
+          } else {
+            const conv = await fetchConversation(uuid, 20000);
+            const apiText = W.stripPlaceholders(W.lastAssistantText(conv));
             const fresh = apiText && apiText !== (before.apiText || "");
-            last = Object.assign({}, last, { apiChars: apiText.length });
+            api = { apiChars: apiText.length, apiAnswered: !!conv };
             if (fresh && W.looksInterrupted(apiText))
               return { el: null, canceled: false, interrupted: true };
             if (fresh && (!marker || W.hasMarker(apiText, marker)))
@@ -463,7 +481,7 @@
               // and keep waiting, the same as the on-screen path does.
               skipped.add(apiText);
               before = Object.assign({}, before, { apiText: apiText });
-              last = Object.assign({}, last, { skipped: skipped.size, marker: marker });
+              api = Object.assign({}, api, { skipped: skipped.size, marker: marker });
             }
           }
         }
@@ -506,6 +524,21 @@
             stalledMs: STALLED_MS,
           });
           last = { fresh, generating, streamDone, chars: text.length, stablePolls, marker };
+          // The turn is over and nothing new can be read. Waiting out the rest
+          // of the hour cannot change that: the stream for THIS message closed,
+          // the page is idle, and the text hasn't moved in fifteen minutes.
+          // Stop and say what actually happened, rather than reporting a
+          // timeout for something that was never one. Held back while replies
+          // are being skipped for a missing marker — that's a live
+          // back-and-forth, and auto-continue may still be working it.
+          if (streamDone && !generating && !fresh && !skipped.size && now - lastChangeAt >= STALLED_MS)
+            return {
+              el: null,
+              canceled: false,
+              timedOut: true,
+              unreadable: true,
+              state: Object.assign({}, api, last),
+            };
           if (fresh && reason) {
             // A finished reply that isn't the thing being asked for. Claude
             // answers a clarifying question, notes a missing paper, or offers
@@ -533,7 +566,7 @@
         }
         await C.sleep(POLL_MS);
       }
-      return { el: null, canceled: false, timedOut: true, state: last };
+      return { el: null, canceled: false, timedOut: true, state: Object.assign({}, api, last) };
     } finally {
       try {
         if (onVisible) document.removeEventListener("visibilitychange", onVisible);
@@ -642,7 +675,7 @@
       sentAt = typeof run.sentAt === "number" ? run.sentAt : 0;
     }
 
-    const { el, apiText, canceled, timedOut, interrupted, via: settledVia, state } = await waitForReply(
+    const { el, apiText, canceled, timedOut, interrupted, unreadable, via: settledVia, state } = await waitForReply(
       runId,
       before,
       W.STEP_TIMEOUT_MS,
@@ -676,15 +709,25 @@
           (s.generating ? "page still says generating" : "page says idle") + ", " +
           (s.streamDone ? "response stream closed" : anyStreamSeen ? "no completion stream seen for this turn" : "no stream events at all") +
           (typeof s.apiChars === "number"
-            ? ", the conversation itself last showed " + s.apiChars + " chars"
-            : ", the conversation was never readable") +
+            ? ", the conversation itself last showed " + s.apiChars + " chars" +
+              (s.apiAnswered ? "" : " (it never answered)")
+            : s.noConvId
+            ? ", and this tab's URL (" + s.path + ") holds no conversation id, so the " +
+              "conversation itself was never asked"
+            : ", the conversation was never asked") +
           (s.skipped
             ? ' — and ' + s.skipped + " finished repl" + (s.skipped === 1 ? "y" : "ies") +
               ' never contained “' + s.marker + '”, so nothing was handed on'
             : "");
       return {
         ok: false,
-        error: (timedOut ? "Claude did not finish replying in time" : "no reply found") + " — " + seen,
+        error:
+          (unreadable
+            ? "Claude finished replying, but the reply could not be read"
+            : timedOut
+            ? "Claude did not finish replying in time"
+            : "no reply found") +
+          " — " + seen,
         note: notes.join("; ") || null,
       };
     }

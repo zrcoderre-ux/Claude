@@ -1241,6 +1241,25 @@ test("a shared step records a refusal, not a zero", () => {
   assert.equal(W.runUsage(r).complete, false, "so it can't reach the workflow's average");
 });
 
+test("conversationId finds the conversation on every surface that shows one", () => {
+  const conv = "0198fe12-3456-7890-abcd-ef0123456789";
+  const proj = "aaaaaaaa-1111-2222-3333-444444444444";
+  assert.equal(W.conversationId("https://claude.ai/chat/" + conv), conv);
+  assert.equal(W.conversationId("/chat/" + conv), conv);
+  assert.equal(W.conversationId("https://claude.ai/chat/" + conv + "?x=1#y"), conv);
+  // A container names itself first; the conversation is the specific one.
+  assert.equal(W.conversationId("/project/" + proj + "/chat/" + conv), conv, "/chat/ still wins");
+  assert.equal(W.conversationId("/cowork/project/" + proj + "/" + conv), conv, "the last id");
+  assert.equal(W.conversationId("/code/" + conv), conv);
+  // Nothing to ask about — which must read as "no id", not as some other id.
+  assert.equal(W.conversationId("https://claude.ai/new"), null);
+  assert.equal(W.conversationId(""), null);
+  assert.equal(W.conversationId(null), null);
+  // A page that names only its container gives that: the API answers "not
+  // found", which is a real reading and says so, rather than being skipped.
+  assert.equal(W.conversationId("/cowork/project/" + proj), proj);
+});
+
 test("conversationKey names a conversation the same way from any URL shape", () => {
   const id = "0198fe12-3456-7890-abcd-ef0123456789";
   assert.equal(W.conversationKey("https://claude.ai/chat/" + id), id);
