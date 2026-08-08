@@ -147,14 +147,15 @@ function bundleWorkflow(extra) {
 test("bundlePlan groups by the message that will carry the file", () => {
   const wf = bundleWorkflow();
   const groups = W.bundlePlan(wf);
-  assert.equal(groups.length, 2, "one per chat — the chats get different papers");
+  assert.equal(groups.length, 2, "the two chats' papers differ, so they need different files");
 
-  const a = groups.find((g) => g.chatId === "a");
+  const a = groups.find((g) => g.chatIds.indexOf("a") !== -1);
   assert.deepEqual(a.docIds, ["t1", "t2"], "the PDF is not foldable and stays out");
+  assert.deepEqual(a.chatIds, ["a"]);
   assert.equal(a.addedAt, null, "rides the chat's opening message");
 
-  const b = groups.find((g) => g.chatId === "b");
-  assert.deepEqual(b.docIds, ["t1", "t2", "t3"], "a document ticked for both is in both bundles");
+  const b = groups.find((g) => g.chatIds.indexOf("b") !== -1);
+  assert.deepEqual(b.docIds, ["t1", "t2", "t3"], "a document ticked for both is in both files");
 
   // Off by default, and never for a lone document.
   assert.deepEqual(W.bundlePlan(bundleWorkflow({ bundleText: false })), []);
@@ -176,6 +177,41 @@ test("bundlePlan groups by the message that will carry the file", () => {
   );
 });
 
+test("chats getting the same papers share one combined file", () => {
+  // Documents default to every chat, so this is the ordinary case. Six chats
+  // must not mean six byte-identical files built and stored.
+  const wf = W.newWorkflow(
+    {
+      name: "same",
+      bundleText: true,
+      chats: [{ id: "a", name: "A" }, { id: "b", name: "B" }, { id: "c", name: "C" }],
+      docs: [
+        { id: "t1", name: "motion.md", type: "text/markdown", chats: ["a", "b", "c"] },
+        { id: "t2", name: "opp.md", type: "text/markdown", chats: ["a", "b", "c"] },
+      ],
+      steps: [
+        { chatId: "a", prompt: "1" },
+        { chatId: "b", prompt: "2" },
+        { chatId: "c", prompt: "3" },
+      ],
+    },
+    "w1",
+    NOW
+  );
+  const groups = W.bundlePlan(wf);
+  assert.equal(groups.length, 1, "built once");
+  assert.deepEqual(groups[0].chatIds, ["a", "b", "c"], "uploaded to each");
+
+  // And the one file reaches all three, exactly as a document ticked for three
+  // chats already does.
+  const folded = W.foldBundle(wf.docs, groups[0], { id: "c1", name: "combined-documents.txt", type: "text/plain" });
+  const plan = W.planRun(Object.assign({}, wf, { docs: folded }));
+  assert.deepEqual(plan[0].docIds, ["c1"]);
+  assert.deepEqual(plan[1].docIds, ["c1"]);
+  assert.deepEqual(plan[2].docIds, ["c1"]);
+  assert.deepEqual(W.bundlePlan(Object.assign({}, wf, { docs: folded })), [], "nothing left to fold");
+});
+
 test("documents added mid-run bundle with their own batch, not the opening one", () => {
   const wf = bundleWorkflow();
   const late = wf.docs.concat([
@@ -183,7 +219,7 @@ test("documents added mid-run bundle with their own batch, not the opening one",
     { id: "L2", name: "supp2.md", type: "text/markdown", chats: ["a"], addedAt: 1 },
   ]);
   const groups = W.bundlePlan(Object.assign({}, wf, { docs: late.map((d) => W.newDoc(d, d.id)) }));
-  const forA = groups.filter((g) => g.chatId === "a");
+  const forA = groups.filter((g) => g.chatIds.indexOf("a") !== -1);
   assert.equal(forA.length, 2, "the opening upload and the later one are different messages");
   assert.deepEqual(forA.find((g) => g.addedAt === 1).docIds, ["L1", "L2"]);
   assert.deepEqual(forA.find((g) => g.addedAt === null).docIds, ["t1", "t2"]);
@@ -191,7 +227,7 @@ test("documents added mid-run bundle with their own batch, not the opening one",
 
 test("folding a group swaps its documents for the combined file, and is idempotent", () => {
   const wf = bundleWorkflow();
-  const group = W.bundlePlan(wf).find((g) => g.chatId === "a");
+  const group = W.bundlePlan(wf).find((g) => g.chatIds.indexOf("a") !== -1);
   const folded = W.foldBundle(wf.docs, group, {
     id: "c1",
     name: "combined-documents.txt",
@@ -212,8 +248,8 @@ test("folding a group swaps its documents for the combined file, and is idempote
 
   // And running the plan again finds nothing left to fold for chat A.
   assert.deepEqual(
-    W.bundlePlan(after).map((g) => g.chatId),
-    ["b"]
+    W.bundlePlan(after).map((g) => g.chatIds),
+    [["b"]]
   );
 });
 

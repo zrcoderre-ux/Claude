@@ -209,43 +209,69 @@
   // promise to read inside an archive, and one attachment it silently ignores
   // is worse than several it might; a single labelled text file needs nothing
   // unpacked and can't half-arrive.
-  // Which documents get folded into one file, grouped by the message that will
-  // carry them: a chat's opening upload, or a batch added mid-run that rides a
-  // later step. Only groups of two or more real text documents — one file has
-  // nothing to be combined with, and a PDF can't be concatenated at all.
+  // Which documents get folded into one file, and which uploads that file goes
+  // to. Only groups of two or more real text documents — one file has nothing to
+  // be combined with, and a PDF can't be concatenated at all.
   //
-  // A document ticked for two chats appears in two groups and is folded into
-  // each chat's own bundle, which is the point: the chats get different papers.
+  // Worked out per chat first, because what a chat receives is what decides the
+  // contents, and then MERGED across chats that would receive exactly the same
+  // file. Documents default to every chat, so identical sets are the ordinary
+  // case rather than a coincidence: a six-chat workflow would otherwise build
+  // and store six byte-identical files. One file ticked for six chats is what a
+  // document ticked for six chats already does.
+  //
+  // Chats whose sets differ still get their own — the point of the per-chat
+  // ticks is that they can differ.
   function bundlePlan(wf) {
     if (!wf || !wf.bundleText) return [];
-    const groups = new Map();
+    const perChat = new Map();
     for (const d of allDocs(wf)) {
       if (!d || !isTextDoc(d)) continue;
       const when = typeof d.addedAt === "number" ? d.addedAt : null;
       for (const cid of d.chats || []) {
         const key = cid + "@" + (when == null ? "open" : when);
-        if (!groups.has(key))
-          groups.set(key, { key: key, chatId: cid, addedAt: when, docIds: [], names: [] });
-        groups.get(key).docIds.push(d.id);
-        groups.get(key).names.push(trimmed(d.name) || "untitled");
+        if (!perChat.has(key))
+          perChat.set(key, { chatId: cid, addedAt: when, docIds: [], names: [] });
+        perChat.get(key).docIds.push(d.id);
+        perChat.get(key).names.push(trimmed(d.name) || "untitled");
       }
     }
-    return Array.from(groups.values()).filter((g) => g.docIds.length > 1);
+
+    const merged = new Map();
+    for (const g of perChat.values()) {
+      if (g.docIds.length < 2) continue;
+      // Same documents, same arrival, so the same bytes. The lists are built by
+      // walking allDocs in order, so equal sets give equal sequences and this
+      // needs no sorting.
+      const key = g.docIds.join("|") + "@" + (g.addedAt == null ? "open" : g.addedAt);
+      if (!merged.has(key))
+        merged.set(key, {
+          key: key,
+          chatIds: [],
+          addedAt: g.addedAt,
+          docIds: g.docIds,
+          names: g.names,
+        });
+      merged.get(key).chatIds.push(g.chatId);
+    }
+    return Array.from(merged.values());
   }
 
   // Swap a group's documents for the combined file they were folded into. The
-  // originals stay on the run — they may be ticked for another chat, which gets
-  // its own bundle — they just stop being sent to THIS one. Applying it twice is
-  // a no-op: the members no longer name this chat, so the group is gone.
+  // originals stay on the run — they may be ticked for a chat whose set differs,
+  // and that chat gets its own bundle — they just stop being sent to the ones
+  // this file covers. Applying it twice is a no-op: the members no longer name
+  // those chats, so the group is gone.
   function foldBundle(docs, group, bundle) {
     const g = group || {};
     const ids = new Set(g.docIds || []);
+    const chats = new Set(g.chatIds || []);
     const out = (docs || []).map((d) =>
       d && ids.has(d.id)
-        ? Object.assign({}, d, { chats: (d.chats || []).filter((c) => c !== g.chatId) })
+        ? Object.assign({}, d, { chats: (d.chats || []).filter((c) => !chats.has(c)) })
         : d
     );
-    const fields = { chats: [g.chatId], bundled: (g.docIds || []).length };
+    const fields = { chats: (g.chatIds || []).slice(), bundled: (g.docIds || []).length };
     if (typeof g.addedAt === "number") fields.addedAt = g.addedAt;
     return out.concat([newDoc(Object.assign({}, bundle, fields), bundle && bundle.id)]);
   }
