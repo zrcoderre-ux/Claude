@@ -997,6 +997,55 @@
   // spent working, and the typical step, which is what tells you whether the
   // next one is nearly done or barely started. Median, not mean — one step that
   // stalled for an hour shouldn't get to describe the other eight.
+  // A stamp with its date on it. "3:04 PM" is fine for a run you watched start
+  // and a lie by omission for one from last Tuesday, and the runs list keeps
+  // both. The year appears only when it isn't this one.
+  function runClock(ms) {
+    return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  function runDay(ms) {
+    const d = new Date(ms);
+    const opts = { month: "short", day: "numeric" };
+    if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+    return d.toLocaleDateString(undefined, opts);
+  }
+  function sameDay(a, b) {
+    const x = new Date(a);
+    const y = new Date(b);
+    return (
+      x.getFullYear() === y.getFullYear() &&
+      x.getMonth() === y.getMonth() &&
+      x.getDate() === y.getDate()
+    );
+  }
+  function runStamp(ms, sinceMs) {
+    // The finish repeats the date only when the run crossed a day — which is
+    // exactly when you want to be told.
+    if (typeof sinceMs === "number" && sameDay(ms, sinceMs)) return runClock(ms);
+    return runDay(ms) + ", " + runClock(ms);
+  }
+
+  // When the run ran: the wall clock, which is the question "of work" below
+  // doesn't answer. A nine-step run that started before lunch and finished
+  // after dinner spent most of that time waiting, and both numbers are worth
+  // having side by side.
+  function runWhenFact(run) {
+    const t = WF.runTiming(run, Date.now());
+    if (t.startedAt == null) return "";
+    const bits = ["Started " + runStamp(t.startedAt)];
+    if (t.finishedAt != null) bits.push("finished " + runStamp(t.finishedAt, t.startedAt));
+    const span = WF.formatMs(t.elapsedMs);
+    if (span) bits.push(t.running ? span + " so far" : span + " end to end");
+    const idle = WF.formatMs(t.idleMs);
+    return (
+      `<span title="Wall clock, start to ${t.running ? "now" : "finish"}${
+        idle ? " — " + idle + " of it not spent working" : ""
+      }">` +
+      escapeHtml(bits.join(" · ")) +
+      `</span>`
+    );
+  }
+
   function timingFact(run) {
     const t = WF.timingSummary(run);
     if (!t.steps) return "";
@@ -1186,6 +1235,7 @@
           (run.trigger && run.trigger.type === "reset" && run.status === "pending"
             ? `<span>when usage resets</span>`
             : "") +
+          runWhenFact(run) +
           timingFact(run) +
           runUsageFact(run) +
           (links ? `<span>Chats: ${links}</span>` : "") +

@@ -1395,6 +1395,38 @@
     };
   }
 
+  // When a run began, when it ended, and how long that was in real time.
+  //
+  // Deliberately separate from timingSummary, which counts only what the steps
+  // spent WORKING. Both are true and they answer different questions: the
+  // summary says what the work cost, this says when the thing happened and how
+  // long you waited for it. A run that started at four and finished at nine took
+  // five hours whatever its steps were doing in between — the gap is the run
+  // sitting paused, held out of an outage, or waiting on you.
+  function runTiming(run, now) {
+    const r = run || {};
+    const started = typeof r.startedAt === "number" ? r.startedAt : null;
+    const finished = typeof r.finishedAt === "number" ? r.finishedAt : null;
+    // A run still going is measured to this moment, so "so far" means something.
+    const end = finished != null ? finished : typeof now === "number" ? now : null;
+    const work = timingSummary(r);
+    const elapsed = started != null && end != null ? Math.max(0, end - started) : null;
+    return {
+      startedAt: started,
+      finishedAt: finished,
+      running: started != null && finished == null,
+      elapsedMs: elapsed,
+      workingMs: work.totalMs,
+      // Everything that wasn't a step working. Named rather than left for the
+      // reader to subtract, because "5h end to end" next to "40m of work" is
+      // the first thing anyone asks about.
+      idleMs:
+        elapsed != null && typeof work.totalMs === "number"
+          ? Math.max(0, elapsed - work.totalMs)
+          : null,
+    };
+  }
+
   // Is there any usage left to send into? Read from the meter rather than from
   // anything on the page: a reply that DISCUSSES running out of usage must not
   // be able to pause a healthy run, and message text is the one place that
@@ -2229,6 +2261,7 @@
     markSending,
     stepTiming,
     timingSummary,
+    runTiming,
     formatMs,
     usageExhausted,
     usageBackAt,
