@@ -354,6 +354,7 @@
       // twenty attachments and quietly show Claude fewer; one file can't be
       // partly there.
       bundleText: !!f.bundleText,
+      nameChats: f.nameChats !== false,
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
       docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
       steps: (f.steps || []).map((s) => newStep(s, s && s.id)),
@@ -750,6 +751,9 @@
       // cleared and re-armed while this run is still going.
       docs: (docs || (wf && wf.docs) || []).map((d) => newDoc(d, d && d.id)),
       bundleText: !!(wf && wf.bundleText),
+      // Name each conversation this run opens after the run. Scoped to the ones
+      // it opens, so it can never retitle a chat you pointed it at.
+      nameChats: !(wf && wf.nameChats === false),
       // And its own copy of the chats and steps. A run executes THIS, not the
       // template — so the template can be edited, re-armed or deleted without
       // changing what a run in flight does, and so a run can be edited (a step
@@ -1198,6 +1202,31 @@
   // otherwise, so /new and the Code surface are still distinguishable from each
   // other. Shared with content.js's activity recorder, which has to agree with
   // this exactly or a run would fail to recognise its own turns.
+  // What a run's conversation should be called in your sidebar: the matter,
+  // then the chat's job within it —
+  //   "8.11.26 Motion to Compel Arbitration: Drafting (A)"
+  // A run leaves several conversations behind and they are worth telling apart
+  // months later, when "Motion to Compel Arbitration" three times over says
+  // nothing about which one holds the ruling.
+  const MAX_CHAT_TITLE = 100;
+  function chatTitle(run, name) {
+    // The run's own names, not runLabel's — "Untitled run" is a placeholder for
+    // a row on the Options page, and writing it into your sidebar would be
+    // taking a gap in the UI for a fact about the matter.
+    const r = run || {};
+    const matter = trimmed(r.name) || trimmed(r.templateName);
+    const chat = trimmed(name);
+    if (!chat) return matter;
+    if (!matter) return chat;
+    const full = matter + ": " + chat;
+    if (full.length <= MAX_CHAT_TITLE) return full;
+    // Too long: shorten the MATTER, never the chat. The chat's name is the half
+    // that tells this run's conversations apart, and it's the short half.
+    const room = MAX_CHAT_TITLE - chat.length - 3;
+    if (room < 8) return chat.slice(0, MAX_CHAT_TITLE);
+    return matter.slice(0, room).trim() + "…: " + chat;
+  }
+
   // The conversation a claude.ai URL is showing, or null. This is what the
   // conversation API — the authority on whether a reply arrived — is asked
   // about, so being too strict here doesn't cause a wrong answer, it causes no
@@ -1207,6 +1236,18 @@
   // the path, since /project/<project-id>/… names the container first and the
   // conversation after it.
   const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  // The conversation an API call was about, from its URL. claude.ai's completion
+  // request names it — /api/organizations/<org>/chat_conversations/<id>/completion
+  // — which is the one source that works wherever the conversation is being
+  // shown from. In a Project the address bar never holds the conversation's id
+  // at all, only the project's, so the path alone leaves the run blind.
+  function conversationIdFromApiUrl(url) {
+    const m = str(url).match(
+      /chat_conversations\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+    );
+    return m ? m[1] : null;
+  }
+
   function conversationId(href) {
     let path = str(href);
     try {
@@ -1900,6 +1941,8 @@
     usageCost,
     conversationKey,
     conversationId,
+    conversationIdFromApiUrl,
+    chatTitle,
     soleActor,
     runUsage,
     noteRunUsage,

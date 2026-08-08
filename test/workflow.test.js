@@ -1241,6 +1241,59 @@ test("a shared step records a refusal, not a zero", () => {
   assert.equal(W.runUsage(r).complete, false, "so it can't reach the workflow's average");
 });
 
+test("a run's conversations are named for the matter and their job in it", () => {
+  const wf = W.newWorkflow(
+    {
+      name: "Tentative ruling",
+      templateName: "Tentative ruling",
+      chats: [{ id: "a", name: "Drafting (A)" }],
+      steps: [{ chatId: "a", prompt: "go" }],
+    },
+    "w1",
+    NOW
+  );
+  const run = W.applyRunEdit(
+    W.newRun(wf, "r1", NOW, { type: "draft" }),
+    { name: "8.11.26 Motion to Compel Arbitration" },
+    NOW + 1
+  );
+  assert.equal(
+    W.chatTitle(run, "Drafting (A)"),
+    "8.11.26 Motion to Compel Arbitration: Drafting (A)"
+  );
+
+  // An unnamed run still has something to say — the workflow it's a run of.
+  const bare = W.newRun(wf, "r2", NOW, { type: "draft" });
+  assert.equal(W.chatTitle(bare, "Drafting (A)"), "Tentative ruling: Drafting (A)");
+
+  // Missing halves don't produce dangling punctuation.
+  assert.equal(W.chatTitle(run, ""), "8.11.26 Motion to Compel Arbitration");
+  assert.equal(W.chatTitle({ name: "", templateName: "" }, "Drafting (A)"), "Drafting (A)");
+});
+
+test("a long matter is shortened, never the chat's own name", () => {
+  const chat = "Devil's advocate (B)";
+  const long = "8.11.26 " + "Motion to Compel Arbitration and to Stay Proceedings ".repeat(3);
+  const title = W.chatTitle({ name: long }, chat);
+  assert.ok(title.length <= 100, "fits: " + title.length);
+  assert.ok(title.endsWith(": " + chat), "the half that tells the run's chats apart survives whole");
+  assert.ok(title.startsWith("8.11.26 Motion to Compel"), "and the matter is still recognisable");
+  assert.ok(/…: /.test(title), "with the cut marked");
+});
+
+test("conversationIdFromApiUrl reads the conversation off a completion request", () => {
+  const id = "0198fe12-3456-7890-abcd-ef0123456789";
+  assert.equal(
+    W.conversationIdFromApiUrl("/api/organizations/" + "aaaaaaaa-1111-2222-3333-444444444444" +
+      "/chat_conversations/" + id + "/completion"),
+    id,
+    "the conversation, not the organization"
+  );
+  assert.equal(W.conversationIdFromApiUrl("/api/organizations/x/chat_conversations/" + id), id);
+  assert.equal(W.conversationIdFromApiUrl("/api/bootstrap"), null);
+  assert.equal(W.conversationIdFromApiUrl(null), null);
+});
+
 test("conversationId finds the conversation on every surface that shows one", () => {
   const conv = "0198fe12-3456-7890-abcd-ef0123456789";
   const proj = "aaaaaaaa-1111-2222-3333-444444444444";

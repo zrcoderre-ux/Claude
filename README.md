@@ -180,6 +180,15 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   REPORT -----`. Two steps **in the same chat never carry**: that conversation
   already has the material, and pasting it back wastes the context it's holding.
   The editor says so rather than offering a tick that would do nothing.
+- **Name each conversation after the run** — a run leaves several chats behind,
+  and untitled they are three sidebar rows saying the same thing. Ticked (the
+  default), each conversation the run **opens** is titled
+  `8.11.26 Motion to Compel Arbitration: Drafting (A)` — the matter, then that
+  chat's job within it. Only conversations the run opens itself: a chat you
+  pointed it at keeps the name it has, because retitling work you started is not
+  the extension's business. A title that won't take is a note on the run, never a
+  failed step.
+
 - **Reordering** — drag a step by the **grip** on its card. The ↑↓ arrows stay
   for a one-notch nudge, but nine steps is enough that moving one from the end to
   the middle was six clicks, each re-rendering the list under the cursor.

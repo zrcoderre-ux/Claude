@@ -49,6 +49,7 @@
   let streamStartedAt = 0;
   let streamDoneAt = 0;
   let anyStreamSeen = false;
+  let streamConvId = null; // named by the completion URL — see the listener
   // claude.ai streams more than the assistant's answer over SSE, so only the
   // completion endpoint counts — some other stream closing must not release a
   // step whose reply is still being written.
@@ -63,6 +64,12 @@
       if (!COMPLETION_RE.test(String(p.url || ""))) return;
       if (p.streamStart) streamStartedAt = p.at || Date.now();
       if (p.streamDone) streamDoneAt = p.at || Date.now();
+      // The completion request names the conversation it is for. In a Project
+      // the address bar never does — it holds the project's id and nothing
+      // else — so without this the conversation API, which is the authority on
+      // whether the reply arrived, could not be asked at all.
+      const fromUrl = W.conversationIdFromApiUrl(p.url);
+      if (fromUrl) streamConvId = fromUrl;
     });
   } catch (e) {
     /* ignore */
@@ -258,8 +265,13 @@
   // A /chat/ id still wins where there is one. Otherwise the LAST id in the path
   // is the most specific: /project/<project-id>/… names the project first and
   // the conversation after it.
+  // Where the path names the conversation, believe the path — it is current
+  // even after the SPA moves between chats. Otherwise fall back to whatever the
+  // completion stream said, which is the only source a Project run has.
   function conversationUuid() {
-    return W.conversationId(location.pathname);
+    const fromPath = W.conversationId(location.pathname);
+    if (fromPath && /\/chat\//i.test(location.pathname)) return fromPath;
+    return streamConvId || fromPath;
   }
   let reqSeq = 0;
   function fetchConversation(uuid, timeoutMs) {
@@ -284,6 +296,39 @@
       try {
         window.postMessage(
           { __channel: C.CHANNEL, command: { type: "fetchConversation", uuid, reqId } },
+          window.location.origin
+        );
+      } catch (e) {
+        finish(null);
+      }
+    });
+  }
+
+  // Give this conversation the run's name. Best-effort in every direction: it
+  // answers whatever happens, the caller doesn't wait on it deciding anything,
+  // and a title that won't take is a note on the run rather than a failed step.
+  function renameConversation(uuid, name, timeoutMs) {
+    return new Promise((resolve) => {
+      const reqId = "wfn" + ++reqSeq + "-" + Date.now();
+      let settled = false;
+      const finish = (data) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        window.removeEventListener("message", onMsg);
+        resolve(data || null);
+      };
+      function onMsg(event) {
+        if (event.source !== window) return;
+        const m = event.data;
+        const p = m && m.__channel === C.CHANNEL ? m.payload : null;
+        if (p && p.renamed && p.renamed.reqId === reqId) finish(p.renamed);
+      }
+      window.addEventListener("message", onMsg);
+      const timer = setTimeout(() => finish(null), timeoutMs || 8000);
+      try {
+        window.postMessage(
+          { __channel: C.CHANNEL, command: { type: "renameConversation", uuid, name, reqId } },
           window.location.origin
         );
       } catch (e) {
@@ -642,6 +687,18 @@
       await updateRun(runId, (r) =>
         W.markSent(r, { chatId: msg.chatId, url, now: sentAt })
       );
+      // Name it, now the conversation exists. Only the message that OPENED it,
+      // and only a conversation this run opened: a chat you pointed the run at
+      // is yours, and renaming it would be the extension retitling your work.
+      if (msg.title && msg.firstInChat) {
+        const uuid = conversationUuid();
+        const named = uuid ? await renameConversation(uuid, msg.title) : null;
+        if (named && named.ok) notes.push('named this chat "' + named.name + '"');
+        else
+          notes.push(
+            "could not name this chat (" + ((named && named.error) || "no answer") + ")"
+          );
+      }
     } else {
       // Re-attaching to a step whose message already went out. Two very
       // different situations, and taking the wrong one is how a step "succeeds"

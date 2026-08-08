@@ -334,6 +334,8 @@
       measureHome(typeof c.sinceMs === "number" ? c.sinceMs : null);
     } else if (c.type === "fetchConversation" && typeof c.uuid === "string") {
       fetchConversation(c.uuid, c.reqId);
+    } else if (c.type === "renameConversation" && typeof c.uuid === "string") {
+      renameConversation(c.uuid, c.name, c.reqId);
     }
   });
 
@@ -372,6 +374,45 @@
             })
             .catch(() => next(i + 1));
         })(0);
+      })
+      .catch((e) => reply({ error: String((e && e.message) || e) }));
+  }
+
+  // ---- Naming a conversation ---------------------------------------------
+  // A run leaves several conversations behind, and untitled they are three rows
+  // of "Motion to Compel Arbitration" telling you nothing about which holds the
+  // ruling. Driven through the same API the page's own rename uses, and through
+  // the original fetch so the meter's hooks don't see its own traffic.
+  //
+  // Never fatal: a run whose work is done must not be reported as failed
+  // because a title didn't take. Every path answers, so the caller can say what
+  // happened instead of waiting.
+  function renameConversation(uuid, name, reqId) {
+    const reply = (obj) => post({ renamed: Object.assign({ reqId }, obj) });
+    if (!origFetch || !/^[0-9a-f-]{36}$/i.test(uuid)) return reply({ error: "unavailable" });
+    const title = String(name || "").slice(0, 200);
+    if (!title) return reply({ error: "no name" });
+    const ids = new Set();
+    origFetch("/api/organizations", { credentials: "include" })
+      .then((r) => (r.ok ? r.clone().text() : ""))
+      .then((t) => {
+        probeOrgIds(t, ids);
+        const orgs = Array.from(ids);
+        if (!orgs.length) return reply({ error: "no organization" });
+        // Each org in turn, and PUT then PATCH: only the owning org answers for
+        // this conversation, and claude.ai's API is unversioned.
+        return (function next(i, method) {
+          if (i >= orgs.length)
+            return method === "PUT" ? next(0, "PATCH") : reply({ error: "rename refused" });
+          return origFetch(`/api/organizations/${orgs[i]}/chat_conversations/${uuid}`, {
+            method: method,
+            credentials: "include",
+            headers: { "content-type": "application/json", accept: "*/*" },
+            body: JSON.stringify({ name: title }),
+          })
+            .then((res) => (res.ok ? reply({ ok: true, name: title, method: method }) : next(i + 1, method)))
+            .catch(() => next(i + 1, method));
+        })(0, "PUT");
       })
       .catch((e) => reply({ error: String((e && e.message) || e) }));
   }
