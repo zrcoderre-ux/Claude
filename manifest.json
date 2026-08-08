@@ -8,9 +8,20 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage", "unlimitedStorage", "alarms", "tabs", "notifications"],
-  "host_permissions": ["https://claude.ai/*", "https://status.claude.com/*"],
-  "background": { "service_worker": "src/background.js" },
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "alarms",
+    "tabs",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://status.claude.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
   "options_page": "src/options.html",
   "action": {
     "default_title": "Claude Usage Meter",
@@ -23,13 +34,21 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://claude.ai/*"],
-      "js": ["src/harvest.js", "src/weights.js", "src/inject.js"],
+      "matches": [
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "src/harvest.js",
+        "src/weights.js",
+        "src/inject.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://claude.ai/*"],
+      "matches": [
+        "https://claude.ai/*"
+      ],
       "js": [
         "src/estimate.js",
         "src/log.js",
@@ -41,14 +60,18 @@
         "src/jobform.js",
         "src/status.js",
         "src/workflow.js",
+        "src/toc.js",
         "src/content.js",
         "src/autocontinue.js",
         "src/composer.js",
         "src/scheduler-run.js",
         "src/workflow-run.js",
-        "src/workflow-pill.js"
+        "src/workflow-pill.js",
+        "src/toc-panel.js"
       ],
-      "css": ["src/content.css"],
+      "css": [
+        "src/content.css"
+      ],
       "run_at": "document_idle",
       "world": "ISOLATED"
     }
