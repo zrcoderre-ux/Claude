@@ -673,6 +673,63 @@ test("pausing keeps a run's place; resuming picks it up", () => {
   assert.equal(W.pickupRuns([paused], NOW + W.STALE_MS + 1, W.STALE_MS).length, 0);
 });
 
+const DA = "Use the devils-advocate skill.\n\nAttack the merits of the draft below.";
+const RULE = "Use the tentative-ruling skill and draft the ruling in full.";
+
+test("the prompt pool counts how often each one has been written", () => {
+  const mk = (prompts) => ({ steps: prompts.map((p) => ({ prompt: p })) });
+  const pool = W.promptPool(
+    [mk([DA, RULE]), mk([DA]), mk([DA, "short"])],
+    [{ prompt: RULE }]
+  );
+  const by = Object.fromEntries(pool.map((p) => [p.text, p.uses]));
+  assert.equal(by[DA], 3, "counted across workflows");
+  assert.equal(by[RULE], 2, "and the steps open in the editor count too");
+  assert.equal(by.short, undefined, "a prompt too short to be worth completing to");
+  assert.deepEqual(W.promptPool(null, null), []);
+});
+
+test("a completion is offered only for what you've actually started typing", () => {
+  const pool = W.promptPool([{ steps: [{ prompt: DA }, { prompt: RULE }] }]);
+
+  const hit = W.promptSuggestions(pool, "Use the devils");
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0].text, DA);
+  assert.equal(hit[0].rest, DA.slice("Use the devils".length), "just the part still to type");
+
+  // Case doesn't matter; the completion still returns what was actually stored.
+  assert.equal(W.promptSuggestions(pool, "use the DEVILS")[0].text, DA);
+  // A prefix shared by both offers both.
+  assert.equal(W.promptSuggestions(pool, "Use the ").length, 2);
+
+  // Not a prefix, so not offered — a fuzzy match that guesses wrong is worse
+  // than no guess, because accepting is one keystroke.
+  assert.deepEqual(W.promptSuggestions(pool, "Attack the merits"), []);
+  assert.deepEqual(W.promptSuggestions(pool, "Use"), [], "too little typed to guess from");
+  assert.deepEqual(W.promptSuggestions(pool, "   "), []);
+  assert.deepEqual(W.promptSuggestions(pool, DA), [], "already typed in full — nothing to add");
+  assert.deepEqual(W.promptSuggestions(null, "Use the devils"), []);
+});
+
+test("the prompt written most often is offered first", () => {
+  const once = "Use the same opening but only once.";
+  const often = "Use the same opening but often, and this one is longer.";
+  const pool = [
+    { text: once, uses: 1 },
+    { text: often, uses: 7 },
+  ];
+  const out = W.promptSuggestions(pool, "Use the same opening but");
+  assert.equal(out[0].text, often, "seven uses beats one, even though it's longer");
+
+  // Equal footing falls back to the shortest — the least presumptuous guess.
+  const tie = W.promptSuggestions(
+    [{ text: once, uses: 2 }, { text: often, uses: 2 }],
+    "Use the same opening but"
+  );
+  assert.equal(tie[0].text, once);
+  assert.equal(W.promptSuggestions(pool, "Use the same opening but", 1).length, 1);
+});
+
 test("reorderSteps puts steps where the drop said, and fixes the first one", () => {
   const wf = twoChatWorkflow(); // s1(a) → s2(b) → s3(a)
   const ids = wf.steps.map((s) => s.id);

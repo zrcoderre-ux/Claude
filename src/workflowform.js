@@ -75,6 +75,17 @@
     .cumwf-check { display:inline-flex; align-items:center; gap:4px; font-size:12px; }
     .cumwf-check input { margin:0; }
     .cumwf-hint { font-size:12px; color:#8a8a8a; margin:0; }
+    /* The completion offered under a prompt. Deliberately a bar rather than
+       ghost text inside the box: these prompts run to several lines, and five
+       greyed-out lines behind what you're typing is noise, not help. */
+    .cumwf-ac { display:flex; align-items:baseline; gap:8px; font-size:12px;
+      padding:5px 8px; border:1px solid rgba(201,100,66,0.45); border-radius:8px;
+      background:rgba(201,100,66,0.07); cursor:pointer; }
+    .cumwf-ac[hidden] { display:none; }
+    .cumwf-ac-key { flex:0 0 auto; font-weight:700; color:#c96442; }
+    .cumwf-ac-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      color:#4a4a4a; }
+    .cumwf-ac-more { flex:0 0 auto; margin-left:auto; color:#8a8a8a; font-size:11px; }
     /* The re-run answers, indented under their switch so they read as its
        detail rather than as more workflow settings. */
     .cumwf-rerun-row { display:flex; flex-direction:column; gap:6px;
@@ -99,6 +110,9 @@
       .cumwf-grip { color:#8a877f; }
       .cumwf-grip:hover { background:rgba(255,255,255,0.08); color:#d4d1c9; }
       .cumwf-rerun-row { border-left-color:rgba(255,255,255,0.16); }
+      .cumwf-ac { background:rgba(201,100,66,0.14); border-color:rgba(224,135,101,0.5); }
+      .cumwf-ac-text { color:#d4d1c9; }
+      .cumwf-ac-key { color:#e08765; }
     }`;
 
   function injectStyles(doc) {
@@ -300,6 +314,7 @@
       onStorage = (changes, area) => {
         if (area !== "local") return;
         if (changes[PROJECTS_KEY] || changes[MODELS_KEY]) loadPickers();
+        if (changes[WORKFLOWS_KEY] && !el.hidden) refreshPromptPool();
       };
       chrome.storage.onChanged.addListener(onStorage);
     } catch (e) {
@@ -563,6 +578,8 @@
           `<textarea class="wf-step-prompt" rows="4" placeholder="What this chat should do">${esc(
             step.prompt
           )}</textarea>` +
+          `<div class="cumwf-ac" hidden><span class="cumwf-ac-key">↵</span>` +
+          `<span class="cumwf-ac-text"></span><span class="cumwf-ac-more"></span></div>` +
           (i === 0
             ? `<p class="cumwf-hint">The first step opens its chat — nothing to carry into it yet.</p>`
             : wf.steps[i - 1] && wf.steps[i - 1].chatId === step.chatId
@@ -580,9 +597,7 @@
         const stepModelEl = card.querySelector(".wf-step-model");
         stepModelEl.value = step.model || "";
         stepModelEl.addEventListener("change", () => (step.model = stepModelEl.value || null));
-        card.querySelector(".wf-step-prompt").addEventListener("input", function () {
-          step.prompt = this.value;
-        });
+        wirePromptComplete(card.querySelector(".wf-step-prompt"), card.querySelector(".cumwf-ac"), step);
         // Changing a step's chat can make the carry control appear or vanish
         // (two steps in one chat never paste), so redraw rather than leave a
         // tick showing that no longer applies.
@@ -602,6 +617,107 @@
       });
       renderRerunStep();
     }
+    // ---- completing a prompt you've written before -------------------------
+    // Prompts recur across steps and across workflows, and retyping one is a
+    // chance to get it subtly different from the version that works. Every
+    // prompt already written is offered back as you type the start of it.
+    //
+    // Enter accepts — and ONLY when something is being offered, so Enter is an
+    // ordinary newline the rest of the time. Escape dismisses until the next
+    // keystroke; the arrows pick among candidates when there's more than one.
+    let promptsKnown = []; // {text, uses}, rebuilt whenever the pool can have changed
+
+    function refreshPromptPool() {
+      storageGet(WORKFLOWS_KEY).then((r) => {
+        const all = (r && r[WORKFLOWS_KEY]) || [];
+        // Every workflow's steps, plus the ones open in this editor — a prompt
+        // written a moment ago in step 2 is exactly what step 4 wants.
+        promptsKnown = W.promptPool(all, (wf && wf.steps) || []);
+      });
+    }
+
+    function wirePromptComplete(input, bar, step) {
+      let list = [];
+      let at = 0;
+      let dismissed = false;
+
+      const textEl = bar.querySelector(".cumwf-ac-text");
+      const moreEl = bar.querySelector(".cumwf-ac-more");
+
+      function hide() {
+        bar.hidden = true;
+        list = [];
+        at = 0;
+      }
+
+      function show() {
+        const s = list[at];
+        if (!s) return hide();
+        // One line of it, so the bar stays a bar. The count says how much more
+        // is coming, which is the thing you'd want to know before accepting.
+        const lines = s.text.split("\n");
+        textEl.textContent = lines[0].slice(0, 120) + (lines[0].length > 120 ? "…" : "");
+        moreEl.textContent =
+          (lines.length > 1 ? lines.length + " lines" : s.text.length + " chars") +
+          (list.length > 1 ? " · " + (at + 1) + "/" + list.length + " ↑↓" : "");
+        bar.hidden = false;
+      }
+
+      function offer() {
+        if (dismissed) return hide();
+        // Only while typing at the END of the box: completing what's in front of
+        // a caret parked in the middle would rewrite the rest of the prompt.
+        if (input.selectionStart !== input.value.length) return hide();
+        list = W.promptSuggestions(promptsKnown, input.value, 5).filter(
+          (s) => s.text !== input.value
+        );
+        at = 0;
+        list.length ? show() : hide();
+      }
+
+      function accept() {
+        const s = list[at];
+        if (!s) return;
+        input.value = s.text;
+        step.prompt = s.text;
+        try {
+          input.setSelectionRange(s.text.length, s.text.length);
+        } catch (e) {
+          /* ignore */
+        }
+        hide();
+      }
+
+      input.addEventListener("input", function () {
+        step.prompt = this.value;
+        dismissed = false;
+        offer();
+      });
+      input.addEventListener("click", offer);
+      input.addEventListener("blur", () => setTimeout(hide, 120)); // let a click land
+      input.addEventListener("keydown", (e) => {
+        if (bar.hidden) return;
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          return accept();
+        }
+        if (e.key === "Escape") {
+          dismissed = true;
+          return hide();
+        }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          at = (at + (e.key === "ArrowDown" ? 1 : list.length - 1)) % list.length;
+          show();
+        }
+      });
+      bar.addEventListener("mousedown", (e) => {
+        e.preventDefault(); // don't blur the box out from under the click
+        accept();
+        input.focus();
+      });
+    }
+
     // The step a re-run starts at, rebuilt whenever the steps change — the
     // choice is an index into a list the editor is busy rewriting.
     function renderRerunStep(want) {
@@ -770,6 +886,9 @@
       } catch (e) {
         /* ignore */
       }
+      // Everything already written, so a prompt repeated from another workflow
+      // is offered from the first keystroke rather than after the first save.
+      refreshPromptPool();
       ui.name.focus();
     }
 

@@ -208,6 +208,21 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   search never looks. The file's name landing in the copied text is harmless and
   travels on with it.
 
+- **Completing a prompt you've written before** — the same prompts recur, and
+  retyping one is a chance to get it subtly different from the version that
+  works. Type the start of a prompt used in this workflow or any other and it's
+  offered back in a bar under the box: **Enter** takes it, **Escape** dismisses
+  it, **↑↓** pick among candidates when there's more than one. Enter is an
+  ordinary newline the rest of the time — it only completes while something is
+  actually being offered.
+
+  It matches on the **prefix** and nothing cleverer. A fuzzy match that offers a
+  prompt you didn't mean is worse than no offer at all, because accepting is one
+  keystroke and the wrong prompt looks like the right one until the run has spent
+  a turn on it. It also only offers while you're typing at the end of the box, so
+  a caret parked in the middle can't have the rest rewritten under it. Where a
+  prompt has been written in several places, the most-used comes first.
+
 - **Reordering** — drag a step by the **grip** on its card. The ↑↓ arrows stay
   for a one-notch nudge, but nine steps is enough that moving one from the end to
   the middle was six clicks, each re-rendering the list under the cursor.
