@@ -192,6 +192,22 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   claude.ai titles a new conversation itself a moment after the first answer
   lands and would otherwise write over it.
 
+- **Save any file a reply offers** (optional, off by default) — some replies come
+  with a document attached rather than only prose. Ticked, each step clicks
+  whatever that reply offers for download, after the answer has been read, so a
+  save dialog can never come between the copy box and the click on it. It's
+  entirely best-effort: a file that won't save is a note on the run, never a
+  failed step, and at most six per reply so a pathological message can't fill
+  your Downloads folder. Off by default because it writes to your disk, which
+  isn't a run's decision to make.
+
+  A file in a reply doesn't disturb a run either way. The copy box is matched
+  against an exact list of labels, so `Download` can never be taken for it —
+  clicking the wrong one would save something unasked *and* hand back no text —
+  and a file card's own controls sit inside the message, where the copy-box
+  search never looks. The file's name landing in the copied text is harmless and
+  travels on with it.
+
 - **Reordering** — drag a step by the **grip** on its card. The ↑↓ arrows stay
   for a one-notch nudge, but nine steps is enough that moving one from the end to
   the middle was six clicks, each re-rendering the list under the cursor.

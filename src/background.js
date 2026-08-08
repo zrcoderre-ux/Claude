@@ -1052,6 +1052,9 @@ async function driveRun(runId, opts) {
         // already had a link, and retitling a conversation you started yourself
         // is not the extension's business.
         firstInChat: step.firstInChat && !saved.url,
+        // Save what the reply offers. Off unless the workflow asks: it writes
+        // to your disk, which is not a run's decision to make.
+        download: !!run.downloadFiles,
         title:
           run.nameChats !== false && step.firstInChat && !saved.url
             ? W.chatTitle(run, step.chatName)

@@ -177,6 +177,15 @@
   // ---- the copy box ------------------------------------------------------
   function copyish(b) {
     if (!b || C.isOurs(b)) return false;
+    // Never a control that saves a file. isCopyLabel is an exact allow-list so
+    // "Download" can't match it anyway — this is the belt to that's braces,
+    // because clicking the wrong one downloads something and returns no text.
+    if (
+      W.isDownloadLabel(b.getAttribute("aria-label")) ||
+      W.isDownloadLabel(b.getAttribute("title")) ||
+      W.isDownloadLabel(b.textContent)
+    )
+      return false;
     if (b.getAttribute("data-testid") === "action-bar-copy") return true;
     return (
       W.isCopyLabel(b.getAttribute("aria-label")) ||
@@ -353,6 +362,46 @@
     if (!notes) return;
     if (named && named.ok) notes.push('named this chat "' + named.name + '"');
     else notes.push("could not name this chat (" + ((named && named.error) || "no answer") + ")");
+  }
+
+  // Save whatever this reply offers for download. Entirely best-effort: a run's
+  // work is the conversation, and a file that wouldn't save is worth a note and
+  // nothing more. Runs AFTER the reply has been harvested, so a save dialog can
+  // never come between the copy box and the click on it.
+  const MAX_DOWNLOADS = 6; // a pathological message must not spam the folder
+  async function downloadAttachments(el) {
+    if (!el) return 0;
+    const targets = [];
+    try {
+      for (const a of el.querySelectorAll("a[download]")) targets.push(a);
+      for (const b of el.querySelectorAll('button,[role="button"],a')) {
+        if (C.isOurs(b) || targets.indexOf(b) !== -1) continue;
+        if (
+          W.isDownloadLabel(b.getAttribute("aria-label")) ||
+          W.isDownloadLabel(b.getAttribute("title")) ||
+          W.isDownloadLabel(b.textContent)
+        )
+          targets.push(b);
+      }
+    } catch (e) {
+      return 0;
+    }
+    let clicked = 0;
+    for (const t of targets.slice(0, MAX_DOWNLOADS)) {
+      try {
+        t.click();
+        clicked++;
+        await C.sleep(700);
+        // A control that opens a menu instead of saving leaves it open, and a
+        // stray popup would swallow the next step's clicks in this same chat.
+        document.body.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
+        );
+      } catch (e) {
+        /* one that won't click must not stop the others */
+      }
+    }
+    return clicked;
   }
 
   async function harvestReply(msgEl) {
@@ -821,6 +870,17 @@
         "reply read from the " + (via === "api" ? "conversation API" : "page") +
           " (the copy box gave nothing usable)"
       );
+
+    // Files the reply offers, if this workflow asks for them. Wrapped whole:
+    // nothing here is allowed to decide whether the step succeeded.
+    if (msg.download) {
+      try {
+        const n = await downloadAttachments(el);
+        if (n) notes.push("saved " + n + " file" + (n === 1 ? "" : "s") + " this reply offered");
+      } catch (e) {
+        notes.push("could not save this reply's files");
+      }
+    }
 
     const url = location.href;
     // Now the answer is in, claude.ai has done its own auto-titling — so this

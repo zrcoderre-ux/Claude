@@ -355,6 +355,9 @@
       // partly there.
       bundleText: !!f.bundleText,
       nameChats: f.nameChats !== false,
+      // Click whatever a reply offers for download. Off unless asked for: it
+      // writes to your disk, which is not something a run should decide.
+      downloadFiles: !!f.downloadFiles,
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
       docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
       steps: (f.steps || []).map((s) => newStep(s, s && s.id)),
@@ -754,6 +757,7 @@
       // Name each conversation this run opens after the run. Scoped to the ones
       // it opens, so it can never retitle a chat you pointed it at.
       nameChats: !(wf && wf.nameChats === false),
+      downloadFiles: !!(wf && wf.downloadFiles),
       // And its own copy of the chats and steps. A run executes THIS, not the
       // template — so the template can be edited, re-armed or deleted without
       // changing what a run in flight does, and so a run can be edited (a step
@@ -1700,6 +1704,19 @@
     return COPY_LABELS.indexOf(s) !== -1;
   }
 
+  // A control that saves a file rather than copying one. Two uses: keeping it
+  // out of the running when the copy box is being looked for — a click on the
+  // wrong one downloads something AND returns no text — and finding it on
+  // purpose when a step is set to save what Claude produced.
+  //
+  // "Download" alone, or leading a filename ("Download ruling.docx"). Not
+  // anywhere in a string: a button captioned with a sentence isn't this.
+  function isDownloadLabel(text) {
+    const s = str(text).replace(/\s+/g, " ").trim().toLowerCase().replace(/[.:]+$/, "");
+    if (!s || s.length > 80) return false;
+    return s === "save" || s === "download" || /^download\b/.test(s);
+  }
+
   // Guard on what the copy box handed back. A code block's own copy control
   // sits in the same message and yields a fragment; pasting that into the next
   // chat would look like a real answer while being nothing of the kind. If the
@@ -1976,6 +1993,7 @@
     usableLength,
     isCopyLabel,
     COPY_LABELS,
+    isDownloadLabel,
     plausibleCopy,
     isNewReply,
     settleReason,
