@@ -18,6 +18,9 @@
         <button class="tab" type="button" role="tab" data-panel="workflows" id="tab-workflows">
           Workflows
         </button>
+        <button class="tab" type="button" role="tab" data-panel="incognito" id="tab-incognito">
+          Incognito
+        </button>
       </div>
 
       <!-- ================= Usage ================= -->
@@ -215,11 +218,43 @@
           >, the run <b>waits</b> mid-workflow and picks up where it left off.
         </p>
       </section>
+
+      <!-- =============== Incognito =============== -->
+      <section
+        class="panel"
+        data-panel="incognito"
+        role="tabpanel"
+        aria-labelledby="tab-incognito"
+        hidden
+      >
+        <div class="head">
+          <div class="dot"></div>
+          <h1>Incognito recovery</h1>
+        </div>
+        <p class="sub">
+          claude.ai doesn't save an incognito chat — that's the point of one — so
+          closing the tab takes the work with it. While an incognito chat is open
+          the extension keeps a running copy here, against exactly that accident.
+          <b>Kept for three days</b>, then deleted: a permanent record of a
+          conversation you asked not to be recorded isn't a recovery feature.
+        </p>
+        <div class="toolbar">
+          <button id="ghost-clear" type="button">Delete all now</button>
+          <span id="ghost-count" class="count"></span>
+        </div>
+        <div id="ghost-list" class="job-list"></div>
+        <p id="ghost-empty" class="empty">
+          Nothing recorded. This fills in while you have an incognito chat open —
+          ordinary chats aren't copied here, since claude.ai already keeps them.
+        </p>
+      </section>
     </div>
 
     <script src="log.js"></script>
     <script src="daily.js"></script>
     <script src="wfusage.js"></script>
+    <script src="incognito.js"></script>
+    <script src="mdexport.js"></script>
     <script src="split.js"></script>
     <script src="jobstore.js"></script>
     <script src="jobform.js"></script>

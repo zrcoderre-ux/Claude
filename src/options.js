@@ -1644,4 +1644,138 @@
   });
 
   renderWfUsage();
+
+
+  // ======================================================================
+  // Incognito recovery
+  // ======================================================================
+  const G = window.CUMIncognito;
+  const MD = window.CUMMdExport;
+
+  const gh = {
+    list: document.getElementById("ghost-list"),
+    empty: document.getElementById("ghost-empty"),
+    count: document.getElementById("ghost-count"),
+    clear: document.getElementById("ghost-clear"),
+  };
+
+  function readGhosts() {
+    return new Promise((resolve) => {
+      if (!G) return resolve([]);
+      chrome.storage.local.get(G.INDEX_KEY, (res) => {
+        const ids = (res && res[G.INDEX_KEY]) || [];
+        if (!ids.length) return resolve([]);
+        chrome.storage.local.get(ids.map(G.recordKey), (store) => {
+          resolve(ids.map((id) => (store || {})[G.recordKey(id)]).filter(Boolean));
+        });
+      });
+    });
+  }
+
+  function ghostAge(rec) {
+    const left = G.RETAIN_MS - (Date.now() - (rec.updatedAt || rec.startedAt || 0));
+    if (left <= 0) return "expiring";
+    const hours = Math.round(left / 3600000);
+    if (hours < 24) return "deleted in " + hours + "h";
+    return "deleted in " + Math.round(hours / 24) + "d";
+  }
+
+  function renderGhosts() {
+    if (!gh.list || !G) return;
+    readGhosts().then((all) => {
+      // Expired-but-not-yet-swept records are already gone as far as this page
+      // is concerned — the sweep will catch up.
+      const live = G.live(all, Date.now());
+      gh.list.innerHTML = "";
+      gh.empty.hidden = live.length !== 0;
+      gh.count.textContent = live.length
+        ? live.length + " chat" + (live.length === 1 ? "" : "s")
+        : "";
+      if (gh.clear) gh.clear.disabled = live.length === 0;
+
+      for (const rec of live) {
+        const s = G.summarize(rec);
+        const row = document.createElement("div");
+        row.className = "job-item";
+        row.innerHTML =
+          `<div class="job-head">` +
+          `<div class="job-title">${escapeHtml(rec.title || "Incognito chat")}` +
+          `<span class="job-badge">${escapeHtml(ghostAge(rec))}</span></div>` +
+          `<div class="job-btns">` +
+          `<button class="job-run ghost-save" data-id="${escapeHtml(rec.id)}">Save as .md</button>` +
+          `<button class="job-del ghost-del" data-id="${escapeHtml(rec.id)}" title="Delete now">✕</button>` +
+          `</div></div>` +
+          `<div class="job-main"><div class="job-facts">` +
+          `<span><b>${s.replies} repl${s.replies === 1 ? "y" : "ies"}</b> · ${s.turns} turns</span>` +
+          `<span>${fmtChars(s.chars)}</span>` +
+          `<span>last ${escapeHtml(new Date(rec.updatedAt || 0).toLocaleString())}</span>` +
+          (s.dropped
+            ? `<span class="warn">${s.dropped} early turns dropped (size limit)</span>`
+            : "") +
+          `</div></div>`;
+        gh.list.appendChild(row);
+      }
+
+      gh.list.querySelectorAll(".ghost-save").forEach((b) =>
+        b.addEventListener("click", () => {
+          const rec = live.find((r) => r.id === b.getAttribute("data-id"));
+          if (!rec || !MD) return;
+          const conv = G.asConversation(rec);
+          const when = new Date(rec.updatedAt || Date.now());
+          const stamp =
+            when.getFullYear() + "-" +
+            String(when.getMonth() + 1).padStart(2, "0") + "-" +
+            String(when.getDate()).padStart(2, "0");
+          downloadText(
+            MD.exportFileName(conv, stamp),
+            MD.conversationMarkdown(conv, { url: rec.url, dateStr: when.toLocaleString() })
+          );
+        })
+      );
+      gh.list.querySelectorAll(".ghost-del").forEach((b) =>
+        b.addEventListener("click", () => dropGhost(b.getAttribute("data-id")))
+      );
+    });
+  }
+
+  function downloadText(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }
+
+  function dropGhost(id) {
+    if (!G || !id) return;
+    chrome.storage.local.get(G.INDEX_KEY, (res) => {
+      const ids = ((res && res[G.INDEX_KEY]) || []).filter((x) => x !== id);
+      chrome.storage.local.remove(G.recordKey(id), () => {
+        chrome.storage.local.set({ [G.INDEX_KEY]: ids }, renderGhosts);
+      });
+    });
+  }
+
+  if (gh.clear)
+    gh.clear.addEventListener("click", () => {
+      if (!confirm("Delete every incognito recovery record now? This can't be undone.")) return;
+      readGhosts().then((all) => {
+        chrome.storage.local.remove(all.map((r) => G.recordKey(r.id)), () => {
+          chrome.storage.local.set({ [G.INDEX_KEY]: [] }, renderGhosts);
+        });
+      });
+    });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !G) return;
+    const touched = Object.keys(changes).some(
+      (k) => k === G.INDEX_KEY || k.indexOf(G.KEY_PREFIX) === 0
+    );
+    if (touched) renderGhosts();
+  });
+
+  renderGhosts();
 })();
