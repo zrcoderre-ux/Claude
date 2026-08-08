@@ -118,6 +118,121 @@ test("bundleText announces what's inside and marks where each document begins", 
   assert.equal(W.bundleText(null), "");
 });
 
+// A workflow whose papers are a mixed bag, ticked for both chats.
+function bundleWorkflow(extra) {
+  return W.newWorkflow(
+    Object.assign(
+      {
+        name: "b",
+        bundleText: true,
+        chats: [{ id: "a", name: "A" }, { id: "b", name: "B" }],
+        docs: [
+          { id: "t1", name: "motion.md", type: "text/markdown", chats: ["a", "b"] },
+          { id: "t2", name: "opp.md", type: "text/markdown", chats: ["a", "b"] },
+          { id: "p1", name: "exhibits.pdf", type: "application/pdf", chats: ["a"] },
+          { id: "t3", name: "reply.md", type: "text/markdown", chats: ["b"] },
+        ],
+        steps: [
+          { id: "s1", chatId: "a", prompt: "draft" },
+          { id: "s2", chatId: "b", prompt: "attack", carry: true },
+        ],
+      },
+      extra || {}
+    ),
+    "w1",
+    NOW
+  );
+}
+
+test("bundlePlan groups by the message that will carry the file", () => {
+  const wf = bundleWorkflow();
+  const groups = W.bundlePlan(wf);
+  assert.equal(groups.length, 2, "one per chat — the chats get different papers");
+
+  const a = groups.find((g) => g.chatId === "a");
+  assert.deepEqual(a.docIds, ["t1", "t2"], "the PDF is not foldable and stays out");
+  assert.equal(a.addedAt, null, "rides the chat's opening message");
+
+  const b = groups.find((g) => g.chatId === "b");
+  assert.deepEqual(b.docIds, ["t1", "t2", "t3"], "a document ticked for both is in both bundles");
+
+  // Off by default, and never for a lone document.
+  assert.deepEqual(W.bundlePlan(bundleWorkflow({ bundleText: false })), []);
+  assert.deepEqual(
+    W.bundlePlan(
+      W.newWorkflow(
+        {
+          name: "one",
+          bundleText: true,
+          chats: [{ id: "a", name: "A" }],
+          docs: [{ id: "t1", name: "a.md", type: "text/markdown", chats: ["a"] }],
+          steps: [{ chatId: "a", prompt: "go" }],
+        },
+        "w2",
+        NOW
+      )
+    ),
+    []
+  );
+});
+
+test("documents added mid-run bundle with their own batch, not the opening one", () => {
+  const wf = bundleWorkflow();
+  const late = wf.docs.concat([
+    { id: "L1", name: "supp1.md", type: "text/markdown", chats: ["a"], addedAt: 1 },
+    { id: "L2", name: "supp2.md", type: "text/markdown", chats: ["a"], addedAt: 1 },
+  ]);
+  const groups = W.bundlePlan(Object.assign({}, wf, { docs: late.map((d) => W.newDoc(d, d.id)) }));
+  const forA = groups.filter((g) => g.chatId === "a");
+  assert.equal(forA.length, 2, "the opening upload and the later one are different messages");
+  assert.deepEqual(forA.find((g) => g.addedAt === 1).docIds, ["L1", "L2"]);
+  assert.deepEqual(forA.find((g) => g.addedAt === null).docIds, ["t1", "t2"]);
+});
+
+test("folding a group swaps its documents for the combined file, and is idempotent", () => {
+  const wf = bundleWorkflow();
+  const group = W.bundlePlan(wf).find((g) => g.chatId === "a");
+  const folded = W.foldBundle(wf.docs, group, {
+    id: "c1",
+    name: "combined-documents.txt",
+    type: "text/plain",
+    size: 99,
+  });
+
+  const byId = Object.fromEntries(folded.map((d) => [d.id, d]));
+  assert.deepEqual(byId.t1.chats, ["b"], "still going to the chat that has its own bundle");
+  assert.deepEqual(byId.t2.chats, ["b"]);
+  assert.deepEqual(byId.p1.chats, ["a"], "the PDF is untouched");
+  assert.deepEqual(byId.c1.chats, ["a"]);
+  assert.equal(byId.c1.bundled, 2, "so a run can say five papers went up as one file");
+
+  // What chat A's opening message now uploads: the combined file and the PDF.
+  const after = Object.assign({}, wf, { docs: folded });
+  assert.deepEqual(W.planRun(after)[0].docIds.sort(), ["c1", "p1"]);
+
+  // And running the plan again finds nothing left to fold for chat A.
+  assert.deepEqual(
+    W.bundlePlan(after).map((g) => g.chatId),
+    ["b"]
+  );
+});
+
+test("a mid-run bundle rides the step its documents were added for", () => {
+  const wf = bundleWorkflow();
+  const docs = wf.docs.concat(
+    [
+      { id: "L1", name: "supp1.md", type: "text/markdown", chats: ["b"], addedAt: 1 },
+      { id: "L2", name: "supp2.md", type: "text/markdown", chats: ["b"], addedAt: 1 },
+    ].map((d) => W.newDoc(d, d.id))
+  );
+  const src = Object.assign({}, wf, { docs: docs });
+  const group = W.bundlePlan(src).find((g) => g.addedAt === 1);
+  const folded = W.foldBundle(docs, group, { id: "c2", name: "combined-documents.txt", type: "text/plain" });
+  const bundle = folded.find((d) => d.id === "c2");
+  assert.equal(bundle.addedAt, 1, "so it goes up with step 2, not chat B's opening message");
+  assert.ok(W.planRun(Object.assign({}, wf, { docs: folded }))[1].docIds.indexOf("c2") !== -1);
+});
+
 test("uploadSummary says, per chat, what will actually go up", () => {
   const wf = twoChatWorkflow();
   assert.equal(W.totalUploads(wf), 1);
@@ -130,6 +245,13 @@ test("uploadSummary says, per chat, what will actually go up", () => {
   // Documents that exist but are ticked for nobody count as zero, not as one.
   const stray = W.normalize(Object.assign({}, bare, { docs: [W.newDoc({ name: "a.pdf", chats: [] }, "d")] }));
   assert.equal(W.totalUploads(stray), 0);
+
+  // With combining on it says what claude.ai will actually receive — "5
+  // documents" and "1 attachment" are both true, and only one is the point.
+  assert.equal(
+    W.uploadSummary(bundleWorkflow()),
+    "uploads: A 3 · B 3 · 5 text documents combine into 2 files"
+  );
 });
 
 test("a step's transcript entry records how many documents went up with it", () => {

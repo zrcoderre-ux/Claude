@@ -570,6 +570,84 @@ async function noteRunUsage(run) {
   if (next !== wf) await set({ [WORKFLOWS_KEY]: W.upsertWorkflow(list, next) });
 }
 
+// ---- combining a run's text documents -----------------------------------
+//
+// Done HERE — in the worker, before a run touches a tab — rather than in the
+// page as each step sends. Building the combined file is ordinary string work
+// that can't fail for interesting reasons, and doing it inside the send path put
+// it in the worst place for it: mid-run, between opening a conversation and
+// uploading to it, where a failure costs an afternoon and has to be recovered
+// from by hand. Up front, a document that can't be read is a run that hasn't
+// started yet.
+//
+// It's idempotent, so it can run at the top of every step without doing the work
+// twice: once a group is folded, its members no longer name that chat, and
+// bundlePlan stops seeing a group at all.
+function dataUrlToText(dataUrl) {
+  const s = String(dataUrl || "");
+  const comma = s.indexOf(",");
+  if (comma === -1) return null;
+  const meta = s.slice(0, comma);
+  const payload = s.slice(comma + 1);
+  try {
+    if (!/;base64/i.test(meta)) return decodeURIComponent(payload);
+    const bin = atob(payload);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    // The bytes are somebody's brief, so decode them strictly: mojibake in a
+    // combined file is worse than not combining, because it still gets read.
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (e) {
+    return null;
+  }
+}
+
+function textToDataUrl(text) {
+  const bytes = new TextEncoder().encode(String(text || ""));
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return "data:text/plain;base64," + btoa(bin);
+}
+
+async function materialiseBundles(run) {
+  if (!run || !run.bundleText) return run;
+  const src = W.runSource(run, null);
+  const groups = W.bundlePlan(Object.assign({ bundleText: true }, src));
+  if (!groups.length) return run;
+
+  let docs = run.docs || [];
+  let changed = false;
+  for (const g of groups) {
+    const byId = new Map(W.allDocs(src).map((d) => [d.id, d]));
+    const blobs = await get(g.docIds.map((id) => J.fileKey(id)));
+    const parts = [];
+    let readable = true;
+    for (const id of g.docIds) {
+      const text = dataUrlToText(blobs[J.fileKey(id)]);
+      if (text == null) {
+        readable = false;
+        break;
+      }
+      parts.push({ name: (byId.get(id) || {}).name || "untitled", text: text });
+    }
+    // Unreadable, or empty once read: leave the group alone and let the papers
+    // go up as they are. Combining is an improvement, never a precondition.
+    const combined = readable ? W.bundleText(parts) : "";
+    if (!combined) continue;
+    const id = crypto.randomUUID();
+    await set({ [J.fileKey(id)]: textToDataUrl(combined) });
+    docs = W.foldBundle(docs, g, {
+      id: id,
+      name: "combined-documents.txt",
+      type: "text/plain",
+      size: combined.length,
+    });
+    changed = true;
+  }
+  if (!changed) return run;
+  return await saveRun(Object.assign({}, run, { docs: docs }));
+}
+
 // Each run's heartbeat, written only by the page that holds its current step.
 async function readBeats(ids) {
   if (!ids.length) return {};
@@ -863,6 +941,9 @@ async function driveRun(runId, opts) {
       // A run executes its OWN snapshot of chats, steps and papers. The
       // template it came from may since have been re-armed for another matter,
       // edited, or deleted; none of that may change what this run does.
+      // Fold this run's text documents into one file per upload, before any tab
+      // is opened. A no-op once it's been done, so it costs a scan per step.
+      run = (await materialiseBundles(run)) || run;
       const src = W.runSource(run, wf);
       const plan = W.planRun(src);
       const step = plan[run.stepIndex];
@@ -944,7 +1025,7 @@ async function driveRun(runId, opts) {
 
       const docs = W.allDocs(src)
         .filter((d) => step.docIds.indexOf(d.id) !== -1)
-        .map((d) => ({ id: d.id, name: d.name, type: d.type }));
+        .map((d) => ({ id: d.id, name: d.name, type: d.type, bundled: d.bundled || 0 }));
 
       const payload = {
         type: "cum-wf-step",
@@ -957,7 +1038,6 @@ async function driveRun(runId, opts) {
         // Only set when this step's reply gets pasted into another chat: the
         // phrase that reply must contain before it's allowed to travel.
         marker: step.marker || null,
-        bundleText: !!run.bundleText,
         text: W.composeStepText(step, run.lastReply),
         files: awaitOnly ? [] : docs,
         // The model this step answers on. A step that names its own switches to

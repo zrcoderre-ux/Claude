@@ -146,10 +146,29 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   attachments is where claude.ai starts showing Claude fewer than were sent. One
   file, listing its contents at the top and marking where each document begins
   and ends, either arrives or doesn't. Only real text is folded in; PDFs and Word
-  files still go up on their own, and a run says how many it combined. This is
-  deliberately **not** a zip: claude.ai makes no promise to read inside an
-  archive, and one attachment it silently ignores is worse than several it
-  might.
+  files still go up on their own. This is deliberately **not** a zip: claude.ai
+  makes no promise to read inside an archive, and one attachment it silently
+  ignores is worse than several it might.
+
+  The combining happens **once, in the background worker, before the run opens a
+  single tab** — not at upload time and not per step. Your documents are stored
+  as you dropped them; when the run starts, the worker reads them, writes the
+  combined files, and rewrites the run's own document list to point at them.
+  Everything downstream then just uploads what it's told, which keeps a piece of
+  ordinary string work out of the one place where failure is expensive — mid-run,
+  between opening a conversation and uploading to it. A document that can't be
+  read is a run that hasn't started yet.
+
+  There is one combined file **per upload**, not per run, because the two things
+  that decide what goes up are per-upload: which chat it's for (the chats get
+  different papers — a document ticked for both is folded into each one's file)
+  and when it arrived (papers added mid-run ride a later step, so they get their
+  own). Before a run starts, its row says what that will come to: `uploads: A 3 ·
+  B 3 · 5 text documents combine into 2 files`.
+
+  It never becomes a precondition. A document that can't be decoded, or a
+  combination that comes out empty, leaves that group alone and the papers go up
+  as they are.
 - **Steps** — ordered, each naming the chat it runs in and the prompt to send. A
   step can **carry the previous step's reply** under its prompt (this is the
   hand-off; it's the copy-and-paste the workflow exists to automate), with a
