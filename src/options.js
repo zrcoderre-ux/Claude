@@ -697,9 +697,32 @@
           `value="${escapeHtml(fixDraft.chats[c.id] || "")}" placeholder="https://claude.ai/chat/…" /></label>`
       )
       .join("");
+    // The step you've picked, spelled out. "Step 4 — Drafting" is not enough to
+    // choose by: what you're deciding is which prompt goes out next, and the
+    // difference between step 4 and step 6 is the prompt.
+    const chosen = plan[fixDraft.stepIndex];
+    const facts = chosen
+      ? [escapeHtml(chosen.chatName)]
+          .concat(chosen.modelOn ? [escapeHtml(chosen.modelOn)] : [])
+          .concat(
+            chosen.docIds.length
+              ? [chosen.docIds.length + " document" + (chosen.docIds.length === 1 ? "" : "s")]
+              : []
+          )
+          .concat(chosen.carry ? ["carries in as “" + escapeHtml(chosen.carryLabel) + "”"] : [])
+          .concat(chosen.marker ? ["must contain “" + escapeHtml(chosen.marker) + "”"] : [])
+          .join(" · ")
+      : "";
+
     return (
       `<div class="wf-fix">` +
       `<div class="wf-fix-row"><b>Continue from</b> <select class="wf-fix-step">${opts}</select></div>` +
+      (chosen
+        ? `<div class="wf-fix-step-view">` +
+          `<div class="wf-step-meta">${facts}</div>` +
+          `<pre class="wf-step-prompt-view">${escapeHtml(chosen.prompt || "(no prompt)")}</pre>` +
+          `</div>`
+        : "") +
       (src.needed
         ? `<label class="wf-fix-check"><input type="checkbox" class="wf-fix-refetch"${
             fixDraft.refetchCarry ? " checked" : ""
