@@ -195,7 +195,7 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   and untitled they are three sidebar rows saying the same thing. Ticked (the
   default), each conversation the run **opens** is titled
   `8.11.26 Motion to Compel Arbitration: Drafting (A)` — the matter, then that
-  chat's job within it. Only conversations the run opens itself: a chat you
+  chat's job within it, then `(Run 2)` on a re-run's. Only conversations the run opens itself: a chat you
   pointed it at keeps the name it has, because retitling work you started is not
   the extension's business. A title that won't take is a note on the run, never a
   failed step. It is applied **twice** — once the conversation exists, so it has a
@@ -551,10 +551,18 @@ again would waste the turn. The documents stay on the run either way — the rec
 of what the matter had doesn't change, they simply don't go up.
 
 What you get is a **draft run** at the top of the list, named
-`8.11.26 MSJ (re-run 1)` — numbered rather than nested, so a third pass is
-`(re-run 2)` and not `(re-run 1) (re-run 1)` — opened in its own editor so you can
-add papers, change a prompt and say when it starts. Nothing runs until you say
-so.
+`8.11.26 MSJ (Run 2)` — counted the way you'd say it out loud, the original being
+Run 1 — opened in its own editor so you can add papers, change a prompt and say
+when it starts. Nothing runs until you say so. A third pass is `(Run 3)`, not
+`(Run 2) (Run 2)`: the old suffix is stripped before the new one is added.
+
+Its **conversations** are named the same way, with the number **at the end**:
+`8.11.26 MSJ: Drafting (A)` for the first run and
+`8.11.26 MSJ: Drafting (A) (Run 2)` for the next, so a re-run's chats read beside
+the ones they repeat instead of the number splitting the matter from the chat it
+names. Where the whole thing is too long, the matter is shortened and both the
+chat's name and the run number survive — they're what tell one conversation from
+another.
 
 ### Fixing a partial run
 
