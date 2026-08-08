@@ -775,9 +775,14 @@ quietly claim to be more than it is:
 - **Attachments are named, not embedded.** Their bytes aren't in the payload,
   and a file the next chat can't see is better named than silently absent.
 
-The button is inserted into markup claude.ai doesn't version, so it tries the
-share control by several names and, failing all of them, floats where the header
-would have been rather than not existing.
+The button is inserted into markup claude.ai doesn't version, so it looks for its
+neighbours three ways: by name, then by a button captioned `Share`, then by
+**geometry** — the leftmost control in the top band of the window's right-hand
+side, which puts it beside that cluster whatever the cluster is called. Failing
+all three it docks into the meter's own indicator stack, which is the
+extension's, and so can't be sitting on top of anything of claude.ai's. It is
+never placed loose at the top right: that's where Share lives, and a Save button
+covering Share is worse than no Save button at all.
 
 ## Table of contents
 

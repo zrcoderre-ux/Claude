@@ -1025,12 +1025,25 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 #cum-save-chat.cum-save-bad { color: #d23f31; border-color: rgba(210, 63, 49, 0.5); }
 .cum-save-ico { font-size: 12px; line-height: 1; }
 
-/* No header to sit in — float where one would have been, rather than leaving
-   no way to save at all. */
+/* Nothing to sit beside. Dock into the meter's own indicator stack, which is
+   ours — so it cannot be covering anything of claude.ai's. The stack turns
+   pointer events off for its decoration; this one is a button. */
+#cum-save-chat.cum-save-docked {
+  pointer-events: auto;
+  background: #ffffff;
+  color: #1f1f1f;
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* And if even the meter isn't there: the bottom-left corner, which nothing in
+   this extension or claude.ai's header uses. Never the top right — that is
+   where Share lives, and a Save button covering Share is worse than no Save
+   button at all. */
 #cum-save-chat.cum-save-loose {
   position: fixed;
-  top: 12px;
-  right: 16px;
+  left: 16px;
+  bottom: 60px; /* clear of the run pill, which takes the corner itself */
   z-index: 2147483643;
   background: #ffffff;
   color: #1f1f1f;
@@ -1041,5 +1054,6 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 @media (prefers-color-scheme: dark) {
   #cum-save-chat { border-color: rgba(255, 255, 255, 0.22); }
   #cum-save-chat:hover { background: rgba(255, 255, 255, 0.08); }
-  #cum-save-chat.cum-save-loose { background: #2a2a28; color: #f0efea; }
+  #cum-save-chat.cum-save-loose,
+  #cum-save-chat.cum-save-docked { background: #2a2a28; color: #f0efea; }
 }
