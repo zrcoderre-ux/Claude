@@ -725,9 +725,11 @@ immediately.
 copying it here would duplicate what it holds. A chat is taken as incognito from
 its URL — claude.ai writes the key bare, `/new?incognito=`, so what's checked is
 whether it was explicitly turned *off* rather than whether it was turned on — or
-from a short `Incognito` / `Temporary` badge in the header. A message that
-happens to *say* "incognito" is a message, not a mode, so only header-ish text of
-badge length is matched.
+from an `Incognito` / `Temporary` badge in the header — the **word**, not an
+exact caption, since betting on one wording is how a fallback stops falling back.
+That's safe because of what it's matched against rather than what it matches: a
+leaf node, badge-sized, and **not inside a message**. Text in a message is what
+someone *said* about incognito mode, which is not the same as being in it.
 
 That flag rides the **composer** URL, and claude.ai navigates away from it the
 moment the chat exists — so the answer is **sticky for the tab**: seen once, this
