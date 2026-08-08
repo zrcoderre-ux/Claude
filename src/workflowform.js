@@ -183,6 +183,11 @@
       `Word files still go up on their own — only text is combined.</p>` +
       `<div class="cumwf-docs cumwf-list"></div>` +
 
+      `<label class="cumwf-check"><input class="cumwf-name-chats" type="checkbox" /> Name each conversation ` +
+      `after the run — “<span class="cumwf-name-eg">Matter</span>: Chat A”</label>` +
+      `<p class="cumwf-hint">Only conversations a run opens itself. A chat you point it at keeps the name ` +
+      `it has: retitling work you started is not the extension's business.</p>` +
+
       `<label class="cumwf-label">Steps</label>` +
       `<div class="cumwf-steps cumwf-list"></div>` +
       `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-add-step" type="button">+ Add step</button></div>` +
@@ -220,6 +225,7 @@
       drop: q(".cumwf-drop"),
       pick: q(".cumwf-pick"),
       bundle: q(".cumwf-bundle"),
+      nameChats: q(".cumwf-name-chats"),
       fileInput: q(".cumwf-file-input"),
       docs: q(".cumwf-docs"),
       steps: q(".cumwf-steps"),
@@ -686,6 +692,7 @@
       ui.name.value = wf.name && wf.name !== ui.template.value ? wf.name : "";
       ui.desc.value = wf.description || "";
       ui.bundle.checked = !!wf.bundleText;
+      ui.nameChats.checked = wf.nameChats !== false;
       ui.count.value = (wf.chats || []).length || 1;
       ui.problems.hidden = true;
       renderChats();
@@ -767,6 +774,7 @@
       wf.name = ui.name.value.trim() || template;
       wf.description = ui.desc.value;
       wf.bundleText = ui.bundle.checked;
+      wf.nameChats = ui.nameChats.checked;
       const candidate = W.newWorkflow(wf, wf.id, Date.now());
       const problems = W.validate(candidate);
       // An unassigned document is a warning, not a blocker — it just doesn't get

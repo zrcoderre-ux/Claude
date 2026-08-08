@@ -1047,6 +1047,15 @@ async function driveRun(runId, opts) {
         // changing the model of a conversation the run didn't open would reach
         // into work that was already there.
         model: step.model && (step.modelOverride || !saved.url) ? step.model : null,
+        // What to call this conversation, when the run is the one opening it.
+        // `!saved.url` is the test for that: a chat the run was pointed at
+        // already had a link, and retitling a conversation you started yourself
+        // is not the extension's business.
+        firstInChat: step.firstInChat && !saved.url,
+        title:
+          run.nameChats !== false && step.firstInChat && !saved.url
+            ? W.chatTitle(run, step.chatName)
+            : null,
         codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
       };
       let res = await sendStep(tab.id, payload);
