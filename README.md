@@ -49,13 +49,13 @@ bottom-right corner of [claude.ai](https://claude.ai).
   the tab takes the work with it. While one is open the extension keeps a running
   copy, kept for **three days** and then deleted. See
   [Incognito recovery](#incognito-recovery).
-- **Save chat** — a button in claude.ai's own header, beside Share, that saves
-  the whole conversation as a **Markdown file** you can hand to the next chat.
-  See [Saving a chat](#saving-a-chat).
+- **Save chat** — a button in claude.ai's own header, in with the file and share
+  controls, that saves the whole conversation as a **Markdown file** you can hand
+  to the next chat. See [Saving a chat](#saving-a-chat).
 - **Table of contents** — a floating list of **your own messages** in the
   conversation you're reading, so a long chat is navigable instead of a scroll
-  bar. Starts minimized; draggable, and it remembers where you put it. See
-  [Table of contents](#table-of-contents).
+  bar. Opens from a `☰` button beside Save; starts minimized, draggable, and it
+  remembers where you put it. See [Table of contents](#table-of-contents).
 - **Workflows** — run one piece of work through **several chats that hand it
   back and forth**: A drafts, B attacks the draft, A revises, round and round,
   then a final pass. Editable, copyable, deletable, with one pre-built. Each run
@@ -775,14 +775,8 @@ quietly claim to be more than it is:
 - **Attachments are named, not embedded.** Their bytes aren't in the payload,
   and a file the next chat can't see is better named than silently absent.
 
-The button is inserted into markup claude.ai doesn't version, so it looks for its
-neighbours three ways: by name, then by a button captioned `Share`, then by
-**geometry** — the leftmost control in the top band of the window's right-hand
-side, which puts it beside that cluster whatever the cluster is called. Failing
-all three it docks into the meter's own indicator stack, which is the
-extension's, and so can't be sitting on top of anything of claude.ai's. It is
-never placed loose at the top right: that's where Share lives, and a Save button
-covering Share is worse than no Save button at all.
+Where it goes is [the header slot](#the-header-slot), which it shares with the
+table of contents' toggle.
 
 ## Table of contents
 
@@ -794,10 +788,12 @@ answer to it begins. That's the position you actually want when you're reading
 back through what a conversation did.
 
 It **starts minimized**: a chat you're only reading shouldn't have a panel over
-it. Click the tab to open it, drag either the tab or the panel's header to move
-it, and it remembers where you put it — the same treatment the meter gets, for
-the same reason. Whichever entry you jump to is briefly outlined, since landing
-silently in a wall of text leaves you wondering whether the click did anything.
+it. Its `☰` toggle sits in [the header slot](#the-header-slot) beside **Save**,
+carrying the number of messages in the chat; the panel it opens free-floats, is
+dragged by its own header, and remembers where you put it — the same treatment
+the meter gets, for the same reason. Whichever entry you jump to is briefly
+outlined, since landing silently in a wall of text leaves you wondering whether
+the click did anything.
 
 Two details in the labelling, both about a list that would otherwise distinguish
 nothing:
@@ -813,6 +809,39 @@ nothing:
 The list is built from what the page currently holds. claude.ai unmounts messages
 that scroll a long way out of view, so in a very long conversation the list grows
 as you scroll rather than being complete from the first moment.
+
+## The header slot
+
+**Save** and the contents `☰` both belong in claude.ai's own header, in with the
+file and share controls, so they live in one slot the two of them share
+(`src/headerslot.js`) rather than each hunting for its own anchor and finding a
+different one.
+
+The slot is found by **shape, not by name**. claude.ai doesn't version this
+markup, and the named guesses drifted: the selector list matched the *chat
+dropdown*, which is its own control well to the left of the file/share pair, and
+so that is where the buttons went. What's stable is the picture — a tight cluster
+of controls at the top right with clear space between it and anything further
+left — so the cluster is found by **adjacency**: start at the rightmost control
+in the header band and walk left while the controls keep touching. A gap ends the
+walk, which is exactly what separates that cluster from the dropdown. The slot
+goes in at the cluster's left end, as a sibling of the controls as they were laid
+out rather than wedged inside one button's own wrapper.
+
+**Inserted and visible are different things.** A container that clips, or a flex
+row with no room left, puts a button in the page and nowhere on the screen —
+which is how a button goes *missing* rather than moving. So every insertion is
+measured afterwards, and one that can't be seen is taken back out. The row that
+rejected it is remembered, or the header would take the button, fail the check,
+hand it back and be offered it again on the next pass — a button flickering
+between two places forever. The SPA builds a new header on every navigation, so
+that memory clears itself.
+
+Failing all of that, the buttons dock into the meter's own indicator stack, which
+is the extension's and so can't be sitting on top of anything of claude.ai's, and
+failing even that they float at the bottom left. Never loose at the top right:
+that's where Share lives, and a Save button covering Share is worse than no Save
+button at all.
 
 ## Outage detection
 
@@ -974,6 +1003,7 @@ src/workflowform.js    Workflow editor (options page)
 src/incognito.js       Incognito recovery records (pure)
 src/incognito-watch.js Keeps a copy while an incognito chat is open
 src/mdexport.js        A conversation as Markdown (pure)
+src/headerslot.js      Finds the file/share cluster and puts our buttons in it
 src/save-chat.js       The Save button in claude.ai's header
 src/toc.js             Table-of-contents labelling (pure)
 src/toc-panel.js       The floating table of contents itself

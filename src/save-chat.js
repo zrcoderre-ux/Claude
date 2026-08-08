@@ -1,9 +1,9 @@
 /**
  * Claude Usage Meter — Save chat (ISOLATED world content script).
  *
- * A button in claude.ai's own header, beside Share, that saves the whole
- * conversation as a Markdown file — so the next chat can be handed everything
- * this one worked out instead of a summary of it.
+ * A button in claude.ai's own header, in with the file and share controls, that
+ * saves the whole conversation as a Markdown file — so the next chat can be
+ * handed everything this one worked out instead of a summary of it.
  *
  * It saves the conversation PAYLOAD rather than the page: claude.ai unmounts
  * messages that scroll out of view, so anything read from the DOM would save
@@ -16,68 +16,11 @@
   const C = window.CUMComposer;
   const W = window.CUMWorkflow;
   const M = window.CUMMdExport;
+  const H = window.CUMHeaderSlot;
   if (!C || !W || !M) return;
 
   const ID = "cum-save-chat";
   const PLACE_MS = 1500;
-
-  // Beside Share, which is where you'd look for it. Each of these is a guess at
-  // unversioned markup, so they're tried in turn and the first that matches
-  // wins; if none do, the button falls back to floating in the corner rather
-  // than not existing.
-  const NEIGHBOUR_SELECTORS = [
-    'button[data-testid="share-button"]',
-    'button[aria-label*="share" i]',
-    'button[aria-label*="chat controls" i]',
-    'button[data-testid="chat-menu-trigger"]',
-  ];
-
-  function usable(b) {
-    if (!b || C.isOurs(b)) return false;
-    const r = b.getBoundingClientRect();
-    return !!(r.width && r.height);
-  }
-
-  // The top-right cluster of controls, found by WHERE IT IS rather than by what
-  // anything is called. Names are the first try because they're exact, but
-  // claude.ai doesn't version them, and a name that stops matching used to mean
-  // the button floated over the header — landing on top of the very controls it
-  // was meant to sit beside.
-  const HEADER_BAND_PX = 90;
-  function findNeighbour() {
-    for (const sel of NEIGHBOUR_SELECTORS) {
-      let b;
-      try {
-        b = document.querySelector(sel);
-      } catch (e) {
-        continue;
-      }
-      if (usable(b)) return b;
-    }
-    try {
-      for (const b of document.querySelectorAll("header button, [role=banner] button")) {
-        if (usable(b) && /^\s*share\s*$/i.test(b.textContent || "")) return b;
-      }
-    } catch (e) {
-      /* ignore */
-    }
-    // Geometry. Everything in the top band, on the right half of the window —
-    // and the LEFTMOST of those, so this sits beside that cluster rather than
-    // in the middle of it.
-    let best = null;
-    try {
-      for (const b of document.querySelectorAll('button, a[role="button"]')) {
-        if (!usable(b)) continue;
-        const r = b.getBoundingClientRect();
-        if (r.top < 0 || r.top > HEADER_BAND_PX) continue;
-        if (r.left < window.innerWidth * 0.55) continue;
-        if (!best || r.left < best.left) best = { el: b, left: r.left };
-      }
-    } catch (e) {
-      /* ignore */
-    }
-    return best ? best.el : null;
-  }
 
   let btn = null;
   function build() {
@@ -91,33 +34,72 @@
     return btn;
   }
 
+  // The conversation as the page has it. Needed for a chat the API has no
+  // record of — an incognito one is never saved, which is exactly the chat
+  // whose contents are most worth rescuing — and as the answer when the API
+  // can't be reached at all.
+  const TURN_SELECTORS = [
+    '[data-testid="user-message"]',
+    '[data-testid="assistant-message"]',
+    ".font-user-message",
+    ".font-claude-response",
+    ".font-claude-message",
+  ];
+  function turnsFromPage() {
+    let nodes = [];
+    try {
+      nodes = Array.from(document.querySelectorAll(TURN_SELECTORS.join(","))).filter(
+        (n) => !C.isOurs(n)
+      );
+    } catch (e) {
+      return [];
+    }
+    nodes.sort((a, b) =>
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+    );
+    const out = [];
+    for (const n of nodes) {
+      if (out.some((o) => o.node.contains(n))) continue; // the same turn twice
+      const text = (n.textContent || "").trim();
+      if (!text) continue;
+      const human = /user-message|font-user-message/.test(
+        (n.getAttribute("data-testid") || "") + " " + (n.className || "")
+      );
+      out.push({ node: n, sender: human ? "human" : "assistant", text: text });
+    }
+    return out;
+  }
+
+  function conversationFromPage() {
+    const turns = turnsFromPage();
+    if (!turns.length) return null;
+    return {
+      name: (document.title || "").replace(/\s*[-–—|]\s*claude.*$/i, "").trim() ||
+        turns[0].text.split("\n")[0].slice(0, 70),
+      chat_messages: turns.map((t) => ({
+        sender: t.sender,
+        content: [{ type: "text", text: t.text }],
+      })),
+    };
+  }
+
   // Put it back whenever the SPA rebuilds its header, which it does on every
-  // navigation — and take it away where there's no conversation to save.
+  // navigation — and take it away where there is nothing to save. Nothing to
+  // save means no messages, NOT no conversation id: an incognito chat has
+  // plenty to save and never gets an id at all.
   function place() {
-    const conv = W.conversationId(location.pathname);
-    if (!conv) {
+    if (!W.conversationId(location.pathname) && !turnsFromPage().length) {
       if (btn && btn.parentNode) btn.remove();
       return;
     }
     const b = build();
-    const neighbour = findNeighbour();
-    if (neighbour && neighbour.parentElement) {
-      if (b.parentElement !== neighbour.parentElement || b.nextElementSibling !== neighbour) {
-        neighbour.parentElement.insertBefore(b, neighbour);
-      }
-      b.classList.remove("cum-save-loose", "cum-save-docked");
-      measureStack();
-      return;
-    }
-    // Nothing found at all. Dock into the meter's own indicator stack, which is
-    // ours and therefore can't be sitting on top of anything of claude.ai's —
-    // the previous fallback floated at the top right and covered Share, which
-    // is the one place a button called Save must not be.
-    const stack = document.getElementById("cum-pills");
-    const home = stack || document.body || document.documentElement;
-    if (b.parentNode !== home) home.appendChild(b);
-    b.classList.toggle("cum-save-loose", !stack);
-    b.classList.toggle("cum-save-docked", !!stack);
+    // Where in the header this goes is src/headerslot.js's problem, and the
+    // contents button asks the same question — so they end up beside each other
+    // rather than each landing on a different anchor.
+    const where = H ? H.place(b) : "loose";
+    b.classList.toggle("cum-save-loose", where === "loose");
+    b.classList.toggle("cum-save-docked", where === "docked");
+    if (!H && b.parentNode !== document.body) document.body.appendChild(b);
     measureStack();
   }
 
@@ -195,16 +177,23 @@
   }
 
   async function save() {
-    const uuid = W.conversationId(location.pathname);
-    if (!uuid) return say("No chat", true);
     btn.disabled = true;
     say("Saving…");
     try {
-      const conv = await fetchConversation(uuid, 25000);
-      const messages = M.messagesOf(conv);
+      // The conversation payload first — it holds the whole chat however far
+      // you have scrolled, where the page holds only what is mounted.
+      const uuid = W.conversationId(location.pathname);
+      let conv = uuid ? await fetchConversation(uuid, 25000) : null;
+      let messages = M.messagesOf(conv);
+      if (!messages.length) {
+        // No id, or no record under it: an incognito chat is never saved by
+        // claude.ai, and that is the chat whose contents are worth most.
+        conv = conversationFromPage();
+        messages = M.messagesOf(conv);
+      }
       // An empty answer is not a file. Saying so beats handing over an .md that
       // turns out to hold a heading and nothing else.
-      if (!conv || !messages.length) return say("Couldn't read", true);
+      if (!messages.length) return say("Couldn't read", true);
       const now = Date.now();
       download(
         M.exportFileName(conv, localDate(now)),
