@@ -470,6 +470,15 @@ step, and the longest with its number. Median rather than mean, because one step
 that stalled for an hour shouldn't get to describe the other eight. The in-chat
 pill counts the current step up as it goes.
 
+The run's row also says **when it ran**: `Started Aug 8, 9:14 AM · finished 4:02
+PM · 6h 48m end to end`, with the date repeated on the finish only when the run
+crossed a day — which is exactly when you want to be told. A run still going
+reads `2h 10m so far`. That figure is the wall clock and the one beside it is
+working time; they disagree by however long the run spent paused, held or
+waiting on you, and hovering says how much that was. Both are worth having,
+because "it took seven hours" and "it did forty minutes of work" are answers to
+different questions.
+
 The clock **stops when the run does**. A step paused overnight, or held through
 an outage, or stopped on an error and fixed the next morning, spent that time
 stopped — not working — and the figure says so, with the excluded time shown

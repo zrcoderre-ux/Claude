@@ -1057,6 +1057,43 @@ test("timingSummary describes a run by its median step, not its worst", () => {
   assert.equal(t.longest.stepIndex, 1);
 });
 
+test("a run records when it ran, not only what its steps cost", () => {
+  const start = 1770000000000;
+  const transcript = [
+    { stepIndex: 0, ms: 20 * MIN },
+    { stepIndex: 1, ms: 20 * MIN },
+  ];
+
+  // Still going: measured to now, and said to be so.
+  const live = W.runTiming({ startedAt: start, transcript: transcript }, start + 90 * MIN);
+  assert.equal(live.startedAt, start);
+  assert.equal(live.finishedAt, null);
+  assert.equal(live.running, true);
+  assert.equal(live.elapsedMs, 90 * MIN);
+  assert.equal(live.workingMs, 40 * MIN);
+  // The gap is the run waiting on something — a hold, a pause, you. Named,
+  // because "1h 30m end to end" beside "40m of work" is the first thing anyone
+  // asks about.
+  assert.equal(live.idleMs, 50 * MIN);
+
+  const done = W.runTiming(
+    { startedAt: start, finishedAt: start + 2 * 60 * MIN, transcript: transcript },
+    start + 99 * 60 * MIN // "now" is irrelevant once it has finished
+  );
+  assert.equal(done.running, false);
+  assert.equal(done.elapsedMs, 2 * 60 * MIN);
+  assert.equal(done.finishedAt, start + 2 * 60 * MIN);
+
+  // A run that never started has no times to report, and a draft is exactly
+  // that — reporting one would date it to whenever the page was opened.
+  const draft = W.runTiming({ transcript: [] }, start);
+  assert.equal(draft.startedAt, null);
+  assert.equal(draft.elapsedMs, null);
+  assert.equal(draft.idleMs, null);
+  assert.equal(draft.running, false);
+  assert.equal(W.runTiming(null, start).startedAt, null);
+});
+
 test("formatMs says the useful thing at each scale", () => {
   assert.equal(W.formatMs(0), "0s");
   assert.equal(W.formatMs(42_000), "42s");
