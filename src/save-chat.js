@@ -32,6 +32,18 @@
     'button[data-testid="chat-menu-trigger"]',
   ];
 
+  function usable(b) {
+    if (!b || C.isOurs(b)) return false;
+    const r = b.getBoundingClientRect();
+    return !!(r.width && r.height);
+  }
+
+  // The top-right cluster of controls, found by WHERE IT IS rather than by what
+  // anything is called. Names are the first try because they're exact, but
+  // claude.ai doesn't version them, and a name that stops matching used to mean
+  // the button floated over the header — landing on top of the very controls it
+  // was meant to sit beside.
+  const HEADER_BAND_PX = 90;
   function findNeighbour() {
     for (const sel of NEIGHBOUR_SELECTORS) {
       let b;
@@ -40,19 +52,31 @@
       } catch (e) {
         continue;
       }
-      if (b && !C.isOurs(b) && b.offsetParent !== null) return b;
+      if (usable(b)) return b;
     }
-    // Nothing named it. A button whose only label is the word Share, up in the
-    // header, is the same thing by another route.
     try {
       for (const b of document.querySelectorAll("header button, [role=banner] button")) {
-        if (C.isOurs(b)) continue;
-        if (/^\s*share\s*$/i.test(b.textContent || "")) return b;
+        if (usable(b) && /^\s*share\s*$/i.test(b.textContent || "")) return b;
       }
     } catch (e) {
       /* ignore */
     }
-    return null;
+    // Geometry. Everything in the top band, on the right half of the window —
+    // and the LEFTMOST of those, so this sits beside that cluster rather than
+    // in the middle of it.
+    let best = null;
+    try {
+      for (const b of document.querySelectorAll('button, a[role="button"]')) {
+        if (!usable(b)) continue;
+        const r = b.getBoundingClientRect();
+        if (r.top < 0 || r.top > HEADER_BAND_PX) continue;
+        if (r.left < window.innerWidth * 0.55) continue;
+        if (!best || r.left < best.left) best = { el: b, left: r.left };
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return best ? best.el : null;
   }
 
   let btn = null;
@@ -81,13 +105,30 @@
       if (b.parentElement !== neighbour.parentElement || b.nextElementSibling !== neighbour) {
         neighbour.parentElement.insertBefore(b, neighbour);
       }
-      b.classList.remove("cum-save-loose");
+      b.classList.remove("cum-save-loose", "cum-save-docked");
+      measureStack();
       return;
     }
-    // No header to sit in: float it where the header would have been, rather
-    // than leaving no way to save at all.
-    if (b.parentNode !== document.body) (document.body || document.documentElement).appendChild(b);
-    b.classList.add("cum-save-loose");
+    // Nothing found at all. Dock into the meter's own indicator stack, which is
+    // ours and therefore can't be sitting on top of anything of claude.ai's —
+    // the previous fallback floated at the top right and covered Share, which
+    // is the one place a button called Save must not be.
+    const stack = document.getElementById("cum-pills");
+    const home = stack || document.body || document.documentElement;
+    if (b.parentNode !== home) home.appendChild(b);
+    b.classList.toggle("cum-save-loose", !stack);
+    b.classList.toggle("cum-save-docked", !!stack);
+    measureStack();
+  }
+
+  // The meter's stack just changed height, which decides whether it hangs above
+  // or below the meter and how much room the meter's panel has to leave it.
+  function measureStack() {
+    try {
+      if (window.CUMPills) window.CUMPills.measure();
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   // ---- fetching and saving -------------------------------------------------
