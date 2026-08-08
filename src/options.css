@@ -637,6 +637,16 @@ td .approx {
   flex-wrap: wrap;
 }
 
+/* The chosen step, read-only, right under the picker: "Step 4 — Drafting" is
+   not enough to choose by when what you're deciding is which prompt goes out. */
+.wf-fix-step-view {
+  margin: 2px 0 4px;
+}
+
+.wf-fix-step-view .wf-step-prompt-view {
+  max-height: 150px;
+}
+
 .wf-fix-check {
   display: flex;
   align-items: flex-start;

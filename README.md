@@ -460,7 +460,12 @@ A ten-step run that stops at step six shouldn't have to start again. **Fix &
 continue** on the run's row opens a small panel:
 
 - **Continue from** — any step, not only the one it stopped on. Go back a step to
-  redo one that went badly, or forward to skip one you've handled by hand.
+  redo one that went badly, or forward to skip one you've handled by hand. The
+  step you pick is **spelled out underneath** — its prompt in full, plus which
+  chat and model, what it carries in, its documents, and any marker it has to see
+  — and changes as you change the pick. `Step 4 — Drafting` is not enough to
+  choose by when the thing you're actually choosing is which prompt goes out
+  next.
 - **Re-read the previous chat's latest reply** — the conversation the step before
   ran in is still open, and its last answer *is* the hand-off. Ticking this reads
   it fresh (through the same copy box) and carries it into the step being
