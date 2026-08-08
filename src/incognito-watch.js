@@ -21,7 +21,13 @@
   if (!C || !G) return;
 
   const POLL_MS = 4000;
-  // Badges claude.ai puts on a temporary chat. The WORD, not an exact caption:
+  // Badges claude.ai puts on a temporary chat. Confirmed live: a leaf
+  //   <span class="text-sm select-none">Incognito chat</span>
+  // sitting at the very top left of the page (y≈16), which the top-of-window
+  // fallback below catches whether or not it is inside anything calling itself
+  // a header.
+  //
+  // The WORD, not that exact caption:
   // "Incognito", "Incognito chat", "Temporary chat · not saved" are all the
   // same badge, and betting on one wording is how the fallback stops falling
   // back. Safe because of what it is matched against, below — a MESSAGE that
