@@ -145,8 +145,8 @@
       `to after each run starts.</p></div>` +
       `<label class="cumwf-label">Run name</label>` +
       `<input class="cumwf-name" type="text" placeholder="e.g. Demurrer — Smith v. Jones" />` +
-      `<p class="cumwf-hint">This matter, this run. Starting a run gives it this name along with the ` +
-      `documents below, then clears both from the template. Leave it blank to use the workflow name.</p>` +
+      `<p class="cumwf-hint">This matter, this run. A run keeps the name of the workflow it came from ` +
+      `either way — this is what tells one matter from another.</p>` +
       `<label class="cumwf-label">What it does (optional)</label>` +
       `<input class="cumwf-desc" type="text" placeholder="One line, for the list" />` +
 
@@ -172,6 +172,22 @@
       `<div class="cumwf-steps cumwf-list"></div>` +
       `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-add-step" type="button">+ Add step</button></div>` +
 
+      // Runs only: when this one should go. It lives here rather than on the
+      // workflow's row because it belongs to the matter, not the template —
+      // and because the last thing you do after setting a run up is decide
+      // whether it goes now, at a time, or not yet.
+      `<div class="cumwf-when-row" hidden>` +
+      `<label class="cumwf-label">When it starts</label>` +
+      `<div class="cumwf-row">` +
+      `<select class="cumwf-when">` +
+      `<option value="draft">Not yet — leave it set up and waiting</option>` +
+      `<option value="now">Run now</option>` +
+      `<option value="reset">When usage resets</option>` +
+      `<option value="time">At a set time</option>` +
+      `</select>` +
+      `<input class="cumwf-at" type="datetime-local" disabled /></div>` +
+      `<p class="cumwf-hint cumwf-when-hint"></p></div>` +
+
       `<ul class="cumwf-problems" hidden></ul>` +
       `<div class="cumwf-actions"><button class="cumwf-btn primary cumwf-save" type="button">Save workflow</button>` +
       `<button class="cumwf-btn ghost cumwf-cancel" type="button">Cancel</button>` +
@@ -193,6 +209,10 @@
       docs: q(".cumwf-docs"),
       steps: q(".cumwf-steps"),
       addStep: q(".cumwf-add-step"),
+      whenRow: q(".cumwf-when-row"),
+      when: q(".cumwf-when"),
+      at: q(".cumwf-at"),
+      whenHint: q(".cumwf-when-hint"),
       problems: q(".cumwf-problems"),
       save: q(".cumwf-save"),
       cancel: q(".cumwf-cancel"),
@@ -571,6 +591,8 @@
       wf = null;
       runSink = null;
       if (ui.tmplRow) ui.tmplRow.hidden = false;
+      if (ui.whenRow) ui.whenRow.hidden = true;
+      ui.name.placeholder = "e.g. Demurrer — Smith v. Jones";
       ui.save.textContent = "Save workflow";
       pendingFiles.clear();
       if (typeof opts.onClosed === "function") opts.onClosed();
@@ -589,6 +611,38 @@
     }
 
     ui.cancel.addEventListener("click", close);
+
+    // The trigger chosen at the bottom of a run's editor, or null when the row
+    // isn't showing (a workflow, or a run already under way). `false` means the
+    // operator asked for a time that has been and gone.
+    function readTrigger() {
+      if (!ui.whenRow || ui.whenRow.hidden) return null;
+      const when = ui.when.value;
+      if (when === "draft") return { type: "draft" };
+      if (when !== "time") return { type: when === "reset" ? "reset" : "now" };
+      const raw = ui.at.value;
+      const at = raw ? new Date(raw).getTime() : NaN;
+      if (!Number.isFinite(at) || at <= Date.now()) return false;
+      return { type: "time", at: at };
+    }
+
+    function syncWhen() {
+      const when = ui.when.value;
+      ui.at.disabled = when !== "time";
+      if (when === "time" && !ui.at.value) {
+        const d = new Date(Date.now() + 3600000 - new Date().getTimezoneOffset() * 60000);
+        ui.at.value = d.toISOString().slice(0, 16);
+      }
+      ui.whenHint.textContent =
+        when === "draft"
+          ? "It stays at the top of the runs list, doing nothing, until you come back and start it."
+          : when === "now"
+          ? "It opens its own window and begins as soon as you save."
+          : when === "reset"
+          ? "It waits for your next 5-hour usage reset, then begins."
+          : "It waits for the time above, then begins.";
+    }
+    ui.when.addEventListener("change", syncWhen);
 
     ui.save.addEventListener("click", async () => {
       if (!wf) return;
@@ -617,9 +671,11 @@
         if (runSink) {
           await storageSet(writes);
           const sink = runSink;
+          const trigger = readTrigger();
+          if (trigger === false) return flash("Pick a time in the future.", true);
           flash("Saved.");
           close();
-          sink(candidate);
+          sink(candidate, trigger);
           return;
         }
 
@@ -696,6 +752,26 @@
         );
         if (ui.tmplRow) ui.tmplRow.hidden = true; // a run has no resting name
         ui.name.value = run.name || "";
+        // The workflow it came from, named where the template's own name would
+        // be — a run keeps that association even after the template is renamed
+        // or deleted, but it isn't the run's name and can't be edited here.
+        const from = W.runLabel(run).template;
+        ui.name.placeholder = from
+          ? "What this matter is — from “" + from + "”"
+          : "What this matter is — e.g. Demurrer — Smith v. Jones";
+        // Its trigger, but only while it still has one to give. Once a run has
+        // started, when it started is history.
+        const armable = W.canRetrigger(run);
+        ui.whenRow.hidden = !armable;
+        if (armable) {
+          const t = run.trigger || {};
+          ui.when.value = t.type === "time" || t.type === "reset" || t.type === "now" ? t.type : "draft";
+          if (t.type === "time" && typeof t.at === "number") {
+            const d = new Date(t.at - new Date(t.at).getTimezoneOffset() * 60000);
+            ui.at.value = d.toISOString().slice(0, 16);
+          }
+          syncWhen();
+        }
         ui.save.textContent = "Save changes to this run";
       },
       close,

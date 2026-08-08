@@ -615,9 +615,17 @@
     return {
       id: id,
       workflowId: wf ? wf.id : null,
-      // The name the workflow was wearing when it started — this matter's name.
-      // The template goes back to its own straight after (see resetToTemplate).
-      name: wf ? wf.name : "Workflow",
+      // This matter's name — and ONLY this matter's. A template sitting at its
+      // resting name has nothing to say about the matter, so a run made from one
+      // starts unnamed and asks; it does not inherit "Tentative ruling — 3×
+      // devil's advocate" and then sit in the list pretending to be a template.
+      // (A workflow armed the older way, by typing the matter's name onto it,
+      // still hands that name over — that name IS the matter.)
+      name: wf && trimmed(wf.name) !== trimmed(wf.templateName) ? wf.name : "",
+      // Where it came from, kept whatever later happens to the template: renamed
+      // for another matter, rewritten, or deleted outright. A run always knows
+      // which workflow it is a run OF.
+      templateName: wf ? trimmed(wf.templateName) || trimmed(wf.name) : "",
       // This matter's papers, handed over at Start so the template can be
       // cleared and re-armed while this run is still going.
       docs: (docs || (wf && wf.docs) || []).map((d) => newDoc(d, d && d.id)),
@@ -732,7 +740,7 @@
       chatMap[c.id] = nid;
       return newChatSlot(c, nid, i);
     });
-    const name = trimmed(run && run.name) || "Workflow from a run";
+    const name = trimmed(run && run.name) || trimmed(run && run.templateName) || "Workflow from a run";
     return newWorkflow(
       {
         name: name,
@@ -760,6 +768,29 @@
     return !!run && run.status === "draft";
   }
 
+  // How a run is named on screen: the matter, and the workflow it's a run of.
+  // A run set up but not yet named says so rather than borrowing the template's
+  // name, which would make the runs list read like a second copy of the
+  // workflows list.
+  function runLabel(run) {
+    const r = run || {};
+    const name = trimmed(r.name);
+    const template = trimmed(r.templateName);
+    const title = name || template || "Untitled run";
+    return {
+      title: title,
+      // Only worth showing beside the title when it isn't already the title.
+      template: template && template !== title ? template : "",
+      named: !!name,
+    };
+  }
+
+  // Has it actually gone yet? A draft hasn't, and neither has a run still
+  // waiting on its trigger — both can still be changed before anything is sent.
+  function started(run) {
+    return !!run && run.status !== "draft" && run.status !== "pending";
+  }
+
   function canRetrigger(run) {
     return !!run && (run.status === "pending" || run.status === "draft");
   }
@@ -772,12 +803,16 @@
         ? { type: "time", at: t.at }
         : t.type === "reset"
         ? { type: "reset" }
+        : t.type === "draft"
+        ? { type: "draft" }
         : { type: "now" };
     // Giving a draft a trigger is what starts it — up to that moment it's a
-    // matter being set up, not a job in a queue.
+    // matter being set up, not a job in a queue. And taking the trigger back off
+    // a queued run puts it there again, which is how a matter is un-scheduled
+    // without being cancelled.
     return Object.assign({}, run, {
       trigger: next,
-      status: isDraft(run) ? "pending" : run.status,
+      status: next.type === "draft" ? "draft" : "pending",
       lastProgressAt: now,
     });
   }
@@ -1735,6 +1770,8 @@
     canRetrigger,
     retrigger,
     isDraft,
+    started,
+    runLabel,
     workflowFromRun,
     markPaused,
     applyRunEdit,
