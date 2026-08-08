@@ -1395,6 +1395,33 @@
     };
   }
 
+  // Is there any usage left to send into? Read from the meter rather than from
+  // anything on the page: a reply that DISCUSSES running out of usage must not
+  // be able to pause a healthy run, and message text is the one place that
+  // sentence is likely to appear.
+  //
+  // 0.995 rather than 1 because the endpoint reports whole percents — a window
+  // reading 99.6% has nothing left worth spending a step on. Either window
+  // counts: a weekly limit blocks a fresh 5-hour session just as firmly.
+  const USAGE_FULL = 0.995;
+  function usageExhausted(state) {
+    const s = state || {};
+    const at = (v) => typeof v === "number" && isFinite(v) && v >= USAGE_FULL;
+    return at(s.percent) || at(s.weeklyPercent);
+  }
+
+  // When it comes back, so a paused run can say. Null when the meter doesn't
+  // know — better to say nothing than to name a time we're guessing at.
+  function usageBackAt(state) {
+    const s = state || {};
+    const session = typeof s.percent === "number" && s.percent >= USAGE_FULL ? s.resetAt : null;
+    const weekly =
+      typeof s.weeklyPercent === "number" && s.weeklyPercent >= USAGE_FULL ? s.weeklyResetAt : null;
+    // Whichever runs out latest is when work can actually resume.
+    const times = [session, weekly].filter((t) => typeof t === "number" && t > 0);
+    return times.length ? Math.max.apply(null, times) : null;
+  }
+
   // ---- what a run costs ---------------------------------------------------
   //
   // claude.ai publishes no per-conversation cost, so this is the meter's own
@@ -2203,6 +2230,8 @@
     stepTiming,
     timingSummary,
     formatMs,
+    usageExhausted,
+    usageBackAt,
     usageSample,
     usageCost,
     conversationKey,
