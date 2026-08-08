@@ -362,6 +362,7 @@
       // are done when they're done, and a Re-run button on every finished row
       // is a button whose only use is to be pressed by mistake.
       allowRerun: !!f.allowRerun,
+      rerun: rerunDefaults(f.rerun),
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
       docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
       steps: (f.steps || []).map((s) => newStep(s, s && s.id)),
@@ -763,6 +764,8 @@
       nameChats: !(wf && wf.nameChats === false),
       downloadFiles: !!(wf && wf.downloadFiles),
       allowRerun: !!(wf && wf.allowRerun),
+      // The workflow's answers, copied so this matter can differ from the next.
+      rerun: rerunDefaults(wf && wf.rerun),
       // And its own copy of the chats and steps. A run executes THIS, not the
       // template — so the template can be edited, re-armed or deleted without
       // changing what a run in flight does, and so a run can be edited (a step
@@ -834,6 +837,36 @@
   //     actually runs rather than one this re-run skips, and the previous run's
   //     final reply is worth carrying in, since otherwise the new chat begins
   //     with no idea what came before.
+  // The answers a re-run needs, which for most workflows are the same every
+  // time: a nine-step ruling workflow re-run is always "start at step 2, fresh
+  // conversations, carry the last ruling in". Held on the workflow so they're
+  // answered once, copied onto each run so one matter can differ, and still
+  // asked at the moment of pressing Re-run — a run made before the workflow had
+  // an opinion, or from a workflow that has none, must still be re-runnable.
+  function rerunDefaults(x) {
+    const d = x || {};
+    let stepIndex = typeof d.stepIndex === "number" ? Math.floor(d.stepIndex) : 1;
+    if (!(stepIndex >= 0)) stepIndex = 0;
+    return {
+      stepIndex: stepIndex,
+      freshChats: !!d.freshChats,
+      carryFinal: d.carryFinal !== false,
+      // Fresh conversations start empty, so the papers go up again — that being
+      // what "the same run, again" means. Off for a re-run that only needs the
+      // hand-off, where re-uploading twenty exhibits is a waste of the turn.
+      reuseDocs: d.reuseDocs !== false,
+    };
+  }
+
+  // Those answers as they apply to THIS run: its own if it has them, and the
+  // step clamped to a plan that may have been edited shorter since.
+  function rerunSettings(run) {
+    const d = rerunDefaults(run && run.rerun);
+    const total = ((runSource(run, null).steps) || []).length;
+    if (total > 0 && d.stepIndex > total - 1) d.stepIndex = total - 1;
+    return d;
+  }
+
   function canRerun(run) {
     return !!run && run.status === "done" && run.allowRerun === true;
   }
@@ -853,6 +886,7 @@
     if (!(stepIndex >= 0)) stepIndex = 0;
     if (total > 0 && stepIndex > total - 1) stepIndex = total - 1;
     const fresh = !!o.freshChats;
+    const reuseDocs = o.reuseDocs !== false;
     const generation = (run.rerunCount || 0) + 1;
 
     const docs = (run.docs || []).map((d) => {
@@ -860,7 +894,11 @@
       // Papers that went up on a step this re-run skips would never be
       // uploaded at all — the plan puts them on a step that doesn't run. In a
       // fresh conversation that matters; in the old one they're already there.
-      if (fresh)
+      //
+      // Left alone rather than dropped when they aren't wanted: the re-run
+      // still says which papers the matter had, they just stay on the step
+      // nothing runs and so never go up.
+      if (fresh && reuseDocs)
         doc.addedAt = Math.max(typeof d.addedAt === "number" ? d.addedAt : 0, stepIndex);
       return doc;
     });
@@ -882,6 +920,7 @@
         nameChats: run.nameChats,
         downloadFiles: run.downloadFiles,
         allowRerun: run.allowRerun,
+        rerun: run.rerun,
       },
       id,
       now,
@@ -1083,6 +1122,7 @@
       nameChats: flag("nameChats"),
       downloadFiles: flag("downloadFiles"),
       allowRerun: flag("allowRerun"),
+      rerun: p.rerun ? rerunDefaults(p.rerun) : run.rerun,
       lastProgressAt: now,
       updatedAt: now,
     });
@@ -2079,6 +2119,8 @@
     retrigger,
     isDraft,
     canRerun,
+    rerunDefaults,
+    rerunSettings,
     rerunOf,
     rerunName,
     rerunCarries,

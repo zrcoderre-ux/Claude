@@ -1318,6 +1318,65 @@ test("a re-run in fresh chats re-uploads the papers on the step it starts at", (
   assert.deepEqual(plan[0].docIds, [], "not the step being skipped");
 });
 
+test("the re-run answers are the workflow's, and a run inherits them", () => {
+  const { run } = finishedRun({
+    rerun: { stepIndex: 2, freshChats: true, carryFinal: true, reuseDocs: false },
+  });
+  // The run carries its own copy, so one matter can differ from the next.
+  assert.deepEqual(run.rerun, {
+    stepIndex: 2,
+    freshChats: true,
+    carryFinal: true,
+    reuseDocs: false,
+  });
+  assert.deepEqual(W.rerunSettings(run), run.rerun, "and that's what Re-run opens with");
+
+  // Changed for this run alone.
+  const mine = W.applyRunEdit(run, { rerun: { stepIndex: 1 } }, NOW + 1);
+  assert.equal(mine.rerun.stepIndex, 1);
+  assert.equal(mine.rerun.freshChats, false, "an answer not given takes the default");
+  assert.equal(W.applyRunEdit(run, {}, NOW + 1).rerun.stepIndex, 2, "an edit that says nothing");
+});
+
+test("a run from a workflow with no re-run answers still has usable ones", () => {
+  // The button must not depend on the workflow having had an opinion.
+  const { run } = finishedRun();
+  const d = W.rerunSettings(run);
+  assert.equal(d.stepIndex, 1, "the second step — the common case");
+  assert.equal(d.freshChats, false);
+  assert.equal(d.carryFinal, true);
+  assert.equal(d.reuseDocs, true);
+  // A run made before any of this existed has no `rerun` at all.
+  assert.deepEqual(W.rerunSettings(Object.assign({}, run, { rerun: undefined })), d);
+  // And a step from a plan that has since been shortened is clamped.
+  const short = Object.assign({}, run, {
+    rerun: { stepIndex: 9 },
+    plan: { chats: run.plan.chats, steps: run.plan.steps.slice(0, 2) },
+  });
+  assert.equal(W.rerunSettings(short).stepIndex, 1);
+});
+
+test("fresh conversations can be told not to take the papers again", () => {
+  const { run } = finishedRun();
+  const without = W.rerunOf(
+    run,
+    { stepIndex: 1, freshChats: true, reuseDocs: false },
+    "r2",
+    NOW + 1
+  );
+  // Kept on the run — the matter still had them — but left on the step nothing
+  // runs, so they never go up.
+  assert.equal(without.docs.length, 1, "still on the record");
+  assert.equal(without.docs[0].addedAt, undefined);
+  const plan = W.planRun(W.runSource(without, null));
+  assert.deepEqual(plan[1].docIds, []);
+  assert.deepEqual(plan[2].docIds, []);
+
+  // And on by default, which is what "the same run, again" means.
+  const with_ = W.rerunOf(run, { stepIndex: 1, freshChats: true }, "r3", NOW + 1);
+  assert.deepEqual(W.planRun(W.runSource(with_, null))[2].docIds, ["d1"]);
+});
+
 test("a re-run never pastes into a step that takes no hand-off", () => {
   const { run } = finishedRun();
   // Step 1 (index 0) opens its chat and carries nothing.

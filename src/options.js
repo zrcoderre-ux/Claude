@@ -687,7 +687,16 @@
     // Default to the second step. A workflow that opens by producing the thing
     // the rest of it works on has nothing to produce the second time — that
     // being the whole reason a re-run asks where to start.
-    rerunDraft = { stepIndex: Math.min(1, Math.max(0, plan.length - 1)), fresh: false, carry: true };
+    // The workflow's answers, carried onto this run when it was made. A run
+    // from before the workflow had any — or from one that has none — falls back
+    // to sensible ones rather than losing the button.
+    const d = WF.rerunSettings(run);
+    rerunDraft = {
+      stepIndex: Math.min(d.stepIndex, Math.max(0, plan.length - 1)),
+      fresh: d.freshChats,
+      carry: d.carryFinal,
+      docs: d.reuseDocs,
+    };
     fixingRunId = null;
     showingStepsFor = null;
     renderRuns();
@@ -732,6 +741,14 @@
             `paste this run's final reply. Start at a step that carries if you want it.</div>`
         : `<div class="wf-fix-note">Its chats already hold the papers and the work, so nothing is ` +
           `re-uploaded and nothing needs carrying in.</div>`) +
+      (rerunDraft.fresh
+        ? `<label class="wf-fix-check"><input type="checkbox" class="wf-rr-docs"${
+            rerunDraft.docs ? " checked" : ""
+          } /> Give the new conversations this run's documents</label>` +
+          `<div class="wf-fix-note">On, they go up again with the first step that runs in each chat — ` +
+          `the new conversations start empty, so otherwise they'd never arrive. Off where a re-run only ` +
+          `needs the hand-off and re-uploading the papers would waste the turn.</div>`
+        : "") +
       `<div class="wf-fix-row"><button class="job-run wf-rr-go" data-id="${run.id}">Create re-run</button>` +
       `<button class="job-edit wf-rr-cancel" data-id="${run.id}">Cancel</button></div>` +
       `</div>`
@@ -753,6 +770,8 @@
       });
     const carry = wfui.runs.querySelector(".wf-rr-carry");
     if (carry) carry.addEventListener("change", () => (rerunDraft.carry = carry.checked));
+    const docs = wfui.runs.querySelector(".wf-rr-docs");
+    if (docs) docs.addEventListener("change", () => (rerunDraft.docs = docs.checked));
     const cancel = wfui.runs.querySelector(".wf-rr-cancel");
     if (cancel)
       cancel.addEventListener("click", () => {
@@ -767,6 +786,7 @@
         const opts = {
           stepIndex: rerunDraft.stepIndex,
           freshChats: !!rerunDraft.fresh,
+          reuseDocs: rerunDraft.docs !== false,
           // Only where it can actually be honoured.
           carryFinal: !!rerunDraft.fresh && !!rerunDraft.carry && WF.rerunCarries(
             (lastRuns || []).find((r) => r.id === id),
