@@ -954,10 +954,23 @@
     return !!run && run.status === "done" && run.allowRerun === true;
   }
 
-  // "Smith (re-run 2)" rather than "Smith (re-run) (re-run)".
-  function rerunName(name, n) {
-    const base = trimmed(str(name).replace(/\s*\(re-run(?:\s+\d+)?\)\s*$/i, ""));
-    return base ? base + " (re-run " + n + ")" : "";
+  // Runs are numbered as you'd count them out loud: the original is Run 1, its
+  // first re-run is Run 2. Stripped before appending, so a third pass is
+  // "Smith (Run 3)" rather than "Smith (Run 2) (Run 2)". The older "(re-run N)"
+  // spelling is stripped too, so runs made before this still re-run cleanly.
+  const RUN_SUFFIX_RE = /\s*\((?:re-run|run)\s*\d*\)\s*$/i;
+  function baseRunName(name) {
+    return trimmed(str(name).replace(RUN_SUFFIX_RE, ""));
+  }
+
+  // Which run this is, counting the original as the first.
+  function runNumber(run) {
+    return ((run && run.rerunCount) || 0) + 1;
+  }
+
+  function rerunName(name, generation) {
+    const base = baseRunName(name);
+    return base ? base + " (Run " + (generation + 1) + ")" : "";
   }
 
   function rerunOf(run, opts, id, now) {
@@ -1442,18 +1455,26 @@
     // The run's own names, not runLabel's — "Untitled run" is a placeholder for
     // a row on the Options page, and writing it into your sidebar would be
     // taking a gap in the UI for a fact about the matter.
+    //
+    // The matter WITHOUT its run number, and the number put back at the end:
+    // a re-run's conversations should sort and read beside the originals they
+    // repeat — "MSJ: Drafting (A)" then "MSJ: Drafting (A) (Run 2)" — rather
+    // than the number splitting the matter from the chat it names.
     const r = run || {};
-    const matter = trimmed(r.name) || trimmed(r.templateName);
+    const matter = baseRunName(r.name) || baseRunName(r.templateName);
     const chat = trimmed(name);
-    if (!chat) return matter;
-    if (!matter) return chat;
-    const full = matter + ": " + chat;
+    const n = runNumber(r);
+    const tail = (chat ? chat : "") + (n > 1 ? " (Run " + n + ")" : "");
+    if (!chat) return matter ? matter + (n > 1 ? " (Run " + n + ")" : "") : "";
+    if (!matter) return tail;
+    const full = matter + ": " + tail;
     if (full.length <= MAX_CHAT_TITLE) return full;
-    // Too long: shorten the MATTER, never the chat. The chat's name is the half
-    // that tells this run's conversations apart, and it's the short half.
-    const room = MAX_CHAT_TITLE - chat.length - 3;
-    if (room < 8) return chat.slice(0, MAX_CHAT_TITLE);
-    return matter.slice(0, room).trim() + "…: " + chat;
+    // Too long: shorten the MATTER, never the rest. The chat's name is the half
+    // that tells this run's conversations apart, and it's the short half — and
+    // the run number is the half that tells this run from the one it repeats.
+    const room = MAX_CHAT_TITLE - tail.length - 3;
+    if (room < 8) return tail.slice(0, MAX_CHAT_TITLE);
+    return matter.slice(0, room).trim() + "…: " + tail;
   }
 
   // The conversation a claude.ai URL is showing, or null. This is what the
@@ -2205,6 +2226,7 @@
     retrigger,
     isDraft,
     canRerun,
+    runNumber,
     rerunDefaults,
     rerunSettings,
     rerunOf,

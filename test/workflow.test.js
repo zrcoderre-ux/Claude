@@ -1385,7 +1385,7 @@ test("a re-run continuing in the same chats keeps them and re-uploads nothing", 
   assert.equal(again.status, "draft", "it waits like any other new run");
   assert.equal(again.stepIndex, 1, "skipping the step that produced what the rest works on");
   assert.equal(again.rerunOf, "r1");
-  assert.equal(again.name, "8.11.26 MSJ (re-run 1)");
+  assert.equal(again.name, "8.11.26 MSJ (Run 2)", "the original was Run 1");
   assert.deepEqual(again.chats, run.chats, "carries on in the conversations it built");
   assert.equal(again.lastReply, "", "they already hold the work — nothing to paste in");
 
@@ -1478,17 +1478,57 @@ test("a re-run never pastes into a step that takes no hand-off", () => {
   assert.equal(again.lastReply, "");
 });
 
-test("re-runs of re-runs are numbered rather than nested", () => {
+test("runs are numbered the way you'd count them out loud", () => {
   const { run } = finishedRun();
+  assert.equal(W.runNumber(run), 1, "the original is Run 1");
+
   const second = W.rerunOf(run, { stepIndex: 1 }, "r2", NOW + 1);
-  assert.equal(second.name, "8.11.26 MSJ (re-run 1)");
+  assert.equal(second.name, "8.11.26 MSJ (Run 2)", "so its first re-run is Run 2");
+  assert.equal(W.runNumber(second), 2);
+
   const done = Object.assign({}, second, { status: "done", allowRerun: true });
   const third = W.rerunOf(done, { stepIndex: 1 }, "r3", NOW + 2);
-  assert.equal(third.name, "8.11.26 MSJ (re-run 2)", "not “(re-run 1) (re-run 1)”");
+  assert.equal(third.name, "8.11.26 MSJ (Run 3)", "not “(Run 2) (Run 2)”");
   assert.equal(third.rerunCount, 2);
+  assert.equal(W.runNumber(third), 3);
+
+  // Runs made before this counted them the other way. Their suffix is stripped
+  // too, so an old run still re-runs into a cleanly numbered name.
+  const old = Object.assign({}, run, { name: "8.11.26 MSJ (re-run 1)", rerunCount: 1 });
+  assert.equal(W.rerunOf(old, { stepIndex: 1 }, "r5", NOW + 4).name, "8.11.26 MSJ (Run 3)");
+
   // An unnamed run leans on the workflow it came from, as everywhere else.
   const bare = W.rerunOf(Object.assign({}, run, { name: "" }), { stepIndex: 1 }, "r4", NOW + 3);
-  assert.equal(bare.name, "Tentative ruling (re-run 1)");
+  assert.equal(bare.name, "Tentative ruling (Run 2)");
+});
+
+test("a re-run's conversations are the originals' names with the run number", () => {
+  const { run } = finishedRun();
+  assert.equal(
+    W.chatTitle(run, "Drafting (A)"),
+    "8.11.26 MSJ: Drafting (A)",
+    "the first run says nothing — there is nothing yet to tell it from"
+  );
+
+  const second = W.rerunOf(run, { stepIndex: 1, freshChats: true }, "r2", NOW + 1);
+  assert.equal(
+    W.chatTitle(second, "Drafting (A)"),
+    "8.11.26 MSJ: Drafting (A) (Run 2)",
+    "the same title as the original, and the number at the END so the two read together"
+  );
+
+  const done = Object.assign({}, second, { status: "done", allowRerun: true });
+  const third = W.rerunOf(done, { stepIndex: 1, freshChats: true }, "r3", NOW + 2);
+  assert.equal(W.chatTitle(third, "Drafting (A)"), "8.11.26 MSJ: Drafting (A) (Run 3)");
+
+  // And when it has to be cut, the run number survives — it's what tells this
+  // conversation from the one it repeats.
+  const long = Object.assign({}, third, {
+    name: "8.11.26 " + "Motion to Compel Arbitration and to Stay Proceedings ".repeat(3),
+  });
+  const cut = W.chatTitle(long, "Devil's advocate (B)");
+  assert.ok(cut.length <= 100, cut.length);
+  assert.ok(cut.endsWith("Devil's advocate (B) (Run 3)"), cut);
 });
 
 test("a step index outside the plan is clamped, not obeyed", () => {
