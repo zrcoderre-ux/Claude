@@ -997,3 +997,49 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   .cum-toc-n { color: #e08765; }
   .cum-toc-dim .cum-toc-label { color: #8a877f; }
 }
+
+/* ── Save chat ────────────────────────────────────────────────────────────
+   Sits in claude.ai's own header beside Share, so it's deliberately quiet:
+   this is their toolbar, and a button shouting in it would look like a
+   mistake. Sized and coloured to sit beside theirs rather than to be found. */
+#cum-save-chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 4px;
+  padding: 5px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#cum-save-chat:hover { background: rgba(0, 0, 0, 0.06); }
+#cum-save-chat:disabled { opacity: 0.6; cursor: default; }
+#cum-save-chat.cum-save-bad { color: #d23f31; border-color: rgba(210, 63, 49, 0.5); }
+.cum-save-ico { font-size: 12px; line-height: 1; }
+
+/* No header to sit in — float where one would have been, rather than leaving
+   no way to save at all. */
+#cum-save-chat.cum-save-loose {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 2147483643;
+  background: #ffffff;
+  color: #1f1f1f;
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  #cum-save-chat { border-color: rgba(255, 255, 255, 0.22); }
+  #cum-save-chat:hover { background: rgba(255, 255, 255, 0.08); }
+  #cum-save-chat.cum-save-loose { background: #2a2a28; color: #f0efea; }
+}
