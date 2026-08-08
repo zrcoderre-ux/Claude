@@ -1198,9 +1198,31 @@
   // otherwise, so /new and the Code surface are still distinguishable from each
   // other. Shared with content.js's activity recorder, which has to agree with
   // this exactly or a run would fail to recognise its own turns.
+  // The conversation a claude.ai URL is showing, or null. This is what the
+  // conversation API — the authority on whether a reply arrived — is asked
+  // about, so being too strict here doesn't cause a wrong answer, it causes no
+  // answer at all: insisting on a literal /chat/ segment left the authority
+  // silently unavailable on every other surface claude.ai serves a conversation
+  // from. A /chat/ id still wins where there is one; otherwise the LAST id in
+  // the path, since /project/<project-id>/… names the container first and the
+  // conversation after it.
+  const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  function conversationId(href) {
+    let path = str(href);
+    try {
+      path = new URL(path).pathname;
+    } catch (e) {
+      /* not absolute — treat what we were given as the path */
+    }
+    const chat = path.match(/\/chat\/([0-9a-f-]{36})/i);
+    if (chat) return chat[1];
+    const all = path.match(new RegExp(UUID_RE.source, "gi"));
+    return all && all.length ? all[all.length - 1] : null;
+  }
+
   function conversationKey(href) {
     const s = str(href);
-    const m = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    const m = s.match(UUID_RE);
     if (m) return m[0];
     try {
       return new URL(s).pathname;
@@ -1877,6 +1899,7 @@
     usageSample,
     usageCost,
     conversationKey,
+    conversationId,
     soleActor,
     runUsage,
     noteRunUsage,
