@@ -159,12 +159,16 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   between opening a conversation and uploading to it. A document that can't be
   read is a run that hasn't started yet.
 
-  There is one combined file **per upload**, not per run, because the two things
-  that decide what goes up are per-upload: which chat it's for (the chats get
-  different papers — a document ticked for both is folded into each one's file)
-  and when it arrived (papers added mid-run ride a later step, so they get their
-  own). Before a run starts, its row says what that will come to: `uploads: A 3 ·
-  B 3 · 5 text documents combine into 2 files`.
+  What goes *in* a combined file is decided per upload, because that's what the
+  ticks mean: which chat it's for (the chats can get different papers) and when
+  it arrived (papers added mid-run ride a later step, so they form their own
+  batch). But chats that would receive **exactly the same file share one** —
+  documents default to every chat, so identical sets are the ordinary case, and a
+  six-chat workflow building six byte-identical files would be six times the work
+  and the storage for nothing. One file ticked for six chats is what a document
+  ticked for six chats already does. Chats whose papers genuinely differ still get
+  their own. Before a run starts, its row says what it will come to: `uploads: A 3
+  · B 3 · 5 text documents combine into 2 files`.
 
   It never becomes a precondition. A document that can't be decoded, or a
   combination that comes out empty, leaves that group alone and the papers go up
