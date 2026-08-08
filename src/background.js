@@ -1182,6 +1182,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const workflows = (await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [];
       await set({ [WORKFLOWS_KEY]: W.upsertWorkflow(workflows, W.resetToTemplate(wf, now)) });
       await reschedule();
+      // A draft has no trigger yet — it sits in the runs list until it's given
+      // one. Everything that picks runs up gates on "pending", so nothing here
+      // has to know about it.
       if (run.trigger.type === "now") driveRun(run.id); // long-running: don't await
       return { ok: true, runId: run.id };
     })()
