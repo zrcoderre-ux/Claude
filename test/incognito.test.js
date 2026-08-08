@@ -6,10 +6,19 @@ const NOW = 1770000000000;
 const DAY = 24 * 60 * 60 * 1000;
 
 test("only a chat claude.ai isn't keeping is recorded", () => {
+  // What claude.ai actually writes: the key, bare, with an empty value.
+  // Requiring "=true" is how a rule about a flag misses the flag.
+  assert.equal(G.looksIncognitoUrl("https://claude.ai/new?incognito="), true);
+  assert.equal(G.looksIncognitoUrl("https://claude.ai/new?incognito"), true);
+  assert.equal(G.looksIncognitoUrl("https://claude.ai/new?foo=1&incognito="), true);
+  assert.equal(G.looksIncognitoUrl("https://claude.ai/new?incognito=&foo=1"), true);
   assert.equal(G.looksIncognitoUrl("https://claude.ai/new?temporary=true"), true);
   assert.equal(G.looksIncognitoUrl("https://claude.ai/chat/abc?incognito=1"), true);
   assert.equal(G.looksIncognitoUrl("https://claude.ai/incognito/abc"), true);
   assert.equal(G.looksIncognitoUrl("https://claude.ai/new#temporary"), true);
+  // Explicitly off is off — the only value that means anything is a denial.
+  assert.equal(G.looksIncognitoUrl("https://claude.ai/new?incognito=false"), false);
+  assert.equal(G.looksIncognitoUrl("https://claude.ai/new?incognito=0"), false);
   // An ordinary chat is already saved by claude.ai; copying it here would only
   // duplicate what it holds.
   assert.equal(G.looksIncognitoUrl("https://claude.ai/chat/abc"), false);

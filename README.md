@@ -723,9 +723,21 @@ immediately.
 
 **Only incognito chats.** An ordinary chat is already saved by claude.ai, and
 copying it here would duplicate what it holds. A chat is taken as incognito from
-its URL, or from a short `Incognito` / `Temporary` badge in the header — a
-message that happens to *say* "incognito" is a message, not a mode, so only
-header-ish text of badge length is matched.
+its URL — claude.ai writes the key bare, `/new?incognito=`, so what's checked is
+whether it was explicitly turned *off* rather than whether it was turned on — or
+from a short `Incognito` / `Temporary` badge in the header. A message that
+happens to *say* "incognito" is a message, not a mode, so only header-ish text of
+badge length is matched.
+
+That flag rides the **composer** URL, and claude.ai navigates away from it the
+moment the chat exists — so the answer is **sticky for the tab**: seen once, this
+tab is on an incognito chat until it plainly isn't. Losing the mode at the exact
+moment the first reply lands would make this miss the only thing it exists for.
+Sticky isn't blind: a tab taken to a *different* conversation, with no flag and
+no badge, stops being recorded. And the record is keyed to the **tab**, not the
+conversation, because an incognito chat starts at `/new` with no id and acquires
+one when it's created — a record keyed on that would split in two at exactly the
+moment the first reply arrived.
 
 It reads the rendered page, because there's nowhere else to read it from: the
 conversation API has no record of a chat that was never saved. **Read, not

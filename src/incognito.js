@@ -42,8 +42,15 @@
   function looksIncognitoUrl(href) {
     const s = str(href).toLowerCase();
     if (!s) return false;
-    return /[?&#](temporary|incognito|ephemeral)(=(true|1|yes))?(&|#|$)/.test(s) ||
-      /\/(temporary|incognito)(\/|\?|#|$)/.test(s);
+    if (/\/(temporary|incognito)(\/|\?|#|$)/.test(s)) return true;
+    // The key with ANY value, or none at all — claude.ai writes it bare:
+    // "/new?incognito=". Requiring =true is how a rule about a flag misses the
+    // flag, so what's checked instead is whether it was explicitly turned OFF.
+    const m = s.match(/[?&#](temporary|incognito|ephemeral)(=([^&#]*))?(?=&|#|$)/);
+    if (!m) return false;
+    const value = m[3];
+    if (value === undefined || value === "") return true;
+    return !/^(false|0|no|off)$/.test(value);
   }
 
   function newRecord(id, at, fields) {

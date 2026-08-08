@@ -67,31 +67,70 @@
     return false;
   }
 
-  function isIncognito() {
-    return G.looksIncognitoUrl(location.href) || badgeSaysIncognito();
-  }
+  // Session storage, so all of this lives exactly as long as the tab does —
+  // which is exactly as long as the chat it describes.
+  const MODE_KEY = "cum_ghost_mode"; // this tab is on an incognito chat
+  const CONV_KEY = "cum_ghost_conv"; // …and this is the conversation it became
+  const TAB_KEY = "cum_ghost_tab"; // the record it writes to
 
-  // A stable id for THIS chat. The conversation id where there is one; failing
-  // that — an incognito chat may never get one — a per-tab id kept in
-  // sessionStorage, which lives exactly as long as the tab does.
-  function chatId() {
-    let conv = null;
+  function session(key, value) {
     try {
-      conv = W ? W.conversationId(location.pathname) : null;
+      if (value === undefined) return sessionStorage.getItem(key);
+      sessionStorage.setItem(key, value);
     } catch (e) {
       /* ignore */
     }
-    if (conv) return "conv-" + conv;
-    try {
-      let tab = sessionStorage.getItem("cum_ghost_tab");
-      if (!tab) {
-        tab = "tab-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
-        sessionStorage.setItem("cum_ghost_tab", tab);
-      }
-      return tab;
-    } catch (e) {
-      return "tab-unknown";
+    return value;
+  }
+
+  // The flag rides the COMPOSER url — "/new?incognito=" — and claude.ai
+  // navigates away from it the moment the chat exists. So the answer is sticky
+  // for the tab: seen once, this tab is on an incognito chat until it plainly
+  // isn't. Losing the mode at the exact moment the first reply lands would make
+  // this feature miss the only thing it exists for.
+  function isIncognito() {
+    if (G.looksIncognitoUrl(location.href) || badgeSaysIncognito()) {
+      session(MODE_KEY, "1");
+      // The conversation it turned into, remembered the first time we see one:
+      // that id is this chat's, and any OTHER id later means we've left.
+      const conv = convId();
+      if (conv && !session(CONV_KEY)) session(CONV_KEY, conv);
+      return true;
     }
+    if (session(MODE_KEY) !== "1") return false;
+
+    // Sticky, but not blind. A tab taken to a different conversation, with no
+    // flag and no badge, is not the incognito chat any more — and appending an
+    // ordinary chat to this record would be the opposite of the point.
+    const conv = convId();
+    const started = session(CONV_KEY);
+    if (conv && started && conv !== started) {
+      session(MODE_KEY, "0");
+      return false;
+    }
+    if (conv && !started) session(CONV_KEY, conv);
+    return true;
+  }
+
+  function convId() {
+    try {
+      return W ? W.conversationId(location.pathname) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // One record per tab, for the life of the tab. NOT keyed on the conversation
+  // id: an incognito chat starts at /new with no id and acquires one when it's
+  // created, and a record keyed on that would be split in two at exactly the
+  // moment the first reply arrived.
+  function chatId() {
+    let tab = session(TAB_KEY);
+    if (!tab) {
+      tab = "tab-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+      session(TAB_KEY, tab);
+    }
+    return tab;
   }
 
   // The conversation as it stands, oldest first. Both sides: a reply without
