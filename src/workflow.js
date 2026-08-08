@@ -338,6 +338,44 @@
     });
   }
 
+  // What to call text pasted straight into the documents field. Its own first
+  // line where that reads like a title — "Opposition to Motion to Compel" tells
+  // you what it is in the list, where "Pasted text 3" tells you when you pasted
+  // it — and the fallback otherwise, numbered past whatever is already there so
+  // two pastes never collide.
+  const PASTE_NAME_MAX = 60;
+  function pastedDocName(text, taken) {
+    const used = new Set((taken || []).map((n) => str(n).toLowerCase()));
+    const free = (name) => {
+      if (!used.has(name.toLowerCase())) return name;
+      const stem = name.replace(/\.txt$/i, "");
+      for (let i = 2; i < 200; i++) {
+        const next = stem + " (" + i + ").txt";
+        if (!used.has(next.toLowerCase())) return next;
+      }
+      return name;
+    };
+
+    const first = str(text)
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length > 0);
+    // Markdown heading marks, list bullets and quotes are decoration on the
+    // title, not part of it. Anything a filename can't hold becomes a space.
+    const title = str(first)
+      .replace(/^[#>*\-•\s]+/, "")
+      .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, PASTE_NAME_MAX)
+      .replace(/[\s.]+$/, "");
+
+    if (title.length >= 4) return free(title + ".txt");
+    let n = 1;
+    while (used.has(("pasted text " + n + ".txt").toLowerCase()) && n < 200) n++;
+    return "Pasted text " + n + ".txt";
+  }
+
   // ---- completing a prompt you've written before --------------------------
   //
   // The same prompts recur: every devil's advocate step in every workflow opens
@@ -2103,6 +2141,7 @@
     docsForChat,
     newWorkflow,
     reorderSteps,
+    pastedDocName,
     promptPool,
     promptSuggestions,
     normalize,

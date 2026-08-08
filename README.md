@@ -130,7 +130,18 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   that draft into the devil's advocate chat, exactly as though it had drafted it
   itself. The reply is read **when the run goes**, not when you press Start, so a
   run scheduled for the small hours takes whatever is in that chat by then.
-- **Documents** — dropped in once, with a tick per chat saying **who gets them**.
+- **Documents** — dropped in, or **pasted**: text pasted anywhere in the editor
+  that isn't a box you were typing in becomes a `.txt` document, the way
+  claude.ai turns a large paste into an attachment. It's named from its own first
+  line — `Opposition to Motion to Compel.txt` tells you what it is in the list
+  where `Pasted text 3` only tells you when you pasted it — with heading marks
+  and characters a filename can't hold stripped off, and a number where there's
+  no usable title or the name is already taken. There's no length threshold to
+  guess at: unlike a chat composer, there's nowhere else here for pasted text to
+  go, so pasting it onto the documents field is itself the instruction. Files on
+  the clipboard are added as files, not wrapped in one.
+
+  Documents come with a tick per chat saying **who gets them**.
   They default to **every chat**: a chat that has the papers can ignore them,
   where a chat that needed them and didn't get them answers from nothing. Each
   chat also has an **All / Clear** toggle across every document, because doing

@@ -673,6 +673,41 @@ test("pausing keeps a run's place; resuming picks it up", () => {
   assert.equal(W.pickupRuns([paused], NOW + W.STALE_MS + 1, W.STALE_MS).length, 0);
 });
 
+test("pasted text is named from its own first line", () => {
+  assert.equal(
+    W.pastedDocName("Opposition to Motion to Compel\n\nComes now…", []),
+    "Opposition to Motion to Compel.txt",
+    "which tells you what it is in the list"
+  );
+  // Heading marks, bullets and quotes are decoration on the title.
+  assert.equal(W.pastedDocName("## Reply Brief\nbody", []), "Reply Brief.txt");
+  assert.equal(W.pastedDocName("> Declaration of Smith\nbody", []), "Declaration of Smith.txt");
+  // Leading blank lines are skipped, not taken as the title.
+  assert.equal(W.pastedDocName("\n\n\nDeclaration of Jones\nbody", []), "Declaration of Jones.txt");
+  // Characters a filename can't hold don't reach the filename.
+  assert.equal(W.pastedDocName('Smith v. Jones: MSJ / part 2\nbody', []), "Smith v. Jones MSJ part 2.txt");
+  // A very long first line is cut rather than becoming the whole paste.
+  const long = W.pastedDocName("x".repeat(400) + "\nbody", []);
+  assert.ok(long.length <= 65, long.length);
+});
+
+test("pasted text with no usable title is numbered, past what's already there", () => {
+  assert.equal(W.pastedDocName("a\nb", []), "Pasted text 1.txt", "too short to be a title");
+  assert.equal(W.pastedDocName("", []), "Pasted text 1.txt");
+  assert.equal(W.pastedDocName(null, []), "Pasted text 1.txt");
+  assert.equal(
+    W.pastedDocName("###\nbody", ["Pasted text 1.txt", "Pasted text 2.txt"]),
+    "Pasted text 3.txt",
+    "so two pastes never collide"
+  );
+  // And a title already taken gets its own number rather than overwriting.
+  assert.equal(
+    W.pastedDocName("Reply Brief\nbody", ["reply brief.txt"]),
+    "Reply Brief (2).txt",
+    "matched case-insensitively, as a filesystem would"
+  );
+});
+
 const DA = "Use the devils-advocate skill.\n\nAttack the merits of the draft below.";
 const RULE = "Use the tentative-ruling skill and draft the ruling in full.";
 

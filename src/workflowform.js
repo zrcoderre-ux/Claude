@@ -192,10 +192,11 @@
       `<div class="cumwf-chats cumwf-list"></div>` +
 
       `<label class="cumwf-label">Documents</label>` +
-      `<div class="cumwf-drop"><p class="cumwf-dz-text">Drag files here, or</p>` +
+      `<div class="cumwf-drop" tabindex="0"><p class="cumwf-dz-text">Drag files here, paste text, or</p>` +
       `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-pick" type="button">Choose files…</button></div></div>` +
       `<input class="cumwf-file-input" type="file" multiple hidden />` +
-      `<p class="cumwf-hint">Tick the chats that should receive each document — it goes up with that chat's first message.</p>` +
+      `<p class="cumwf-hint">Tick the chats that should receive each document — it goes up with that chat's first message. ` +
+      `Text pasted anywhere here that isn't a box becomes a .txt document, named from its first line.</p>` +
       `<label class="cumwf-check"><input class="cumwf-bundle" type="checkbox" /> Combine text documents into ` +
       `one labelled file before uploading</label>` +
       `<p class="cumwf-hint">Twenty separate attachments is where claude.ai starts showing Claude fewer than ` +
@@ -440,6 +441,43 @@
     });
 
     // ---- documents -------------------------------------------------------
+    // Text pasted into the editor, anywhere that isn't a box you were typing
+    // in, becomes a document — the same move claude.ai makes when you paste
+    // something too big to be a message. There is nowhere else for it to go
+    // here, so there's no length threshold to guess at: if you pasted it onto
+    // the documents field, you meant it to be a document.
+    function pasteAsDocument(text) {
+      const body = String(text || "");
+      if (!body.trim()) return;
+      const name = W.pastedDocName(
+        body,
+        (wf.docs || []).map((d) => d.name)
+      );
+      addFiles([new File([body], name, { type: "text/plain" })]);
+      flash("Added " + name);
+    }
+
+    el.addEventListener("paste", (e) => {
+      if (el.hidden) return;
+      // Never steal a paste meant for a prompt, a name or a link.
+      const t = e.target;
+      const tag = (t && t.tagName) || "";
+      if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT" || (t && t.isContentEditable))
+        return;
+      const cd = e.clipboardData;
+      if (!cd) return;
+      // Real files on the clipboard are just files — they don't need wrapping
+      // in a text document to be understood.
+      if (cd.files && cd.files.length) {
+        e.preventDefault();
+        return addFiles(Array.from(cd.files));
+      }
+      const text = cd.getData("text/plain");
+      if (!text || !text.trim()) return;
+      e.preventDefault();
+      pasteAsDocument(text);
+    });
+
     function addFiles(list) {
       for (const f of list || []) {
         const id = uuid();
