@@ -75,6 +75,11 @@
     .cumwf-check { display:inline-flex; align-items:center; gap:4px; font-size:12px; }
     .cumwf-check input { margin:0; }
     .cumwf-hint { font-size:12px; color:#8a8a8a; margin:0; }
+    /* The re-run answers, indented under their switch so they read as its
+       detail rather than as more workflow settings. */
+    .cumwf-rerun-row { display:flex; flex-direction:column; gap:6px;
+      margin:2px 0 2px 18px; padding-left:10px; border-left:2px solid rgba(0,0,0,0.10); }
+    .cumwf-rerun-row[hidden] { display:none; }
     .cumwf-actions { display:flex; align-items:center; gap:10px; margin-top:10px;
       position:sticky; bottom:0; padding:8px 0; background:inherit; }
     .cumwf-status { font-size:12px; font-weight:600; color:#1f7a3f; }
@@ -93,6 +98,7 @@
       .cumwf-drop { border-color:rgba(255,255,255,0.22); }
       .cumwf-grip { color:#8a877f; }
       .cumwf-grip:hover { background:rgba(255,255,255,0.08); color:#d4d1c9; }
+      .cumwf-rerun-row { border-left-color:rgba(255,255,255,0.16); }
     }`;
 
   function injectStyles(doc) {
@@ -194,10 +200,23 @@
 
       `<label class="cumwf-check"><input class="cumwf-rerun" type="checkbox" /> Offer to run a finished ` +
       `run again</label>` +
-      `<p class="cumwf-hint">Adds a Re-run button to this workflow's finished runs, which asks which step ` +
-      `to start on — a workflow that opens by producing the thing the rest of it works on has nothing to ` +
-      `produce the second time. Off by default; each run keeps its own copy of this, so it can be turned ` +
-      `on or off for one run without touching the workflow.</p>` +
+      `<p class="cumwf-hint">Adds a Re-run button to this workflow's finished runs. Off by default; each ` +
+      `run keeps its own copy of this and of the answers below, so one matter can differ without touching ` +
+      `the workflow.</p>` +
+      `<div class="cumwf-rerun-row" hidden>` +
+      `<div class="cumwf-row"><label class="cumwf-hint" style="flex:0 0 auto">Start a re-run at</label>` +
+      `<select class="cumwf-rr-step" style="width:auto"></select></div>` +
+      `<p class="cumwf-hint">A workflow that opens by producing the thing the rest of it works on has ` +
+      `nothing to produce the second time.</p>` +
+      `<label class="cumwf-check"><input class="cumwf-rr-fresh" type="checkbox" /> In fresh conversations ` +
+      `— otherwise it carries on in that run's chats</label>` +
+      `<label class="cumwf-check"><input class="cumwf-rr-carry" type="checkbox" /> Paste that run's final ` +
+      `reply into the step it starts at</label>` +
+      `<label class="cumwf-check"><input class="cumwf-rr-docs" type="checkbox" /> Give fresh conversations ` +
+      `the same documents</label>` +
+      `<p class="cumwf-hint">The last two apply to fresh conversations, which start empty: without them a ` +
+      `re-run begins knowing nothing of what came before, and its papers never arrive. Every answer here ` +
+      `is a default — Re-run still asks, so you can change your mind for one run.</p></div>` +
 
       `<label class="cumwf-label">Steps</label>` +
       `<div class="cumwf-steps cumwf-list"></div>` +
@@ -239,6 +258,11 @@
       nameChats: q(".cumwf-name-chats"),
       download: q(".cumwf-download"),
       rerun: q(".cumwf-rerun"),
+      rerunRow: q(".cumwf-rerun-row"),
+      rrStep: q(".cumwf-rr-step"),
+      rrFresh: q(".cumwf-rr-fresh"),
+      rrCarry: q(".cumwf-rr-carry"),
+      rrDocs: q(".cumwf-rr-docs"),
       fileInput: q(".cumwf-file-input"),
       docs: q(".cumwf-docs"),
       steps: q(".cumwf-steps"),
@@ -576,7 +600,28 @@
         });
         ui.steps.appendChild(card);
       });
+      renderRerunStep();
     }
+    // The step a re-run starts at, rebuilt whenever the steps change — the
+    // choice is an index into a list the editor is busy rewriting.
+    function renderRerunStep(want) {
+      if (!ui.rrStep) return;
+      const at = typeof want === "number" ? want : parseInt(ui.rrStep.value, 10) || 0;
+      const steps = wf && wf.steps ? wf.steps : [];
+      ui.rrStep.innerHTML = steps
+        .map((s, i) => {
+          const chat = (wf.chats || []).find((c) => c.id === s.chatId);
+          return `<option value="${i}">Step ${i + 1} — ${esc((chat && chat.name) || "?")}</option>`;
+        })
+        .join("");
+      ui.rrStep.value = String(Math.min(Math.max(0, at), Math.max(0, steps.length - 1)));
+    }
+
+    ui.rerun.addEventListener("change", () => {
+      ui.rerunRow.hidden = !ui.rerun.checked;
+      if (ui.rerun.checked) renderRerunStep();
+    });
+
     // One notch at a time, for a small correction or a keyboard. Both this and
     // dragging end up in reorderSteps, which is where the rule that the first
     // step can't carry anything lives.
@@ -708,6 +753,12 @@
       ui.nameChats.checked = wf.nameChats !== false;
       ui.download.checked = !!wf.downloadFiles;
       ui.rerun.checked = !!wf.allowRerun;
+      const rr = W.rerunDefaults(wf.rerun);
+      ui.rrFresh.checked = rr.freshChats;
+      ui.rrCarry.checked = rr.carryFinal;
+      ui.rrDocs.checked = rr.reuseDocs;
+      ui.rerunRow.hidden = !ui.rerun.checked;
+      renderRerunStep(rr.stepIndex);
       ui.count.value = (wf.chats || []).length || 1;
       ui.problems.hidden = true;
       renderChats();
@@ -792,6 +843,12 @@
       wf.nameChats = ui.nameChats.checked;
       wf.downloadFiles = ui.download.checked;
       wf.allowRerun = ui.rerun.checked;
+      wf.rerun = {
+        stepIndex: parseInt(ui.rrStep.value, 10) || 0,
+        freshChats: ui.rrFresh.checked,
+        carryFinal: ui.rrCarry.checked,
+        reuseDocs: ui.rrDocs.checked,
+      };
       const candidate = W.newWorkflow(wf, wf.id, Date.now());
       const problems = W.validate(candidate);
       // An unassigned document is a warning, not a blocker — it just doesn't get

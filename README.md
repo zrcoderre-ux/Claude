@@ -486,11 +486,17 @@ rather than dragging it down for a reason nothing on the row explains.
 
 Off unless asked for — **Offer to run a finished run again**, on the workflow —
 because most runs are done when they're done, and a Re-run button on every
-finished row is a button whose only use is to be pressed by mistake. Each run
-keeps its own copy of the setting, so it can be turned on or off for one matter
-without touching the template.
+finished row is a button whose only use is to be pressed by mistake.
 
-**Re-run** on a finished row asks two things.
+Tick it and the workflow also holds **the answers**, because for most workflows
+they're the same every time: a ruling workflow re-run is always "start at step 2,
+fresh conversations, carry the last ruling in". Each run keeps its own copy of
+those answers as well as of the switch, so one matter can differ without touching
+the template — and **Re-run still asks**, so you can change your mind for a single
+run. A run made before the workflow had any answers, or from a workflow that has
+none, falls back to sensible ones rather than losing the button.
+
+**Re-run** on a finished row asks three things.
 
 **Which step to start at**, with that step's prompt shown as you pick — a
 workflow that opens by producing the thing the rest of it works on has nothing to
@@ -505,12 +511,18 @@ already hold:
   and the right answer when you want the second pass to build on the first.
 - **Fresh conversations.** A clean context, which is the point — but it means the
   papers must ride the first step that actually runs rather than one this re-run
-  skips, and that's handled: documents are re-stamped so each chat's first
-  *running* step carries them. It also offers to **paste the first run's final
-  reply into that step**, since otherwise the new chat begins knowing nothing of
-  what came before. Offered only where the step you chose takes a hand-off at
-  all; where it doesn't, the panel says so rather than showing a tick that would
-  do nothing.
+  skips. It also offers to **paste the first run's final reply into that step**,
+  since otherwise the new chat begins knowing nothing of what came before —
+  offered only where the step you chose takes a hand-off at all; where it
+  doesn't, the panel says so rather than showing a tick that would do nothing.
+
+**Whether the new conversations get the documents**, which only arises when
+they're fresh. On by default, because that's what "the same run, again" means: it
+re-stamps each document so it rides the first step that actually *runs* in its
+chat, rather than one this re-run skips, where it would never arrive at all. Turn
+it off for a re-run that only needs the hand-off, where sending twenty exhibits up
+again would waste the turn. The documents stay on the run either way — the record
+of what the matter had doesn't change, they simply don't go up.
 
 What you get is a **draft run** at the top of the list, named
 `8.11.26 MSJ (re-run 1)` — numbered rather than nested, so a third pass is
