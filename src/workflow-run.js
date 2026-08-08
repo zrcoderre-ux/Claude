@@ -337,6 +337,24 @@
     });
   }
 
+  // Give this conversation the run's name. Only the message that OPENED it, and
+  // only a conversation this run opened: a chat you pointed the run at is yours,
+  // and renaming it would be the extension retitling your work.
+  //
+  // Called twice — once the conversation exists, and again once the reply is in.
+  // claude.ai titles a new conversation ITSELF a moment after the first answer
+  // lands, and that would land on top of the first attempt. The second one is
+  // the one that sticks; only it reports, so the run's note says what the chat
+  // ended up called rather than narrating two attempts.
+  async function nameThisChat(msg, notes) {
+    if (!msg.title || !msg.firstInChat) return;
+    const uuid = conversationUuid();
+    const named = uuid ? await renameConversation(uuid, msg.title) : null;
+    if (!notes) return;
+    if (named && named.ok) notes.push('named this chat "' + named.name + '"');
+    else notes.push("could not name this chat (" + ((named && named.error) || "no answer") + ")");
+  }
+
   async function harvestReply(msgEl) {
     // Every source is cleaned of claude.ai's "not supported on your current
     // device" placeholders before it is judged or carried. Where the page
@@ -687,18 +705,9 @@
       await updateRun(runId, (r) =>
         W.markSent(r, { chatId: msg.chatId, url, now: sentAt })
       );
-      // Name it, now the conversation exists. Only the message that OPENED it,
-      // and only a conversation this run opened: a chat you pointed the run at
-      // is yours, and renaming it would be the extension retitling your work.
-      if (msg.title && msg.firstInChat) {
-        const uuid = conversationUuid();
-        const named = uuid ? await renameConversation(uuid, msg.title) : null;
-        if (named && named.ok) notes.push('named this chat "' + named.name + '"');
-        else
-          notes.push(
-            "could not name this chat (" + ((named && named.error) || "no answer") + ")"
-          );
-      }
+      // Name it, now the conversation exists — so it has a name even if this
+      // step then fails. It gets named again once the reply is in; see below.
+      await nameThisChat(msg, null);
     } else {
       // Re-attaching to a step whose message already went out. Two very
       // different situations, and taking the wrong one is how a step "succeeds"
@@ -814,6 +823,9 @@
       );
 
     const url = location.href;
+    // Now the answer is in, claude.ai has done its own auto-titling — so this
+    // is the rename that survives.
+    await nameThisChat(msg, notes);
     // The meter as it stands now the step has landed. Read here rather than in
     // the worker because this is a claude.ai tab: its own content script keeps
     // the reading current, and by the time the worker hears about the step the

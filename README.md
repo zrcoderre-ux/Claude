@@ -187,7 +187,10 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   chat's job within it. Only conversations the run opens itself: a chat you
   pointed it at keeps the name it has, because retitling work you started is not
   the extension's business. A title that won't take is a note on the run, never a
-  failed step.
+  failed step. It is applied **twice** — once the conversation exists, so it has a
+  name even if that step then fails, and again once the reply is in, because
+  claude.ai titles a new conversation itself a moment after the first answer
+  lands and would otherwise write over it.
 
 - **Reordering** — drag a step by the **grip** on its card. The ↑↓ arrows stay
   for a one-notch nudge, but nine steps is enough that moving one from the end to
