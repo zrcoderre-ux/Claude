@@ -61,13 +61,15 @@
         "src/status.js",
         "src/workflow.js",
         "src/toc.js",
+        "src/mdexport.js",
         "src/content.js",
         "src/autocontinue.js",
         "src/composer.js",
         "src/scheduler-run.js",
         "src/workflow-run.js",
         "src/workflow-pill.js",
-        "src/toc-panel.js"
+        "src/toc-panel.js",
+        "src/save-chat.js"
       ],
       "css": [
         "src/content.css"

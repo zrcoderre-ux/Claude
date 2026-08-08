@@ -45,6 +45,9 @@ bottom-right corner of [claude.ai](https://claude.ai).
   an optional prompt to a **new chat, a Project, or the chat you're currently
   in**, to send at a set time or when usage next resets. Set them up from the
   Options page or the **＋ Schedule a send** button in the pill's panel.
+- **Save chat** — a button in claude.ai's own header, beside Share, that saves
+  the whole conversation as a **Markdown file** you can hand to the next chat.
+  See [Saving a chat](#saving-a-chat).
 - **Table of contents** — a floating list of **your own messages** in the
   conversation you're reading, so a long chat is navigable instead of a scroll
   bar. Starts minimized; draggable, and it remembers where you put it. See
@@ -699,6 +702,34 @@ new window if you'd closed the lot. A run that adopts a new window this way keep
 using it for later steps. This is the only place a run's window is given focus —
 everywhere else it stays behind what you're doing.
 
+## Saving a chat
+
+**Save** sits in claude.ai's header beside Share, and writes the conversation to
+a Markdown file — `2026-08-08 Smith v. Jones — MSJ.md`, dated first so a folder
+of them falls into order on its own. The point is the *next* chat: a file it can
+read is the whole of what the last one worked out, where a summary is whatever
+you remembered to include.
+
+It saves the conversation **payload**, not the page. claude.ai unmounts messages
+that scroll out of view, so anything read from the DOM would save whichever part
+you happened to be looking at.
+
+Three decisions about what goes in, and the file states them so it can't
+quietly claim to be more than it is:
+
+- **Thinking blocks are left out.** They're Claude's scratch work rather than
+  its answer, and a chat's worth of them would spend the next conversation's
+  context on reasoning the conclusions below it already superseded.
+- **Artifacts are included.** In this work they're often where the substance
+  actually is — a ruling written into a document rather than into the reply —
+  and they're fenced in backticks long enough to survive their own contents.
+- **Attachments are named, not embedded.** Their bytes aren't in the payload,
+  and a file the next chat can't see is better named than silently absent.
+
+The button is inserted into markup claude.ai doesn't version, so it tries the
+share control by several names and, failing all of them, floats where the header
+would have been rather than not existing.
+
 ## Table of contents
 
 A nine-step run leaves a conversation you'll want to read back through, and a
@@ -886,6 +917,8 @@ src/scheduler-run.js   Sends a queued job through the composer
 src/workflow-run.js    Runs one workflow step and reads Claude's reply
 src/jobform.js         Shared scheduled-send form (options page + pill modal)
 src/workflowform.js    Workflow editor (options page)
+src/mdexport.js        A conversation as Markdown (pure)
+src/save-chat.js       The Save button in claude.ai's header
 src/toc.js             Table-of-contents labelling (pure)
 src/toc-panel.js       The floating table of contents itself
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
@@ -894,6 +927,7 @@ test/estimate.test.js  Unit tests for the tenths-place calibrator
 test/status.test.js    Unit tests for the status model + hold decisions
 test/workflow.test.js  Unit tests for the workflow model + run transitions
 test/toc.test.js       Unit tests for the table-of-contents labelling
+test/mdexport.test.js  Unit tests for the Markdown export
 test/autocontinue.test.js  Unit tests for the button-label predicates
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only
