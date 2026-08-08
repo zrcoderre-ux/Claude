@@ -482,6 +482,42 @@ for at least this share. Where a run has steps it couldn't measure, its row says
 how many — and a run with any such step stays out of its workflow's average
 rather than dragging it down for a reason nothing on the row explains.
 
+### Running one again
+
+Off unless asked for — **Offer to run a finished run again**, on the workflow —
+because most runs are done when they're done, and a Re-run button on every
+finished row is a button whose only use is to be pressed by mistake. Each run
+keeps its own copy of the setting, so it can be turned on or off for one matter
+without touching the template.
+
+**Re-run** on a finished row asks two things.
+
+**Which step to start at**, with that step's prompt shown as you pick — a
+workflow that opens by producing the thing the rest of it works on has nothing to
+produce the second time, and starting from the top would throw the first run's
+work away and spend a turn doing it again.
+
+**Whether to use fresh conversations.** The two answers differ in what the chats
+already hold:
+
+- **Carry on in this run's chats** (the default). They still have the papers and
+  the work, so nothing is re-uploaded and nothing has to be carried in. Cheapest,
+  and the right answer when you want the second pass to build on the first.
+- **Fresh conversations.** A clean context, which is the point — but it means the
+  papers must ride the first step that actually runs rather than one this re-run
+  skips, and that's handled: documents are re-stamped so each chat's first
+  *running* step carries them. It also offers to **paste the first run's final
+  reply into that step**, since otherwise the new chat begins knowing nothing of
+  what came before. Offered only where the step you chose takes a hand-off at
+  all; where it doesn't, the panel says so rather than showing a tick that would
+  do nothing.
+
+What you get is a **draft run** at the top of the list, named
+`8.11.26 MSJ (re-run 1)` — numbered rather than nested, so a third pass is
+`(re-run 2)` and not `(re-run 1) (re-run 1)` — opened in its own editor so you can
+add papers, change a prompt and say when it starts. Nothing runs until you say
+so.
+
 ### Fixing a partial run
 
 A ten-step run that stops at step six shouldn't have to start again. **Fix &

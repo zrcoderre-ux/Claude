@@ -1241,6 +1241,122 @@ test("a shared step records a refusal, not a zero", () => {
   assert.equal(W.runUsage(r).complete, false, "so it can't reach the workflow's average");
 });
 
+// A finished three-step run, ready to be run again.
+function finishedRun(extra) {
+  const wf = W.newWorkflow(
+    Object.assign(
+      {
+        name: "Tentative ruling",
+        templateName: "Tentative ruling",
+        allowRerun: true,
+        chats: [{ id: "a", name: "Drafting" }, { id: "b", name: "Critic" }],
+        docs: [{ id: "d1", name: "motion.pdf", chats: ["a"] }],
+        steps: [
+          { id: "s1", chatId: "a", prompt: "draft" },
+          { id: "s2", chatId: "b", prompt: "attack", carry: true },
+          { id: "s3", chatId: "a", prompt: "revise", carry: true },
+        ],
+      },
+      extra || {}
+    ),
+    "w1",
+    NOW
+  );
+  let run = W.applyRunEdit(
+    W.newRun(wf, "r1", NOW, { type: "now" }),
+    { name: "8.11.26 MSJ" },
+    NOW
+  );
+  run = Object.assign({}, run, {
+    status: "done",
+    stepIndex: 3,
+    lastReply: "THE REVISED RULING",
+    chats: { a: { url: "https://claude.ai/chat/u1" }, b: { url: "https://claude.ai/chat/u2" } },
+  });
+  return { wf, run };
+}
+
+test("only a finished run that was told it may is offered a re-run", () => {
+  const { run } = finishedRun();
+  assert.equal(W.canRerun(run), true);
+  assert.equal(W.canRerun(Object.assign({}, run, { status: "running" })), false, "not mid-flight");
+  assert.equal(W.canRerun(Object.assign({}, run, { status: "error" })), false);
+  assert.equal(W.canRerun(Object.assign({}, run, { allowRerun: false })), false, "off by default");
+  assert.equal(W.canRerun(finishedRun({ allowRerun: false }).run), false);
+  assert.equal(W.canRerun(null), false);
+});
+
+test("a re-run continuing in the same chats keeps them and re-uploads nothing", () => {
+  const { run } = finishedRun();
+  const again = W.rerunOf(run, { stepIndex: 1, freshChats: false }, "r2", NOW + 1);
+
+  assert.equal(again.status, "draft", "it waits like any other new run");
+  assert.equal(again.stepIndex, 1, "skipping the step that produced what the rest works on");
+  assert.equal(again.rerunOf, "r1");
+  assert.equal(again.name, "8.11.26 MSJ (re-run 1)");
+  assert.deepEqual(again.chats, run.chats, "carries on in the conversations it built");
+  assert.equal(again.lastReply, "", "they already hold the work — nothing to paste in");
+
+  // The papers rode step 0, which this re-run doesn't run, so nothing goes up
+  // again — those chats already have them.
+  const plan = W.planRun(W.runSource(again, null));
+  assert.deepEqual(plan[1].docIds, []);
+  assert.deepEqual(plan[2].docIds, []);
+});
+
+test("a re-run in fresh chats re-uploads the papers on the step it starts at", () => {
+  const { run } = finishedRun();
+  const again = W.rerunOf(run, { stepIndex: 1, freshChats: true, carryFinal: true }, "r2", NOW + 1);
+
+  assert.deepEqual(again.chats, {}, "new conversations, so it opens its own");
+  assert.equal(again.lastReply, "THE REVISED RULING", "and the last run's answer goes in with it");
+
+  // Chat A's papers went up on step 0 last time. Step 0 doesn't run now, and
+  // the new chat A is empty — so they have to ride A's first step that does.
+  const plan = W.planRun(W.runSource(again, null));
+  assert.deepEqual(plan[2].docIds, ["d1"], "chat A's next step carries them");
+  assert.deepEqual(plan[0].docIds, [], "not the step being skipped");
+});
+
+test("a re-run never pastes into a step that takes no hand-off", () => {
+  const { run } = finishedRun();
+  // Step 1 (index 0) opens its chat and carries nothing.
+  assert.equal(W.rerunCarries(run, 0), false);
+  assert.equal(W.rerunCarries(run, 1), true);
+  const again = W.rerunOf(run, { stepIndex: 0, freshChats: true, carryFinal: false }, "r2", NOW + 1);
+  assert.equal(again.lastReply, "");
+});
+
+test("re-runs of re-runs are numbered rather than nested", () => {
+  const { run } = finishedRun();
+  const second = W.rerunOf(run, { stepIndex: 1 }, "r2", NOW + 1);
+  assert.equal(second.name, "8.11.26 MSJ (re-run 1)");
+  const done = Object.assign({}, second, { status: "done", allowRerun: true });
+  const third = W.rerunOf(done, { stepIndex: 1 }, "r3", NOW + 2);
+  assert.equal(third.name, "8.11.26 MSJ (re-run 2)", "not “(re-run 1) (re-run 1)”");
+  assert.equal(third.rerunCount, 2);
+  // An unnamed run leans on the workflow it came from, as everywhere else.
+  const bare = W.rerunOf(Object.assign({}, run, { name: "" }), { stepIndex: 1 }, "r4", NOW + 3);
+  assert.equal(bare.name, "Tentative ruling (re-run 1)");
+});
+
+test("a step index outside the plan is clamped, not obeyed", () => {
+  const { run } = finishedRun();
+  assert.equal(W.rerunOf(run, { stepIndex: 99 }, "r2", NOW).stepIndex, 2, "the last step");
+  assert.equal(W.rerunOf(run, { stepIndex: -3 }, "r2", NOW).stepIndex, 0);
+  assert.equal(W.rerunOf(run, {}, "r2", NOW).stepIndex, 0);
+  assert.equal(W.rerunOf(null, {}, "r2", NOW), null);
+});
+
+test("a run's own switches survive an edit of that run", () => {
+  const { run } = finishedRun();
+  const off = W.applyRunEdit(run, { allowRerun: false, downloadFiles: true }, NOW + 1);
+  assert.equal(off.allowRerun, false, "turned off for this run without touching the workflow");
+  assert.equal(off.downloadFiles, true);
+  assert.equal(off.nameChats, run.nameChats, "and an edit that says nothing changes nothing");
+  assert.equal(W.applyRunEdit(run, {}, NOW + 1).allowRerun, true);
+});
+
 test("a download control is never mistaken for the copy box", () => {
   // The failure this prevents: clicking Download when the copy box was wanted
   // saves a file nobody asked for AND hands back no text at all.

@@ -1286,6 +1286,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // Change when a queued run goes off — a different time, or across to "when
   // usage resets" or straight away.
+  // Run a finished run again: a fresh draft from its own plan, starting where
+  // you said, in its conversations or in new ones.
+  if (msg && msg.type === "cum-wf-rerun" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "run not found" };
+      if (!W.canRerun(run))
+        return { ok: false, error: "this run can't be re-run — tick it on the workflow first" };
+      const next = W.rerunOf(run, msg.opts || {}, crypto.randomUUID(), Date.now());
+      if (!next) return { ok: false, error: "could not build the re-run" };
+      await saveRun(next);
+      await reschedule();
+      return { ok: true, runId: next.id };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
   if (msg && msg.type === "cum-wf-retrigger" && msg.runId) {
     (async () => {
       const run = await readRun(msg.runId);

@@ -358,6 +358,10 @@
       // Click whatever a reply offers for download. Off unless asked for: it
       // writes to your disk, which is not something a run should decide.
       downloadFiles: !!f.downloadFiles,
+      // Offer to run a finished run again. Off unless asked for: most workflows
+      // are done when they're done, and a Re-run button on every finished row
+      // is a button whose only use is to be pressed by mistake.
+      allowRerun: !!f.allowRerun,
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
       docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
       steps: (f.steps || []).map((s) => newStep(s, s && s.id)),
@@ -758,6 +762,7 @@
       // it opens, so it can never retitle a chat you pointed it at.
       nameChats: !(wf && wf.nameChats === false),
       downloadFiles: !!(wf && wf.downloadFiles),
+      allowRerun: !!(wf && wf.allowRerun),
       // And its own copy of the chats and steps. A run executes THIS, not the
       // template — so the template can be edited, re-armed or deleted without
       // changing what a run in flight does, and so a run can be edited (a step
@@ -813,6 +818,95 @@
       heldSince: null,
       holdReason: null,
     };
+  }
+
+  // ---- running one again ---------------------------------------------------
+  //
+  // A finished run is often worth another pass, and rarely from the top: a
+  // workflow that opens by drafting a tentative has nothing to draft the second
+  // time, because the first run already did. So a re-run says where to start.
+  //
+  // Two shapes, and the difference is what the chats already hold:
+  //   - CONTINUE in the same conversations. They still have the papers and the
+  //     work, so nothing is re-uploaded and nothing has to be carried in.
+  //   - FRESH conversations. They start empty, which is the point — a clean
+  //     context — but it means the papers must ride the first step that
+  //     actually runs rather than one this re-run skips, and the previous run's
+  //     final reply is worth carrying in, since otherwise the new chat begins
+  //     with no idea what came before.
+  function canRerun(run) {
+    return !!run && run.status === "done" && run.allowRerun === true;
+  }
+
+  // "Smith (re-run 2)" rather than "Smith (re-run) (re-run)".
+  function rerunName(name, n) {
+    const base = trimmed(str(name).replace(/\s*\(re-run(?:\s+\d+)?\)\s*$/i, ""));
+    return base ? base + " (re-run " + n + ")" : "";
+  }
+
+  function rerunOf(run, opts, id, now) {
+    if (!run) return null;
+    const o = opts || {};
+    const src = runSource(run, null);
+    const total = (src.steps || []).length;
+    let stepIndex = typeof o.stepIndex === "number" ? Math.floor(o.stepIndex) : 0;
+    if (!(stepIndex >= 0)) stepIndex = 0;
+    if (total > 0 && stepIndex > total - 1) stepIndex = total - 1;
+    const fresh = !!o.freshChats;
+    const generation = (run.rerunCount || 0) + 1;
+
+    const docs = (run.docs || []).map((d) => {
+      const doc = newDoc(d, d && d.id);
+      // Papers that went up on a step this re-run skips would never be
+      // uploaded at all — the plan puts them on a step that doesn't run. In a
+      // fresh conversation that matters; in the old one they're already there.
+      if (fresh)
+        doc.addedAt = Math.max(typeof d.addedAt === "number" ? d.addedAt : 0, stepIndex);
+      return doc;
+    });
+
+    const next = newRun(
+      {
+        id: run.workflowId,
+        name: rerunName(run.name || run.templateName, generation),
+        templateName: run.templateName,
+        // Its own copy of the plan, as any run has. A chat told to start in an
+        // existing conversation is a fact about the FIRST run — this one either
+        // continues in the conversations that run ended up in, or opens new.
+        chats: (src.chats || []).map((c) =>
+          Object.assign({}, c, { startUrl: null, seedFromLatest: false })
+        ),
+        steps: src.steps || [],
+        docs: docs,
+        bundleText: run.bundleText,
+        nameChats: run.nameChats,
+        downloadFiles: run.downloadFiles,
+        allowRerun: run.allowRerun,
+      },
+      id,
+      now,
+      { type: "draft" },
+      docs
+    );
+
+    return Object.assign({}, next, {
+      stepIndex: stepIndex,
+      seedFrom: null,
+      chats: fresh ? {} : Object.assign({}, run.chats),
+      // Carried into the first step it runs, if that step takes a hand-off.
+      lastReply: o.carryFinal ? str(run.lastReply) : "",
+      rerunOf: run.id,
+      rerunCount: generation,
+    });
+  }
+
+  // Would the step a re-run starts on actually paste the previous run's final
+  // reply? Only a step that carries takes one, so offering the choice where it
+  // can't be honoured would be a tick that does nothing.
+  function rerunCarries(run, stepIndex) {
+    const plan = planRun(runSource(run, null));
+    const step = plan[stepIndex];
+    return !!(step && step.carry);
   }
 
   function upsertRun(list, run) {
@@ -976,11 +1070,19 @@
         return doc;
       }),
     });
+    // The switches are a run's own too, not only the template's — the editor
+    // shows them on a run, and until they were carried here it showed them
+    // doing nothing.
+    const flag = (k) => (typeof p[k] === "boolean" ? p[k] : run[k]);
     return Object.assign({}, run, {
       name: trimmed(p.name) || run.name,
       plan: { chats: shaped.chats, steps: shaped.steps },
       docs: shaped.docs,
       totalSteps: shaped.steps.length,
+      bundleText: flag("bundleText"),
+      nameChats: flag("nameChats"),
+      downloadFiles: flag("downloadFiles"),
+      allowRerun: flag("allowRerun"),
       lastProgressAt: now,
       updatedAt: now,
     });
@@ -1976,6 +2078,10 @@
     canRetrigger,
     retrigger,
     isDraft,
+    canRerun,
+    rerunOf,
+    rerunName,
+    rerunCarries,
     started,
     runLabel,
     workflowFromRun,

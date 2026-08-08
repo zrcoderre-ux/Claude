@@ -192,6 +192,13 @@
       `<p class="cumwf-hint">Off by default — it writes to your Downloads folder, so it's yours to ask for. ` +
       `Best-effort either way: a file that won't save is a note on the run, never a failed step.</p>` +
 
+      `<label class="cumwf-check"><input class="cumwf-rerun" type="checkbox" /> Offer to run a finished ` +
+      `run again</label>` +
+      `<p class="cumwf-hint">Adds a Re-run button to this workflow's finished runs, which asks which step ` +
+      `to start on — a workflow that opens by producing the thing the rest of it works on has nothing to ` +
+      `produce the second time. Off by default; each run keeps its own copy of this, so it can be turned ` +
+      `on or off for one run without touching the workflow.</p>` +
+
       `<label class="cumwf-label">Steps</label>` +
       `<div class="cumwf-steps cumwf-list"></div>` +
       `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-add-step" type="button">+ Add step</button></div>` +
@@ -231,6 +238,7 @@
       bundle: q(".cumwf-bundle"),
       nameChats: q(".cumwf-name-chats"),
       download: q(".cumwf-download"),
+      rerun: q(".cumwf-rerun"),
       fileInput: q(".cumwf-file-input"),
       docs: q(".cumwf-docs"),
       steps: q(".cumwf-steps"),
@@ -699,6 +707,7 @@
       ui.bundle.checked = !!wf.bundleText;
       ui.nameChats.checked = wf.nameChats !== false;
       ui.download.checked = !!wf.downloadFiles;
+      ui.rerun.checked = !!wf.allowRerun;
       ui.count.value = (wf.chats || []).length || 1;
       ui.problems.hidden = true;
       renderChats();
@@ -782,6 +791,7 @@
       wf.bundleText = ui.bundle.checked;
       wf.nameChats = ui.nameChats.checked;
       wf.downloadFiles = ui.download.checked;
+      wf.allowRerun = ui.rerun.checked;
       const candidate = W.newWorkflow(wf, wf.id, Date.now());
       const problems = W.validate(candidate);
       // An unassigned document is a warning, not a blocker — it just doesn't get
