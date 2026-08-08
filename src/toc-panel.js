@@ -255,6 +255,15 @@
       let sx = 0, sy = 0, ox = 0, oy = 0, on = false;
       h.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return;
+        // Not on a control that lives in the bar. Starting a drag here captures
+        // the pointer, and a captured pointer sends the click that follows to
+        // the CAPTURING element — so the minimize button was being pressed and
+        // the title bar was being clicked, which is a button that does nothing.
+        try {
+          if (e.target && e.target.closest && e.target.closest("button")) return;
+        } catch (err) {
+          /* ignore */
+        }
         on = true;
         dragged = false;
         sx = e.clientX;
