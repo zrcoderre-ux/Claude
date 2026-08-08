@@ -45,6 +45,19 @@
     .cumwf-card { border:1px solid rgba(0,0,0,0.12); border-radius:10px; padding:10px 12px;
       display:flex; flex-direction:column; gap:6px; background:rgba(0,0,0,0.015); }
     .cumwf-card-head { display:flex; align-items:center; gap:8px; }
+    /* Grip for dragging a step. A handle rather than the whole card, so
+       selecting text in the prompt still works: the card is only made draggable
+       while the pointer is down on this. */
+    .cumwf-grip { flex:0 0 auto; cursor:grab; user-select:none; line-height:1;
+      padding:2px 4px; border-radius:6px; color:#8a8a8a; font-size:14px;
+      background:none; border:none; }
+    .cumwf-grip:hover { background:rgba(0,0,0,0.06); color:#6b6b6b; }
+    .cumwf-grip:active { cursor:grabbing; }
+    .cumwf-card.cumwf-dragging { opacity:.45; }
+    /* Where it would land. Drawn on the card the dragged one would sit above,
+       so the gap is visible without moving anything until you let go. */
+    .cumwf-card.cumwf-drop-before { box-shadow:0 -3px 0 -1px #c96442; }
+    .cumwf-list.cumwf-drop-end > .cumwf-card:last-child { box-shadow:0 3px 0 -1px #c96442; }
     .cumwf-card-title { font-size:12px; font-weight:700; color:#6b6b6b; flex:1;
       text-transform:uppercase; letter-spacing:.04em; }
     .cumwf-list { display:flex; flex-direction:column; gap:8px; }
@@ -78,6 +91,8 @@
       .cumwf-doc-head { background:rgba(255,255,255,0.06); }
       .cumwf-doc-head .cumwf-doc-name { color:#a5a29a; }
       .cumwf-drop { border-color:rgba(255,255,255,0.22); }
+      .cumwf-grip { color:#8a877f; }
+      .cumwf-grip:hover { background:rgba(255,255,255,0.08); color:#d4d1c9; }
     }`;
 
   function injectStyles(doc) {
@@ -492,8 +507,11 @@
               : `<option value="">Model: ${esc(inherited)}</option>`
           )
           .join("");
+        card.setAttribute("data-step-id", step.id);
         card.innerHTML =
-          `<div class="cumwf-card-head"><span class="cumwf-card-title">Step ${i + 1}</span>` +
+          `<div class="cumwf-card-head">` +
+          `<button class="cumwf-grip" type="button" title="Drag to reorder" aria-label="Drag to reorder">⠿</button>` +
+          `<span class="cumwf-card-title">Step ${i + 1}</span>` +
           `<select class="wf-step-chat" style="width:auto">${chatOpts}</select>` +
           `<select class="wf-step-model" style="width:auto" title="Which model answers this step">${stepModelOpts}</select>` +
           `<button class="cumwf-btn mini wf-up" type="button" title="Move up">↑</button>` +
@@ -530,6 +548,7 @@
         if (carryEl) carryEl.addEventListener("change", () => (step.carry = carryEl.checked));
         const labelEl = card.querySelector(".wf-step-label");
         if (labelEl) labelEl.addEventListener("input", () => (step.carryLabel = labelEl.value));
+        wireStepDrag(card);
         card.querySelector(".wf-up").addEventListener("click", () => moveStep(i, -1));
         card.querySelector(".wf-down").addEventListener("click", () => moveStep(i, 1));
         card.querySelector(".wf-del").addEventListener("click", () => {
@@ -539,16 +558,111 @@
         ui.steps.appendChild(card);
       });
     }
+    // One notch at a time, for a small correction or a keyboard. Both this and
+    // dragging end up in reorderSteps, which is where the rule that the first
+    // step can't carry anything lives.
     function moveStep(i, delta) {
       const j = i + delta;
       if (j < 0 || j >= wf.steps.length) return;
-      const [s] = wf.steps.splice(i, 1);
-      wf.steps.splice(j, 0, s);
-      // The step that lands first can't carry anything; the one that moved out
-      // of first position gets its hand-off back.
-      wf.steps.forEach((st, k) => (st.carry = k === 0 ? false : st.carry !== false));
+      const order = wf.steps.map((s) => s.id);
+      order.splice(j, 0, order.splice(i, 1)[0]);
+      wf.steps = W.reorderSteps(wf.steps, order);
       renderSteps();
     }
+
+    // ---- dragging a step ---------------------------------------------------
+    // Nine steps is enough that moving one from the end to the middle is six
+    // clicks of an arrow, each one re-rendering under the cursor. Dragging is
+    // the direct version; the arrows stay for a one-notch nudge.
+    //
+    // Nothing is moved until the drop: the card the pointer is over is marked
+    // instead, so the list doesn't rearrange itself while you're still looking
+    // for the gap you want.
+    let dragCard = null;
+    let dropBefore = null; // the card it would land above; null means the end
+
+    function clearDropMarks() {
+      ui.steps.classList.remove("cumwf-drop-end");
+      for (const c of ui.steps.querySelectorAll(".cumwf-drop-before"))
+        c.classList.remove("cumwf-drop-before");
+    }
+
+    function markDrop(y) {
+      const cards = Array.from(ui.steps.querySelectorAll(".cumwf-card"));
+      dropBefore = null;
+      for (const c of cards) {
+        if (c === dragCard) continue;
+        const r = c.getBoundingClientRect();
+        if (y < r.top + r.height / 2) {
+          dropBefore = c;
+          break;
+        }
+      }
+      clearDropMarks();
+      if (dropBefore) dropBefore.classList.add("cumwf-drop-before");
+      else if (cards.length) ui.steps.classList.add("cumwf-drop-end");
+    }
+
+    function wireStepDrag(card) {
+      const grip = card.querySelector(".cumwf-grip");
+      // Only draggable while the grip is held. Otherwise the browser would take
+      // over selecting text in the prompt below it.
+      grip.addEventListener("mousedown", () => (card.draggable = true));
+      grip.addEventListener("mouseup", () => (card.draggable = false));
+      card.addEventListener("dragstart", (e) => {
+        dragCard = card;
+        card.classList.add("cumwf-dragging");
+        try {
+          e.dataTransfer.effectAllowed = "move";
+          // Firefox refuses to start a drag without payload; the id is only a
+          // formality since both ends are this list.
+          e.dataTransfer.setData("text/plain", card.getAttribute("data-step-id") || "");
+        } catch (err) {
+          /* ignore */
+        }
+      });
+      card.addEventListener("dragend", () => {
+        card.draggable = false;
+        card.classList.remove("cumwf-dragging");
+        clearDropMarks();
+        dragCard = null;
+        dropBefore = null;
+      });
+    }
+
+    ui.steps.addEventListener("dragover", (e) => {
+      if (!dragCard) return;
+      e.preventDefault();
+      try {
+        e.dataTransfer.dropEffect = "move";
+      } catch (err) {
+        /* ignore */
+      }
+      markDrop(e.clientY);
+    });
+    ui.steps.addEventListener("dragleave", (e) => {
+      // Only when the pointer has actually left the list, not on the way
+      // between two cards inside it.
+      if (dragCard && !ui.steps.contains(e.relatedTarget)) clearDropMarks();
+    });
+    ui.steps.addEventListener("drop", (e) => {
+      if (!dragCard) return;
+      e.preventDefault();
+      const moving = dragCard.getAttribute("data-step-id");
+      const landsAbove = dropBefore ? dropBefore.getAttribute("data-step-id") : null;
+      const order = [];
+      for (const s of wf.steps) {
+        if (String(s.id) === moving) continue;
+        if (landsAbove != null && String(s.id) === landsAbove) order.push(moving);
+        order.push(s.id);
+      }
+      if (landsAbove == null) order.push(moving);
+      wf.steps = W.reorderSteps(wf.steps, order);
+      clearDropMarks();
+      dragCard = null;
+      dropBefore = null;
+      renderSteps();
+    });
     ui.addStep.addEventListener("click", () => {
       const last = wf.steps[wf.steps.length - 1];
       // Alternate chats by default — that's what a back-and-forth workflow is.

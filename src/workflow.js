@@ -299,6 +299,45 @@
 
   // ---- workflow -----------------------------------------------------------
 
+  // Put steps into the order named by a list of ids. Anything the list doesn't
+  // name keeps its relative position, after the ones it does — a dropped card
+  // that somehow isn't in the list must not take its prompt with it.
+  //
+  // Carrying is decided partly by position: the first step has nothing before it
+  // to carry from, and a step directly after another in the SAME chat has no
+  // reason to be handed material that conversation already holds. In both cases
+  // the editor doesn't even offer the tick — so a `false` there was never a
+  // choice, and taking it along to a position where neither reason applies would
+  // silently drop a hand-off in the middle of a reshuffle. Reordering therefore
+  // gives such a step its default back, and only carries a genuine no across.
+  function positionForbidsCarry(list, i) {
+    return i === 0 || !!(list[i - 1] && list[i - 1].chatId === list[i].chatId);
+  }
+
+  function reorderSteps(steps, ids) {
+    const list = (steps || []).filter(Boolean);
+    const chosen = new Map();
+    list.forEach((s, i) =>
+      chosen.set(str(s.id), positionForbidsCarry(list, i) ? true : s.carry !== false)
+    );
+
+    const by = new Map(list.map((s) => [str(s.id), s]));
+    const out = [];
+    for (const id of ids || []) {
+      const s = by.get(str(id));
+      if (s && out.indexOf(s) === -1) out.push(s);
+    }
+    // Anything the list doesn't name keeps its relative position, after the ones
+    // it does — a card that somehow isn't in the order must not take its prompt
+    // with it.
+    for (const s of list) if (out.indexOf(s) === -1) out.push(s);
+
+    return out.map((s, i) => {
+      const want = chosen.has(str(s.id)) ? chosen.get(str(s.id)) : s.carry !== false;
+      return Object.assign({}, s, { carry: positionForbidsCarry(out, i) ? false : want });
+    });
+  }
+
   function newWorkflow(fields, id, now) {
     const f = fields || {};
     const wf = {
@@ -1796,6 +1835,7 @@
     newDoc,
     docsForChat,
     newWorkflow,
+    reorderSteps,
     normalize,
     setChatCount,
     cloneWorkflow,
