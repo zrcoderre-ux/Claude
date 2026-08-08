@@ -806,9 +806,26 @@ nothing:
   quotes and emphasis are stripped before labelling, and a long line is cut at a
   word rather than through one.
 
-The list is built from what the page currently holds. claude.ai unmounts messages
-that scroll a long way out of view, so in a very long conversation the list grows
-as you scroll rather than being complete from the first moment.
+**The list is the conversation, not the page.** claude.ai unmounts messages that
+scroll a long way out of view, so a list rebuilt from what's rendered loses
+entries behind you as you scroll — the exact opposite of what a table of contents
+is for. So it's built from the conversation payload, the same one
+[Save](#saving-a-chat) writes out, and re-read when a prompt appears that the
+list doesn't know about, which is how a message you just sent joins it.
+
+Where there's no conversation to read — an incognito chat is never saved — the
+page is all there is. Those views are **merged** rather than replacing one
+another: what's mounted is a contiguous window onto the chat, so each new window
+either sits inside what's already listed or overlaps one of its ends, and the
+union is recoverable either way. A chat that repeats itself ("continue", twenty
+times) can align ambiguously, which costs a duplicated entry at worst — where
+rebuilding costs entries for certain.
+
+Because the list outlives what's rendered, **an entry you click may not exist on
+the page**, so there's nothing to scroll to. It's aimed instead: scroll to about
+where that entry should be, see which message actually turned up, and correct
+from there — a few passes, each landing closer, then the usual jump to the end of
+the prompt once the real message is mounted.
 
 ## The header slot
 

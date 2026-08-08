@@ -13,9 +13,15 @@
  * draggable, and its position is remembered: the same treatment the meter gets,
  * because the right corner for it depends on the window and on the day.
  *
- * The list is built from the page. claude.ai unmounts messages that scroll far
- * out of view, so a very long conversation lists what it currently holds and
- * grows as you scroll — see the note in refresh().
+ * The list is built from the CONVERSATION, not from the page. claude.ai unmounts
+ * messages that scroll far out of view, so a list rebuilt from what's rendered
+ * loses entries behind you as you scroll — which is the exact opposite of what
+ * this is for. Where there is no conversation to read (an incognito chat is
+ * never saved), the page's windows are merged instead of replacing each other.
+ *
+ * That means an entry you click may not be rendered at all, so there is nothing
+ * to scroll to. See seek(): aim by proportion, look at what turned up, and go
+ * again.
  */
 (function () {
   "use strict";
@@ -23,6 +29,8 @@
   const T = window.CUMToc;
   const W = window.CUMWorkflow;
   const H = window.CUMHeaderSlot;
+  const C = window.CUMComposer;
+  const M = window.CUMMdExport;
   if (!T) return;
 
   const ID = "cum-toc";
@@ -30,6 +38,7 @@
   const POS_KEY = "cum_toc_pos"; // { left, top }
   const OPEN_KEY = "cum_toc_open"; // remembered across chats, not per chat
   const RESCAN_MS = 1500;
+  const REFETCH_MS = 6000; // no faster than this, however often a prompt lands
 
   let el = null;
   let btn = null;
@@ -37,7 +46,12 @@
   let countEl = null;
   let open = false;
   let pos = null;
-  let entries = []; // { n, label, el } — el is the message it points at
+  let entries = []; // { n, key, label, … } — the list, one entry per message
+  let fromApi = false; // the list came from the conversation, not the page
+  let convId = null; // …and this is the conversation it came from
+  let fetching = false;
+  let lastFetch = 0;
+  let misses = 0; // fetches that found nothing, which back the next one off
   let lastKey = "";
 
   function storageGet(keys) {
@@ -122,6 +136,99 @@
     }
   }
 
+  // The scroller the conversation is in, without needing a message to start
+  // from — the message you're looking for may not be mounted, which is the
+  // whole problem seeking exists to solve.
+  function conversationScroller() {
+    const nodes = humanMessages();
+    if (nodes.length) {
+      const s = scrollerFor(nodes[0]);
+      if (s) return s;
+    }
+    let best = null;
+    try {
+      for (const p of document.querySelectorAll("div,main,section")) {
+        if (isOurs(p)) continue;
+        const style = getComputedStyle(p);
+        if (!/(auto|scroll)/.test(style.overflowY)) continue;
+        const over = p.scrollHeight - p.clientHeight;
+        if (over < 200) continue;
+        if (!best || over > best.over) best = { el: p, over: over };
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return best ? best.el : null;
+  }
+
+  // Where the mounted window sits in the list: the offset that turns "third
+  // message on screen" into "eleventh message in the chat". Null when nothing on
+  // screen is recognisable, which happens before the list has been fetched.
+  function windowOffset(nodes) {
+    for (let i = 0; i < nodes.length; i++) {
+      const key = T.entryKey(nodes[i].textContent || "");
+      const at = entries.findIndex((e) => e.key === key);
+      if (at !== -1) return at - i;
+    }
+    return null;
+  }
+
+  // Which mounted message is which entry. Matched on text, and where a chat
+  // repeats itself — "continue", twenty times — on whichever match is nearest
+  // to where that entry ought to be, which the window offset makes answerable.
+  function mountedNodeFor(index) {
+    const want = entries[index];
+    if (!want) return null;
+    const nodes = humanMessages();
+    const base = windowOffset(nodes);
+    let best = null;
+    nodes.forEach((node, i) => {
+      if (T.entryKey(node.textContent || "") !== want.key) return;
+      const d = Math.abs((base === null ? i : base + i) - index);
+      if (!best || d < best.d) best = { node: node, d: d };
+    });
+    return best ? best.node : null;
+  }
+
+  // Where in the list the view currently is — the first mounted message we can
+  // place. Null when nothing on screen is recognisable.
+  function indexOnScreen() {
+    const nodes = humanMessages();
+    const base = windowOffset(nodes);
+    return base === null ? null : base;
+  }
+
+  // Jump to an entry that isn't mounted. Nothing to scroll to, so it's a guess
+  // and then a correction: scroll roughly where that entry should be, see which
+  // entry actually turned up, and go again from there. A few passes is plenty —
+  // each one lands closer, and the list is short enough that "closer" converges.
+  const SEEK_TRIES = 8;
+  const SEEK_WAIT_MS = 220;
+  function seek(index, tries) {
+    const node = mountedNodeFor(index);
+    if (node) return jumpTo(node);
+    if (tries >= SEEK_TRIES) return false;
+    const scroller = conversationScroller();
+    if (!scroller) return false;
+    const span = scroller.scrollHeight - scroller.clientHeight;
+    const from = indexOnScreen();
+    let top;
+    if (from === null) {
+      // Nothing recognisable on screen: start from where the entry would be if
+      // the chat were evenly spread, which is close enough to correct from.
+      top = (span * (index + 0.5)) / Math.max(1, entries.length);
+    } else {
+      top = scroller.scrollTop + T.seekDelta(from, index, span, entries.length);
+    }
+    try {
+      scroller.scrollTop = Math.max(0, Math.min(span, top));
+    } catch (e) {
+      return false;
+    }
+    setTimeout(() => seek(index, tries + 1), SEEK_WAIT_MS);
+    return true;
+  }
+
   // A moment's outline on what you jumped to. Landing silently in the middle of
   // a wall of text leaves you wondering whether the click did anything.
   function flash(node) {
@@ -197,7 +304,7 @@
     el.hidden = !open || entries.length === 0;
     if (el.hidden) return;
     listEl.innerHTML = "";
-    for (const e of entries) {
+    entries.forEach((e, i) => {
       const row = document.createElement("button");
       row.type = "button";
       row.className = "cum-toc-row" + (e.empty ? " cum-toc-dim" : "");
@@ -207,9 +314,16 @@
       // anything at all.
       row.querySelector(".cum-toc-label").textContent = e.label;
       row.title = e.label;
-      row.addEventListener("click", () => jumpTo(e.el));
+      row.addEventListener("click", () => go(i));
       listEl.appendChild(row);
-    }
+    });
+  }
+
+  // Jump to the nth entry, mounted or not.
+  function go(index) {
+    const node = mountedNodeFor(index);
+    if (node) return jumpTo(node);
+    seek(index, 0);
   }
 
   function refresh(force) {
@@ -221,10 +335,94 @@
     if (!force && key === lastKey) return;
     lastKey = key;
 
-    const built = T.tocEntries(nodes.map((n) => ({ text: n.textContent || "" })));
-    entries = built.map((e, i) => Object.assign({}, e, { el: nodes[i] }));
+    const seen = T.tocEntries(nodes.map((n) => ({ text: n.textContent || "" })));
+    if (fromApi) {
+      // The conversation is the list; the page only says when to ask for it
+      // again. A message on screen that the list doesn't know is one you just
+      // sent.
+      if (seen.some((s) => !entries.some((e) => e.key === s.key))) fetchList();
+    } else {
+      // No conversation to read — an incognito chat is never saved — so the
+      // page is all there is. Merge rather than replace: what's mounted is a
+      // window, and rebuilding from it is what made entries disappear as you
+      // scrolled.
+      entries = T.mergeWindows(entries, seen);
+    }
     build();
     render();
+  }
+
+  // ---- the conversation itself -------------------------------------------
+  // The list is built from the conversation payload wherever there is one.
+  // claude.ai unmounts messages that scroll out of view, so a list built from
+  // the page holds only what you have lately looked at — entries vanishing
+  // behind you as you scroll down, which is precisely what a table of contents
+  // is supposed to prevent.
+  let reqSeq = 0;
+  function fetchConversation(uuid, timeoutMs) {
+    return new Promise((resolve) => {
+      if (!C) return resolve(null);
+      const reqId = "toc" + ++reqSeq + "-" + Date.now();
+      let settled = false;
+      const finish = (data) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        window.removeEventListener("message", onMsg);
+        resolve(data || null);
+      };
+      function onMsg(event) {
+        if (event.source !== window) return;
+        const m = event.data;
+        const p = m && m.__channel === C.CHANNEL ? m.payload : null;
+        if (p && p.conversation && p.conversation.reqId === reqId)
+          finish(p.conversation.data || null);
+      }
+      window.addEventListener("message", onMsg);
+      const timer = setTimeout(() => finish(null), timeoutMs || 20000);
+      try {
+        window.postMessage(
+          { __channel: C.CHANNEL, command: { type: "fetchConversation", uuid, reqId } },
+          window.location.origin
+        );
+      } catch (e) {
+        finish(null);
+      }
+    });
+  }
+
+  function fetchList() {
+    if (!C || !M || fetching) return;
+    const uuid = W ? W.conversationId(location.pathname) : null;
+    if (!uuid) return;
+    const now = Date.now();
+    // Backed off after a miss, because a chat claude.ai has no record of — an
+    // incognito one — will miss every single time, and asking every few seconds
+    // for something that is never there is just noise.
+    if (now - lastFetch < REFETCH_MS * (misses + 1)) return;
+    fetching = true;
+    lastFetch = now;
+    fetchConversation(uuid, 20000)
+      .then((conv) => {
+        fetching = false;
+        misses = conv ? 0 : Math.min(misses + 1, 10);
+        // Still the same chat? A slow answer for the chat you just left must
+        // not become the list for the one you're in.
+        if (!conv || uuid !== (W ? W.conversationId(location.pathname) : null)) return;
+        const mine = M.messagesOf(conv).filter((m) => {
+          const who = String((m && (m.sender || m.role)) || "").toLowerCase();
+          return who === "human" || who === "user";
+        });
+        if (!mine.length) return;
+        entries = T.tocEntries(mine.map((m) => ({ text: M.parts(m).text })));
+        fromApi = true;
+        convId = uuid;
+        build();
+        render();
+      })
+      .catch(() => {
+        fetching = false;
+      });
   }
 
   // ---- drag, and staying on screen ---------------------------------------
@@ -319,6 +517,7 @@
     if (r[POS_KEY]) pos = r[POS_KEY];
     open = !!r[OPEN_KEY];
     if (onAConversation()) {
+      fetchList();
       refresh(true);
       if (pos) applyPos(pos, false);
       setOpen(open);
@@ -338,13 +537,23 @@
     if (location.href !== lastHref) {
       lastHref = location.href;
       lastKey = "";
-      entries = [];
+      // A different chat has a different list. Keeping the old one, even for a
+      // moment, would offer bookmarks into a conversation you've left.
+      const now = W ? W.conversationId(location.pathname) : null;
+      if (now !== convId) {
+        entries = [];
+        fromApi = false;
+        convId = now;
+        lastFetch = 0;
+        misses = 0;
+      }
       hideAll();
     }
     if (!onAConversation()) {
       hideAll();
       return;
     }
+    if (!fromApi) fetchList(); // a chat that has just acquired an id
     refresh(false);
     // The SPA rebuilds its header on every navigation, taking our slot with it.
     placeButton();

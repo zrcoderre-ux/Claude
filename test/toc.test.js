@@ -73,3 +73,62 @@ test("a message with nothing to label still gets an entry", () => {
   // Plain strings work as well as objects, since that's what the DOM gives.
   assert.equal(T.tocEntries(["Hello there"])[0].label, "Hello there");
 });
+
+test("the same message is the same message however it was read", () => {
+  // The payload's copy and the page's copy of one prompt differ in whitespace
+  // and nothing else, and a key that told them apart would list both.
+  assert.equal(
+    T.entryKey("Draft the ruling"),
+    T.entryKey("  draft   the\n  ruling  ")
+  );
+  assert.notEqual(T.entryKey("Draft the ruling"), T.entryKey("Draft the order"));
+  assert.equal(T.entryKey(null), "");
+});
+
+const win = (...texts) => T.tocEntries(texts.map((t) => ({ text: t })));
+
+test("scrolling adds to the list instead of replacing it", () => {
+  // claude.ai unmounts what scrolls out of view, so each look at the page is a
+  // WINDOW. Rebuilding from it is what made entries disappear behind you.
+  const all = win("one", "two", "three", "four", "five");
+  const top = win("one", "two", "three");
+  const bottom = win("three", "four", "five");
+
+  // Scrolled down: the window slides, the list grows.
+  assert.deepEqual(T.mergeWindows(top, bottom).map((e) => e.label), [
+    "one", "two", "three", "four", "five",
+  ]);
+  // And back up again: still five, not eight.
+  assert.deepEqual(T.mergeWindows(bottom, top).map((e) => e.label), [
+    "one", "two", "three", "four", "five",
+  ]);
+  // A window wholly inside what's known changes nothing but its own entries.
+  assert.deepEqual(T.mergeWindows(all, win("three", "four")).map((e) => e.label),
+    all.map((e) => e.label));
+  // Numbering is of the list, not of the window it arrived in.
+  assert.deepEqual(T.mergeWindows(top, bottom).map((e) => e.n), [1, 2, 3, 4, 5]);
+});
+
+test("a merge that can't find any overlap keeps both halves", () => {
+  // Jumped far enough that the windows share nothing: the new one can only be
+  // further down, and guessing wrong costs an entry out of order — where
+  // dropping it costs the bookmark itself.
+  const a = win("one", "two");
+  const b = win("nine", "ten");
+  assert.deepEqual(T.mergeWindows(a, b).map((e) => e.label), ["one", "two", "nine", "ten"]);
+  assert.deepEqual(T.mergeWindows([], b).map((e) => e.label), ["nine", "ten"]);
+  assert.deepEqual(T.mergeWindows(a, []).map((e) => e.label), ["one", "two"]);
+  assert.deepEqual(T.mergeWindows(null, null), []);
+});
+
+test("seeking an unmounted message aims by how far through the chat it is", () => {
+  // Nothing to scroll TO — the entry isn't rendered — so the first move is a
+  // proportion of the scroll, and the caller measures where it landed and goes
+  // again.
+  assert.equal(T.seekDelta(0, 10, 1000, 20), 500);
+  assert.equal(T.seekDelta(10, 0, 1000, 20), -500);
+  assert.equal(T.seekDelta(5, 5, 1000, 20), 0);
+  // No list to be a proportion of: don't move.
+  assert.equal(T.seekDelta(0, 10, 1000, 0), 0);
+  assert.equal(T.seekDelta(0, 10, 0, 20), 0);
+});
