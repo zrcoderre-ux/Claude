@@ -7,8 +7,10 @@
  * to it begins, and so the place you actually want to land when you're reading
  * back through what a conversation did.
  *
- * Starts minimized: a chat you're just reading shouldn't have a panel over it.
- * Draggable, and its position is remembered — the same treatment the meter gets,
+ * Starts minimized — a chat you're just reading shouldn't have a panel over it —
+ * behind a button in claude.ai's own header, in with the file and share
+ * controls, beside Save. The panel it opens is still free-floating and
+ * draggable, and its position is remembered: the same treatment the meter gets,
  * because the right corner for it depends on the window and on the day.
  *
  * The list is built from the page. claude.ai unmounts messages that scroll far
@@ -20,14 +22,17 @@
 
   const T = window.CUMToc;
   const W = window.CUMWorkflow;
+  const H = window.CUMHeaderSlot;
   if (!T) return;
 
   const ID = "cum-toc";
+  const BTN_ID = "cum-toc-btn";
   const POS_KEY = "cum_toc_pos"; // { left, top }
   const OPEN_KEY = "cum_toc_open"; // remembered across chats, not per chat
   const RESCAN_MS = 1500;
 
   let el = null;
+  let btn = null;
   let listEl = null;
   let countEl = null;
   let open = false;
@@ -77,7 +82,7 @@
   }
 
   function isOurs(node) {
-    return !!(node && node.closest && node.closest("#" + ID));
+    return !!(node && node.closest && node.closest("#" + ID + ", #" + BTN_ID));
   }
 
   // Which element actually scrolls. claude.ai scrolls an inner container, not
@@ -131,46 +136,66 @@
   // ---- the panel ----------------------------------------------------------
   function build() {
     if (el) return el;
+    // The toggle is a header button, not part of the panel: it belongs with
+    // Save and claude.ai's own controls, which is where you look for something
+    // that acts on this chat. The panel it opens still floats.
+    btn = document.createElement("button");
+    btn.id = BTN_ID;
+    btn.type = "button";
+    btn.title = "Your messages in this chat";
+    btn.innerHTML = `<span class="cum-toc-icon">☰</span><span class="cum-toc-count"></span>`;
+    btn.addEventListener("click", () => setOpen(!open));
+
     el = document.createElement("div");
     el.id = ID;
+    el.hidden = true;
     el.innerHTML =
-      `<button class="cum-toc-tab" type="button" title="Your messages in this chat">` +
-      `<span class="cum-toc-icon">☰</span><span class="cum-toc-count"></span></button>` +
-      `<div class="cum-toc-body" hidden>` +
+      `<div class="cum-toc-body">` +
       `<div class="cum-toc-head"><span class="cum-toc-title">Your messages</span>` +
       `<button class="cum-toc-close" type="button" title="Minimize">–</button></div>` +
       `<div class="cum-toc-list"></div></div>`;
     (document.body || document.documentElement).appendChild(el);
 
     listEl = el.querySelector(".cum-toc-list");
-    countEl = el.querySelector(".cum-toc-count");
+    countEl = btn.querySelector(".cum-toc-count");
 
-    el.querySelector(".cum-toc-tab").addEventListener("click", () => {
-      if (dragged) return; // a drag that ended on the tab isn't a click
-      setOpen(!open);
-    });
     el.querySelector(".cum-toc-close").addEventListener("click", () => setOpen(false));
     setupDrag();
+    placeButton();
     return el;
+  }
+
+  // Beside Save, in claude.ai's header — same slot, so the two arrive together
+  // rather than each finding its own anchor. See src/headerslot.js.
+  function placeButton() {
+    if (!btn) return;
+    const where = H ? H.place(btn) : "loose";
+    btn.classList.toggle("cum-toc-loose", where === "loose");
+    btn.classList.toggle("cum-toc-docked", where === "docked");
+    if (!H && btn.parentNode !== document.body) document.body.appendChild(btn);
+    try {
+      if (window.CUMPills) window.CUMPills.measure();
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   function setOpen(next) {
     open = !!next;
-    if (!el) return;
-    el.querySelector(".cum-toc-body").hidden = !open;
-    el.classList.toggle("cum-toc-open", open);
     storageSet({ [OPEN_KEY]: open });
-    if (open) {
-      refresh(true);
-      keepOnScreen();
-    }
+    if (!el) return;
+    if (btn) btn.classList.toggle("cum-toc-on", open);
+    if (open) refresh(true);
+    render();
+    if (open) keepOnScreen();
   }
 
   function render() {
     if (!el) return;
     countEl.textContent = entries.length ? String(entries.length) : "";
-    el.hidden = entries.length === 0;
-    if (!open) return;
+    if (btn) btn.hidden = entries.length === 0;
+    el.hidden = !open || entries.length === 0;
+    if (el.hidden) return;
     listEl.innerHTML = "";
     for (const e of entries) {
       const row = document.createElement("button");
@@ -223,9 +248,10 @@
   }
 
   function setupDrag() {
-    const handle = el.querySelector(".cum-toc-head");
-    const tab = el.querySelector(".cum-toc-tab");
-    for (const h of [handle, tab]) {
+    // The panel's own title bar, and only that. The toggle is in claude.ai's
+    // header now, where dragging it would mean dragging it out of the row it
+    // was put in.
+    for (const h of [el.querySelector(".cum-toc-head")]) {
       let sx = 0, sy = 0, ox = 0, oy = 0, on = false;
       h.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return;
@@ -290,6 +316,11 @@
     }
   });
 
+  function hideAll() {
+    if (el) el.hidden = true;
+    if (btn) btn.hidden = true;
+  }
+
   // Rebuilt on a timer rather than a MutationObserver: claude.ai mutates on
   // every streamed token, and the fingerprint above makes a poll cheap where an
   // observer would fire thousands of times a turn.
@@ -299,13 +330,15 @@
       lastHref = location.href;
       lastKey = "";
       entries = [];
-      if (el) el.hidden = true;
+      hideAll();
     }
     if (!onAConversation()) {
-      if (el) el.hidden = true;
+      hideAll();
       return;
     }
     refresh(false);
+    // The SPA rebuilds its header on every navigation, taking our slot with it.
+    placeButton();
   }, RESCAN_MS);
 
   window.addEventListener("resize", keepOnScreen);

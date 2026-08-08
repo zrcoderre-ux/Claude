@@ -69,6 +69,7 @@
         "src/scheduler-run.js",
         "src/workflow-run.js",
         "src/workflow-pill.js",
+        "src/headerslot.js",
         "src/toc-panel.js",
         "src/save-chat.js",
         "src/incognito-watch.js"

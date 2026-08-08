@@ -840,14 +840,25 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   .cum-wfp-btn:hover { background: #403f39; }
 }
 
+/* ── Our slot in claude.ai's header ───────────────────────────────────────
+   Save and the contents toggle, together, at the left end of the file/share
+   cluster. Laid out to disappear into that row: no background, no border of
+   its own — the row's own spacing is what should show. */
+#cum-hslot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
 /* ── Table of contents ────────────────────────────────────────────────────
    Your own messages in this conversation, as a list you can jump between.
-   Free-floating and draggable, so it can sit wherever this window has room —
-   it starts minimized, on the left, where the meter's stack never goes. */
+   The toggle sits in the header beside Save; the panel it opens free-floats
+   and is draggable, so it can sit wherever this window has room. */
 #cum-toc {
   position: fixed;
-  left: 16px;
-  top: 96px;
+  right: 16px;
+  top: 92px;
   z-index: 2147483644;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
@@ -858,38 +869,57 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 #cum-toc[hidden] { display: none; }
 #cum-toc.cum-toc-dragging { user-select: none; }
 
-.cum-toc-tab {
-  display: flex;
+/* The toggle, styled like the header it sits in rather than like this
+   extension — same reasoning as the Save button beside it. */
+#cum-toc-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 11px;
-  border: 1.5px solid rgba(0, 0, 0, 0.18);
-  border-radius: 999px;
-  background: #ffffff;
-  color: #1f1f1f;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  gap: 5px;
+  margin: 0;
+  padding: 5px 9px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
   font: inherit;
   font-size: 12.5px;
-  font-weight: 700;
-  cursor: grab;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
 }
 
-.cum-toc-tab:hover { background: #f5f4f0; }
-#cum-toc.cum-toc-dragging .cum-toc-tab { cursor: grabbing; }
+#cum-toc-btn[hidden] { display: none; }
+#cum-toc-btn:hover { background: rgba(0, 0, 0, 0.06); }
+#cum-toc-btn.cum-toc-on { background: rgba(201, 100, 66, 0.14); }
 .cum-toc-icon { font-size: 13px; line-height: 1; }
 .cum-toc-count { font-variant-numeric: tabular-nums; color: #6b6b6b; }
 
-/* Expanded, the tab becomes the panel's own shoulder — the panel hangs off it
-   rather than replacing it, so the thing you clicked is still under the
-   cursor. */
-#cum-toc.cum-toc-open .cum-toc-tab { border-radius: 999px 999px 0 0; }
+/* No header to sit in: dock into the meter's stack, or — failing even that —
+   the bottom left, which nothing else here uses. */
+#cum-toc-btn.cum-toc-docked {
+  pointer-events: auto;
+  background: #ffffff;
+  color: #1f1f1f;
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+#cum-toc-btn.cum-toc-loose {
+  position: fixed;
+  left: 16px;
+  bottom: 104px; /* above Save, which takes the space below it */
+  z-index: 2147483643;
+  background: #ffffff;
+  color: #1f1f1f;
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
 
 .cum-toc-body {
   width: 300px;
   max-width: calc(100vw - 32px);
-  margin-top: -1px;
   border: 1.5px solid rgba(0, 0, 0, 0.18);
-  border-radius: 4px 14px 14px 14px;
+  border-radius: 14px;
   background: #ffffff;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
   overflow: hidden;
@@ -986,9 +1016,12 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 
 @media (prefers-color-scheme: dark) {
   #cum-toc { color: #f0efea; }
-  .cum-toc-tab, .cum-toc-body { background: #2a2a28; border-color: rgba(255, 255, 255, 0.22); }
-  .cum-toc-tab { color: #f0efea; }
-  .cum-toc-tab:hover { background: #35342f; }
+  .cum-toc-body { background: #2a2a28; border-color: rgba(255, 255, 255, 0.22); }
+  #cum-toc-btn { border-color: rgba(255, 255, 255, 0.22); }
+  #cum-toc-btn:hover { background: rgba(255, 255, 255, 0.08); }
+  #cum-toc-btn.cum-toc-on { background: rgba(224, 135, 101, 0.2); }
+  #cum-toc-btn.cum-toc-loose,
+  #cum-toc-btn.cum-toc-docked { background: #2a2a28; color: #f0efea; }
   .cum-toc-count, .cum-toc-title { color: #a5a29a; }
   .cum-toc-head { border-bottom-color: rgba(255, 255, 255, 0.1); }
   .cum-toc-close { color: #a5a29a; }
