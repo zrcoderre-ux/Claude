@@ -450,9 +450,10 @@
           (wf.description ? `<div class="job-desc">${escapeHtml(wf.description)}</div>` : "") +
           `<div class="job-facts">` +
           `<span>${escapeHtml(WF.summarize(wf))}</span>` +
-          `<span${WF.totalUploads(wf) ? "" : ' class="warn"'}>${escapeHtml(
-            WF.uploadSummary(wf)
-          )}</span>` +
+          // No upload summary here. A template's documents belong to whatever
+          // matter is next, and warning that a workflow will upload nothing is
+          // warning about a run that doesn't exist yet — the run's own row says
+          // it, while there's still something to do about it.
           (armed.length
             ? `<span>starts in an existing chat: ${escapeHtml(
                 armed.map((c) => c.name).join(", ")
@@ -460,25 +461,14 @@
             : "") +
           workflowUsageFact(wf) +
           `</div>` +
+          // No trigger here either: when a matter goes is the matter's business.
+          // Create run makes the run, and its own editor asks when it starts.
           `<div class="job-chain">${escapeHtml(stepChain(wf))}</div>` +
-          `<div class="job-meta wf-run-bar">` +
-          `<select class="wf-when" data-id="${wf.id}">` +
-          `<option value="now">Run now</option>` +
-          `<option value="reset">When usage resets</option>` +
-          `<option value="time">At a set time</option></select> ` +
-          `<input class="wf-at" type="datetime-local" data-id="${wf.id}" disabled /> ` +
-          `<button class="job-run wf-start" data-id="${wf.id}">Start</button>` +
-          `</div></div>`;
+          `</div>`;
         wfui.list.appendChild(row);
       }
       wfui.empty.hidden = list.length !== 0;
 
-      wfui.list.querySelectorAll(".wf-when").forEach((sel) =>
-        sel.addEventListener("change", () => {
-          const at = sel.parentElement.querySelector(".wf-at");
-          at.disabled = sel.value !== "time";
-        })
-      );
       wfui.list.querySelectorAll(".wf-edit").forEach((b) =>
         b.addEventListener("click", () => {
           const wf = workflowsById[b.getAttribute("data-id")];
@@ -491,55 +481,9 @@
       wfui.list.querySelectorAll(".wf-del").forEach((b) =>
         b.addEventListener("click", () => deleteWorkflow(b.getAttribute("data-id")))
       );
-      wfui.list.querySelectorAll(".wf-start").forEach((b) =>
-        b.addEventListener("click", () => startWorkflow(b, b.getAttribute("data-id")))
-      );
       wfui.list.querySelectorAll(".wf-create").forEach((b) =>
         b.addEventListener("click", () => createRun(b, b.getAttribute("data-id")))
       );
-    });
-  }
-
-  function startWorkflow(btn, id) {
-    const wf = workflowsById[id];
-    // The editor holds changes in memory until Save, so a tick you just made is
-    // not part of the run unless it was saved.
-    if (wfForm.editingId() === id) {
-      if (
-        !confirm(
-          "This workflow is open in the editor. The run uses the SAVED version — " +
-            "any changes you haven't saved won't be included. Start anyway?"
-        )
-      )
-        return;
-    }
-    // Don't let a run that uploads nothing start silently. These prompts talk
-    // about "the attached papers"; Claude will answer anyway, from nothing, and
-    // the result looks like work.
-    if (wf && !WF.totalUploads(wf)) {
-      const stray = (wf.docs || []).length;
-      const msg = stray
-        ? `“${wf.name}” has ${stray} document(s), but none are ticked for a chat — nothing will be uploaded. Start anyway?`
-        : `“${wf.name}” has no documents attached — its first message goes out with nothing. Start anyway?`;
-      if (!confirm(msg)) return;
-    }
-    const bar = btn.parentElement;
-    const when = bar.querySelector(".wf-when").value;
-    let trigger = { type: when === "reset" ? "reset" : "now" };
-    if (when === "time") {
-      const raw = bar.querySelector(".wf-at").value;
-      const at = raw ? new Date(raw).getTime() : NaN;
-      if (!Number.isFinite(at)) return alert("Pick a valid date & time.");
-      if (at <= Date.now()) return alert("Pick a time in the future.");
-      trigger = { type: "time", at };
-    }
-    btn.disabled = true;
-    btn.textContent = "Starting…";
-    chrome.runtime.sendMessage({ type: "cum-wf-run", workflowId: id, trigger }, (res) => {
-      btn.disabled = false;
-      btn.textContent = "Start";
-      if (!res || !res.ok) alert("Could not start: " + ((res && res.error) || "unknown error"));
-      renderRuns();
     });
   }
 
@@ -920,7 +864,7 @@
   function openRunEditor(runId) {
     const run = (lastRuns || []).find((r) => r.id === runId);
     if (!run) return;
-    wfForm.editRun(run, (edited) => {
+    wfForm.editRun(run, (edited, trigger) => {
       // Documents new to a run ALREADY UNDER WAY are stamped with the step it
       // has reached, so they go up with the next step in their chats rather than
       // trying to ride an opening message that has already been sent. A run that
@@ -937,8 +881,38 @@
           },
         },
         (res) => {
-          if (res && !res.ok) alert("Could not save: " + (res.error || "unknown error"));
-          renderRuns();
+          if (res && !res.ok) {
+            alert("Could not save: " + (res.error || "unknown error"));
+            return renderRuns();
+          }
+          // The editor's own "When it starts" — applied after the edit, so the
+          // run that goes is the one you just finished setting up.
+          if (!trigger || !WF.canRetrigger(run)) return renderRuns();
+          const armed = Object.assign({}, run, {
+            docs: edited.docs,
+            plan: { chats: edited.chats, steps: edited.steps },
+          });
+          // "Not yet" needs no confirming — nothing is about to go out. On a run
+          // that was queued it puts it back to a draft, which is the only way to
+          // un-schedule one without cancelling it.
+          if (trigger.type !== "draft" && !WF.totalUploads(WF.runSource(armed, null))) {
+            const stray = (edited.docs || []).length;
+            if (
+              !confirm(
+                stray
+                  ? `This run has ${stray} document(s), but none are ticked for a chat — nothing will be uploaded. Start it anyway?`
+                  : "This run has no documents attached — its first message goes out with nothing. Start it anyway?"
+              )
+            )
+              return renderRuns();
+          }
+          chrome.runtime.sendMessage(
+            { type: "cum-wf-retrigger", runId: run.id, trigger },
+            (r2) => {
+              if (r2 && !r2.ok) alert("Saved, but could not start: " + (r2.error || "unknown error"));
+              renderRuns();
+            }
+          );
         }
       );
     });
@@ -964,6 +938,8 @@
       wfui.runs.innerHTML = "";
       for (const run of sorted) {
         const wf = WF.getWorkflow(workflows, run.workflowId);
+        const label = WF.runLabel(run);
+        const source = WF.runSource(run, wf);
         const links = Object.keys(run.chats || {})
           .map((cid) => {
             const url = (run.chats[cid] || {}).url;
@@ -1016,15 +992,31 @@
 
         row.innerHTML =
           `<div class="job-head">` +
-          `<div class="job-title">${escapeHtml(run.name || "Workflow")}` +
+          `<div class="job-title">${
+            label.named
+              ? escapeHtml(label.title)
+              : `<span class="job-unnamed">${escapeHtml(label.title)}</span>`
+          }` +
+          // The workflow it's a run of, kept beside the matter's own name. A run
+          // never borrows that name outright — a runs list that reads like a
+          // second copy of the workflows list tells you nothing about which
+          // matter is which.
+          (label.template ? `<span class="job-badge">${escapeHtml(label.template)}</span>` : "") +
           `<span class="job-badge">${RUN_STATUS_LABEL[run.status] || run.status}</span></div>` +
           `<div class="job-btns">${btns}</div></div>` +
           `<div class="job-main">` +
           `<div class="job-facts">` +
           `<span><b>${escapeHtml(WF.progressText(run, wf))}</b></span>` +
-          (run.docs && run.docs.length
-            ? `<span>${run.docs.length} document${run.docs.length === 1 ? "" : "s"}</span>`
-            : "") +
+          // What will actually go up, said while there's still time to fix it —
+          // these prompts talk about "the attached papers", and Claude answers
+          // from nothing in a way that looks like work.
+          (WF.started(run)
+            ? run.docs && run.docs.length
+              ? `<span>${run.docs.length} document${run.docs.length === 1 ? "" : "s"}</span>`
+              : ""
+            : `<span${WF.totalUploads(source) ? "" : ' class="warn"'}>${escapeHtml(
+                WF.uploadSummary(source)
+              )}</span>`) +
           (run.trigger && run.trigger.type === "time" && run.status === "pending"
             ? `<span>at ${escapeHtml(new Date(run.trigger.at).toLocaleString())}</span>`
             : "") +
@@ -1067,7 +1059,7 @@
           const wf = WF.getWorkflow(workflows, run.workflowId);
           const name = prompt(
             "Save this run's chats and steps as a new workflow, called:",
-            run.name || "Workflow from a run"
+            WF.runLabel(run).title
           );
           if (name === null) return;
           const made = WF.workflowFromRun(

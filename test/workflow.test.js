@@ -810,6 +810,57 @@ test("a draft run exists but nothing picks it up", () => {
   assert.match(W.progressText(draft, wf), /Not started/);
 });
 
+test("a run made from a resting template starts unnamed, but knows its workflow", () => {
+  const wf = W.newWorkflow(
+    { name: "Tentative ruling", templateName: "Tentative ruling", chats: [{ id: "a", name: "A" }], steps: [{ chatId: "a", prompt: "go" }] },
+    "w1",
+    NOW
+  );
+  const run = W.newRun(wf, "r1", NOW, { type: "draft" });
+  assert.equal(run.name, "", "it has nothing to say about the matter yet");
+  assert.equal(run.templateName, "Tentative ruling");
+
+  const label = W.runLabel(run);
+  assert.equal(label.named, false);
+  assert.equal(label.title, "Tentative ruling", "so the row is still recognisable");
+  assert.equal(label.template, "", "and doesn't say the same thing twice");
+
+  // Named for the matter, the workflow moves to the badge beside it.
+  const named = W.applyRunEdit(run, { name: "Demurrer — Smith v. Jones" }, NOW + 1);
+  const l2 = W.runLabel(named);
+  assert.equal(l2.named, true);
+  assert.equal(l2.title, "Demurrer — Smith v. Jones");
+  assert.equal(l2.template, "Tentative ruling");
+});
+
+test("a workflow armed for a matter still hands that name to its run", () => {
+  // The older way round: type the matter's name onto the template and go. That
+  // name IS the matter, so the run takes it.
+  const wf = W.newWorkflow(
+    {
+      name: "MSJ — Alvarez",
+      templateName: "Tentative ruling",
+      chats: [{ id: "a", name: "A" }],
+      steps: [{ chatId: "a", prompt: "go" }],
+    },
+    "w1",
+    NOW
+  );
+  const run = W.newRun(wf, "r1", NOW, { type: "now" });
+  assert.equal(run.name, "MSJ — Alvarez");
+  assert.equal(run.templateName, "Tentative ruling");
+  assert.equal(W.runLabel(run).template, "Tentative ruling");
+});
+
+test("a run remembers its workflow after the template is renamed or deleted", () => {
+  const wf = twoChatWorkflow();
+  const run = W.newRun(wf, "r1", NOW, { type: "draft" });
+  // Nothing about the run points at the template's current name.
+  assert.equal(W.runLabel(run).title, "Two chats");
+  assert.equal(W.getWorkflow([], run.workflowId), null, "even with the template gone");
+  assert.equal(W.runLabel(run).title, "Two chats");
+});
+
 test("giving a draft a trigger is what starts it", () => {
   const wf = twoChatWorkflow();
   const draft = W.newRun(wf, "r1", NOW, { type: "draft" });
@@ -824,6 +875,13 @@ test("giving a draft a trigger is what starts it", () => {
   // Rescheduling a run that was already queued doesn't change its status.
   const queued = W.newRun(wf, "r2", NOW, { type: "reset" });
   assert.equal(W.retrigger(queued, { type: "now" }, NOW + 10).status, "pending");
+
+  // And taking the trigger back off a queued run un-schedules it rather than
+  // running it — this is the one place a bad default would send a matter out.
+  const back = W.retrigger(queued, { type: "draft" }, NOW + 10);
+  assert.equal(back.status, "draft");
+  assert.equal(back.trigger.type, "draft");
+  assert.deepEqual(W.dueRuns([back], NOW + 1e9), []);
   // And a run that has actually started can't be re-armed at all.
   assert.equal(W.canRetrigger(W.markStarted(queued, NOW)), false);
 });

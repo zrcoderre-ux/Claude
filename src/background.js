@@ -554,7 +554,7 @@ async function recordStepUsage(prev, run) {
       workflowId: run.workflowId || run.id,
       // The template's name, not the run's — a run is named for the matter, and
       // a breakdown by matter would grow a line every time you started one.
-      workflowName: (wf && (wf.templateName || wf.name)) || run.name || null,
+      workflowName: (wf && (wf.templateName || wf.name)) || run.templateName || null,
     }),
   });
 }
@@ -857,7 +857,7 @@ async function driveRun(runId, opts) {
       const wf = W.getWorkflow((await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], run.workflowId);
       if (!wf) {
         await saveRun(W.markError(run, "its workflow was deleted", Date.now()));
-        notify("Workflow stopped", (run.name || "A workflow") + " — its definition is gone.");
+        notify("Workflow stopped", W.runLabel(run).title + " — its definition is gone.");
         return;
       }
       // A run executes its OWN snapshot of chats, steps and papers. The
@@ -883,7 +883,7 @@ async function driveRun(runId, opts) {
         if (firstHold)
           notify(
             "Workflow is waiting",
-            (run.name ? run.name + " — " : "") +
+            W.runLabel(run).title + " — " +
               "holding at step " + (run.stepIndex + 1) + " until Claude recovers (" + gate.reason + ")."
           );
         ensureStatusAlarm(true);
@@ -904,7 +904,7 @@ async function driveRun(runId, opts) {
           await saveRun(
             W.markError(run, "couldn't read " + from + " to start from — " + got.error, Date.now())
           );
-          notify("Workflow stopped", (run.name || "Workflow") + " — " + got.error);
+          notify("Workflow stopped", W.runLabel(run).title + " — " + got.error);
           return;
         }
         run = await saveRun(
@@ -1003,7 +1003,7 @@ async function driveRun(runId, opts) {
           if (res.paused)
             notify(
               "Workflow paused",
-              (run.name || "Workflow") + " — Claude's response was interrupted at step " +
+              W.runLabel(run).title + " — Claude's response was interrupted at step " +
                 (run.stepIndex + 1) + ". Read the chat, then Resume."
             );
           return;
@@ -1011,7 +1011,7 @@ async function driveRun(runId, opts) {
         await saveRun(W.markError(after, (res && res.error) || "unknown", Date.now()));
         notify(
           "Workflow stopped",
-          (after.name || "Workflow") + " failed at step " + (after.stepIndex + 1) + ": " +
+          W.runLabel(after).title + " failed at step " + (after.stepIndex + 1) + ": " +
             ((res && res.error) || "unknown")
         );
         return;
@@ -1021,7 +1021,7 @@ async function driveRun(runId, opts) {
         await noteRunUsage(after);
         notify(
           "Workflow finished",
-          (after.name || "Workflow") + " — all " + plan.length + " steps done."
+          W.runLabel(after).title + " — all " + plan.length + " steps done."
         );
         return;
       }

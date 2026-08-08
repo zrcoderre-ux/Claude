@@ -425,6 +425,14 @@ td .approx {
   border-left-style: dashed;
   border-left-color: #8a8a8a;
 }
+/* A run nobody has named yet. Italic and grey so "Untitled run" reads as a
+   prompt to name it rather than as a name. */
+.job-unnamed {
+  font-style: italic;
+  font-weight: 400;
+  color: #8a8a8a;
+}
+
 .job-item.status-pending { border-left-color: #c96442; }
 .job-item.status-waiting { border-left-color: #3f7fd2; }
 .job-item.status-running { border-left-color: #d99b1f; }
@@ -723,6 +731,7 @@ td .approx {
   }
   .wf-run-bar-lead { color: #a5a29a; }
   .job-item.status-draft { border-left-color: #8a877f; }
+  .job-unnamed { color: #8a877f; }
 }
 
 .daily-chart {

@@ -134,7 +134,7 @@
     lastKey = key;
 
     node.classList.toggle("cum-wfp-paused", paused);
-    node.querySelector(".cum-wfp-name").textContent = run.name || "Workflow";
+    node.querySelector(".cum-wfp-name").textContent = W.runLabel(run).title;
     node.querySelector(".cum-wfp-where").textContent = paused
       ? " · paused before step " + (run.stepIndex + 1) + " of " + total
       : " · step " + (run.stepIndex + 1) + " of " + total + " · " + here +
