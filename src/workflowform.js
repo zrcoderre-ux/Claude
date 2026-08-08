@@ -187,6 +187,10 @@
       `after the run — “<span class="cumwf-name-eg">Matter</span>: Chat A”</label>` +
       `<p class="cumwf-hint">Only conversations a run opens itself. A chat you point it at keeps the name ` +
       `it has: retitling work you started is not the extension's business.</p>` +
+      `<label class="cumwf-check"><input class="cumwf-download" type="checkbox" /> Save any file a reply ` +
+      `offers for download</label>` +
+      `<p class="cumwf-hint">Off by default — it writes to your Downloads folder, so it's yours to ask for. ` +
+      `Best-effort either way: a file that won't save is a note on the run, never a failed step.</p>` +
 
       `<label class="cumwf-label">Steps</label>` +
       `<div class="cumwf-steps cumwf-list"></div>` +
@@ -226,6 +230,7 @@
       pick: q(".cumwf-pick"),
       bundle: q(".cumwf-bundle"),
       nameChats: q(".cumwf-name-chats"),
+      download: q(".cumwf-download"),
       fileInput: q(".cumwf-file-input"),
       docs: q(".cumwf-docs"),
       steps: q(".cumwf-steps"),
@@ -693,6 +698,7 @@
       ui.desc.value = wf.description || "";
       ui.bundle.checked = !!wf.bundleText;
       ui.nameChats.checked = wf.nameChats !== false;
+      ui.download.checked = !!wf.downloadFiles;
       ui.count.value = (wf.chats || []).length || 1;
       ui.problems.hidden = true;
       renderChats();
@@ -775,6 +781,7 @@
       wf.description = ui.desc.value;
       wf.bundleText = ui.bundle.checked;
       wf.nameChats = ui.nameChats.checked;
+      wf.downloadFiles = ui.download.checked;
       const candidate = W.newWorkflow(wf, wf.id, Date.now());
       const problems = W.validate(candidate);
       // An unassigned document is a warning, not a blocker — it just doesn't get

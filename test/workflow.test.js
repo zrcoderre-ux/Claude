@@ -1241,6 +1241,25 @@ test("a shared step records a refusal, not a zero", () => {
   assert.equal(W.runUsage(r).complete, false, "so it can't reach the workflow's average");
 });
 
+test("a download control is never mistaken for the copy box", () => {
+  // The failure this prevents: clicking Download when the copy box was wanted
+  // saves a file nobody asked for AND hands back no text at all.
+  assert.ok(W.isDownloadLabel("Download"));
+  assert.ok(W.isDownloadLabel("  download  "));
+  assert.ok(W.isDownloadLabel("Download ruling.docx"), "aria-labels name the file");
+  assert.ok(W.isDownloadLabel("Save"));
+  // And it must not swallow the copy box, or a reply could never be read.
+  assert.equal(W.isDownloadLabel("Copy"), false);
+  assert.equal(W.isDownloadLabel(""), false);
+  assert.equal(W.isDownloadLabel(null), false);
+  // Prose that happens to mention downloading is not a control.
+  assert.equal(W.isDownloadLabel("You can download the file from the link above"), false);
+  assert.equal(W.isDownloadLabel("Redownload"), false, "matched at the word, not the substring");
+  // The two rules stay disjoint: nothing may be both.
+  for (const s of ["Copy", "copy message", "Download", "Save"])
+    assert.ok(!(W.isCopyLabel(s) && W.isDownloadLabel(s)), s);
+});
+
 test("a run's conversations are named for the matter and their job in it", () => {
   const wf = W.newWorkflow(
     {
