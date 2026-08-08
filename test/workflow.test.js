@@ -794,6 +794,71 @@ test("a window that reset mid-step can't be differenced", () => {
   assert.equal(W.usageCost(before, W.usageSample({})).weekly, null);
 });
 
+test("a draft run exists but nothing picks it up", () => {
+  const wf = twoChatWorkflow();
+  const draft = W.newRun(wf, "r1", NOW, { type: "draft" });
+  assert.equal(draft.status, "draft");
+  assert.equal(draft.trigger.type, "draft");
+  assert.equal(W.isDraft(draft), true);
+  assert.equal(W.isRunActive(draft), false, "so nothing treats it as in flight");
+
+  // Every scheduler gates on "pending", and a draft is not that.
+  assert.deepEqual(W.dueRuns([draft], NOW + 1e9), []);
+  assert.deepEqual(W.pendingResetRuns([draft]), []);
+  assert.deepEqual(W.pickupRuns([draft], NOW + W.STALE_MS + 1, W.STALE_MS), []);
+  assert.deepEqual(W.heldRuns([draft]), []);
+  assert.match(W.progressText(draft, wf), /Not started/);
+});
+
+test("giving a draft a trigger is what starts it", () => {
+  const wf = twoChatWorkflow();
+  const draft = W.newRun(wf, "r1", NOW, { type: "draft" });
+  assert.equal(W.canRetrigger(draft), true, "the same control that reschedules a queued run");
+
+  const armed = W.retrigger(draft, { type: "reset" }, NOW + 10);
+  assert.equal(armed.status, "pending");
+  assert.equal(armed.trigger.type, "reset");
+  assert.equal(W.isDraft(armed), false);
+  assert.equal(W.pendingResetRuns([armed]).length, 1);
+
+  // Rescheduling a run that was already queued doesn't change its status.
+  const queued = W.newRun(wf, "r2", NOW, { type: "reset" });
+  assert.equal(W.retrigger(queued, { type: "now" }, NOW + 10).status, "pending");
+  // And a run that has actually started can't be re-armed at all.
+  assert.equal(W.canRetrigger(W.markStarted(queued, NOW)), false);
+});
+
+test("papers added to a run that hasn't started go up with its opening message", () => {
+  const wf = twoChatWorkflow();
+  const draft = W.newRun(wf, "r1", NOW, { type: "draft" });
+  const edited = W.applyRunEdit(
+    draft,
+    { docs: draft.docs.concat([{ id: "new", name: "moving papers.pdf", chats: ["a"] }]) },
+    NOW + 1
+  );
+  // Stamped with step 0, which for a run that hasn't moved IS the chat's
+  // opening message — so it goes up exactly where it would have anyway.
+  assert.equal(edited.docs.find((d) => d.id === "new").addedAt, 0);
+  assert.deepEqual(
+    W.planRun(W.runSource(edited, null))[0].docIds,
+    ["d1", "new"],
+    "the chat's first step carries both, the one it inherited and the one just added"
+  );
+
+  // Whereas the same edit to a run under way holds them for the next step, as
+  // before: that chat's opening message has already gone.
+  const running = W.markStarted(W.newRun(wf, "r2", NOW, { type: "now" }), NOW);
+  const midRun = W.applyRunEdit(
+    Object.assign({}, running, { stepIndex: 1 }),
+    { docs: running.docs.concat([{ id: "d2", name: "reply brief.pdf", chats: ["a"] }]) },
+    NOW + 1
+  );
+  assert.equal(midRun.docs.find((d) => d.id === "d2").addedAt, 1);
+  const midPlan = W.planRun(W.runSource(midRun, null));
+  assert.deepEqual(midPlan[0].docIds, ["d1"], "not the message already sent");
+  assert.deepEqual(midPlan[2].docIds, ["d2"], "chat A's next step carries it instead");
+});
+
 test("a step can name its own model, and the chat keeps it afterwards", () => {
   const wf = W.newWorkflow(
     {

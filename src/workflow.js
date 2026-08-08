@@ -636,8 +636,13 @@
           ? { type: "time", at: t.at }
           : t.type === "reset"
           ? { type: "reset" }
+          : t.type === "draft"
+          ? { type: "draft" }
           : { type: "now" },
-      status: "pending", // pending | waiting | running | done | error | canceled
+      // draft | pending | waiting | running | done | error | canceled | paused.
+      // A draft is armed for a matter but has no trigger yet, so nothing picks
+      // it up — every scheduler here gates on "pending".
+      status: t.type === "draft" ? "draft" : "pending",
       // Normally 0. A chat standing in as step 0 starts the run past the steps
       // that chat has already done by hand.
       stepIndex: seed.stepIndex,
@@ -747,8 +752,16 @@
   // Change when a queued run goes off. Only meaningful before it has started —
   // once a run is under way its trigger is history, and the thing you want then
   // is Pause or Fix & continue.
+  // A run that exists but has never been armed: created from a workflow so this
+  // matter's name, papers and tweaks live on the RUN rather than on the template,
+  // which is a shared thing the next matter needs back clean. It sits at the top
+  // of the runs list doing nothing until it's given a trigger.
+  function isDraft(run) {
+    return !!run && run.status === "draft";
+  }
+
   function canRetrigger(run) {
-    return !!run && run.status === "pending";
+    return !!run && (run.status === "pending" || run.status === "draft");
   }
 
   function retrigger(run, trigger, now) {
@@ -760,7 +773,13 @@
         : t.type === "reset"
         ? { type: "reset" }
         : { type: "now" };
-    return Object.assign({}, run, { trigger: next, lastProgressAt: now });
+    // Giving a draft a trigger is what starts it — up to that moment it's a
+    // matter being set up, not a job in a queue.
+    return Object.assign({}, run, {
+      trigger: next,
+      status: isDraft(run) ? "pending" : run.status,
+      lastProgressAt: now,
+    });
   }
 
   // Stop at the next step boundary, keeping everything else — where it is, what
@@ -786,6 +805,10 @@
       steps: (Array.isArray(p.steps) ? p.steps : src.steps).map((s) => newStep(s, s && s.id)),
       docs: (Array.isArray(p.docs) ? p.docs : src.docs).map((d) => {
         const doc = newDoc(d, d && d.id);
+        // Stamped with where the run has reached, so it rides the next step in
+        // each of its chats rather than an opening message that may already have
+        // gone. On a run that hasn't started this is step 0, which is that
+        // chat's opening message — the same place it would have gone anyway.
         if (!prior.has(doc.id) && typeof doc.addedAt !== "number") doc.addedAt = run.stepIndex;
         return doc;
       }),
@@ -1345,6 +1368,9 @@
     if (run.status === "canceled") return "Canceled at step " + (run.stepIndex + 1);
     if (run.status === "paused") return "Paused before step " + (run.stepIndex + 1) + " of " + total;
     if (run.status === "error") return "Failed at step " + (run.stepIndex + 1) + " of " + total;
+    if (run.status === "draft")
+      return "Not started · " + total + " step" + (total === 1 ? "" : "s") +
+        " · add this matter's papers, then start it";
     if (run.status === "pending") return "Queued · " + total + " steps";
     const plan = planRun(src);
     const step = plan[run.stepIndex];
@@ -1708,6 +1734,7 @@
     runSource,
     canRetrigger,
     retrigger,
+    isDraft,
     workflowFromRun,
     markPaused,
     applyRunEdit,

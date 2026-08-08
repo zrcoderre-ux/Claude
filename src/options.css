@@ -419,6 +419,12 @@ td .approx {
   background: #fff;
 }
 
+/* A run that exists but hasn't been armed. Dashed rather than a colour: it's
+   not queued, not running, not finished — it's still being set up. */
+.job-item.status-draft {
+  border-left-style: dashed;
+  border-left-color: #8a8a8a;
+}
 .job-item.status-pending { border-left-color: #c96442; }
 .job-item.status-waiting { border-left-color: #3f7fd2; }
 .job-item.status-running { border-left-color: #d99b1f; }
@@ -687,6 +693,12 @@ td .approx {
   margin-top: 6px;
 }
 
+.wf-run-bar-lead {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #6b6b6b;
+}
+
 .wf-run-bar select,
 .wf-run-bar input[type="datetime-local"] {
   font: inherit;
@@ -709,6 +721,8 @@ td .approx {
     border-color: rgba(255, 255, 255, 0.16);
     color: #f0efea;
   }
+  .wf-run-bar-lead { color: #a5a29a; }
+  .job-item.status-draft { border-left-color: #8a877f; }
 }
 
 .daily-chart {

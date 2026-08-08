@@ -354,6 +354,7 @@
   wfui.newBtn.addEventListener("click", () => wfForm.create());
 
   const RUN_STATUS_LABEL = {
+    draft: "Not started",
     pending: "Queued",
     waiting: "Waiting out an outage",
     running: "Running",
@@ -440,6 +441,9 @@
           `<div class="job-btns">` +
           `<button class="job-edit wf-edit" data-id="${wf.id}" title="Edit">Edit</button>` +
           `<button class="job-edit wf-copy" data-id="${wf.id}" title="Duplicate">Copy</button>` +
+          `<button class="job-run wf-create" data-id="${wf.id}" ` +
+          `title="Set this workflow up for a matter, down in Runs — nothing starts until you say so">` +
+          `Create run</button>` +
           `<button class="job-del wf-del" data-id="${wf.id}" title="Delete">✕</button>` +
           `</div></div>` +
           `<div class="job-main">` +
@@ -490,6 +494,9 @@
       wfui.list.querySelectorAll(".wf-start").forEach((b) =>
         b.addEventListener("click", () => startWorkflow(b, b.getAttribute("data-id")))
       );
+      wfui.list.querySelectorAll(".wf-create").forEach((b) =>
+        b.addEventListener("click", () => createRun(b, b.getAttribute("data-id")))
+      );
     });
   }
 
@@ -534,6 +541,39 @@
       if (!res || !res.ok) alert("Could not start: " + ((res && res.error) || "unknown error"));
       renderRuns();
     });
+  }
+
+  // Set a workflow up for a matter without arming the workflow itself. The run
+  // is created immediately — with no trigger, so nothing can pick it up — and
+  // opened for editing, which is where this matter's name, papers and tweaks
+  // go. Close it without starting and the run simply waits at the top of the
+  // list. The template goes back to its resting state either way, so the
+  // Workflows section stays a list of templates rather than of matters.
+  function createRun(btn, id) {
+    if (wfForm.editingId() === id) {
+      if (
+        !confirm(
+          "This workflow is open in the editor. The run copies the SAVED version — " +
+            "any changes you haven't saved won't be included. Create the run anyway?"
+        )
+      )
+        return;
+    }
+    btn.disabled = true;
+    btn.textContent = "Creating…";
+    chrome.runtime.sendMessage(
+      { type: "cum-wf-run", workflowId: id, trigger: { type: "draft" } },
+      (res) => {
+        btn.disabled = false;
+        btn.textContent = "Create run";
+        if (!res || !res.ok)
+          return alert("Could not create the run: " + ((res && res.error) || "unknown error"));
+        renderWorkflows();
+        // Straight into the run's own editor — the papers are the first thing
+        // you'd want to add, and the whole point is that they go on the run.
+        renderRuns().then(() => openRunEditor(res.runId));
+      }
+    );
   }
 
   function copyWorkflow(id) {
@@ -822,8 +862,12 @@
     const at = t.type === "time" && typeof t.at === "number" ? toLocalDatetime(t.at) : "";
     const opt = (v, label) =>
       `<option value="${v}"${t.type === v ? " selected" : ""}>${label}</option>`;
+    // The same control does two jobs: it starts a run that has never been armed,
+    // and it reschedules one that's already queued. Only the verb differs.
+    const draft = WF.isDraft(run);
     return (
       `<div class="job-meta wf-run-bar">` +
+      (draft ? `<span class="wf-run-bar-lead">Start this run</span> ` : "") +
       `<select class="wf-when-run" data-id="${run.id}">` +
       opt("now", "Run now") +
       opt("reset", "When usage resets") +
@@ -832,7 +876,9 @@
       `<input class="wf-at-run" type="datetime-local" data-id="${run.id}" value="${at}"${
         t.type === "time" ? "" : " disabled"
       } /> ` +
-      `<button class="job-run wf-retrigger" data-id="${run.id}">Change</button>` +
+      `<button class="job-run wf-retrigger" data-id="${run.id}">${
+        draft ? "Start" : "Change"
+      }</button>` +
       `</div>`
     );
   }
@@ -868,14 +914,53 @@
     );
   }
 
+  // The run's own editor: this matter's name, its papers, and any tweak to the
+  // steps that belongs to this matter rather than to the template. Reached both
+  // from Edit run and straight after Create run, which is the same act.
+  function openRunEditor(runId) {
+    const run = (lastRuns || []).find((r) => r.id === runId);
+    if (!run) return;
+    wfForm.editRun(run, (edited) => {
+      // Documents new to a run ALREADY UNDER WAY are stamped with the step it
+      // has reached, so they go up with the next step in their chats rather than
+      // trying to ride an opening message that has already been sent. A run that
+      // hasn't started yet has no such problem — its papers are just its papers.
+      chrome.runtime.sendMessage(
+        {
+          type: "cum-wf-edit-run",
+          runId: run.id,
+          patch: {
+            name: edited.name,
+            chats: edited.chats,
+            steps: edited.steps,
+            docs: edited.docs,
+          },
+        },
+        (res) => {
+          if (res && !res.ok) alert("Could not save: " + (res.error || "unknown error"));
+          renderRuns();
+        }
+      );
+    });
+  }
+
   function renderRuns() {
-    Promise.all([
+    return Promise.all([
       readRuns(),
       new Promise((r) => chrome.storage.local.get(WORKFLOWS_KEY, (x) => r((x && x[WORKFLOWS_KEY]) || []))),
     ]).then(([runs, workflows]) => {
       lastRuns = runs;
       lastWorkflows = workflows;
-      const sorted = runs.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      // Runs still being set up sit at the top: they're the ones waiting on you,
+      // and a matter you're preparing shouldn't be below yesterday's finished
+      // one. Everything else stays newest-first.
+      const sorted = runs
+        .slice()
+        .sort(
+          (a, b) =>
+            (WF.isDraft(b) ? 1 : 0) - (WF.isDraft(a) ? 1 : 0) ||
+            (b.createdAt || 0) - (a.createdAt || 0)
+        );
       wfui.runs.innerHTML = "";
       for (const run of sorted) {
         const wf = WF.getWorkflow(workflows, run.workflowId);
@@ -901,14 +986,21 @@
                 WF.resumePlan(run).action
               )}">Resume</button>`
             : "") +
-          (WF.isRunActive(run) && run.status !== "waiting"
+          // Nothing to carry on from until it has run at all.
+          ((WF.isRunActive(run) && run.status !== "waiting") || WF.isDraft(run)
             ? ""
             : `<button class="job-edit wf-run-fix" data-id="${run.id}" title="Choose where to carry on from">Fix &amp; continue</button>`) +
           (WF.isRunActive(run)
             ? `<button class="job-edit wf-run-pause" data-id="${run.id}" title="Stop at the next step so you can change something">Pause</button>`
             : "") +
           (run.status !== "running" && run.status !== "done"
-            ? `<button class="job-edit wf-run-edit" data-id="${run.id}" title="Add a step, fix a prompt, add documents — this run only">Edit run</button>`
+            ? `<button class="${WF.isDraft(run) ? "job-run" : "job-edit"} wf-run-edit" data-id="${
+                run.id
+              }" title="${
+                WF.isDraft(run)
+                  ? "Name this matter, add its papers, tweak its steps — this run only"
+                  : "Add a step, fix a prompt, add documents — this run only"
+              }">${WF.isDraft(run) ? "Set up" : "Edit run"}</button>`
             : "") +
           (WF.isRunActive(run) || run.status === "paused"
             ? `<button class="job-edit wf-run-cancel" data-id="${run.id}" title="Stop here for good">Cancel</button>`
@@ -1005,31 +1097,7 @@
         })
       );
       wfui.runs.querySelectorAll(".wf-run-edit").forEach((b) =>
-        b.addEventListener("click", () => {
-          const run = runs.find((r) => r.id === b.getAttribute("data-id"));
-          if (!run) return;
-          wfForm.editRun(run, (edited) => {
-            // Documents new to the run are stamped with the step it has reached,
-            // so they go up with the next step in their chats rather than trying
-            // to ride an opening message that has already been sent.
-            chrome.runtime.sendMessage(
-              {
-                type: "cum-wf-edit-run",
-                runId: run.id,
-                patch: {
-                  name: edited.name,
-                  chats: edited.chats,
-                  steps: edited.steps,
-                  docs: edited.docs,
-                },
-              },
-              (res) => {
-                if (res && !res.ok) alert("Could not save: " + (res.error || "unknown error"));
-                renderRuns();
-              }
-            );
-          });
-        })
+        b.addEventListener("click", () => openRunEditor(b.getAttribute("data-id")))
       );
       wfui.runs.querySelectorAll(".wf-run-steps").forEach((b) =>
         b.addEventListener("click", () => {
@@ -1056,6 +1124,21 @@
             if (!Number.isFinite(at)) return alert("Pick a valid date & time.");
             if (at <= Date.now()) return alert("Pick a time in the future.");
             trigger = { type: "time", at };
+          }
+          // Starting a run that uploads nothing, silently, is the failure worth
+          // catching: these prompts talk about "the attached papers", and Claude
+          // will answer from nothing and make it look like work.
+          const run = (lastRuns || []).find((r) => r.id === b.getAttribute("data-id"));
+          if (WF.isDraft(run) && !WF.totalUploads(WF.runSource(run, null))) {
+            const stray = (run.docs || []).length;
+            if (
+              !confirm(
+                stray
+                  ? `This run has ${stray} document(s), but none are ticked for a chat — nothing will be uploaded. Start anyway?`
+                  : "This run has no documents attached — its first message goes out with nothing. Start anyway?"
+              )
+            )
+              return;
           }
           b.disabled = true;
           chrome.runtime.sendMessage(

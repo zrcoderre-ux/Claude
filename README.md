@@ -181,27 +181,35 @@ The editor has two names for that reason:
 - **Run name** — the matter in front of you. Blank means "use the workflow
   name".
 
-Set the run name, drop in that matter's papers, and press **Start**:
+**Create run** is the way to keep those apart. Press it and a run appears
+immediately at the top of the **Runs** section — with no trigger, so nothing can
+pick it up — and opens for editing, which is where the matter's name, its papers
+and any tweak to the steps go. Close it without starting and it simply waits
+there, marked *Not started*. Nothing about that matter ever occupies the
+workflow's row.
 
-- the **run** takes that name and those documents, and owns them for its whole
-  life;
-- the **workflow** goes straight back to its own name with **no documents**,
-  ready for the next matter — even while the run it just spawned is still going.
+Starting it is the same control a queued run uses: pick **Run now**, **When usage
+resets** or **At a set time** on the run's own row and press **Start**.
 
-A workflow armed for a matter shows both in the list, so a shelf of
-similarly-named rows stays readable. Because the run owns its copy of the papers,
-re-arming the template — or deleting it outright — can't disturb a run in
-flight, and stored files are only discarded once nothing, run or workflow, still
-points at them.
+(The workflow's own **Start** still works the older way — name the template for
+the matter, drop the papers on it, and go — and it behaves identically underneath:
+the run takes the name and the documents and owns them for its whole life, and
+the workflow goes straight back to its own name with no documents. A workflow
+armed that way shows both names in the list so a shelf of similarly-named rows
+stays readable.)
+
+Either way, because the run owns its copy of the papers, re-arming the template —
+or deleting it outright — can't disturb a run in flight, and stored files are
+only discarded once nothing, run or workflow, still points at them.
 
 ### Running one
 
-Pick **Run now**, **When usage resets**, or **At a set time** on the workflow's
-row and press **Start** — the same three triggers a scheduled send has, sharing
-the same alarms. A run that hasn't gone yet keeps that control on **its own** row,
-so a queued run can be moved to a different time, switched to the next usage
-reset, or sent straight away, without cancelling it and setting the whole thing
-up again. Once a run has started its trigger is history, and **Pause** is the
+**Run now**, **When usage resets**, or **At a set time** — the same three triggers
+a scheduled send has, sharing the same alarms. The control lives on the **run's
+own row**, both for a run that hasn't been armed yet (where the button says
+*Start*) and for one already queued (where it says *Change*), so a matter can be
+moved to a different time, switched to the next usage reset, or sent straight
+away without cancelling it and setting the whole thing up again. Once a run has started its trigger is history, and **Pause** is the
 tool instead. The run then walks its steps: open (or return to) the step's
 chat, attach that chat's documents if it's the chat's first message, type the
 composed prompt, send, **wait for Claude to finish** — up to **an hour** per
