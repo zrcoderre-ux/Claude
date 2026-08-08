@@ -611,6 +611,23 @@ want. Neither is confused by other open chats: a run addresses a conversation by
 its URL, so unrelated claude.ai tabs — including other workflows' — are invisible
 to it.
 
+**Running out of usage pauses the run.** Before each step, and every twenty
+seconds while one waits, the run reads the meter it already keeps. At 100% of
+either window — the 5-hour session or the 7-day week, since a weekly limit blocks
+a fresh session just as firmly — it **pauses** and says when usage comes back.
+
+It reads the **meter**, never the page. A reply that discusses running out of
+usage must not be able to pause a healthy run, and the message text is the one
+place that sentence is likely to turn up.
+
+Pausing rather than holding is deliberate. An outage is over when it's over, so a
+held run picks itself back up; a usage window reopens on a schedule, and a run
+that resumed itself at 3am would start a nine-step afternoon's work with nobody
+watching. It waits for you. Where the message had already gone out, the pause
+keeps the phase, so **Resume** waits for that answer rather than sending the same
+message into a second turn. A turn already generating is left to finish — it's
+paid for; what will never arrive is the reply that hasn't started.
+
 **When things go wrong.** A run is driven through the real UI, so it needs your
 browser open and logged in. If Claude is down it **waits mid-workflow** and picks
 up where it left off (same gate, same 6-hour ceiling as a scheduled send). If the

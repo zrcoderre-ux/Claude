@@ -970,6 +970,29 @@ async function driveRun(runId, opts) {
         ensureStatusAlarm(true);
         return;
       }
+      // Nothing left to send into. Pause rather than post a message that will
+      // be refused and then wait an hour for a reply that can't come — and
+      // pause rather than hold, because a run that resumed itself at reset
+      // would start a nine-step afternoon while nobody was watching.
+      const meter = (await get(STATE_KEY))[STATE_KEY];
+      if (W.usageExhausted(meter)) {
+        const back = W.usageBackAt(meter);
+        await saveRun(
+          Object.assign({}, W.markPaused(run, Date.now()), {
+            note:
+              "paused before step " + (run.stepIndex + 1) + " — your Claude usage has run out" +
+              (back ? ", back at " + new Date(back).toLocaleTimeString() : "") +
+              ". Resume when it has.",
+          })
+        );
+        notify(
+          "Workflow paused",
+          W.runLabel(run).title + " — out of usage before step " + (run.stepIndex + 1) +
+            (back ? ". Usage returns at " + new Date(back).toLocaleTimeString() : "") + "."
+        );
+        return;
+      }
+
       const heldNote = gate.expired
         ? "step " + (run.stepIndex + 1) + " sent after waiting " + S.fmtWaited(gate.waitedMs)
         : null;

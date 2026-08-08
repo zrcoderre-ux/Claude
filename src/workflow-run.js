@@ -516,6 +516,10 @@
     // How often to ask the conversation API, and when we last did.
     const API_EVERY_MS = 12000;
     let lastApiAt = 0;
+    // …and how often to look at the meter. A step waiting on a reply that can
+    // never come because the window emptied should stop, not sit out its hour.
+    const USAGE_EVERY_MS = 20000;
+    let lastUsageAt = Date.now();
     const deadline = startedAt + (timeoutMs || W.STEP_TIMEOUT_MS);
     const since = typeof sentAt === "number" ? sentAt : startedAt;
     let lastText = "";
@@ -597,6 +601,19 @@
             }
           }
         }
+        // Out of usage, and Claude isn't mid-answer. A turn already running is
+        // paid for and finishes; it's the reply that hasn't started that will
+        // never arrive.
+        if (now - lastUsageAt > USAGE_EVERY_MS) {
+          lastUsageAt = now;
+          const generatingNow = C.isGenerating() || streamStartedAt > streamDoneAt;
+          if (!generatingNow) {
+            const meter = (await C.storageGet("cum_state")).cum_state;
+            if (W.usageExhausted(meter))
+              return { el: null, canceled: false, outOfUsage: true, backAt: W.usageBackAt(meter) };
+          }
+        }
+
         if (el) {
           const text = renderedText(el);
           // A cut-off reply, whatever cut it off. Stop here rather than settle:
@@ -790,7 +807,18 @@
       sentAt = typeof run.sentAt === "number" ? run.sentAt : 0;
     }
 
-    const { el, apiText, canceled, timedOut, interrupted, unreadable, via: settledVia, state } = await waitForReply(
+    const {
+      el,
+      apiText,
+      canceled,
+      timedOut,
+      interrupted,
+      unreadable,
+      outOfUsage,
+      backAt,
+      via: settledVia,
+      state,
+    } = await waitForReply(
       runId,
       before,
       W.STEP_TIMEOUT_MS,
@@ -801,6 +829,20 @@
     // Pause rather than fail: the message went out, the reply is a fragment, and
     // what happens next is a judgement call. The run keeps its place and its
     // phase, so Resume waits for a fresh reply instead of sending again.
+    // The message went out and the window emptied before it was answered. Pause
+    // with the phase intact, so Resume waits for the reply rather than sending
+    // the same message into a second turn.
+    if (outOfUsage) {
+      await updateRun(runId, (r) =>
+        Object.assign({}, W.markPaused(r, Date.now()), {
+          note:
+            "paused at step " + (r.stepIndex + 1) + " — your Claude usage ran out while waiting" +
+            (backAt ? ", back at " + new Date(backAt).toLocaleTimeString() : "") +
+            ". The message is already in the chat, so Resume waits for the answer.",
+        })
+      );
+      return { ok: false, paused: true, error: "out of usage while waiting for the reply" };
+    }
     if (interrupted) {
       await updateRun(runId, (r) =>
         Object.assign({}, W.markPaused(r, Date.now()), {

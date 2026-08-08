@@ -1070,6 +1070,38 @@ test("formatMs says the useful thing at each scale", () => {
 
 const SAMPLE = { percent: 0.2, resetAt: 5000, weeklyPercent: 0.4, weeklyResetAt: 90000, updatedAt: 1 };
 
+test("a run stops when there's no usage left to send into", () => {
+  assert.equal(W.usageExhausted({ percent: 0.4 }), false);
+  assert.equal(W.usageExhausted({ percent: 1 }), true);
+  // Whole percents come back from the endpoint, so 99.6% has nothing left worth
+  // spending a step on.
+  assert.equal(W.usageExhausted({ percent: 0.996 }), true);
+  assert.equal(W.usageExhausted({ percent: 0.98 }), false);
+  // A weekly limit blocks a fresh 5-hour session just as firmly.
+  assert.equal(W.usageExhausted({ percent: 0.1, weeklyPercent: 1 }), true);
+  // And a meter that knows nothing must not stop anything — the run is the
+  // work; a missing reading is no reason to hold it up.
+  assert.equal(W.usageExhausted({}), false);
+  assert.equal(W.usageExhausted(null), false);
+  assert.equal(W.usageExhausted({ percent: null, weeklyPercent: undefined }), false);
+});
+
+test("a paused run can say when its usage comes back", () => {
+  const t = 1893456000000;
+  assert.equal(W.usageBackAt({ percent: 1, resetAt: t }), t);
+  assert.equal(W.usageBackAt({ weeklyPercent: 1, weeklyResetAt: t }), t);
+  // Both out: work resumes when the LATER of them returns.
+  assert.equal(
+    W.usageBackAt({ percent: 1, resetAt: t, weeklyPercent: 1, weeklyResetAt: t + 5000 }),
+    t + 5000
+  );
+  // The window that isn't out doesn't get to name the time.
+  assert.equal(W.usageBackAt({ percent: 1, resetAt: t, weeklyPercent: 0.2, weeklyResetAt: 1 }), t);
+  // Nothing known is nothing said, rather than a time we'd be guessing at.
+  assert.equal(W.usageBackAt({ percent: 1 }), null);
+  assert.equal(W.usageBackAt(null), null);
+});
+
 test("a step records what your usage did while it ran", () => {
   const before = W.usageSample(SAMPLE);
   assert.equal(before.session, 20);
