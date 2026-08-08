@@ -45,6 +45,10 @@ bottom-right corner of [claude.ai](https://claude.ai).
   an optional prompt to a **new chat, a Project, or the chat you're currently
   in**, to send at a set time or when usage next resets. Set them up from the
   Options page or the **＋ Schedule a send** button in the pill's panel.
+- **Table of contents** — a floating list of **your own messages** in the
+  conversation you're reading, so a long chat is navigable instead of a scroll
+  bar. Starts minimized; draggable, and it remembers where you put it. See
+  [Table of contents](#table-of-contents).
 - **Workflows** — run one piece of work through **several chats that hand it
   back and forth**: A drafts, B attacks the draft, A revises, round and round,
   then a final pass. Editable, copyable, deletable, with one pre-built. Each run
@@ -695,6 +699,36 @@ new window if you'd closed the lot. A run that adopts a new window this way keep
 using it for later steps. This is the only place a run's window is given focus —
 everywhere else it stays behind what you're doing.
 
+## Table of contents
+
+A nine-step run leaves a conversation you'll want to read back through, and a
+long chat offers nothing to navigate by but its scroll bar. The panel lists
+**your own messages** — the questions, not the answers — and jumping to one puts
+the **end** of that prompt near the top of the view, which is where Claude's
+answer to it begins. That's the position you actually want when you're reading
+back through what a conversation did.
+
+It **starts minimized**: a chat you're only reading shouldn't have a panel over
+it. Click the tab to open it, drag either the tab or the panel's header to move
+it, and it remembers where you put it — the same treatment the meter gets, for
+the same reason. Whichever entry you jump to is briefly outlined, since landing
+silently in a wall of text leaves you wondering whether the click did anything.
+
+Two details in the labelling, both about a list that would otherwise distinguish
+nothing:
+
+- **An opening every prompt shares is stepped over.** A workflow's prompts all
+  begin `Use the devils-advocate skill.`, and a list of nine identical rows is
+  no list at all — so the label is the first line that says something
+  particular, unless the shared opening is all there is.
+- **Markdown decoration isn't part of what a line says**, so headings, bullets,
+  quotes and emphasis are stripped before labelling, and a long line is cut at a
+  word rather than through one.
+
+The list is built from what the page currently holds. claude.ai unmounts messages
+that scroll a long way out of view, so in a very long conversation the list grows
+as you scroll rather than being complete from the first moment.
+
 ## Outage detection
 
 The background worker polls
@@ -852,11 +886,14 @@ src/scheduler-run.js   Sends a queued job through the composer
 src/workflow-run.js    Runs one workflow step and reads Claude's reply
 src/jobform.js         Shared scheduled-send form (options page + pill modal)
 src/workflowform.js    Workflow editor (options page)
+src/toc.js             Table-of-contents labelling (pure)
+src/toc-panel.js       The floating table of contents itself
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
 test/estimate.test.js  Unit tests for the tenths-place calibrator
 test/status.test.js    Unit tests for the status model + hold decisions
 test/workflow.test.js  Unit tests for the workflow model + run transitions
+test/toc.test.js       Unit tests for the table-of-contents labelling
 test/autocontinue.test.js  Unit tests for the button-label predicates
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only

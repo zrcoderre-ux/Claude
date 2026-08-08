@@ -839,3 +839,161 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   }
   .cum-wfp-btn:hover { background: #403f39; }
 }
+
+/* ── Table of contents ────────────────────────────────────────────────────
+   Your own messages in this conversation, as a list you can jump between.
+   Free-floating and draggable, so it can sit wherever this window has room —
+   it starts minimized, on the left, where the meter's stack never goes. */
+#cum-toc {
+  position: fixed;
+  left: 16px;
+  top: 96px;
+  z-index: 2147483644;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #1f1f1f;
+}
+
+#cum-toc[hidden] { display: none; }
+#cum-toc.cum-toc-dragging { user-select: none; }
+
+.cum-toc-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1.5px solid rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1f1f1f;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: grab;
+}
+
+.cum-toc-tab:hover { background: #f5f4f0; }
+#cum-toc.cum-toc-dragging .cum-toc-tab { cursor: grabbing; }
+.cum-toc-icon { font-size: 13px; line-height: 1; }
+.cum-toc-count { font-variant-numeric: tabular-nums; color: #6b6b6b; }
+
+/* Expanded, the tab becomes the panel's own shoulder — the panel hangs off it
+   rather than replacing it, so the thing you clicked is still under the
+   cursor. */
+#cum-toc.cum-toc-open .cum-toc-tab { border-radius: 999px 999px 0 0; }
+
+.cum-toc-body {
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  margin-top: -1px;
+  border: 1.5px solid rgba(0, 0, 0, 0.18);
+  border-radius: 4px 14px 14px 14px;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.cum-toc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: grab;
+}
+
+#cum-toc.cum-toc-dragging .cum-toc-head { cursor: grabbing; }
+
+.cum-toc-title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b6b6b;
+}
+
+.cum-toc-close {
+  border: none;
+  background: none;
+  color: #8a8a8a;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 6px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.cum-toc-close:hover { background: rgba(0, 0, 0, 0.06); color: #1f1f1f; }
+
+.cum-toc-list {
+  max-height: min(52vh, 460px);
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.cum-toc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cum-toc-row:hover { background: rgba(201, 100, 66, 0.09); }
+
+.cum-toc-n {
+  flex: 0 0 auto;
+  min-width: 16px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #c96442;
+  font-size: 11.5px;
+}
+
+/* Two lines, then an ellipsis. One line is often not enough to tell two
+   prompts apart; three turns the list into the thing it's meant to summarise. */
+.cum-toc-label {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cum-toc-dim .cum-toc-label { color: #9a9a9a; font-style: italic; }
+
+/* What you jumped to, briefly outlined — landing silently in a wall of text
+   leaves you wondering whether the click did anything. */
+.cum-toc-hit {
+  outline: 2px solid rgba(201, 100, 66, 0.75);
+  outline-offset: 3px;
+  border-radius: 6px;
+  transition: outline-color 0.6s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  #cum-toc { color: #f0efea; }
+  .cum-toc-tab, .cum-toc-body { background: #2a2a28; border-color: rgba(255, 255, 255, 0.22); }
+  .cum-toc-tab { color: #f0efea; }
+  .cum-toc-tab:hover { background: #35342f; }
+  .cum-toc-count, .cum-toc-title { color: #a5a29a; }
+  .cum-toc-head { border-bottom-color: rgba(255, 255, 255, 0.1); }
+  .cum-toc-close { color: #a5a29a; }
+  .cum-toc-close:hover { background: rgba(255, 255, 255, 0.08); color: #f0efea; }
+  .cum-toc-row:hover { background: rgba(224, 135, 101, 0.16); }
+  .cum-toc-n { color: #e08765; }
+  .cum-toc-dim .cum-toc-label { color: #8a877f; }
+}
