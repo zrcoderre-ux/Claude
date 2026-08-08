@@ -45,6 +45,10 @@ bottom-right corner of [claude.ai](https://claude.ai).
   an optional prompt to a **new chat, a Project, or the chat you're currently
   in**, to send at a set time or when usage next resets. Set them up from the
   Options page or the **＋ Schedule a send** button in the pill's panel.
+- **Incognito recovery** — claude.ai doesn't save an incognito chat, so closing
+  the tab takes the work with it. While one is open the extension keeps a running
+  copy, kept for **three days** and then deleted. See
+  [Incognito recovery](#incognito-recovery).
 - **Save chat** — a button in claude.ai's own header, beside Share, that saves
   the whole conversation as a **Markdown file** you can hand to the next chat.
   See [Saving a chat](#saving-a-chat).
@@ -702,6 +706,37 @@ new window if you'd closed the lot. A run that adopts a new window this way keep
 using it for later steps. This is the only place a run's window is given focus —
 everywhere else it stays behind what you're doing.
 
+## Incognito recovery
+
+claude.ai doesn't save an incognito chat — that's the point of one — so closing
+the tab takes the work with it. While such a chat is open the extension keeps a
+running copy, against exactly that accident. **Options → Incognito** lists them,
+and each can be saved as Markdown through the same exporter the Save button uses.
+
+**Kept for three days, then deleted.** A permanent record of a conversation you
+asked not to be recorded isn't a recovery feature, it's a filing cabinet nobody
+asked for. The sweep runs in the background worker rather than in a page, so it
+happens whether or not you go back to claude.ai, and a record with no timestamp
+at all is treated as stale rather than as immortal — "keep it if unsure" is the
+wrong way for this particular doubt to fall. **Delete all now** empties it
+immediately.
+
+**Only incognito chats.** An ordinary chat is already saved by claude.ai, and
+copying it here would duplicate what it holds. A chat is taken as incognito from
+its URL, or from a short `Incognito` / `Temporary` badge in the header — a
+message that happens to *say* "incognito" is a message, not a mode, so only
+header-ish text of badge length is matched.
+
+It reads the rendered page, because there's nowhere else to read it from: the
+conversation API has no record of a chat that was never saved. **Read, not
+clicked** — this is a conversation you're driving by hand, and a script reaching
+for the copy box under your cursor would be its own kind of accident. A reply
+still being written is left until it's finished, and a turn caught twice replaces
+itself rather than appearing twice.
+
+A record that outgrows 2 MB drops its oldest turns and **says so in the saved
+file**, rather than either refusing to grow or quietly looking complete.
+
 ## Saving a chat
 
 **Save** sits in claude.ai's header beside Share, and writes the conversation to
@@ -917,6 +952,8 @@ src/scheduler-run.js   Sends a queued job through the composer
 src/workflow-run.js    Runs one workflow step and reads Claude's reply
 src/jobform.js         Shared scheduled-send form (options page + pill modal)
 src/workflowform.js    Workflow editor (options page)
+src/incognito.js       Incognito recovery records (pure)
+src/incognito-watch.js Keeps a copy while an incognito chat is open
 src/mdexport.js        A conversation as Markdown (pure)
 src/save-chat.js       The Save button in claude.ai's header
 src/toc.js             Table-of-contents labelling (pure)
@@ -928,6 +965,7 @@ test/status.test.js    Unit tests for the status model + hold decisions
 test/workflow.test.js  Unit tests for the workflow model + run transitions
 test/toc.test.js       Unit tests for the table-of-contents labelling
 test/mdexport.test.js  Unit tests for the Markdown export
+test/incognito.test.js Unit tests for incognito recovery + expiry
 test/autocontinue.test.js  Unit tests for the button-label predicates
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only

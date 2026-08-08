@@ -15,7 +15,7 @@
  * MV3 workers are short-lived, so a chrome.alarm keeps things ticking.
  */
 // self.CUMJobs / CUMStatus / CUMWorkflow / CUMWfUsage
-importScripts("jobstore.js", "status.js", "workflow.js", "wfusage.js");
+importScripts("jobstore.js", "status.js", "workflow.js", "wfusage.js", "incognito.js");
 
 const CFG_KEY = "cum_autocontinue";
 const JOBS_KEY = "cum_jobs";
@@ -53,6 +53,7 @@ const J = self.CUMJobs;
 const S = self.CUMStatus;
 const W = self.CUMWorkflow;
 const U = self.CUMWfUsage;
+const G = self.CUMIncognito;
 
 // ---- storage helpers ----------------------------------------------------
 function get(keys) {
@@ -646,6 +647,34 @@ async function materialiseBundles(run) {
   }
   if (!changed) return run;
   return await saveRun(Object.assign({}, run, { docs: docs }));
+}
+
+// ---- incognito recovery, swept ------------------------------------------
+// An incognito chat is kept against the tab being closed by accident, not kept
+// full stop: a permanent copy of a conversation you asked not to be recorded is
+// not a recovery feature. Swept here rather than in a page, because the sweep
+// has to happen whether or not you go back to claude.ai.
+async function sweepGhosts() {
+  if (!G) return;
+  const ids = (await get(G.INDEX_KEY))[G.INDEX_KEY] || [];
+  if (!ids.length) return;
+  const store = await get(ids.map(G.recordKey));
+  const now = Date.now();
+  const dead = [];
+  const keep = [];
+  for (const id of ids) {
+    const rec = store[G.recordKey(id)];
+    // A record whose bytes are gone is an id pointing at nothing.
+    if (!rec || G.isExpired(rec, now)) dead.push(id);
+    else keep.push(id);
+  }
+  if (!dead.length) return;
+  try {
+    chrome.storage.local.remove(dead.map(G.recordKey));
+  } catch (e) {
+    /* ignore */
+  }
+  await set({ [G.INDEX_KEY]: keep });
 }
 
 // Each run's heartbeat, written only by the page that holds its current step.
@@ -1550,6 +1579,7 @@ chrome.runtime.onInstalled.addListener(() => {
   seedWorkflows();
   migrateRuns().then(reschedule);
   refreshStatus();
+  sweepGhosts();
 });
 chrome.runtime.onStartup.addListener(() => {
   ensureKeepalive();
@@ -1558,6 +1588,7 @@ chrome.runtime.onStartup.addListener(() => {
   reschedule();
   runJobs("time"); // catch anything whose time passed while the browser was off
   startRuns("time");
+  sweepGhosts(); // a browser left closed for a week must not preserve them
   // ...and anything an outage parked before the browser closed. The stored
   // reading is hours old by now, so this always fetches.
   refreshStatusIfStale().then(() => {
@@ -1581,6 +1612,10 @@ chrome.alarms.onAlarm.addListener((a) => {
   } else if (a.name === STATUS_ALARM) {
     // Always retry held jobs after a refresh — the gate itself decides whether
     // things have recovered, so this needs no separate recovery check.
+    // Piggy-backed on the status poll rather than given an alarm of its own:
+    // creating an alarm resets its countdown, and this worker restarts every
+    // thirty seconds, so an alarm slower than that would never fire at all.
+    sweepGhosts();
     refreshStatus().then(() => {
       runJobs("hold");
       startRuns("hold");
