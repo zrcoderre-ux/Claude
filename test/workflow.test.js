@@ -673,6 +673,73 @@ test("pausing keeps a run's place; resuming picks it up", () => {
   assert.equal(W.pickupRuns([paused], NOW + W.STALE_MS + 1, W.STALE_MS).length, 0);
 });
 
+test("reorderSteps puts steps where the drop said, and fixes the first one", () => {
+  const wf = twoChatWorkflow(); // s1(a) → s2(b) → s3(a)
+  const ids = wf.steps.map((s) => s.id);
+  assert.deepEqual(ids, ["s1", "s2", "s3"]);
+  assert.equal(wf.steps[0].carry, false);
+  assert.equal(wf.steps[1].carry, true);
+
+  // Dragged from the end to the top. s3 lands first and can't carry; s1 now
+  // follows s3, which is the same chat, so it can't either; s2 follows a chat it
+  // isn't in, so it does.
+  const moved = W.reorderSteps(wf.steps, ["s3", "s1", "s2"]);
+  assert.deepEqual(moved.map((s) => s.id), ["s3", "s1", "s2"]);
+  assert.equal(moved[0].carry, false, "nothing before it to carry from");
+  assert.equal(moved[1].carry, false, "chat A already has what chat A just wrote");
+  assert.equal(moved[2].carry, true);
+
+  // The originals are untouched — a drag that's abandoned mid-way changes
+  // nothing until it lands.
+  assert.deepEqual(wf.steps.map((s) => s.id), ["s1", "s2", "s3"]);
+  assert.equal(wf.steps[0].carry, false);
+});
+
+test("reordering restores a hand-off that only position had suppressed", () => {
+  // s2 sits directly after s1 in the SAME chat, so the editor doesn't offer it
+  // a tick at all and normalize stores false. Moved somewhere that isn't true,
+  // it should carry again — losing hand-offs silently mid-reshuffle is the
+  // failure this exists to prevent.
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "A" }, { id: "b", name: "B" }],
+      steps: [
+        { id: "s1", chatId: "a", prompt: "draft" },
+        { id: "s2", chatId: "a", prompt: "again" }, // same chat → carry false
+        { id: "s3", chatId: "b", prompt: "attack" },
+      ],
+    },
+    "w1",
+    NOW
+  );
+  assert.equal(wf.steps[1].carry, false, "as stored");
+
+  const moved = W.reorderSteps(wf.steps, ["s1", "s3", "s2"]);
+  assert.deepEqual(moved.map((s) => s.id), ["s1", "s3", "s2"]);
+  assert.equal(moved[2].carry, true, "now it follows chat B, so it has something to carry");
+
+  // A no that WAS a choice still travels: s3 carries by default, untick it and
+  // moving it keeps the answer.
+  const said = wf.steps.map((s) => (s.id === "s3" ? Object.assign({}, s, { carry: false }) : s));
+  const after = W.reorderSteps(said, ["s3", "s1", "s2"]);
+  assert.equal(after.find((s) => s.id === "s3").carry, false, "it was first, so still false");
+  const later = W.reorderSteps(said, ["s1", "s2", "s3"]);
+  assert.equal(later.find((s) => s.id === "s3").carry, false, "and back where it was, still no");
+});
+
+test("a reorder that names fewer steps than exist doesn't lose the rest", () => {
+  const wf = twoChatWorkflow();
+  // A card that somehow isn't in the list keeps its place rather than taking
+  // its prompt with it.
+  const kept = W.reorderSteps(wf.steps, ["s3"]);
+  assert.deepEqual(kept.map((s) => s.id), ["s3", "s1", "s2"]);
+  assert.deepEqual(W.reorderSteps(wf.steps, []).map((s) => s.id), ["s1", "s2", "s3"]);
+  assert.deepEqual(W.reorderSteps(wf.steps, ["s2", "s2", "nope"]).map((s) => s.id), ["s2", "s1", "s3"]);
+  assert.deepEqual(W.reorderSteps([], ["s1"]), []);
+  assert.deepEqual(W.reorderSteps(null, null), []);
+});
+
 test("two steps in the same chat never paste into each other", () => {
   const wf = W.newWorkflow(
     {

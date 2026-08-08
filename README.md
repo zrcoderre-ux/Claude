@@ -180,6 +180,19 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   REPORT -----`. Two steps **in the same chat never carry**: that conversation
   already has the material, and pasting it back wastes the context it's holding.
   The editor says so rather than offering a tick that would do nothing.
+- **Reordering** — drag a step by the **grip** on its card. The ↑↓ arrows stay
+  for a one-notch nudge, but nine steps is enough that moving one from the end to
+  the middle was six clicks, each re-rendering the list under the cursor.
+  Nothing moves until you let go: the card you would land above is marked
+  instead, so the list doesn't rearrange itself while you're still looking for
+  the gap you want.
+
+  A reorder also **gives back a hand-off that only position had suppressed**. A
+  step is offered no carry tick at all while it's first, or while it sits
+  directly after another step in the same chat — so a `false` there was never a
+  decision, and dragging it somewhere neither reason applies restores the default
+  rather than silently dropping the paste. A no you actually made travels with
+  the step.
 - **A model per step** — each step has its own model picker, defaulting to
   *whatever the chat is on*. Set one and the run switches that conversation to it
   before sending, and **leaves it there** for the steps after it, exactly as
