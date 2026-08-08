@@ -338,6 +338,51 @@
     });
   }
 
+  // ---- completing a prompt you've written before --------------------------
+  //
+  // The same prompts recur: every devil's advocate step in every workflow opens
+  // the same way, and typing it out again is both tedious and a chance to get it
+  // subtly different from the one that works.
+  //
+  // The pool is every step prompt already written, counted — a prompt used in
+  // six places is more likely to be the one being typed than one used once.
+  function promptPool(workflows, extraSteps) {
+    const counts = new Map();
+    const add = (text) => {
+      const t = str(text).trim();
+      if (t.length < MIN_POOLED) return;
+      counts.set(t, (counts.get(t) || 0) + 1);
+    };
+    for (const wf of workflows || []) for (const s of (wf && wf.steps) || []) add(s && s.prompt);
+    for (const s of extraSteps || []) add(s && s.prompt);
+    return Array.from(counts.entries()).map(([text, uses]) => ({ text: text, uses: uses }));
+  }
+
+  const MIN_POOLED = 12; // a prompt too short to be worth completing to
+  const MIN_TYPED = 4; // …and too little typed to guess from
+
+  // What you might be typing, best first. A prefix match and nothing cleverer:
+  // a fuzzy match that offers a prompt you didn't mean is worse than no offer,
+  // because accepting is one keystroke and the wrong prompt looks like the
+  // right one until the run has spent a turn on it.
+  function promptSuggestions(pool, typed, limit) {
+    const t = str(typed);
+    if (t.trim().length < MIN_TYPED) return [];
+    const q = t.toLowerCase();
+    const out = [];
+    for (const p of pool || []) {
+      if (!p || typeof p.text !== "string") continue;
+      const text = p.text;
+      if (text.length <= t.length) continue; // nothing left to add
+      if (text.toLowerCase().indexOf(q) !== 0) continue;
+      out.push({ text: text, rest: text.slice(t.length), uses: p.uses || 1 });
+    }
+    // Most-used first; then the shortest, which is the least presumptuous
+    // completion of what's been typed so far.
+    out.sort((a, b) => b.uses - a.uses || a.text.length - b.text.length);
+    return out.slice(0, typeof limit === "number" ? limit : 5);
+  }
+
   function newWorkflow(fields, id, now) {
     const f = fields || {};
     const wf = {
@@ -2058,6 +2103,8 @@
     docsForChat,
     newWorkflow,
     reorderSteps,
+    promptPool,
+    promptSuggestions,
     normalize,
     setChatCount,
     cloneWorkflow,
