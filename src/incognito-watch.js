@@ -21,10 +21,16 @@
   if (!C || !G) return;
 
   const POLL_MS = 4000;
-  // Badges claude.ai puts on a temporary chat. Matched only against short,
-  // header-ish text — a MESSAGE that says "incognito" is a message, not a mode.
-  const BADGE_RE = /^\s*(incognito|temporary)(\s+chat)?\s*$/i;
+  // Badges claude.ai puts on a temporary chat. The WORD, not an exact caption:
+  // "Incognito", "Incognito chat", "Temporary chat · not saved" are all the
+  // same badge, and betting on one wording is how the fallback stops falling
+  // back. Safe because of what it is matched against, below — a MESSAGE that
+  // says "incognito" is a message, not a mode.
+  const BADGE_RE = /\b(incognito|temporary)\b/i;
+  const BADGE_MAX = 30; // badge-sized text, not a sentence
   const BADGE_SCOPE = "header, [role=banner], nav, [data-testid*='header' i]";
+  // Where the header would be, for a page that doesn't use any of those.
+  const BADGE_TOP_PX = 170;
 
   let recordId = null;
   let record = null;
@@ -49,17 +55,47 @@
     });
   }
 
+  // The conversation's own turns. Declared here because the badge check needs
+  // them too: text inside a message is what someone SAID about incognito mode,
+  // which is not the same as being in it.
+  const TURN_SELECTORS = [
+    '[data-testid="user-message"]',
+    '[data-testid="assistant-message"]',
+    ".font-user-message",
+    ".font-claude-response",
+    ".font-claude-message",
+  ];
+
+  // A leaf, badge-sized, and not part of the conversation itself. Those three
+  // together are what make matching a mere word safe.
+  function badgeish(node) {
+    if (!node || C.isOurs(node) || node.children.length) return false;
+    const t = (node.textContent || "").trim();
+    if (!t || t.length > BADGE_MAX || !BADGE_RE.test(t)) return false;
+    try {
+      // Text inside a message is what someone SAID about incognito mode, which
+      // is not the same as being in it.
+      if (node.closest(TURN_SELECTORS.join(","))) return false;
+    } catch (e) {
+      /* ignore */
+    }
+    return true;
+  }
+
   function badgeSaysIncognito() {
     try {
       for (const scope of document.querySelectorAll(BADGE_SCOPE)) {
         for (const node of scope.querySelectorAll("span,div,p,button")) {
-          if (C.isOurs(node)) continue;
-          const t = node.textContent || "";
-          // Only leaf-ish text: a container holding the whole header would
-          // match on any word inside it.
-          if (t.length > 24 || node.children.length) continue;
-          if (BADGE_RE.test(t)) return true;
+          if (badgeish(node)) return true;
         }
+      }
+      // No header of any name claude.ai answers to. Fall back to where a header
+      // would be: near the top of the page, which a message only reaches by
+      // being scrolled there — hence the exclusion above.
+      for (const node of document.querySelectorAll("span,div,p,button")) {
+        if (!badgeish(node)) continue;
+        const r = node.getBoundingClientRect();
+        if (r.width && r.top >= 0 && r.top <= BADGE_TOP_PX) return true;
       }
     } catch (e) {
       /* ignore */
@@ -135,13 +171,6 @@
 
   // The conversation as it stands, oldest first. Both sides: a reply without
   // the question it answered is half a record.
-  const TURN_SELECTORS = [
-    '[data-testid="user-message"]',
-    '[data-testid="assistant-message"]',
-    ".font-user-message",
-    ".font-claude-response",
-    ".font-claude-message",
-  ];
   function turnsOnPage() {
     let nodes = [];
     try {
