@@ -650,6 +650,11 @@
   let fixingRunId = null;
   let fixDraft = null;
 
+  // ---- running a finished run again ----
+  // Which finished run has its re-run panel open, and the choices made in it.
+  let rerunRunId = null;
+  let rerunDraft = null;
+
   function openFix(run, wf) {
     const source = WF.runSource(run, wf);
     const plan = WF.planRun(source);
@@ -674,6 +679,112 @@
     for (const c of source.chats || [])
       fixDraft.chats[c.id] = ((run.chats || {})[c.id] || {}).url || "";
     renderRuns();
+  }
+
+  function openRerun(run, wf) {
+    const plan = WF.planRun(WF.runSource(run, wf));
+    rerunRunId = run.id;
+    // Default to the second step. A workflow that opens by producing the thing
+    // the rest of it works on has nothing to produce the second time — that
+    // being the whole reason a re-run asks where to start.
+    rerunDraft = { stepIndex: Math.min(1, Math.max(0, plan.length - 1)), fresh: false, carry: true };
+    fixingRunId = null;
+    showingStepsFor = null;
+    renderRuns();
+  }
+
+  function rerunPanel(run, wf) {
+    if (!rerunDraft) return "";
+    const plan = WF.planRun(WF.runSource(run, wf));
+    const opts = plan
+      .map(
+        (s, i) =>
+          `<option value="${i}"${i === rerunDraft.stepIndex ? " selected" : ""}>` +
+          `Step ${i + 1} — ${escapeHtml(s.chatName)}</option>`
+      )
+      .join("");
+    const chosen = plan[rerunDraft.stepIndex];
+    const carries = WF.rerunCarries(run, rerunDraft.stepIndex);
+    return (
+      `<div class="wf-fix">` +
+      `<div class="wf-fix-row"><b>Start the re-run at</b> <select class="wf-rr-step">${opts}</select></div>` +
+      (chosen
+        ? `<div class="wf-fix-step-view">` +
+          `<div class="wf-step-meta">${escapeHtml(chosen.chatName)}${
+            chosen.modelOn ? " · " + escapeHtml(chosen.modelOn) : ""
+          }${
+            chosen.docIds.length
+              ? " · " + chosen.docIds.length + " document" + (chosen.docIds.length === 1 ? "" : "s")
+              : ""
+          }</div>` +
+          `<pre class="wf-step-prompt-view">${escapeHtml(chosen.prompt || "(no prompt)")}</pre>` +
+          `</div>`
+        : "") +
+      `<label class="wf-fix-check"><input type="checkbox" class="wf-rr-fresh"${
+        rerunDraft.fresh ? " checked" : ""
+      } /> Fresh conversations — otherwise it carries on in this run's chats</label>` +
+      (rerunDraft.fresh
+        ? carries
+          ? `<label class="wf-fix-check"><input type="checkbox" class="wf-rr-carry"${
+              rerunDraft.carry ? " checked" : ""
+            } /> Paste this run's final reply into that first step</label>`
+          : `<div class="wf-fix-note">That step doesn't take a hand-off, so there's nowhere to ` +
+            `paste this run's final reply. Start at a step that carries if you want it.</div>`
+        : `<div class="wf-fix-note">Its chats already hold the papers and the work, so nothing is ` +
+          `re-uploaded and nothing needs carrying in.</div>`) +
+      `<div class="wf-fix-row"><button class="job-run wf-rr-go" data-id="${run.id}">Create re-run</button>` +
+      `<button class="job-edit wf-rr-cancel" data-id="${run.id}">Cancel</button></div>` +
+      `</div>`
+    );
+  }
+
+  function wireRerunPanel() {
+    const sel = wfui.runs.querySelector(".wf-rr-step");
+    if (sel)
+      sel.addEventListener("change", () => {
+        rerunDraft.stepIndex = parseInt(sel.value, 10) || 0;
+        renderRuns(); // the prompt shown, and whether a hand-off is possible
+      });
+    const fresh = wfui.runs.querySelector(".wf-rr-fresh");
+    if (fresh)
+      fresh.addEventListener("change", () => {
+        rerunDraft.fresh = fresh.checked;
+        renderRuns();
+      });
+    const carry = wfui.runs.querySelector(".wf-rr-carry");
+    if (carry) carry.addEventListener("change", () => (rerunDraft.carry = carry.checked));
+    const cancel = wfui.runs.querySelector(".wf-rr-cancel");
+    if (cancel)
+      cancel.addEventListener("click", () => {
+        rerunRunId = null;
+        rerunDraft = null;
+        renderRuns();
+      });
+    const go = wfui.runs.querySelector(".wf-rr-go");
+    if (go)
+      go.addEventListener("click", () => {
+        const id = go.getAttribute("data-id");
+        const opts = {
+          stepIndex: rerunDraft.stepIndex,
+          freshChats: !!rerunDraft.fresh,
+          // Only where it can actually be honoured.
+          carryFinal: !!rerunDraft.fresh && !!rerunDraft.carry && WF.rerunCarries(
+            (lastRuns || []).find((r) => r.id === id),
+            rerunDraft.stepIndex
+          ),
+        };
+        go.disabled = true;
+        go.textContent = "Creating…";
+        chrome.runtime.sendMessage({ type: "cum-wf-rerun", runId: id, opts }, (res) => {
+          rerunRunId = null;
+          rerunDraft = null;
+          if (!res || !res.ok)
+            return alert("Could not create the re-run: " + ((res && res.error) || "unknown error"));
+          // Straight into its editor, the same as Create run — that's where its
+          // papers, its name and when it starts are settled.
+          renderRuns().then(() => openRunEditor(res.runId));
+        });
+      });
   }
 
   function fixPanel(run, wf) {
@@ -901,6 +1012,10 @@
             chats: edited.chats,
             steps: edited.steps,
             docs: edited.docs,
+            bundleText: !!edited.bundleText,
+            nameChats: edited.nameChats !== false,
+            downloadFiles: !!edited.downloadFiles,
+            allowRerun: !!edited.allowRerun,
           },
         },
         (res) => {
@@ -1007,6 +1122,11 @@
           (Object.keys(run.chats || {}).length
             ? `<button class="job-run wf-run-show" data-id="${run.id}" title="Bring this run's window forward, reopening its chats if they were closed">Open chats</button>`
             : "") +
+          (WF.canRerun(run)
+            ? `<button class="job-run wf-run-again" data-id="${run.id}" title="Run this again — you choose which step it starts on">${
+                rerunRunId === run.id ? "Cancel re-run" : "Re-run"
+              }</button>`
+            : "") +
           `<button class="job-edit wf-run-save" data-id="${run.id}" title="Keep this run's steps as a new workflow">Save as workflow</button>` +
           (!WF.isRunActive(run) && typeof run.windowId === "number"
             ? `<button class="job-edit wf-run-closewin" data-id="${run.id}" title="Close this run's Chrome window and its chats">Close window</button>`
@@ -1056,6 +1176,7 @@
           (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
           (run.note ? `<div class="job-note">${escapeHtml(run.note)}</div>` : "") +
           (showingStepsFor === run.id ? stepsPanel(run, wf) : "") +
+          (rerunRunId === run.id ? rerunPanel(run, wf) : "") +
           (fixingRunId === run.id ? fixPanel(run, wf) : "") +
           `</div>`;
         wfui.runs.appendChild(row);
@@ -1211,6 +1332,19 @@
         })
       );
       if (fixingRunId) wireFixPanel();
+      if (rerunRunId) wireRerunPanel();
+      wfui.runs.querySelectorAll(".wf-run-again").forEach((b) =>
+        b.addEventListener("click", () => {
+          const id = b.getAttribute("data-id");
+          if (rerunRunId === id) {
+            rerunRunId = null;
+            rerunDraft = null;
+            return renderRuns();
+          }
+          const run = (lastRuns || []).find((r) => r.id === id);
+          if (run) openRerun(run, WF.getWorkflow(lastWorkflows || [], run.workflowId));
+        })
+      );
       wfui.runs.querySelectorAll(".wf-run-del").forEach((b) =>
         b.addEventListener("click", () => {
           const id = b.getAttribute("data-id");
