@@ -69,6 +69,7 @@
       out.push({
         n: out.length + 1,
         id: (typeof m === "object" && m.id) || null,
+        key: entryKey(text),
         label: label || "(no text)",
         empty: !label,
         chars: text.length,
@@ -77,7 +78,88 @@
     return out;
   }
 
-  const api = { tocLabel, tocEntries, MAX_LABEL };
+  // What makes two sightings of a message the same message. Deliberately loose:
+  // the same text arrives from the conversation payload and from the rendered
+  // page, and the page's copy picks up whatever whitespace the layout put in it.
+  // Case and spacing are dropped, and only the opening is compared, because
+  // that's the part both sources agree on.
+  const KEY_CHARS = 120;
+  function entryKey(text) {
+    return str(text).replace(/\s+/g, " ").trim().toLowerCase().slice(0, KEY_CHARS);
+  }
+
+  function renumber(list) {
+    return list.map((e, i) => Object.assign({}, e, { n: i + 1 }));
+  }
+
+  function sameBlock(host, part, offset) {
+    for (let i = 0; i < part.length; i++) {
+      if (!host[offset + i] || host[offset + i].key !== part[i].key) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Two views of the same conversation, joined into one.
+   *
+   * claude.ai unmounts messages that scroll out of view, so what the page holds
+   * is a WINDOW onto the chat — and a list rebuilt from it drops entries as you
+   * scroll, which is the opposite of what a table of contents is for. A window
+   * is contiguous, though, so a new one either sits inside what's already known
+   * or overlaps one of its ends, and either way the union is recoverable.
+   *
+   * Repeated prompts make the overlap ambiguous — the first alignment that fits
+   * wins, which can be the wrong one in a chat that says "continue" twenty
+   * times. It costs a duplicated entry at worst, where the alternative is losing
+   * entries for certain.
+   */
+  function mergeWindows(known, seen) {
+    const a = (known || []).filter(Boolean);
+    const b = (seen || []).filter(Boolean);
+    if (!a.length) return renumber(b);
+    if (!b.length) return renumber(a);
+
+    // The new window inside what we know: the ordinary case while scrolling
+    // around a chat already listed. Its entries replace ours, so an edited
+    // message updates rather than doubling.
+    for (let o = 0; o + b.length <= a.length; o++) {
+      if (sameBlock(a, b, o)) {
+        const merged = a.slice();
+        for (let i = 0; i < b.length; i++) merged[o + i] = b[i];
+        return renumber(merged);
+      }
+    }
+    // What we know inside the new window — a fuller list arriving, typically the
+    // conversation payload after a page-built stub.
+    for (let o = 0; o + a.length <= b.length; o++) if (sameBlock(b, a, o)) return renumber(b);
+
+    // Overlapping ends: scrolled far enough that the windows only share a
+    // margin. The longest shared margin wins.
+    for (let k = Math.min(a.length, b.length) - 1; k > 0; k--) {
+      if (sameBlock(a, b.slice(0, k), a.length - k))
+        return renumber(a.slice(0, a.length - k).concat(b));
+      if (sameBlock(b, a.slice(0, k), b.length - k))
+        return renumber(b.slice(0, b.length - k).concat(a));
+    }
+    // Nothing in common. A jump that far can only be new messages below.
+    return renumber(a.concat(b));
+  }
+
+  /**
+   * How far to scroll to get from the message you can see to the one you want.
+   *
+   * A guess, refined by repeating: the entry you're after may not be mounted,
+   * so there's nothing to measure and nothing to scroll to. Messages differ in
+   * length, so one step lands near rather than on — hence the caller loops,
+   * measuring where it actually got to each time.
+   */
+  function seekDelta(fromIndex, toIndex, span, count) {
+    const n = Number(count);
+    if (!n || n < 1) return 0;
+    return Math.round(((Number(toIndex) - Number(fromIndex)) * Number(span || 0)) / n);
+  }
+
+  const api = { tocLabel, tocEntries, entryKey, mergeWindows, seekDelta, MAX_LABEL };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMToc = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
