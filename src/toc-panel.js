@@ -31,6 +31,8 @@
   const H = window.CUMHeaderSlot;
   const C = window.CUMComposer;
   const M = window.CUMMdExport;
+  const St = window.CUMStamp;
+  const V = window.CUMConv;
   if (!T) return;
 
   const ID = "cum-toc";
@@ -240,6 +242,17 @@
     }
   }
 
+  // The clock time a message was sent, with its date where that isn't today —
+  // a bare "2:14 PM" on something from last week says the wrong thing.
+  function clockOf(ms) {
+    const d = new Date(ms);
+    const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    if (St && St.sameDay(ms, Date.now())) return time;
+    const opts = { month: "short", day: "numeric" };
+    if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+    return d.toLocaleDateString(undefined, opts) + ", " + time;
+  }
+
   // ---- the panel ----------------------------------------------------------
   function build() {
     if (el) return el;
@@ -309,10 +322,28 @@
       row.type = "button";
       row.className = "cum-toc-row" + (e.empty ? " cum-toc-dim" : "");
       row.innerHTML =
-        `<span class="cum-toc-n">${e.n}</span><span class="cum-toc-label"></span>`;
+        `<span class="cum-toc-n">${e.n}</span>` +
+        `<span class="cum-toc-main"><span class="cum-toc-label"></span>` +
+        `<span class="cum-toc-sub"></span></span>`;
       // textContent, not innerHTML: this is your own text and it may contain
       // anything at all.
       row.querySelector(".cum-toc-label").textContent = e.label;
+      // When it was sent, and — where a workflow sent it — which step it was.
+      const sub = row.querySelector(".cum-toc-sub");
+      if (e.step) {
+        const chip = document.createElement("span");
+        chip.className = "cum-toc-step";
+        chip.textContent = "Step " + e.step;
+        if (e.run) chip.title = e.run;
+        sub.appendChild(chip);
+      }
+      if (e.at) {
+        const when = document.createElement("span");
+        when.className = "cum-toc-when";
+        when.textContent = clockOf(e.at);
+        when.title = new Date(e.at).toLocaleString();
+        sub.appendChild(when);
+      }
       row.title = e.label;
       row.addEventListener("click", () => go(i));
       listEl.appendChild(row);
@@ -346,7 +377,7 @@
       // page is all there is. Merge rather than replace: what's mounted is a
       // window, and rebuilding from it is what made entries disappear as you
       // scrolled.
-      entries = T.mergeWindows(entries, seen);
+      entries = withSteps(T.mergeWindows(entries, seen));
     }
     build();
     render();
@@ -358,41 +389,68 @@
   // the page holds only what you have lately looked at — entries vanishing
   // behind you as you scroll down, which is precisely what a table of contents
   // is supposed to prevent.
-  let reqSeq = 0;
-  function fetchConversation(uuid, timeoutMs) {
-    return new Promise((resolve) => {
-      if (!C) return resolve(null);
-      const reqId = "toc" + ++reqSeq + "-" + Date.now();
-      let settled = false;
-      const finish = (data) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        window.removeEventListener("message", onMsg);
-        resolve(data || null);
-      };
-      function onMsg(event) {
-        if (event.source !== window) return;
-        const m = event.data;
-        const p = m && m.__channel === C.CHANNEL ? m.payload : null;
-        if (p && p.conversation && p.conversation.reqId === reqId)
-          finish(p.conversation.data || null);
+  // ---- which of these a workflow sent ------------------------------------
+  //
+  // A run's message is its step's prompt with the carried material pasted under
+  // it, so a rendered turn that BEGINS with a step's prompt is that step. Worth
+  // saying in the list: reading back through a nine-step run, "which one is the
+  // second devil's advocate pass" is the question you actually have, and the
+  // prompts alone all look alike.
+  let runSteps = []; // { label, prompt, runName } for this conversation, in order
+  let runsFor = null; // the conversation those steps were read for
+
+  async function loadRunSteps() {
+    const uuid = W ? W.conversationId(location.pathname) : null;
+    if (!uuid || uuid === runsFor) return;
+    runsFor = uuid;
+    runSteps = [];
+    let store;
+    try {
+      store = await storageGet(W.RUN_IDS_KEY);
+    } catch (e) {
+      return;
+    }
+    const ids = (store && store[W.RUN_IDS_KEY]) || [];
+    if (!ids.length) return;
+    const keys = ids.map((id) => W.runKey(id));
+    const runs = await storageGet(keys);
+    const out = [];
+    for (const key of keys) {
+      const run = runs[key];
+      if (!run || !run.chats) continue;
+      // Which of this run's chats is the conversation we're looking at.
+      const chatId = Object.keys(run.chats).find((cid) => {
+        const url = (run.chats[cid] || {}).url;
+        return url && W.conversationId(url) === uuid;
+      });
+      if (!chatId) continue;
+      const plan = W.planRun(W.runSource(run, null));
+      for (const step of plan) {
+        if (step.chatId !== chatId) continue;
+        out.push({
+          label: step.label,
+          prompt: step.prompt,
+          runName: (W.runLabel(run) || {}).title || null,
+          // Steps are claimed in the order they ran, so keep them in it.
+          index: step.index,
+        });
       }
-      window.addEventListener("message", onMsg);
-      const timer = setTimeout(() => finish(null), timeoutMs || 20000);
-      try {
-        window.postMessage(
-          { __channel: C.CHANNEL, command: { type: "fetchConversation", uuid, reqId } },
-          window.location.origin
-        );
-      } catch (e) {
-        finish(null);
-      }
-    });
+    }
+    runSteps = out.sort((a, b) => a.index - b.index);
+    // The list may already have been built before this landed — a run's steps
+    // come out of storage, which is slower than reading the page.
+    if (runSteps.length && entries.length) {
+      entries = withSteps(entries);
+      render();
+    }
+  }
+
+  function withSteps(list) {
+    return runSteps.length ? T.stepMarks(list, runSteps) : list;
   }
 
   function fetchList() {
-    if (!C || !M || fetching) return;
+    if (!M || fetching) return;
     const uuid = W ? W.conversationId(location.pathname) : null;
     if (!uuid) return;
     const now = Date.now();
@@ -402,7 +460,10 @@
     if (now - lastFetch < REFETCH_MS * (misses + 1)) return;
     fetching = true;
     lastFetch = now;
-    fetchConversation(uuid, 20000)
+    // Through the shared cache: the timestamps under each turn want the same
+    // payload, and two copies of this asking separately is two fetches of one
+    // conversation every few seconds.
+    (V ? V.get(uuid, 0) : Promise.resolve(null))
       .then((conv) => {
         fetching = false;
         misses = conv ? 0 : Math.min(misses + 1, 10);
@@ -414,7 +475,10 @@
           return who === "human" || who === "user";
         });
         if (!mine.length) return;
-        entries = T.tocEntries(mine.map((m) => ({ text: M.parts(m).text })));
+        entries = T.tocEntries(
+          mine.map((m) => ({ text: M.parts(m).text, at: St ? St.atOf(m) : null }))
+        );
+        entries = withSteps(entries);
         fromApi = true;
         convId = uuid;
         build();
@@ -517,7 +581,7 @@
     if (r[POS_KEY]) pos = r[POS_KEY];
     open = !!r[OPEN_KEY];
     if (onAConversation()) {
-      fetchList();
+      loadRunSteps().then(fetchList).catch(() => {});
       refresh(true);
       if (pos) applyPos(pos, false);
       setOpen(open);
@@ -543,6 +607,8 @@
       if (now !== convId) {
         entries = [];
         fromApi = false;
+        runSteps = [];
+        runsFor = null;
         convId = now;
         lastFetch = 0;
         misses = 0;
@@ -554,6 +620,7 @@
       return;
     }
     if (!fromApi) fetchList(); // a chat that has just acquired an id
+    loadRunSteps().catch(() => {});
     refresh(false);
     // The SPA rebuilds its header on every navigation, taking our slot with it.
     placeButton();

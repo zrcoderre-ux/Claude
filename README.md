@@ -54,8 +54,14 @@ bottom-right corner of [claude.ai](https://claude.ai).
   to the next chat. See [Saving a chat](#saving-a-chat).
 - **Table of contents** — a floating list of **your own messages** in the
   conversation you're reading, so a long chat is navigable instead of a scroll
-  bar. Opens from a `☰` button beside Save; starts minimized, draggable, and it
-  remembers where you put it. See [Table of contents](#table-of-contents).
+  bar. Each entry carries the time it was sent and, where a workflow sent it,
+  **which step it was**. Opens from a `☰` button beside Save; starts minimized,
+  draggable, and it remembers where you put it. See
+  [Table of contents](#table-of-contents).
+- **The time under every turn** — claude.ai shows one relative time per
+  conversation and keeps the real one behind a hover. Every turn, yours and
+  Claude's, gets a line under it: the clock time it was sent, and how long after
+  the turn before it landed. See [Timestamps](#timestamps).
 - **Workflows** — run one piece of work through **several chats that hand it
   back and forth**: A drafts, B attacks the draft, A revises, round and round,
   then a final pass. Editable, copyable, deletable, with one pre-built. Each run
@@ -883,6 +889,17 @@ the **end** of that prompt near the top of the view, which is where Claude's
 answer to it begins. That's the position you actually want when you're reading
 back through what a conversation did.
 
+Each entry also carries **when it was sent**, and — where a **workflow** sent it
+— **which step it was**: `Step 2B` beside the time, with the run's name on hover.
+A run's message is its step's prompt with the carried material pasted under it,
+so a turn that begins with a step's prompt is that step; steps are claimed in the
+order they ran, so a chat asked the same thing twice gives the second occurrence
+to the second step rather than both to the first. Messages you typed yourself
+keep their place in the numbering and are simply unmarked. That answers the
+question you actually have when reading back through a nine-step run — *which one
+is the second devil's advocate pass* — where the prompts on their own all look
+alike.
+
 It **starts minimized**: a chat you're only reading shouldn't have a panel over
 it. Its `☰` toggle sits in [the header slot](#the-header-slot) beside **Save**,
 carrying the number of messages in the chat; the panel it opens free-floats, is
@@ -922,6 +939,34 @@ the page**, so there's nothing to scroll to. It's aimed instead: scroll to about
 where that entry should be, see which message actually turned up, and correct
 from there — a few passes, each landing closer, then the usual jump to the end of
 the prompt once the real message is mounted.
+
+## Timestamps
+
+claude.ai shows one relative time per conversation — *"1 hour ago"* — and keeps
+the real one behind a hover. Reading back through a day's work that is the least
+useful form of the fact. So every turn, yours and Claude's, carries a line under
+it:
+
+```
+2:31 PM · 17m later
+```
+
+The clock time it was sent, and **how long after the previous turn it landed** —
+which is how long that turn actually took, visible without doing arithmetic on
+two hover tooltips. The date appears only where it says something: on a turn that
+crossed a day, and on the first turn of a conversation that didn't happen today.
+
+The times come from the **conversation payload**, not the page — the page doesn't
+hold them in any form worth parsing. Two consequences worth stating: a chat
+claude.ai has no record of (an incognito one) gets no stamps, because the honest
+alternative would be inventing them; and a turn is only stamped where the payload
+and the page agree about what that turn is, matched on its text with the mounted
+window's offset breaking ties, exactly as the contents list does it. A time under
+the wrong message would be worse than no time.
+
+The payload is fetched **once and shared** (`src/conv.js`): the contents list
+wants the same thing, and two copies asking separately is two fetches of one
+conversation every few seconds.
 
 ## The header slot
 
@@ -1136,6 +1181,9 @@ src/mdexport.js        A conversation as Markdown (pure)
 src/headerslot.js      Finds the file/share cluster and puts our buttons in it
 src/save-chat.js       The Save button in claude.ai's header
 src/toc.js             Table-of-contents labelling (pure)
+src/stamp.js           When each turn happened, and the gap between (pure)
+src/stamps.js          Puts that time under every turn on the page
+src/conv.js            The conversation payload, fetched once and shared
 src/toc-panel.js       The floating table of contents itself
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
@@ -1143,6 +1191,7 @@ test/estimate.test.js  Unit tests for the tenths-place calibrator
 test/status.test.js    Unit tests for the status model + hold decisions
 test/workflow.test.js  Unit tests for the workflow model + run transitions
 test/toc.test.js       Unit tests for the table-of-contents labelling
+test/stamp.test.js     Unit tests for turn times and the gaps between them
 test/mdexport.test.js  Unit tests for the Markdown export
 test/incognito.test.js Unit tests for incognito recovery + expiry
 test/autocontinue.test.js  Unit tests for the button-label predicates
