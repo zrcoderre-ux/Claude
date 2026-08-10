@@ -5,19 +5,32 @@
  * the contents list — so they sit together beside the file and share controls
  * instead of each hunting for its own anchor and landing somewhere different.
  *
- * Found by SHAPE, not by name. claude.ai doesn't version this markup, and the
- * named guesses drifted: the selector list matched the chat dropdown, which is
- * its own control well to the left of the file/share pair, so that is where the
- * buttons went. What's stable is the picture — a tight cluster of controls at
- * the top right, with clear space between it and anything further left. So the
- * cluster is found by adjacency: start at the rightmost control in the header
- * band and walk left while the controls keep touching. A gap ends it, which is
- * exactly what separates that cluster from the dropdown.
+ * Three rules, each of them the answer to a way this went wrong:
  *
- * Everything here checks that what it inserted is actually VISIBLE. Inserted
- * and visible are different things: a container that clips, or a flex row with
- * no room left, puts a button in the page and nowhere on the screen — which is
- * how a button goes missing rather than moving.
+ *   1. ONLY claude.ai's OWN controls count. Other extensions put buttons on
+ *      this page too, and they are almost always attached to <body> rather
+ *      than inside claude.ai's app root — so the search is scoped to that root
+ *      and their buttons stop being candidates at all. Anchoring to another
+ *      extension's button is how ours ended up beside it, wherever it went.
+ *
+ *   2. NAME FIRST, shape second. `Share` is the one control here worth
+ *      matching by name, and where it is found there is nothing to infer. Only
+ *      when it isn't does this fall back to the picture: a tight cluster of
+ *      controls at the top right, found by walking left from the rightmost one
+ *      while they keep touching, so a gap ends the cluster before it can
+ *      swallow the chat dropdown.
+ *
+ *   3. ONCE PLACED, STAY. The check runs every second and a half; recomputing
+ *      the anchor each time meant that any flicker in the page — a control
+ *      that hadn't rendered yet, another extension arriving late — moved the
+ *      buttons. So a slot already sitting in a row that is still in the
+ *      document and still visible is left exactly where it is. It re-anchors
+ *      when the row genuinely goes, which is what a navigation does.
+ *
+ * Everything here also checks that what it inserted is actually VISIBLE.
+ * Inserted and visible are different things: a container that clips, or a flex
+ * row with no room left, puts a button in the page and nowhere on the screen —
+ * which is how a button goes missing rather than moving.
  */
 (function () {
   "use strict";
@@ -32,6 +45,7 @@
   const ROW_PX = 12; // and this much difference in height is another row
 
   let slot = null;
+  let placedIn = null; // the row it is in, while that row still exists
 
   function visible(node) {
     if (!node) return false;
@@ -46,18 +60,39 @@
     );
   }
 
-  // Every control in the header band, left to right. Ours are skipped, or the
-  // slot would start measuring itself.
+  // claude.ai's own markup, and nothing else's. Extensions inject into <body>;
+  // claude.ai renders inside one app container, so scoping the search to that
+  // container is a cheap and very effective way of not anchoring to a stranger.
+  function appRoot() {
+    try {
+      const named = document.querySelector("#__next, #root, [data-nextjs-scroll-focus-boundary]");
+      if (named) return named;
+      // Whatever top-level element holds the conversation. Written this way
+      // rather than as a fixed id because claude.ai doesn't version either.
+      const main = document.querySelector("main");
+      const top = main && main.closest("body > *");
+      if (top) return top;
+    } catch (e) {
+      /* ignore */
+    }
+    return document.body || document.documentElement;
+  }
+
+  function ours(el) {
+    return !!(C.isOurs(el) || (el.closest && el.closest("#" + ID)));
+  }
+
+  // Every one of claude.ai's controls in the header band, left to right.
   function controlsInBand() {
     const out = [];
     let all;
     try {
-      all = document.querySelectorAll('button, a[role="button"]');
+      all = appRoot().querySelectorAll('button, a[role="button"]');
     } catch (e) {
       return out;
     }
     for (const b of all) {
-      if (C.isOurs(b) || (b.closest && b.closest("#" + ID))) continue;
+      if (ours(b)) continue;
       const r = b.getBoundingClientRect();
       if (r.width < 8 || r.height < 8) continue;
       if (r.top < 0 || r.top > BAND_PX) continue;
@@ -65,6 +100,41 @@
       out.push({ el: b, left: r.left, right: r.right, top: r.top });
     }
     return out.sort((a, b) => a.left - b.left);
+  }
+
+  // Share, by name. The one control in this row worth matching on what it is
+  // called: it is the thing people mean by "next to the share button", and when
+  // it is found there is nothing left to guess.
+  const SHARE_SELECTORS = [
+    'button[data-testid="share-button"]',
+    'button[aria-label="Share"]',
+    'button[aria-label*="share" i]',
+  ];
+  function shareButton() {
+    const root = appRoot();
+    for (const sel of SHARE_SELECTORS) {
+      let b;
+      try {
+        b = root.querySelector(sel);
+      } catch (e) {
+        continue;
+      }
+      if (b && !ours(b) && inBand(b)) return b;
+    }
+    try {
+      for (const b of root.querySelectorAll("button")) {
+        if (ours(b) || !inBand(b)) continue;
+        if (/^\s*share\s*$/i.test(b.textContent || "")) return b;
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return null;
+  }
+
+  function inBand(el) {
+    const r = el.getBoundingClientRect();
+    return r.width >= 8 && r.height >= 8 && r.top >= 0 && r.top <= BAND_PX;
   }
 
   // The rightmost run of controls that touch each other. Walking left stops at
@@ -84,18 +154,57 @@
     return group;
   }
 
-  // Where in the DOM that cluster's left end is: the outermost wrapper around
-  // the leftmost control that doesn't also hold one of the others. Inserting
+  // Where in the DOM to insert: the outermost wrapper around the leftmost
+  // control of the cluster that doesn't also hold one of the others. Inserting
   // before THAT makes the slot a sibling of the controls as they were laid out,
   // rather than something wedged inside one button's own wrapper.
+  // The run of touching controls around a particular one. Used with Share: the
+  // cluster it belongs to is the cluster we want, whether or not it happens to
+  // be the rightmost thing on the page.
+  function clusterAround(target) {
+    const all = controlsInBand();
+    const at = all.findIndex(
+      (c) => c.el === target || c.el.contains(target) || target.contains(c.el)
+    );
+    if (at === -1) return [];
+    const group = [all[at]];
+    for (let i = at - 1; i >= 0; i--) {
+      const cur = all[i];
+      const next = group[0];
+      if (Math.abs(cur.top - next.top) > ROW_PX) break;
+      if (next.left - cur.right > GAP_PX) break;
+      group.unshift(cur);
+    }
+    for (let i = at + 1; i < all.length; i++) {
+      const cur = all[i];
+      const prev = group[group.length - 1];
+      if (Math.abs(cur.top - prev.top) > ROW_PX) break;
+      if (cur.left - prev.right > GAP_PX) break;
+      group.push(cur);
+    }
+    return group;
+  }
+
   function anchorPoint() {
-    const group = cluster();
-    if (!group.length) return null;
-    const first = group[0].el;
+    const share = shareButton();
+    // Named anchor where there is one, measured row either way.
+    const around = share ? clusterAround(share) : [];
+    const useful = around.length ? around : cluster();
+    // Nothing that looks like the header yet. Refuse rather than guess: a
+    // half-rendered page offers a lone button somewhere, and because a placed
+    // slot then STAYS placed, a bad guess made in the first second would be
+    // lived with for the rest of the page's life.
+    if (!share && useful.length < 2) return null;
+    if (!useful.length) {
+      // No cluster at all, but Share is there: sit immediately before it.
+      if (share && share.parentElement) return { parent: share.parentElement, before: share };
+      return null;
+    }
+    const first = useful[0].el;
     let node = first;
     while (node.parentElement && node.parentElement !== document.body) {
       const p = node.parentElement;
-      if (group.slice(1).some((g) => p.contains(g.el))) return { parent: p, before: node };
+      if (useful.slice(1).some((g) => p.contains(g.el))) return { parent: p, before: node };
       node = p;
     }
     return first.parentElement ? { parent: first.parentElement, before: first } : null;
@@ -110,6 +219,7 @@
 
   function detach() {
     if (slot && slot.parentNode) slot.remove();
+    placedIn = null;
   }
 
   // A row the slot has already been thrown out of. Without this, a header that
@@ -119,23 +229,51 @@
   // a new one on every navigation, so it forgets by itself.
   const rejected = new WeakMap();
 
+  // Is the slot where it was put, and is that still a real place to be? This is
+  // what stops the buttons wandering: nothing is recomputed while the answer is
+  // yes, so a control that renders late — or another extension arriving after
+  // us — can't drag them somewhere else.
+  function settled(node) {
+    return !!(
+      slot &&
+      placedIn &&
+      placedIn.isConnected &&
+      slot.parentElement === placedIn &&
+      node.parentElement === slot &&
+      visible(node)
+    );
+  }
+
+  // The slot, in a row. A slot that is already in a row that still exists stays
+  // in it — the second button to ask must not be able to move the first one,
+  // which is what re-deriving the anchor per caller used to do.
+  function slotHome() {
+    if (slot && placedIn && placedIn.isConnected && slot.parentElement === placedIn) return slot;
+    const at = anchorPoint();
+    if (!at) return null;
+    const s = build();
+    if (s.parentElement !== at.parent || s.nextElementSibling !== at.before) {
+      at.parent.insertBefore(s, at.before);
+    }
+    placedIn = at.parent;
+    return s;
+  }
+
   /**
    * Put a button in the header, or somewhere it can at least be seen.
    * Returns "header", "docked" or "loose" — the caller styles for each.
    */
   function place(node) {
     if (!node) return "loose";
-    const at = anchorPoint();
-    if (at && rejected.get(node) !== at.parent) {
-      const s = build();
-      if (s.parentElement !== at.parent || s.nextElementSibling !== at.before) {
-        at.parent.insertBefore(s, at.before);
-      }
+    if (settled(node)) return "header";
+
+    const s = slotHome();
+    if (s && rejected.get(node) !== placedIn) {
       if (node.parentElement !== s) s.appendChild(node);
       if (visible(node)) return "header";
       // It went in and can't be seen. Take it back out, and don't try this row
       // again.
-      rejected.set(node, at.parent);
+      rejected.set(node, placedIn);
       node.remove();
       if (!s.childElementCount) detach();
     }
@@ -153,5 +291,6 @@
     detach: detach,
     visible: visible,
     cluster: cluster,
+    appRoot: appRoot,
   };
 })();

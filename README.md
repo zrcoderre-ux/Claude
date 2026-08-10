@@ -917,16 +917,33 @@ file and share controls, so they live in one slot the two of them share
 (`src/headerslot.js`) rather than each hunting for its own anchor and finding a
 different one.
 
-The slot is found by **shape, not by name**. claude.ai doesn't version this
-markup, and the named guesses drifted: the selector list matched the *chat
-dropdown*, which is its own control well to the left of the file/share pair, and
-so that is where the buttons went. What's stable is the picture — a tight cluster
-of controls at the top right with clear space between it and anything further
-left — so the cluster is found by **adjacency**: start at the rightmost control
-in the header band and walk left while the controls keep touching. A gap ends the
-walk, which is exactly what separates that cluster from the dropdown. The slot
-goes in at the cluster's left end, as a sibling of the controls as they were laid
-out rather than wedged inside one button's own wrapper.
+Three rules, each of them the answer to a way this went wrong.
+
+**Only claude.ai's own controls count.** Other extensions put buttons on this
+page too, and they attach them to `<body>` rather than into claude.ai's app
+root — so the search is scoped to that root and their buttons stop being
+candidates at all. Anchoring to another extension's button is how ours ended up
+travelling with it, wherever it went.
+
+**Name first, shape second.** `Share` is the one control here worth matching on
+what it is called, and where it is found there is nothing left to infer: the slot
+joins the run of controls that touch it. Only when it isn't found does this fall
+back to the picture — a tight cluster at the top right, found by walking left
+from the rightmost control while they keep touching, so a gap ends the cluster
+before it can swallow the *chat dropdown* (which is what an earlier selector list
+matched, and why the buttons once sat well to the left of where they belong). The
+slot goes in at the cluster's left end, as a sibling of the controls as they were
+laid out rather than wedged inside one button's own wrapper. Where neither a
+Share button nor a cluster of at least two can be found, it places nothing at
+all — a half-rendered page offers a lone button somewhere, and a guess made in
+the first second would be lived with, because of the third rule.
+
+**Once placed, it stays.** The check runs every second and a half, and
+recomputing the anchor each time meant any flicker in the page — a control that
+hadn't rendered yet, another extension arriving late — moved the buttons. A slot
+sitting in a row that is still in the document and still visible is now left
+exactly where it is, and the second button to ask can't move the first one. It
+re-anchors when the row genuinely goes, which is what a navigation does.
 
 **Inserted and visible are different things.** A container that clips, or a flex
 row with no room left, puts a button in the page and nowhere on the screen —
