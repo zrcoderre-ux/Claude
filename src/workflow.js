@@ -1538,6 +1538,60 @@
     };
   }
 
+  // Is this conversation one of the run's? Asked by a page that knows only
+  // which chat it is looking at, so it can find the run it belongs to without
+  // reading every run's plan.
+  function runHasConversation(run, convId) {
+    if (!run || !convId) return null;
+    const chats = run.chats || {};
+    for (const cid of Object.keys(chats)) {
+      const url = trimmed(chats[cid] && chats[cid].url);
+      if (url && conversationId(url) === convId) return cid;
+    }
+    return null;
+  }
+
+  /**
+   * Every step of a run as one list you can move around by: what it is, which
+   * conversation it happened in, whether it has happened yet, and where to find
+   * it.
+   *
+   * A run is several conversations, and the thing you actually want while
+   * reading one of them is the other one — "what did the advocate say about
+   * this" is a different chat, and finding it by hand means remembering which
+   * tab. This is the index that makes that a click.
+   */
+  function runDirectory(run, wf) {
+    if (!run) return [];
+    const plan = planRun(runSource(run, wf));
+    const done = {};
+    for (const t of run.transcript || []) if (t) done[t.stepIndex] = t;
+    const finished = run.status === "done";
+    return plan.map((s) => {
+      const chat = (run.chats || {})[s.chatId] || {};
+      const t = done[s.index] || null;
+      return {
+        index: s.index,
+        label: s.label,
+        chatId: s.chatId,
+        chatName: s.chatName,
+        // Null until the run has actually opened that conversation — a step
+        // that hasn't run yet has nowhere to send you.
+        url: trimmed(chat.url) || null,
+        prompt: s.prompt,
+        parallel: s.parallel,
+        wave: s.wave.slice(),
+        done: !!t,
+        // Where the run is now. The whole wave is "here", since all of it is
+        // what the run is doing.
+        here: !finished && s.wave.indexOf(run.stepIndex) !== -1,
+        at: t ? t.at : null,
+        chars: t ? t.chars : null,
+        ms: t ? t.ms : null,
+      };
+    });
+  }
+
   // When a run began, when it ended, and how long that was in real time.
   //
   // Deliberately separate from timingSummary, which counts only what the steps
@@ -2495,6 +2549,8 @@
     stepTiming,
     timingSummary,
     runTiming,
+    runDirectory,
+    runHasConversation,
     formatMs,
     usageExhausted,
     usageBackAt,

@@ -1747,6 +1747,85 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;
   }
+  // Move to a step of a run, wherever it happened. The workflow index asks;
+  // this owns the tabs, so it does the moving: find the conversation that step
+  // ran in, bring it forward, and tell it which message to scroll to.
+  //
+  // This DOES focus a window, unlike everything else a run touches. You clicked
+  // a step in order to go and read it; leaving you where you were would be the
+  // bug.
+  if (msg && msg.type === "cum-wf-goto" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "that run is gone" };
+      const wf = W.getWorkflow((await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], run.workflowId);
+      const step = W.runDirectory(run, wf).find((s) => s.index === msg.stepIndex);
+      if (!step) return { ok: false, error: "no such step" };
+      if (!step.url) return { ok: false, error: "that chat hasn't been opened yet" };
+
+      let tab = null;
+      try {
+        const all = await chrome.tabs.query({});
+        tab = all.find((t) => t && t.url && J.sameConversationUrl(t.url, step.url)) || null;
+      } catch (e) {
+        /* fall through to opening one */
+      }
+      if (!tab) {
+        // Closed since the run used it. A run still going gets its conversation
+        // back in its OWN window, where the rest of them are. A finished one
+        // has no window to keep together any more — reading it back is
+        // ordinary browsing, so it opens beside whatever you're reading it
+        // from.
+        if (W.isRunActive(run)) {
+          const opened = await runTab(run, step.url);
+          tab = opened.tab;
+        } else {
+          try {
+            tab = await chrome.tabs.create({
+              url: step.url,
+              active: true,
+              windowId: (sender && sender.tab && sender.tab.windowId) || undefined,
+            });
+          } catch (e) {
+            tab = null;
+          }
+        }
+        if (!tab) return { ok: false, error: "couldn't open that conversation" };
+        try {
+          await waitTabComplete(tab.id, 20000);
+        } catch (e) {
+          /* it can still be told where to go */
+        }
+      }
+      try {
+        await chrome.tabs.update(tab.id, { active: true });
+        if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+      } catch (e) {
+        /* a tab that vanished between finding it and moving to it */
+      }
+      // Where to scroll, once it is looking at the right conversation. Sent a
+      // few times: a tab that has only just been opened has no content script
+      // listening yet, and the page it will render doesn't exist either.
+      for (let attempt = 0; attempt < 6; attempt++) {
+        try {
+          const res = await chrome.tabs.sendMessage(tab.id, {
+            type: "cum-goto-step",
+            runId: msg.runId,
+            stepIndex: step.index,
+            prompt: step.prompt,
+          });
+          if (res && res.ok) break;
+        } catch (e) {
+          /* not ready yet */
+        }
+        await sleep(700);
+      }
+      return { ok: true };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
   // A page borrowing this worker's clock. Chrome throttles timers in a tab that
   // isn't on screen — about one wake-up a minute — and a run's tabs are behind
   // whatever you're doing by design, so a page that waited on its own clock

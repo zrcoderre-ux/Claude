@@ -1141,3 +1141,188 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 @media (prefers-color-scheme: dark) {
   .cum-stamp { color: #85827b; }
 }
+
+/* ── The workflow's own contents ──────────────────────────────────────────
+   The list beside this one indexes the conversation; this one indexes the
+   RUN — every step, in every chat, with the one you're reading marked. Same
+   shape as the contents panel, because they do the same job at two scales. */
+#cum-run {
+  position: fixed;
+  right: 16px;
+  top: 92px;
+  z-index: 2147483644;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #1f1f1f;
+}
+
+#cum-run[hidden] { display: none; }
+#cum-run.cum-run-dragging { user-select: none; }
+
+#cum-run-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 5px 9px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+#cum-run-btn[hidden] { display: none; }
+#cum-run-btn:hover { background: rgba(0, 0, 0, 0.06); }
+#cum-run-btn.cum-run-on { background: rgba(201, 100, 66, 0.14); }
+.cum-run-ico { font-size: 13px; line-height: 1; }
+.cum-run-count { font-variant-numeric: tabular-nums; color: #6b6b6b; }
+
+#cum-run-btn.cum-run-docked {
+  pointer-events: auto;
+  background: #ffffff;
+  color: #1f1f1f;
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+#cum-run-btn.cum-run-loose {
+  position: fixed;
+  left: 16px;
+  bottom: 148px; /* above the contents button, which is above Save */
+  z-index: 2147483643;
+  background: #ffffff;
+  color: #1f1f1f;
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.cum-run-body {
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  border: 1.5px solid rgba(0, 0, 0, 0.18);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.cum-run-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  cursor: grab;
+}
+
+#cum-run.cum-run-dragging .cum-run-head { cursor: grabbing; }
+
+.cum-run-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b6b6b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cum-run-close {
+  border: none;
+  background: none;
+  color: #8a8a8a;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 6px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.cum-run-close:hover { background: rgba(0, 0, 0, 0.06); color: #1f1f1f; }
+
+.cum-run-list {
+  max-height: min(56vh, 520px);
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.cum-run-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cum-run-row:hover { background: rgba(201, 100, 66, 0.09); }
+
+/* The step you're reading, and the one the run is on. Different facts: one is
+   where you are, the other is where the work is. */
+.cum-run-row.mine { background: rgba(201, 100, 66, 0.07); }
+.cum-run-row.here .cum-run-n { background: #c96442; color: #fff; }
+.cum-run-row.dead { opacity: 0.55; cursor: default; }
+.cum-run-row.bad .cum-run-sub { color: #d23f31; }
+
+.cum-run-n {
+  flex: 0 0 auto;
+  min-width: 24px;
+  text-align: center;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #c96442;
+  font-size: 11.5px;
+}
+
+.cum-run-row.done .cum-run-n { color: #6b6b6b; }
+
+.cum-run-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+
+.cum-run-label {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cum-run-sub { font-size: 10.5px; line-height: 1.2; color: #8a8a8a; }
+
+@media (prefers-color-scheme: dark) {
+  #cum-run { color: #f0efea; }
+  .cum-run-body { background: #2a2a28; border-color: rgba(255, 255, 255, 0.22); }
+  #cum-run-btn { border-color: rgba(255, 255, 255, 0.22); }
+  #cum-run-btn:hover { background: rgba(255, 255, 255, 0.08); }
+  #cum-run-btn.cum-run-on { background: rgba(224, 135, 101, 0.2); }
+  #cum-run-btn.cum-run-loose,
+  #cum-run-btn.cum-run-docked { background: #2a2a28; color: #f0efea; }
+  .cum-run-count, .cum-run-title, .cum-run-sub { color: #a5a29a; }
+  .cum-run-head { border-bottom-color: rgba(255, 255, 255, 0.1); }
+  .cum-run-close { color: #a5a29a; }
+  .cum-run-close:hover { background: rgba(255, 255, 255, 0.08); color: #f0efea; }
+  .cum-run-row:hover { background: rgba(224, 135, 101, 0.16); }
+  .cum-run-row.mine { background: rgba(224, 135, 101, 0.1); }
+  .cum-run-n { background: rgba(255, 255, 255, 0.08); color: #e08765; }
+  .cum-run-row.done .cum-run-n { color: #a5a29a; }
+}
