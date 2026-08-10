@@ -612,6 +612,9 @@
           `<select class="wf-step-model" style="width:auto" title="Which model answers this step">${stepModelOpts}</select>` +
           `<button class="cumwf-btn mini wf-up" type="button" title="Move up">↑</button>` +
           `<button class="cumwf-btn mini wf-down" type="button" title="Move down">↓</button>` +
+          // Add HERE, rather than at the bottom and then dragged up. Next to
+          // the delete, since both are about this step's place in the list.
+          `<button class="cumwf-btn mini wf-add" type="button" title="Add a step below this one">＋</button>` +
           `<button class="cumwf-btn mini wf-del" type="button" title="Delete step">✕</button></div>` +
           `<textarea class="wf-step-prompt" rows="4" placeholder="What this chat should do">${esc(
             step.prompt
@@ -647,6 +650,7 @@
         wireStepDrag(card);
         card.querySelector(".wf-up").addEventListener("click", () => moveStep(i, -1));
         card.querySelector(".wf-down").addEventListener("click", () => moveStep(i, 1));
+        card.querySelector(".wf-add").addEventListener("click", () => insertStep(i + 1));
         card.querySelector(".wf-del").addEventListener("click", () => {
           wf.steps.splice(i, 1);
           renderSteps();
@@ -881,16 +885,40 @@
       dropBefore = null;
       renderSteps();
     });
-    ui.addStep.addEventListener("click", () => {
-      const last = wf.steps[wf.steps.length - 1];
-      // Alternate chats by default — that's what a back-and-forth workflow is.
+    // A new step, taking its chat from the one it will follow: alternating is
+    // what a back-and-forth workflow does, and a step added in the middle
+    // belongs to the same alternation as one added at the end.
+    function newStepAfter(index) {
+      const prev = index >= 0 ? wf.steps[index] : null;
       const nextChat =
-        wf.chats.length > 1 && last
-          ? wf.chats[(wf.chats.findIndex((c) => c.id === last.chatId) + 1) % wf.chats.length].id
+        wf.chats.length > 1 && prev
+          ? wf.chats[(wf.chats.findIndex((c) => c.id === prev.chatId) + 1) % wf.chats.length].id
           : (wf.chats[0] || {}).id;
-      wf.steps.push(W.newStep({ chatId: nextChat, prompt: "", carry: wf.steps.length > 0 }, uuid()));
+      return W.newStep({ chatId: nextChat, prompt: "", carry: index >= 0 }, uuid());
+    }
+
+    // Insert at a position rather than only at the end. Building a workflow is
+    // mostly realising a step is missing between two you already have, and
+    // adding it at the bottom and dragging it up five places is the same act
+    // with more steps in it.
+    function insertStep(at) {
+      const where = Math.max(0, Math.min(at, wf.steps.length));
+      wf.steps.splice(where, 0, newStepAfter(where - 1));
       renderSteps();
-    });
+      // Straight into the empty prompt, since writing it is the next thing.
+      const card = ui.steps.children[where];
+      const box = card && card.querySelector(".wf-step-prompt");
+      if (box) {
+        box.focus();
+        try {
+          card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        } catch (e) {
+          /* ignore */
+        }
+      }
+    }
+
+    ui.addStep.addEventListener("click", () => insertStep(wf.steps.length));
 
     // ---- open / close ----------------------------------------------------
     function open(workflow) {

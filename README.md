@@ -245,6 +245,14 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   a caret parked in the middle can't have the rest rewritten under it. Where a
   prompt has been written in several places, the most-used comes first.
 
+- **Adding a step where you want it** — every step's card carries a `＋` beside
+  its `✕`, which puts a new step directly below that one and drops the cursor in
+  its empty prompt. `+ Add step` at the bottom still adds to the end. Building a
+  workflow is mostly noticing a step is missing *between* two you already have,
+  and adding it at the bottom and dragging it up five places is the same act with
+  more steps in it. A step inserted mid-list takes the chat the alternation calls
+  for — the one after the step it follows — exactly as one added at the end does.
+
 - **Reordering** — drag a step by the **grip** on its card. The ↑↓ arrows stay
   for a one-notch nudge, but nine steps is enough that moving one from the end to
   the middle was six clicks, each re-rendering the list under the cursor.
