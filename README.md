@@ -727,11 +727,23 @@ responsive, and below its breakpoint it serves a compact client that can't rende
 every block type, substituting *"This block is not supported on your current
 device"* where the content should be. The copy box then copies that notice, and
 the shell travels to the next chat as the material to work from. Filling the
-screen puts the layout as far from that breakpoint as the display allows, and a
-run window left smaller is maximized again before a step uses it. Maximizing
-doesn't focus a window, so this stays out of your way. Nothing is ever activated or brought forward, so a nine-step
-workflow can grind away for an hour while you work in your own windows — the run
-never takes the screen, and its tabs never pile into whatever you're using.
+screen puts the layout as far from that breakpoint as the display allows.
+
+It is sized **once, when the run opens it**, maximized at creation where Chrome
+will take that. Afterwards it is left alone unless it is genuinely too narrow for
+the full client, because *sizing a window is a request to the window manager, and
+window managers raise the windows they are asked to resize*. That is not what the
+API documentation implies and it is what actually happens — a size check that ran
+before every step put the run's window in front of whatever you were doing, over
+and over, for the length of a run. The check now costs nothing on a window that
+is already wide enough, and every call that can still raise one is bracketed:
+note which window had the screen, and put it back if it moved. (Only when Chrome
+had it. If you were in another application, "restoring" focus to a Chrome window
+would be the very theft that guard exists to prevent.)
+
+Nothing is ever activated or brought forward, so a nine-step workflow can grind
+away for an hour while you work in your own windows — the run never takes the
+screen, and its tabs never pile into whatever you're using.
 
 The window also gets **Options, pinned at its left edge**, opened on the
 Workflows section — the run's controls in the window where you watch it happen,

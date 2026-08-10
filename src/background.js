@@ -735,9 +735,53 @@ function windowExists(id) {
   });
 }
 
+// Whatever you were doing stays in front.
+//
+// A run's window is opened behind on purpose — but SIZING a window is a request
+// to the window manager, and window managers raise the windows they are asked to
+// resize or maximize. That is how a run that must never interrupt you ended up
+// taking the screen on every single step: the size check ran before each send,
+// the state came back as something other than "maximized" (which platforms
+// report inconsistently), and the fix-up raised the window every time.
+//
+// Two rules now. Size it ONCE, when the run opens it, and afterwards leave it
+// alone unless it is actually too narrow to render Claude properly. And bracket
+// anything that could still raise it with this: note what had the screen, put it
+// back if it moved.
+async function keepingFocus(fn) {
+  let before = null;
+  try {
+    before = await chrome.windows.getLastFocused();
+  } catch (e) {
+    /* ignore */
+  }
+  try {
+    return await fn();
+  } finally {
+    try {
+      // Only when Chrome had the screen to begin with. If you were in another
+      // application, "restoring" focus to a Chrome window would be the very
+      // theft this exists to prevent.
+      if (before && before.id != null && before.focused) {
+        const now = await chrome.windows.getLastFocused();
+        if (now && now.id !== before.id)
+          await chrome.windows.update(before.id, { focused: true });
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+}
+
+// Below this, claude.ai serves its compact client, which cannot render some
+// block types — it shows "This block is not supported on your current device"
+// where the content should be, and the copy box then copies that notice into
+// the next chat as the material to work from. So a window this narrow is worth
+// raising to fix. A window already wider than this is left entirely alone.
+const RUN_MIN_W = 1100;
+
 // Maximize a run's window if it isn't already — one the operator resized, or one
-// from before this mattered. Maximizing does not focus it, so this can't
-// interrupt anything.
+// from before this mattered.
 async function ensureWindowSize(windowId) {
   const win = await new Promise((resolve) => {
     try {
@@ -750,10 +794,12 @@ async function ensureWindowSize(windowId) {
     }
   });
   if (!win || win.state === "maximized" || win.state === "fullscreen") return;
+  // Wide enough for the full client already. Whatever the window manager calls
+  // that state, there is nothing here worth taking the screen for.
+  if (typeof win.width === "number" && win.width >= RUN_MIN_W) return;
   // Maximize as a SEPARATE update rather than at creation: `state` can't be
   // combined with bounds at create time, and a create that rejects the
-  // combination takes the whole window with it. Updating afterwards is
-  // unconditional and doesn't focus the window.
+  // combination takes the whole window with it.
   // Twice, with a pause. A window that has only just been created can swallow
   // the first request; the second lands.
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -847,13 +893,26 @@ async function runTab(run, url) {
       // the shell travels to the next chat as the material to work from.
       // Filling the screen puts the layout as far from that breakpoint as the
       // display allows.
-      const win = await chrome.windows.create({ url, focused: false });
+      // Maximized AT CREATION where Chrome will take it, which is the one way
+      // of getting a full-size window that never involves asking the window
+      // manager to raise an existing one. `state` can't be combined with bounds
+      // — it can perfectly well be combined with `focused: false`.
+      let win = null;
+      try {
+        win = await keepingFocus(() =>
+          chrome.windows.create({ url, focused: false, state: "maximized" })
+        );
+      } catch (e) {
+        win = await keepingFocus(() => chrome.windows.create({ url, focused: false }));
+      }
       // A beat before maximizing. Asked for immediately the request is ignored
       // — the giveaway being that the same call lands perfectly well later,
       // when the run opens its second tab.
       if (win && win.id != null) {
-        await sleep(300);
-        await ensureWindowSize(win.id);
+        if (win.state !== "maximized" && win.state !== "fullscreen") {
+          await sleep(300);
+          await keepingFocus(() => ensureWindowSize(win.id));
+        }
         await ensureOptionsTab(win.id);
       }
       const tab = win && win.tabs && win.tabs[0];
@@ -863,7 +922,12 @@ async function runTab(run, url) {
     }
   }
 
-  await ensureWindowSize(windowId);
+  // NOT sized again here. This runs before every step, and re-asserting a
+  // window's size on each one is what put the run's window in front of whatever
+  // you were doing, over and over, for the length of a run. ensureWindowSize
+  // now leaves a window that is already wide enough completely alone, and the
+  // request it does make when one isn't goes through keepingFocus.
+  await keepingFocus(() => ensureWindowSize(windowId));
   for (const t of await tabsInWindow(windowId)) {
     if (t && t.url && J.sameConversationUrl(t.url, url)) return { tab: t, windowId, created: false };
   }
