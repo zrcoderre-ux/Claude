@@ -60,6 +60,17 @@
     .cumwf-list.cumwf-drop-end > .cumwf-card:last-child { box-shadow:0 3px 0 -1px #c96442; }
     .cumwf-card-title { font-size:12px; font-weight:700; color:#6b6b6b; flex:1;
       text-transform:uppercase; letter-spacing:.04em; }
+    /* Steps that run at the same time, drawn as one block: a bar down the side
+       joining them, so a wave reads as a wave rather than as three steps that
+       happen to be next to each other. */
+    .cumwf-card.cumwf-par { border-left:3px solid #c96442; border-radius:4px 10px 10px 4px;
+      margin-left:10px; }
+    .cumwf-card.cumwf-par-first { border-top-left-radius:10px; }
+    .cumwf-card.cumwf-par-last { border-bottom-left-radius:10px; }
+    .cumwf-par-tag { flex:0 0 auto; font-size:11px; font-weight:700; letter-spacing:.03em;
+      color:#c96442; background:rgba(201,100,66,0.12); border:none; border-radius:999px;
+      padding:2px 8px; cursor:pointer; font-family:inherit; }
+    .cumwf-par-tag:hover { background:rgba(201,100,66,0.22); }
     .cumwf-list { display:flex; flex-direction:column; gap:8px; }
     .cumwf-drop { display:flex; flex-direction:column; align-items:center; gap:8px;
       border:1.5px dashed rgba(0,0,0,0.22); border-radius:10px; padding:12px; text-align:center; }
@@ -113,6 +124,9 @@
       .cumwf-ac { background:rgba(201,100,66,0.14); border-color:rgba(224,135,101,0.5); }
       .cumwf-ac-text { color:#d4d1c9; }
       .cumwf-ac-key { color:#e08765; }
+      .cumwf-card.cumwf-par { border-left-color:#e08765; }
+      .cumwf-par-tag { color:#e08765; background:rgba(224,135,101,0.18); }
+      .cumwf-par-tag:hover { background:rgba(224,135,101,0.3); }
     }`;
 
   function injectStyles(doc) {
@@ -579,9 +593,23 @@
     // ---- steps -----------------------------------------------------------
     function renderSteps() {
       ui.steps.innerHTML = "";
+      // "1", "2A", "2B", "2C", "3" — and which steps run together, so a card
+      // can say what it is part of rather than only where it sits.
+      const labels = W.stepLabels(wf.steps || []);
+      const waves = W.stepWaves(wf.steps || []);
+      const waveFor = [];
+      for (const w of waves) for (const m of w.members) waveFor[m] = w;
       (wf.steps || []).forEach((step, i) => {
+        const wave = waveFor[i] || { members: [i] };
+        const parallel = wave.members.length > 1;
         const card = doc.createElement("div");
-        card.className = "cumwf-card";
+        card.className =
+          "cumwf-card" +
+          (parallel
+            ? " cumwf-par" +
+              (wave.members[0] === i ? " cumwf-par-first" : "") +
+              (wave.members[wave.members.length - 1] === i ? " cumwf-par-last" : "")
+            : "");
         const chatOpts = (wf.chats || [])
           .map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`)
           .join("");
@@ -607,7 +635,12 @@
         card.innerHTML =
           `<div class="cumwf-card-head">` +
           `<button class="cumwf-grip" type="button" title="Drag to reorder" aria-label="Drag to reorder">⠿</button>` +
-          `<span class="cumwf-card-title">Step ${i + 1}</span>` +
+          `<span class="cumwf-card-title">Step ${esc(labels[i] || i + 1)}</span>` +
+          (parallel
+            ? `<button class="cumwf-par-tag wf-unpar" type="button" title="Runs at the same time as ${esc(
+                wave.members.filter((m) => m !== i).map((m) => labels[m]).join(" and ")
+              )}, in its own chat — click to take it out of the wave">⇉ at once</button>`
+            : "") +
           `<select class="wf-step-chat" style="width:auto">${chatOpts}</select>` +
           `<select class="wf-step-model" style="width:auto" title="Which model answers this step">${stepModelOpts}</select>` +
           `<button class="cumwf-btn mini wf-up" type="button" title="Move up">↑</button>` +
@@ -615,23 +648,48 @@
           // Add HERE, rather than at the bottom and then dragged up. Next to
           // the delete, since both are about this step's place in the list.
           `<button class="cumwf-btn mini wf-add" type="button" title="Add a step below this one">＋</button>` +
+          // …and one that adds a step running ALONGSIDE this one rather than
+          // after it: same hand-off in, both replies out to whatever follows.
+          `<button class="cumwf-btn mini wf-par" type="button" title="Add a step that runs at the same time as this one, in another chat">⇉</button>` +
           `<button class="cumwf-btn mini wf-del" type="button" title="Delete step">✕</button></div>` +
           `<textarea class="wf-step-prompt" rows="4" placeholder="What this chat should do">${esc(
             step.prompt
           )}</textarea>` +
           `<div class="cumwf-ac" hidden><span class="cumwf-ac-key">↵</span>` +
           `<span class="cumwf-ac-text"></span><span class="cumwf-ac-more"></span></div>` +
-          (i === 0
-            ? `<p class="cumwf-hint">The first step opens its chat — nothing to carry into it yet.</p>`
-            : wf.steps[i - 1] && wf.steps[i - 1].chatId === step.chatId
+          // What this step is handed, judged from the step before its WAVE:
+          // 2B's neighbour is 2A, but 2A is not where its material comes from.
+          // They are given the same thing at the same time — that is what makes
+          // them parallel rather than a queue.
+          (wave.members[0] === 0
+            ? `<p class="cumwf-hint">${
+                parallel
+                  ? "These steps open their chats together — nothing to carry into them yet."
+                  : "The first step opens its chat — nothing to carry into it yet."
+              }</p>`
+            : wf.steps[wave.members[0] - 1] &&
+              wf.steps[wave.members[0] - 1].chatId === step.chatId
             ? `<p class="cumwf-hint">Same chat as the step before it — that conversation already has this, ` +
               `so nothing is pasted in.</p>`
             : `<div class="cumwf-row"><label class="cumwf-check"><input class="wf-step-carry" type="checkbox" ${
                 step.carry !== false ? "checked" : ""
-              } /> Paste the previous step's reply under this prompt</label>` +
+              } /> Paste ${
+                parallel ? "step " + esc(labels[wave.members[0] - 1]) + "'s" : "the previous step's"
+              } reply under this prompt</label>` +
               `<input class="wf-step-label" type="text" placeholder="Call it… (e.g. devil's advocate report)" value="${esc(
                 step.carryLabel || ""
-              )}" /></div>`);
+              )}" /></div>`) +
+          (parallel
+            ? `<p class="cumwf-hint">Runs at the same time as ${esc(
+                wave.members.filter((m) => m !== i).map((m) => "step " + labels[m]).join(" and ")
+              )}, and never sees ${wave.members.length > 2 ? "them" : "it"}. ${
+                wf.steps[wave.members[wave.members.length - 1] + 1]
+                  ? "Step " +
+                    esc(labels[wave.members[wave.members.length - 1] + 1]) +
+                    " is handed all of their replies together."
+                  : "Add a step after them to read all of their replies together."
+              }</p>`
+            : "");
         const chatEl = card.querySelector(".wf-step-chat");
         chatEl.value = step.chatId || (wf.chats[0] && wf.chats[0].id) || "";
         chatEl.addEventListener("change", () => (step.chatId = chatEl.value));
@@ -651,6 +709,9 @@
         card.querySelector(".wf-up").addEventListener("click", () => moveStep(i, -1));
         card.querySelector(".wf-down").addEventListener("click", () => moveStep(i, 1));
         card.querySelector(".wf-add").addEventListener("click", () => insertStep(i + 1));
+        card.querySelector(".wf-par").addEventListener("click", () => insertParallel(i));
+        const unpar = card.querySelector(".wf-unpar");
+        if (unpar) unpar.addEventListener("click", () => leaveWave(i));
         card.querySelector(".wf-del").addEventListener("click", () => {
           wf.steps.splice(i, 1);
           renderSteps();
@@ -902,19 +963,84 @@
     // adding it at the bottom and dragging it up five places is the same act
     // with more steps in it.
     function insertStep(at) {
-      const where = Math.max(0, Math.min(at, wf.steps.length));
+      let where = Math.max(0, Math.min(at, wf.steps.length));
+      // "Below this one", pressed on a step that runs alongside others, means
+      // below all of them — a step dropped into the middle of a wave would
+      // split it, which is not what the button says it does.
+      const wave = where > 0 ? W.waveOf(wf.steps, where - 1) : null;
+      if (wave && wave.members.length > 1) where = wave.members[wave.members.length - 1] + 1;
       wf.steps.splice(where, 0, newStepAfter(where - 1));
       renderSteps();
       // Straight into the empty prompt, since writing it is the next thing.
-      const card = ui.steps.children[where];
-      const box = card && card.querySelector(".wf-step-prompt");
-      if (box) {
-        box.focus();
-        try {
-          card.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        } catch (e) {
-          /* ignore */
-        }
+      focusStep(where);
+    }
+
+    // A step that runs AT THE SAME TIME as this one: same hand-off in, its own
+    // chat, and whatever follows the pair reads both replies. Three
+    // devil's-advocate reports at once instead of one after another.
+    function insertParallel(i) {
+      const wave = W.waveOf(wf.steps, i) || { members: [i] };
+      const start = wave.members[0];
+      const end = wave.members[wave.members.length - 1];
+      // A wave needs an id, and a step that didn't have one gets it now — this
+      // is the moment it stopped being on its own.
+      const group = wf.steps[start].group || "wave-" + uuid();
+      for (const m of wave.members) wf.steps[m].group = group;
+
+      // Its own chat. Steps running at once cannot share a conversation: they
+      // would post into it together and each would read the other's answer as
+      // its own. Take a chat the wave isn't already using, and add one if there
+      // isn't one to take.
+      const used = wave.members.map((m) => wf.steps[m].chatId);
+      let free = (wf.chats || []).find((c) => used.indexOf(c.id) === -1);
+      if (!free && wf.chats.length < W.MAX_CHATS) {
+        wf = W.setChatCount(wf, wf.chats.length + 1, uuid);
+        ui.count.value = wf.chats.length;
+        free = wf.chats[wf.chats.length - 1];
+        renderChats();
+        renderDocs();
+      }
+      wf.steps.splice(
+        end + 1,
+        0,
+        W.newStep(
+          {
+            chatId: (free || wf.chats[wf.chats.length - 1] || {}).id,
+            prompt: wf.steps[i].prompt,
+            carry: start > 0,
+            carryLabel: wf.steps[start].carryLabel,
+            model: wf.steps[i].model,
+            group: group,
+          },
+          uuid()
+        )
+      );
+      renderSteps();
+      focusStep(end + 1);
+    }
+
+    // Out of the wave, back to being an ordinary step — running after the ones
+    // it used to run beside.
+    function leaveWave(i) {
+      wf.steps[i] = Object.assign({}, wf.steps[i], { group: null });
+      // A wave of one is not a wave: the last two members left in it stop being
+      // parallel as well, and leaving the id on them would be a lie the moment
+      // a third step was added below.
+      const wave = W.waveOf(wf.steps, i === 0 ? 0 : i - 1);
+      if (wave && wave.members.length === 1) wf.steps[wave.members[0]].group = null;
+      renderSteps();
+    }
+
+    // Bring a new step into view — and DON'T put the cursor in it. Taking focus
+    // moves it out of whatever box you were in, which is a change you didn't
+    // ask for in return for a keystroke you'd have made anyway.
+    function focusStep(at) {
+      const card = ui.steps.children[at];
+      if (!card) return;
+      try {
+        card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } catch (e) {
+        /* ignore */
       }
     }
 

@@ -719,12 +719,25 @@
     }
   }
 
+  // A step running alongside others writes to a key of its own rather than to
+  // the run: three tabs doing read-modify-write on one record lose whichever
+  // write lands second, and what would be lost is a reply that cost a whole
+  // Claude turn. The worker collects these and writes the run once.
+  async function memberSet(msg, fields) {
+    if (!msg.waveKey) return;
+    const had = (await C.storageGet(msg.waveKey))[msg.waveKey] || {};
+    await storageSet({ [msg.waveKey]: Object.assign({}, had, fields) });
+  }
+
   async function runStepInner(msg) {
     const runId = msg.runId;
     const run = await readRun(runId);
     if (!run) return { ok: false, error: "run not found" };
     if (run.status === "canceled") return { ok: false, canceled: true, error: "canceled" };
-    if (typeof msg.stepIndex === "number" && msg.stepIndex !== run.stepIndex)
+    // Is this step still the one the run is on? A member of a wave never sits
+    // at run.stepIndex — its wave does — so it asks about the wave instead.
+    const at = typeof msg.waveStart === "number" ? msg.waveStart : msg.stepIndex;
+    if (typeof at === "number" && at !== run.stepIndex)
       return { ok: false, error: "step already moved on" };
 
     const notes = [];
@@ -768,9 +781,11 @@
         return { ok: false, error: sent.error, note: notes.join("; ") || null };
       sentAt = Date.now();
       const url = await settledUrl(20000);
-      await updateRun(runId, (r) =>
-        W.markSent(r, { chatId: msg.chatId, url, now: sentAt })
-      );
+      if (msg.waveKey) await memberSet(msg, { sent: true, url: url, sentAt: sentAt });
+      else
+        await updateRun(runId, (r) =>
+          W.markSent(r, { chatId: msg.chatId, url, now: sentAt })
+        );
       // Name it, now the conversation exists — so it has a name even if this
       // step then fails. It gets named again once the reply is in; see below.
       await nameThisChat(msg, null);
@@ -803,8 +818,16 @@
         before = { count: -1, text: null, apiText: "" };
       }
       // The message went out before this tab took the step over; anything the
-      // stream signals from here on is fair game.
-      sentAt = typeof run.sentAt === "number" ? run.sentAt : 0;
+      // stream signals from here on is fair game. A wave member's own record
+      // says when, since the run's single sentAt describes whichever member
+      // wrote it last.
+      sentAt = msg.waveKey
+        ? typeof msg.sentAtKnown === "number"
+          ? msg.sentAtKnown
+          : 0
+        : typeof run.sentAt === "number"
+        ? run.sentAt
+        : 0;
     }
 
     const {
@@ -836,7 +859,7 @@
       await updateRun(runId, (r) =>
         Object.assign({}, W.markPaused(r, Date.now()), {
           note:
-            "paused at step " + (r.stepIndex + 1) + " — your Claude usage ran out while waiting" +
+            "paused at step " + (msg.label || r.stepIndex + 1) + " — your Claude usage ran out while waiting" +
             (backAt ? ", back at " + new Date(backAt).toLocaleTimeString() : "") +
             ". The message is already in the chat, so Resume waits for the answer.",
         })
@@ -847,7 +870,7 @@
       await updateRun(runId, (r) =>
         Object.assign({}, W.markPaused(r, Date.now()), {
           note:
-            "paused at step " + (r.stepIndex + 1) +
+            "paused at step " + (msg.label || r.stepIndex + 1) +
             " — Claude's response was interrupted, so the reply is only part of one. " +
             "Read the chat, then Resume (or ask Claude to continue there first).",
         })
@@ -932,6 +955,27 @@
     // the worker because this is a claude.ai tab: its own content script keeps
     // the reading current, and by the time the worker hears about the step the
     // reply has been sitting there for a moment already.
+    // A member of a wave reports and stops there. Its reply goes to its own
+    // key, the worker folds the wave's replies together once they're all in,
+    // and the run is advanced exactly once — by the worker, past the whole
+    // wave.
+    if (msg.waveKey) {
+      await memberSet(msg, {
+        reply: text,
+        chars: text.length,
+        url: url,
+        at: Date.now(),
+        docs: (msg.files || []).length,
+      });
+      return {
+        ok: true,
+        url,
+        text: text,
+        chars: text.length,
+        note: notes.join("; ") || null,
+      };
+    }
+
     const usageNow = W.usageSample((await C.storageGet("cum_state")).cum_state);
     // …and who else was using Claude while this step ran. The meter is
     // browser-wide, so a step that shared the window with another chat — yours,

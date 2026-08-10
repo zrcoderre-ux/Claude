@@ -564,7 +564,21 @@
     return Math.round(c / 100) / 10 + "k chars";
   }
 
-  function transcriptHtml(run) {
+  // A step, or a wave of them, as one line: "2A/2B/2C" across "Drafting,
+  // Attacking, Second opinion". Continuing a run can only ever begin at a whole
+  // wave, so this is what the pickers offer.
+  function waveLabel(plan, s) {
+    return s.wave.map((i) => plan[i].label).join("/");
+  }
+  function waveChats(plan, s) {
+    const names = s.wave.map((i) => plan[i].chatName);
+    return names.length > 1 ? names.join(", ") + " (at once)" : names[0];
+  }
+
+  function transcriptHtml(run, wf) {
+    // "2A" where a wave is involved, so a chip matches what the Steps list and
+    // the editor call the same step.
+    const labels = WF.stepLabels((WF.runSource(run, wf) || {}).steps || []);
     const steps = (run.transcript || [])
       .map((t) => {
         const thin = (t.chars || 0) < 400; // a reply this short is rarely the work
@@ -574,9 +588,16 @@
           typeof t.sendMs === "number" && typeof t.replyMs === "number"
             ? ` — ${WF.formatMs(t.sendMs)} sending, ${WF.formatMs(t.replyMs)} waiting for Claude`
             : "";
+        const label = labels[t.stepIndex] || t.stepIndex + 1;
         return (
-          `<span class="${cls}"${took ? ` title="Step ${t.stepIndex + 1} took ${escapeHtml(took)}${escapeHtml(split)}"` : ""}>` +
-          `<b>${t.stepIndex + 1}</b> · ${escapeHtml(fmtChars(t.chars))}` +
+          `<span class="${cls}${t.parallel ? " par" : ""}"${
+            took
+              ? ` title="Step ${label} took ${escapeHtml(took)}${escapeHtml(split)}${
+                  t.parallel ? " — it ran alongside the other steps in its wave" : ""
+                }"`
+              : ""
+          }>` +
+          `<b>${escapeHtml(String(label))}</b> · ${escapeHtml(fmtChars(t.chars))}` +
           (t.docs ? ` · ${t.docs} doc${t.docs === 1 ? "" : "s"}` : "") +
           (took ? ` · ${escapeHtml(took)}` : "") +
           `</span>`
@@ -620,16 +641,26 @@
     const rows = plan
       .map((s) => {
         const done = s.index < run.stepIndex;
-        const here = s.index === run.stepIndex;
+        // A wave is where the run is, all of it — marking only its first member
+        // would say two of the three chats it is driving are still to come.
+        const here = s.wave.indexOf(run.stepIndex) !== -1;
         const cls = "wf-step-row" + (done ? " done" : "") + (here ? " here" : "");
         const state = done ? "done" : here ? "next" : "";
         return (
-          `<div class="${cls}">` +
-          `<div class="wf-step-no"><b>${s.index + 1}</b>${
+          `<div class="${cls}${s.parallel ? " par" : ""}">` +
+          `<div class="wf-step-no"><b>${escapeHtml(s.label)}</b>${
             state ? `<span class="wf-step-state">${state}</span>` : ""
           }</div>` +
           `<div class="wf-step-body">` +
           `<div class="wf-step-meta">${escapeHtml(s.chatName)}` +
+          // Which steps this one runs beside. Worth saying on the row rather
+          // than only in the editor: a run that is "on step 2" is really on
+          // three chats at once, and the list should look like that.
+          (s.parallel
+            ? ` · <b>at once with ${escapeHtml(
+                s.wave.filter((i) => i !== s.index).map((i) => plan[i].label).join(" & ")
+              )}</b>`
+            : "") +
           (s.modelOn ? ` · ${escapeHtml(s.modelOn)}${s.modelOverride ? " (this step only)" : ""}` : "") +
           (s.carry ? ` · carries the previous reply as “${escapeHtml(s.carryLabel)}”` : "") +
           (s.docIds.length ? ` · ${s.docIds.length} document${s.docIds.length === 1 ? "" : "s"}` : "") +
@@ -705,11 +736,15 @@
   function rerunPanel(run, wf) {
     if (!rerunDraft) return "";
     const plan = WF.planRun(WF.runSource(run, wf));
+    // Only the head of a wave is offered: its members run together, so
+    // "start at 2B" isn't a thing that can happen — starting there would leave
+    // the step after the wave waiting on replies nothing was going to write.
     const opts = plan
+      .filter((s) => s.index === s.waveStart)
       .map(
-        (s, i) =>
-          `<option value="${i}"${i === rerunDraft.stepIndex ? " selected" : ""}>` +
-          `Step ${i + 1} — ${escapeHtml(s.chatName)}</option>`
+        (s) =>
+          `<option value="${s.index}"${s.index === rerunDraft.stepIndex ? " selected" : ""}>` +
+          `Step ${escapeHtml(waveLabel(plan, s))} — ${escapeHtml(waveChats(plan, s))}</option>`
       )
       .join("");
     const chosen = plan[rerunDraft.stepIndex];
@@ -814,10 +849,11 @@
     const plan = WF.planRun(source);
     const src = WF.carrySource(source, fixDraft.stepIndex);
     const opts = plan
+      .filter((s) => s.index === s.waveStart)
       .map(
-        (s, i) =>
-          `<option value="${i}"${i === fixDraft.stepIndex ? " selected" : ""}>` +
-          `Step ${i + 1} — ${escapeHtml(s.chatName)}</option>`
+        (s) =>
+          `<option value="${s.index}"${s.index === fixDraft.stepIndex ? " selected" : ""}>` +
+          `Step ${escapeHtml(waveLabel(plan, s))} — ${escapeHtml(waveChats(plan, s))}</option>`
       )
       .join("");
     const chatRows = ((wf && wf.chats) || [])
@@ -1241,7 +1277,7 @@
           (links ? `<span>Chats: ${links}</span>` : "") +
           `</div>` +
           (WF.canRetrigger(run) ? retriggerBar(run) : "") +
-          (run.transcript && run.transcript.length ? transcriptHtml(run) : "") +
+          (run.transcript && run.transcript.length ? transcriptHtml(run, wf) : "") +
           (run.error ? `<div class="job-err">${escapeHtml(run.error)}</div>` : "") +
           (run.status === "waiting" ? `<div class="job-hold">${escapeHtml(runHoldText(run))}</div>` : "") +
           (run.note ? `<div class="job-note">${escapeHtml(run.note)}</div>` : "") +

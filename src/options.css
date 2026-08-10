@@ -562,6 +562,13 @@ td .approx {
   color: #a33227;
 }
 
+/* A step that ran alongside others. Underlined rather than coloured: the
+   colours here already mean documents and thin replies, and a wave is a
+   different kind of fact about a step. */
+.run-step.par {
+  border-bottom: 2px solid rgba(201, 100, 66, 0.55);
+}
+
 .job-note {
   font-size: 12px;
   line-height: 1.55;
@@ -1021,6 +1028,8 @@ td .approx {
   .run-step b { color: #f0efea; }
   .run-step.has-docs { background: rgba(201, 100, 66, 0.22); }
   .run-step.thin { background: rgba(210, 63, 49, 0.22); color: #f0b5ad; }
+  .run-step.par { border-bottom-color: rgba(224, 135, 101, 0.7); }
+  .wf-step-row.par { border-left-color: rgba(224, 135, 101, 0.7); }
   .job-note { color: #8a877f; border-left-color: rgba(255, 255, 255, 0.14); }
   .job-hold { color: #7fb0e8; }
   .job-badge { color: #a5a29a; background: rgba(255, 255, 255, 0.08); }
@@ -1110,6 +1119,13 @@ td .approx {
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 9px;
   background: rgba(0, 0, 0, 0.015);
+}
+
+/* Steps that run at the same time, joined down the side so the group reads as
+   one thing the run is doing rather than three it will do in turn. */
+.wf-step-row.par {
+  border-left: 3px solid rgba(201, 100, 66, 0.55);
+  padding-left: 9px;
 }
 
 .wf-step-row {
