@@ -627,4 +627,27 @@
   }, RESCAN_MS);
 
   window.addEventListener("resize", keepOnScreen);
+
+  // Jumping to a step's message, for the workflow index next door. It knows
+  // which prompt it wants and nothing about where messages are; this knows how
+  // to find one that may not even be rendered. See seek().
+  window.CUMTocJump = {
+    toPrompt: function (prompt) {
+      const want = T.entryKey(prompt);
+      if (!want) return false;
+      // The same rule the step marks use: a run's message is the prompt with
+      // the carried material under it, so the turn BEGINS with the prompt.
+      let at = entries.findIndex(
+        (e) => e.key === want || (want.length >= 12 && e.key.indexOf(want) === 0)
+      );
+      // Nothing in the list yet — the page may still be loading. Say so rather
+      // than scrolling somewhere arbitrary.
+      if (at === -1) return false;
+      go(at);
+      return true;
+    },
+    ready: function () {
+      return entries.length > 0;
+    },
+  };
 })();

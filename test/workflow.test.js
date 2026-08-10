@@ -1203,6 +1203,43 @@ test("restarting inside a wave restarts the wave", () => {
   assert.equal(W.reviseRun(run, { stepIndex: 4 }, 1770000000000).stepIndex, 4);
 });
 
+test("a run is an index you can move around by, finished or not", () => {
+  const wf = parWf();
+  const run = Object.assign(W.newRun(wf, "r", 1770000000000, null, []), {
+    status: "running",
+    stepIndex: 2,
+    chats: {
+      c1: { url: "https://claude.ai/chat/11111111-1111-1111-1111-111111111111" },
+      c2: { url: "https://claude.ai/chat/22222222-2222-2222-2222-222222222222" },
+    },
+    transcript: [{ stepIndex: 0, at: 1770000060000, chars: 900, ms: 60000 }],
+  });
+
+  const dir = W.runDirectory(run, wf);
+  assert.deepEqual(dir.map((s) => s.label), ["1", "2A", "2B", "2C", "3"]);
+  assert.equal(dir[0].done, true);
+  assert.equal(dir[0].at, 1770000060000);
+  // Where the run is: the whole wave, since all of it is what it's doing.
+  assert.deepEqual(dir.map((s) => s.here), [false, true, true, true, false]);
+  // Somewhere to go, but only where that conversation exists yet.
+  assert.match(dir[0].url, /11111111/);
+  assert.equal(dir[2].url, null, "a step whose chat hasn't opened has nowhere to send you");
+
+  // Which chat this conversation is — asked by a page that knows only its own
+  // id, so it can find the run it belongs to.
+  assert.equal(W.runHasConversation(run, "22222222-2222-2222-2222-222222222222"), "c2");
+  assert.equal(W.runHasConversation(run, "33333333-3333-3333-3333-333333333333"), null);
+  assert.equal(W.runHasConversation(null, "x"), null);
+
+  // A finished run still indexes: reading back through what it did is most of
+  // what this is for, and nothing about it is "current" any more.
+  const done = W.runDirectory(Object.assign({}, run, { status: "done", stepIndex: 5 }), wf);
+  assert.deepEqual(done.map((s) => s.here), [false, false, false, false, false]);
+  assert.equal(done[0].done, true);
+  assert.match(done[1].url, /22222222/);
+  assert.deepEqual(W.runDirectory(null, wf), []);
+});
+
 test("a run records when it ran, not only what its steps cost", () => {
   const start = 1770000000000;
   const transcript = [

@@ -73,6 +73,7 @@
         "src/conv.js",
         "src/headerslot.js",
         "src/toc-panel.js",
+        "src/run-panel.js",
         "src/save-chat.js",
         "src/stamps.js",
         "src/incognito-watch.js"

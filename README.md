@@ -58,6 +58,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
   **which step it was**. Opens from a `☰` button beside Save; starts minimized,
   draggable, and it remembers where you put it. See
   [Table of contents](#table-of-contents).
+- **A workflow's own contents** — in a conversation a run owns, a second `⇄`
+  button beside the contents one indexes **the run**: every step, in every chat,
+  in order. Click one and you land on it, whichever conversation it happened in.
+  Works after the run has finished, which is when you mostly want it. See
+  [The workflow's own contents](#the-workflows-own-contents).
 - **The time under every turn** — claude.ai shows one relative time per
   conversation and keeps the real one behind a hover. Every turn, yours and
   Claude's, gets a line under it: the clock time it was sent, and how long after
@@ -940,6 +945,37 @@ where that entry should be, see which message actually turned up, and correct
 from there — a few passes, each landing closer, then the usual jump to the end of
 the prompt once the real message is mounted.
 
+## The workflow's own contents
+
+The contents list indexes the conversation you are in. In a chat a **run** owns,
+a second button beside it — `⇄` — indexes **the run**: every step of it, in
+order, across all of its chats.
+
+That is the thing a multi-chat workflow otherwise makes hard. *"What did the
+advocate actually say about this paragraph"* is a different tab, and finding it
+by hand means remembering which one. Here it is a click: the step you pick is
+opened **and scrolled to**, not merely opened.
+
+Each row is a step — its number (`2B` where steps ran at once), the first line of
+its prompt that says something, the chat it ran in, and when it landed. The step
+you're reading is marked, and so is the one the run is currently on; those are
+different facts, and the panel says both. A step whose chat the run hasn't opened
+yet has nowhere to send you and says so rather than doing nothing.
+
+**Moving between chats** is the worker's job, since it owns the tabs: it finds
+the conversation that step ran in, brings it forward, and tells it which message
+to scroll to — retrying, because a tab that has only just opened has no content
+script listening yet and no page to scroll. This is the one place a run's window
+is deliberately given focus. You clicked a step in order to go and read it;
+leaving you where you were would be the bug.
+
+**It works after the run has finished**, which is when you mostly want it —
+nothing here asks whether the run is still going. The one difference: a
+conversation that has since been closed is reopened **in the run's own window**
+while the run is live, keeping its chats together, and **beside whatever you're
+reading** once it isn't, because by then it's ordinary browsing. Runs are kept
+until you delete them, so the index outlives the work.
+
 ## Timestamps
 
 claude.ai shows one relative time per conversation — *"1 hour ago"* — and keeps
@@ -1185,6 +1221,7 @@ src/stamp.js           When each turn happened, and the gap between (pure)
 src/stamps.js          Puts that time under every turn on the page
 src/conv.js            The conversation payload, fetched once and shared
 src/toc-panel.js       The floating table of contents itself
+src/run-panel.js       The workflow's own contents — every step, every chat
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
 test/estimate.test.js  Unit tests for the tenths-place calibrator
