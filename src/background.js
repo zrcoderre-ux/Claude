@@ -1747,6 +1747,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;
   }
+  // A page borrowing this worker's clock. Chrome throttles timers in a tab that
+  // isn't on screen — about one wake-up a minute — and a run's tabs are behind
+  // whatever you're doing by design, so a page that waited on its own clock
+  // waited minutes for fractions of a second. The worker is not a page and is
+  // not throttled. Capped, and the page races this against its own timer, so
+  // the worst case is the throttled wait it would have had anyway.
+  if (msg && msg.type === "cum-wait") {
+    const ms = Math.max(0, Math.min(25000, Math.floor(msg.ms) || 0));
+    setTimeout(() => {
+      try {
+        sendResponse({ ok: true });
+      } catch (e) {
+        /* the page went away mid-wait */
+      }
+    }, ms);
+    return true;
+  }
   // Carry a stopped run on. With no patch it picks up exactly where it stopped
   // — including waiting for a reply to a message that already went out, rather
   // than posting it twice. With a patch, the operator has said where to resume

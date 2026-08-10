@@ -26,7 +26,67 @@
     editor: 'div[data-testid="chat-input"]',
   };
 
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // ---- waiting, in a tab nobody is looking at -----------------------------
+  //
+  // Chrome throttles timers in a page that isn't on screen: after a few minutes
+  // hidden, setTimeout is held to about ONE WAKE-UP A MINUTE. A run drives tabs
+  // that sit deliberately behind whatever you're doing, so every wait in the
+  // send path — each of them a fraction of a second — became a minute, and a
+  // step looked like it was waiting for you to come and watch it.
+  //
+  // It used to be masked: the run's window was re-maximized before each step,
+  // which raised it, which un-hid the tab. That is the focus theft that had to
+  // go, and this is the half of the job that went with it.
+  //
+  // So a hidden page borrows the WORKER's clock. The worker is not a page and is
+  // not throttled. Raced against the ordinary timer and capped, because a worker
+  // restarted mid-wait would never answer and a step that hangs is worse than a
+  // step that is slow.
+  const WORKER_WAIT_MAX = 25000;
+  const localSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function hidden() {
+    try {
+      return document.visibilityState === "hidden";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function workerSleep(ms) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (how) => {
+        if (done) return;
+        done = true;
+        resolve(how);
+      };
+      try {
+        chrome.runtime.sendMessage({ type: "cum-wait", ms: ms }, (res) => {
+          // A worker that was restarted mid-wait answers with an error rather
+          // than not at all. Reported, so the caller falls back to its own
+          // clock instead of waking early.
+          if (chrome.runtime.lastError || !res) return finish("failed");
+          finish("worker");
+        });
+      } catch (e) {
+        finish("failed");
+      }
+    });
+  }
+
+  async function sleep(ms) {
+    let left = Math.max(0, Math.floor(ms) || 0);
+    // Short waits aren't worth a message, and a visible page has a clock of its
+    // own that works.
+    if (left < 100 || !hidden()) return localSleep(left);
+    while (left > 0) {
+      const chunk = Math.min(left, WORKER_WAIT_MAX);
+      const how = await Promise.race([workerSleep(chunk), localSleep(chunk).then(() => "local")]);
+      if (how === "failed") await localSleep(chunk);
+      left -= chunk;
+    }
+  }
   const isCodePage = () => /^\/code(\/|$)/.test(location.pathname);
 
   // Deliberately NOT offsetParent: that is null for any position:fixed element,
@@ -120,7 +180,10 @@
         }
         if (el) return resolve(el);
         if (Date.now() > deadline) return resolve(null);
-        setTimeout(poll, 200);
+        // Through sleep(), so this keeps polling at something like the rate it
+        // asks for in a tab that isn't on screen. A throttled poll here is a
+        // step waiting a minute for a composer that was already there.
+        sleep(200).then(poll);
       })();
     });
   }
