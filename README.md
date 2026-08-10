@@ -745,6 +745,19 @@ Nothing is ever activated or brought forward, so a nine-step workflow can grind
 away for an hour while you work in your own windows — the run never takes the
 screen, and its tabs never pile into whatever you're using.
 
+**A run's tabs borrow the worker's clock.** Chrome throttles timers in a page
+that isn't on screen: after a few minutes hidden, `setTimeout` is held to about
+one wake-up a minute. A run's tabs are hidden by design, so every wait in the
+send path — each of them a fraction of a second — was becoming a minute, and a
+step looked like it was waiting for you to come and watch it. (It was masked for
+a while by the window being re-maximized before each step, which raised it, which
+un-hid the tab — the focus theft above.) So a hidden page asks the background
+worker to time its waits: the worker is not a page and is not throttled. Capped
+at 25 seconds a time and raced against the page's own timer, so a worker
+restarted mid-wait costs a slow step rather than a stuck one. The step heartbeat
+runs on the same clock, since a lapsed beat invites the worker to take over a
+step that is still going.
+
 The window also gets **Options, pinned at its left edge**, opened on the
 Workflows section — the run's controls in the window where you watch it happen,
 rather than a tab away in whatever window you were in when you started it. Steps,

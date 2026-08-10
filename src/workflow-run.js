@@ -484,10 +484,23 @@
     // A timestamp under its own key, not a rewrite of the run. Writing the run
     // here would mean posting a copy read up to 20 seconds ago — enough to undo
     // a pause or a cancel the worker set in between.
+    // A loop on C.sleep rather than setInterval, because this tab is hidden by
+    // design and a hidden page's timers are throttled to about one wake-up a
+    // minute — which would let the beat lapse and invite the worker to take
+    // over a step this tab is in the middle of. C.sleep borrows the worker's
+    // clock when the page is hidden; see the note in src/composer.js.
+    let alive = true;
     const beat = () => storageSet({ [W.beatKey(runId)]: Date.now() });
     beat();
-    const id = setInterval(beat, HEARTBEAT_MS);
-    return () => clearInterval(id);
+    (async () => {
+      while (alive) {
+        await C.sleep(HEARTBEAT_MS);
+        if (alive) beat();
+      }
+    })();
+    return () => {
+      alive = false;
+    };
   }
 
   // Wait for a reply that wasn't there before this step's message went out, and
