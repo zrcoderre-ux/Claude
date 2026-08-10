@@ -73,6 +73,10 @@
         label: label || "(no text)",
         empty: !label,
         chars: text.length,
+        // When it was sent, where that's known. The page can't say — only the
+        // conversation payload carries times — so this is null for a list built
+        // from what's rendered.
+        at: (typeof m === "object" && typeof m.at === "number" && m.at) || null,
       });
     }
     return out;
@@ -153,13 +157,62 @@
    * length, so one step lands near rather than on — hence the caller loops,
    * measuring where it actually got to each time.
    */
+  /**
+   * Which of these messages a workflow sent, and as which step.
+   *
+   * A run's message is its step's prompt with the carried material pasted under
+   * it, so the rendered turn BEGINS with the prompt — which is what this matches
+   * on. Steps are taken in order and each claims the first message after the one
+   * before it claimed: a chat that was asked the same thing twice gets the
+   * second occurrence for the second step, rather than both steps pointing at
+   * the first.
+   *
+   * `steps` are the run's steps that ran in THIS conversation, in order, each
+   * with the label to show ("2B") and the prompt that was sent.
+   */
+  const MIN_PREFIX = 12;
+  function stepMarks(entries, steps) {
+    const out = (entries || []).map((e) => Object.assign({}, e));
+    let from = 0;
+    for (const s of steps || []) {
+      const want = entryKey(s && s.prompt);
+      if (!want) continue;
+      let hit = -1;
+      for (let i = from; i < out.length; i++) {
+        if (out[i].step) continue;
+        const key = str(out[i].key);
+        // A prompt long enough to be distinctive is matched as a prefix, since
+        // the message carries material after it. A short one — "Continue" —
+        // has to match outright, or it would claim the first message that
+        // happened to start with the same word.
+        const same = want.length >= MIN_PREFIX ? key.indexOf(want) === 0 : key === want;
+        if (same) {
+          hit = i;
+          break;
+        }
+      }
+      if (hit === -1) continue;
+      out[hit] = Object.assign({}, out[hit], { step: s.label, run: s.runName || null });
+      from = hit + 1;
+    }
+    return out;
+  }
+
   function seekDelta(fromIndex, toIndex, span, count) {
     const n = Number(count);
     if (!n || n < 1) return 0;
     return Math.round(((Number(toIndex) - Number(fromIndex)) * Number(span || 0)) / n);
   }
 
-  const api = { tocLabel, tocEntries, entryKey, mergeWindows, seekDelta, MAX_LABEL };
+  const api = {
+    tocLabel,
+    tocEntries,
+    entryKey,
+    mergeWindows,
+    stepMarks,
+    seekDelta,
+    MAX_LABEL,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMToc = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

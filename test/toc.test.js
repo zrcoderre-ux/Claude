@@ -121,6 +121,42 @@ test("a merge that can't find any overlap keeps both halves", () => {
   assert.deepEqual(T.mergeWindows(null, null), []);
 });
 
+test("a workflow's own prompts are marked with the step that sent them", () => {
+  // A run's message is its step's prompt with the carried material pasted
+  // under it, so the turn BEGINS with the prompt.
+  const entries = win(
+    "Draft the tentative ruling on the attached motion",
+    "Attack the draft ruling below.\n\n----- BEGIN DRAFT -----\nblah\n----- END DRAFT -----",
+    "something I typed myself",
+    "Attack the draft ruling below.\n\n----- BEGIN DRAFT -----\nrevised\n----- END DRAFT -----"
+  );
+  const marked = T.stepMarks(entries, [
+    { label: "1", prompt: "Draft the tentative ruling on the attached motion", runName: "Smith" },
+    { label: "2A", prompt: "Attack the draft ruling below." },
+    { label: "4", prompt: "Attack the draft ruling below." },
+  ]);
+  assert.deepEqual(marked.map((e) => e.step || null), ["1", "2A", null, "4"]);
+  assert.equal(marked[0].run, "Smith");
+  // The one you typed keeps its place in the numbering and is simply unmarked.
+  assert.equal(marked[2].step, undefined);
+
+  // Steps are claimed in order: the second identical prompt belongs to the
+  // second step, not both of them to the first.
+  const twice = T.stepMarks(win("Continue with the next section", "Continue with the next section"), [
+    { label: "2", prompt: "Continue with the next section" },
+    { label: "3", prompt: "Continue with the next section" },
+  ]);
+  assert.deepEqual(twice.map((e) => e.step), ["2", "3"]);
+
+  // A prompt too short to be distinctive has to match outright, or it would
+  // claim any message that opened with the same word.
+  const shortish = T.stepMarks(win("Continue please, with the costs section"), [
+    { label: "2", prompt: "Continue" },
+  ]);
+  assert.equal(shortish[0].step, undefined);
+  assert.deepEqual(T.stepMarks(entries, []), entries);
+});
+
 test("seeking an unmounted message aims by how far through the chat it is", () => {
   // Nothing to scroll TO — the entry isn't rendered — so the first move is a
   // proportion of the scroll, and the caller measures where it landed and goes
