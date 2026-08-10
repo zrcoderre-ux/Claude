@@ -1057,6 +1057,152 @@ test("timingSummary describes a run by its median step, not its worst", () => {
   assert.equal(t.longest.stepIndex, 1);
 });
 
+// ---- steps that run at the same time ---------------------------------------
+const parWf = () => ({
+  id: "wf",
+  name: "Three advocates",
+  chats: [
+    { id: "c1", name: "Drafting" },
+    { id: "c2", name: "Advocate A" },
+    { id: "c3", name: "Advocate B" },
+    { id: "c4", name: "Advocate C" },
+  ],
+  steps: [
+    { id: "s1", chatId: "c1", prompt: "Draft it" },
+    { id: "s2", chatId: "c2", prompt: "Attack it", group: "g" },
+    { id: "s3", chatId: "c3", prompt: "Attack it", group: "g" },
+    { id: "s4", chatId: "c4", prompt: "Attack it", group: "g" },
+    { id: "s5", chatId: "c1", prompt: "Revise" },
+  ],
+  docs: [],
+});
+
+test("adjacent steps sharing a group are one wave, and are numbered as one", () => {
+  const wf = parWf();
+  assert.deepEqual(W.stepWaves(wf.steps).map((w) => w.members), [[0], [1, 2, 3], [4]]);
+  assert.deepEqual(W.stepLabels(wf.steps), ["1", "2A", "2B", "2C", "3"]);
+  // A group of one is an ordinary step: a letter would imply siblings that
+  // aren't there.
+  assert.deepEqual(W.stepLabels([{ id: "a", group: "g" }, { id: "b" }]), ["1", "2"]);
+
+  // Adjacency is half the definition. A step dragged in between two members
+  // splits them — an id acting at a distance would keep two steps that are no
+  // longer next to each other silently in lockstep.
+  const split = wf.steps.slice();
+  split.splice(2, 0, { id: "x", chatId: "c1", prompt: "interloper" });
+  assert.deepEqual(W.stepWaves(split).map((w) => w.members), [[0], [1], [2], [3, 4], [5]]);
+});
+
+test("a wave takes one hand-off and gives back all of them", () => {
+  const plan = W.planRun(parWf());
+  // Every member carries from the step before the WAVE — 2B does not read 2A,
+  // which is the whole of what makes them parallel rather than a queue.
+  assert.deepEqual(plan.map((s) => s.carry), [false, true, true, true, true]);
+  assert.deepEqual(plan.map((s) => s.parallel), [false, true, true, true, false]);
+  assert.deepEqual(plan[2].wave, [1, 2, 3]);
+  assert.equal(plan[2].waveStart, 1);
+  // And each hands on to the step AFTER the wave, so each needs its marker —
+  // 2A's reader is 3, not 2B.
+  assert.deepEqual(plan.map((s) => s.handsOn), [true, true, true, true, false]);
+
+  // Which chats step 3 is fed from: all three of them, named so the replies can
+  // be told apart.
+  const src = W.carrySource(parWf(), 4);
+  assert.equal(src.needed, true);
+  assert.deepEqual(src.sources.map((s) => s.chatName), ["Advocate A", "Advocate B", "Advocate C"]);
+  assert.deepEqual(src.sources.map((s) => s.label), [
+    "Advocate A (2A)",
+    "Advocate B (2B)",
+    "Advocate C (2C)",
+  ]);
+});
+
+test("steps that run at once must not share a chat", () => {
+  const wf = parWf();
+  assert.deepEqual(W.validate(wf), []);
+  wf.steps[2].chatId = "c2"; // 2B into 2A's conversation
+  const problems = W.validate(wf);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /2A and 2B/);
+  assert.match(problems[0], /same time/);
+});
+
+test("a wave's replies are folded into one hand-off, labelled", () => {
+  assert.equal(W.foldWave([{ label: "A", text: "only one" }]), "only one");
+  const folded = W.foldWave([
+    { label: "Advocate A (2A)", text: "first report" },
+    { label: "Advocate B (2B)", text: "second report" },
+    { label: "", text: "   " }, // a member with nothing to say adds nothing
+  ]);
+  assert.match(folded, /ADVOCATE A \(2A\)/);
+  assert.match(folded, /ADVOCATE B \(2B\)/);
+  assert.ok(folded.indexOf("first report") < folded.indexOf("second report"));
+  assert.equal(W.foldWave([]), "");
+});
+
+test("a finished wave advances the run past all of it at once", () => {
+  const now = 1770000000000;
+  const run = {
+    id: "r",
+    stepIndex: 1,
+    totalSteps: 5,
+    status: "running",
+    phase: "sending",
+    transcript: [{ stepIndex: 0, ms: 1000 }],
+    chats: {},
+    stepStartedAt: now - 60_000,
+    stepUsage: { weekly: 0.2, session: 0.1, weeklyResetAt: 1, sessionResetAt: 2 },
+  };
+  const next = W.applyWaveResult(run, {
+    members: [
+      { stepIndex: 1, chatId: "c2", chatName: "Advocate A", label: "A", reply: "one", url: "u2", ms: 40_000 },
+      { stepIndex: 2, chatId: "c3", chatName: "Advocate B", label: "B", reply: "two", url: "u3", ms: 55_000 },
+      { stepIndex: 3, chatId: "c4", chatName: "Advocate C", label: "C", reply: "three", url: "u4", ms: 30_000 },
+    ],
+    now: now,
+    total: 5,
+    usage: { weekly: 0.26, session: 0.13, weeklyResetAt: 1, sessionResetAt: 2 },
+    usageClean: true,
+  });
+  assert.equal(next.stepIndex, 4, "past the whole wave, not one member of it");
+  assert.equal(next.status, "running");
+  // All three replies travel on, each named.
+  assert.match(next.lastReply, /one/);
+  assert.match(next.lastReply, /three/);
+  assert.deepEqual(Object.keys(next.chats).sort(), ["c2", "c3", "c4"]);
+  // One row per member, each with its own time — the wave took as long as its
+  // slowest, so adding them up would report the saving as a cost.
+  assert.deepEqual(next.transcript.map((t) => t.stepIndex), [0, 1, 2, 3]);
+  assert.deepEqual(next.transcript.slice(1).map((t) => t.ms), [40_000, 55_000, 30_000]);
+  // Usage belongs to the wave: three chats answering at once move one meter and
+  // there is no honest way to split it, so it is recorded once.
+  const used = next.transcript.slice(1).map((t) => t.usedWeekly);
+  assert.equal(typeof used[0], "number");
+  assert.deepEqual(used.slice(1), [null, null]);
+  assert.equal(next.transcript[1].usageWave, true);
+  assert.equal(next.transcript[2].usageShared, true, "and says why it's blank");
+
+  // The last wave in a workflow finishes the run.
+  const done = W.applyWaveResult(Object.assign({}, run, { totalSteps: 3 }), {
+    members: [{ stepIndex: 1, chatId: "c2", reply: "x" }, { stepIndex: 2, chatId: "c3", reply: "y" }],
+    now: now,
+    total: 3,
+  });
+  assert.equal(done.status, "done");
+  assert.equal(done.finishedAt, now);
+});
+
+test("restarting inside a wave restarts the wave", () => {
+  const wf = parWf();
+  const run = W.newRun(wf, "r", 1770000000000, null, []);
+  // Picking 2B would leave step 3 waiting on replies nothing was going to
+  // write: the members run together or not at all.
+  const revised = W.reviseRun(Object.assign({}, run, { status: "error" }), { stepIndex: 2 }, 1770000000000);
+  assert.equal(revised.stepIndex, 1);
+  // A step outside a wave is left where it was asked for.
+  assert.equal(W.reviseRun(run, { stepIndex: 4 }, 1770000000000).stepIndex, 4);
+});
+
 test("a run records when it ran, not only what its steps cost", () => {
   const start = 1770000000000;
   const transcript = [

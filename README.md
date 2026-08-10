@@ -245,6 +245,14 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   a caret parked in the middle can't have the rest rewritten under it. Where a
   prompt has been written in several places, the most-used comes first.
 
+- **Steps that run at the same time** — press `⇉` on a step and you get another
+  one *beside* it rather than after it: `2A`, `2B`, `2C`. They are all handed the
+  same thing (step 1's reply), each works in its own chat, none of them sees the
+  others, and step 3 is handed **all three replies at once**. Three
+  devil's-advocate reports written in parallel and then read against each other,
+  in the time one of them used to take. See
+  [Steps that run at the same time](#steps-that-run-at-the-same-time).
+
 - **Adding a step where you want it** — every step's card carries a `＋` beside
   its `✕`, which puts a new step directly below that one and drops the cursor in
   its empty prompt. `+ Add step` at the bottom still adds to the end. Building a
@@ -284,6 +292,52 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   the answer that arrives after auto-continue clicks **Continue** is the one that
   travels. The check applies **only where something is pasted onward**: a step
   whose reply stays in its own chat can say anything at all.
+
+### Steps that run at the same time
+
+Some work fans out. Three devil's-advocate passes over one draft don't need to
+know about each other — they need to be *independent*, so that where they agree
+is worth something and where they differ is worth more. Run one after another,
+that's three long turns end to end; run together, it's one.
+
+Press `⇉` on a step to add another **beside** it. The pair becomes a **wave**,
+numbered `2A`, `2B`, `2C`, drawn joined down the side in the editor:
+
+- every member is handed **the same thing** — the reply from the step before the
+  wave, exactly as a lone step 2 would have been;
+- each works in **its own chat**, and none of them ever sees the others. The
+  editor gives a new member a free chat automatically, adding one if it has to,
+  and a workflow whose parallel steps share a conversation won't save: they would
+  post into it together and each would read the other's answer as its own;
+- **the step after the wave gets all of their replies**, folded into one hand-off
+  with each labelled by the chat it came from — which is what makes "see if they
+  differ" a thing you can ask for in the next prompt;
+- **step 3 waits for every one of them.** A wave lands as a unit or not at all.
+
+`⇉ at once` on a card says what a step runs beside; clicking it takes that step
+back out of the wave. `＋` on a wave member adds a step *after the whole wave*,
+not into the middle of it — a step dropped between two members would split them,
+and adjacency is half of what defines a wave (dragging one out is the other half,
+and does exactly that on purpose).
+
+**How it runs.** The worker opens each member's chat, sends all of them, and
+waits for all of them. Each page reports to a key of its own and never writes the
+run: three tabs doing read-modify-write on one record would lose whichever write
+landed second, and what would be lost is a reply that cost a full Claude turn.
+The worker collects them and writes once, past the whole wave. A member that has
+already answered is **not asked again** when a wave is resumed — its reply is
+kept and only the missing ones are re-sent.
+
+**What it costs.** Each member is timed separately, and the wave takes as long as
+its *slowest* — adding them up would report the saving as a cost. Usage can't be
+split: three chats answering at once move one meter, so the figure is recorded
+against the wave rather than divided between its members, and the others say why
+they're blank.
+
+**One honest caveat.** Chrome throttles timers in tabs that aren't in front, so
+the members you aren't looking at may notice their replies a minute or so late.
+Nothing is lost and the run doesn't stall — but three at once is not quite three
+times faster in the way the arithmetic suggests.
 
 ### A workflow is a template
 

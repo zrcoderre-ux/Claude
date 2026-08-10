@@ -47,6 +47,14 @@
   function beatKey(id) {
     return BEAT_PREFIX + id;
   }
+  // And a step running alongside others gets a key of its own, for the same
+  // reason twice over: three tabs are working at once, and each has to be able
+  // to say "mine went out" and "mine came back" without reading and rewriting
+  // a record the other two are also holding. The worker collects them.
+  const MEMBER_PREFIX = "cum_wf_wave_";
+  function memberKey(runId, stepIndex) {
+    return MEMBER_PREFIX + runId + "_" + stepIndex;
+  }
   const MAX_CHATS = 6;
   // A single step is one whole Claude turn: a long ruling with three tool calls,
   // or a verification pass over four uploaded papers, so an hour of patience is
@@ -153,7 +161,85 @@
       // drafted by one model and criticised by another, which is the whole
       // point of being able to try combinations.
       model: trimmed(f.model) || null,
+      // Steps sharing a group id, and sitting next to each other, run at the
+      // same time — see stepWaves.
+      group: trimmed(f.group) || null,
     };
+  }
+
+  // ---- parallel steps ------------------------------------------------------
+  //
+  // A WAVE is a run of adjacent steps that share a group id. They all take the
+  // same hand-off from whatever came before the wave, none of them sees any of
+  // the others, and the step after the wave takes ALL of their replies. Three
+  // devil's-advocate reports written at once, then read side by side.
+  //
+  // Adjacency is half the definition, not decoration: dragging a step in
+  // between two members splits them, which is the visible answer to "what did
+  // that reorder just do" — an id acting at a distance would silently keep two
+  // now-separated steps in lockstep.
+  //
+  // Every step belongs to a wave; most waves have one member, which is what an
+  // ordinary linear workflow is.
+  const WAVE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  function stepWaves(steps) {
+    const out = [];
+    (steps || []).forEach((s, i) => {
+      const group = trimmed(s && s.group);
+      const last = out[out.length - 1];
+      if (
+        group &&
+        last &&
+        last.group === group &&
+        last.members[last.members.length - 1] === i - 1
+      ) {
+        last.members.push(i);
+        return;
+      }
+      out.push({ group: group || null, index: out.length, members: [i] });
+    });
+    return out;
+  }
+
+  // "1", "2A", "2B", "2C", "3" — what to call each step. A wave of one is just
+  // its number: a letter on a step with no siblings would suggest there are
+  // others somewhere.
+  function stepLabels(steps) {
+    const labels = [];
+    stepWaves(steps).forEach((w) => {
+      w.members.forEach((idx, mi) => {
+        labels[idx] =
+          String(w.index + 1) +
+          (w.members.length > 1 ? WAVE_LETTERS[mi] || String(mi + 1) : "");
+      });
+    });
+    return labels;
+  }
+
+  // The wave a step is in, and where that step sits within it.
+  function waveOf(steps, index) {
+    for (const w of stepWaves(steps)) {
+      const at = w.members.indexOf(index);
+      if (at !== -1) return Object.assign({}, w, { at: at });
+    }
+    return null;
+  }
+
+  // Several replies as one piece of text, each under a heading naming where it
+  // came from. Fenced by a line rather than a Markdown heading because the
+  // replies contain headings of their own, and the join has to survive being
+  // read by something that only sees the text.
+  function foldWave(parts) {
+    const rows = (parts || []).filter((p) => p && trimmed(p.text));
+    if (!rows.length) return "";
+    if (rows.length === 1) return trimmed(rows[0].text);
+    return rows
+      .map((p, i) => {
+        const name = trimmed(p.label) || "Reply " + (WAVE_LETTERS[i] || i + 1);
+        return "===== " + name.toUpperCase() + " =====\n\n" + trimmed(p.text);
+      })
+      .join("\n\n");
   }
 
   // ---- documents ----------------------------------------------------------
@@ -311,7 +397,12 @@
   // silently drop a hand-off in the middle of a reshuffle. Reordering therefore
   // gives such a step its default back, and only carries a genuine no across.
   function positionForbidsCarry(list, i) {
-    return i === 0 || !!(list[i - 1] && list[i - 1].chatId === list[i].chatId);
+    const wave = waveOf(list, i);
+    const start = wave ? wave.members[0] : i;
+    // A wave carries from what came before it, so what matters for every member
+    // is the step before the FIRST of them — 2B's neighbour is 2A, but 2A is
+    // not where 2B's material comes from.
+    return start === 0 || !!(list[start - 1] && list[start - 1].chatId === list[i].chatId);
   }
 
   function reorderSteps(steps, ids) {
@@ -477,11 +568,10 @@
       Object.assign({}, s, {
         // Nothing to carry into the first step, and nothing to carry between
         // two steps in the SAME chat: that conversation already has it, and
-        // pasting it back in wastes the context it's already holding.
-        carry:
-          i === 0 || (placed[i - 1] && placed[i - 1].chatId === s.chatId)
-            ? false
-            : s.carry !== false,
+        // pasting it back in wastes the context it's already holding. Measured
+        // from the step before the WAVE, so steps that run at once are all
+        // handed the same thing rather than each other's.
+        carry: positionForbidsCarry(placed, i) ? false : s.carry !== false,
       })
     );
     wf.docs = (wf.docs || []).map((d) =>
@@ -570,6 +660,23 @@
     for (const s of (wf && wf.steps) || []) {
       if (!trimmed(s.prompt)) {
         problems.push("Every step needs a prompt.");
+        break;
+      }
+    }
+    // Steps that run at the same time cannot share a conversation: they would
+    // be posting into it at once, and each would read the other's answer as its
+    // own. Two chats is what makes them parallel rather than a queue.
+    const labels = stepLabels((wf && wf.steps) || []);
+    for (const w of stepWaves((wf && wf.steps) || [])) {
+      if (w.members.length < 2) continue;
+      const chats = w.members.map((i) => (wf.steps[i] || {}).chatId);
+      const clash = chats.find((c, i) => chats.indexOf(c) !== i);
+      if (clash) {
+        const which = w.members.filter((i) => wf.steps[i].chatId === clash).map((i) => labels[i]);
+        problems.push(
+          "Steps " + which.join(" and ") + " run at the same time but in the same chat — " +
+            "give each parallel step its own."
+        );
         break;
       }
     }
@@ -704,6 +811,13 @@
       }
     }
 
+    // Which steps run together, so a step can tell its NEIGHBOUR from its
+    // CONSUMER. In a wave, the step after 2A is 2B — which never reads it.
+    const waves = stepWaves(steps);
+    const labels = stepLabels(steps);
+    const waveFor = [];
+    for (const w of waves) for (const m of w.members) waveFor[m] = w;
+
     const seen = new Set();
     // What model each chat is currently on, so a step only has to switch when
     // it actually wants something different — and so a step that DOES switch
@@ -719,9 +833,14 @@
       if (model) on.set(s.chatId, model);
       // Does this step's reply get pasted into another chat? Only then is it
       // worth insisting on what the reply must be — a step whose answer stays
-      // where it is can say anything it likes.
-      const next = steps[i + 1];
-      const handsOn = !!(next && next.carry !== false && next.chatId !== s.chatId);
+      // where it is can say anything it likes. In a wave, the step that reads
+      // this one is the one after the WHOLE wave: 2B is not 2A's reader, it's
+      // its sibling, and the two never see each other.
+      const wave = waveFor[i] || { members: [i], index: i };
+      const waveStart = wave.members[0];
+      const consumerAt = wave.members[wave.members.length - 1] + 1;
+      const consumer = steps[consumerAt];
+      const handsOn = !!(consumer && consumer.carry !== false && consumer.chatId !== s.chatId);
       const opening = firstInChat
         ? docs
             .filter(
@@ -740,7 +859,19 @@
         chatId: s.chatId,
         chatName: chatName(wf, s.chatId),
         prompt: str(s.prompt),
-        carry: i > 0 && s.carry !== false,
+        // What to call it: "3" on its own, "2B" in a wave.
+        label: labels[i] || String(i + 1),
+        // The steps this one runs alongside, itself included, and where it sits
+        // among them. A wave of one is an ordinary step.
+        wave: wave.members.slice(),
+        waveIndex: wave.index,
+        waveStart: waveStart,
+        waveAt: wave.members.indexOf(i),
+        parallel: wave.members.length > 1,
+        // Carrying is measured from the step before the WAVE. Every member gets
+        // the same hand-off — that being what makes them parallel — so 2B does
+        // not carry from 2A, it carries from 1 exactly as 2A does.
+        carry: waveStart > 0 && s.carry !== false,
         carryLabel: trimmed(s.carryLabel) || "material from the previous step",
         firstInChat: firstInChat,
         // The model to pick before sending. Null when the chat is already on the
@@ -766,15 +897,27 @@
   function carrySource(wf, stepIndex) {
     const plan = planRun(wf);
     const step = plan[stepIndex];
-    if (!step || !step.carry || stepIndex <= 0)
-      return { needed: false, chatId: null, chatName: null, label: null };
-    const prev = plan[stepIndex - 1];
+    if (!step || !step.carry || step.waveStart <= 0)
+      return { needed: false, chatId: null, chatName: null, label: null, sources: [] };
+    // Everything the wave before this step produced — three chats where a
+    // linear workflow has one. Each is named, because what comes back is
+    // several answers to the same question and telling them apart is the point.
+    const before = plan[step.waveStart - 1];
+    const sources = before.wave.map((idx) => ({
+      stepIndex: idx,
+      chatId: plan[idx].chatId,
+      chatName: plan[idx].chatName,
+      label: plan[idx].chatName + " (" + plan[idx].label + ")",
+    }));
     return {
       needed: true,
-      chatId: prev.chatId,
-      chatName: prev.chatName,
+      // The first source, for the callers that only ever expect one. A linear
+      // workflow has exactly one and this is it.
+      chatId: sources[0].chatId,
+      chatName: sources[0].chatName,
+      sources: sources,
       label: step.carryLabel,
-      fromStep: stepIndex - 1,
+      fromStep: step.waveStart - 1,
     };
   }
 
@@ -1781,6 +1924,76 @@
     });
   }
 
+  // A whole wave finished: every member has answered, so their replies are
+  // folded into one hand-off and the run moves past all of them at once.
+  //
+  // The worker does this, not the pages — three tabs each rewriting the same run
+  // record would lose whichever write landed second, and losing one is losing a
+  // reply that cost a full turn to produce. Each member reports back and this
+  // writes once.
+  function applyWaveResult(run, info) {
+    const i = info || {};
+    if (!run) return run;
+    const members = (i.members || []).filter(Boolean);
+    if (!members.length) return run;
+    const chats = Object.assign({}, run.chats);
+    for (const m of members)
+      if (m.chatId)
+        chats[m.chatId] = Object.assign({}, chats[m.chatId], {
+          url: m.url || (chats[m.chatId] || {}).url || null,
+        });
+
+    const next = members[members.length - 1].stepIndex + 1;
+    const total = typeof i.total === "number" ? i.total : run.totalSteps;
+    const done = next >= total;
+    const timing = stepTiming(run, i.now);
+    const shared = i.usageClean === false;
+    const cost = shared ? { session: null, weekly: null } : usageCost(run.stepUsage, i.usage);
+
+    return Object.assign({}, clearStepClock(run), {
+      status: done ? "done" : "running",
+      phase: "idle",
+      stepIndex: next,
+      // All of them, labelled, as one piece of text. Which is the whole point:
+      // the step after a wave is there to read the answers against each other.
+      lastReply: foldWave(members.map((m) => ({ label: m.label, text: m.reply }))),
+      chats: chats,
+      transcript: (run.transcript || []).concat(
+        members.map((m, at) => ({
+          stepIndex: m.stepIndex,
+          chatId: m.chatId || null,
+          chatName: m.chatName || null,
+          at: i.now,
+          chars: str(m.reply).length,
+          docs: typeof m.docs === "number" ? m.docs : 0,
+          // Each member's own time, measured by the worker while it waited on
+          // all of them. The wave's elapsed time is the LONGEST of these, not
+          // their sum — which is the entire reason for running them at once, so
+          // adding them up would report the saving as a cost.
+          ms: typeof m.ms === "number" ? m.ms : null,
+          sendMs: typeof m.sendMs === "number" ? m.sendMs : null,
+          replyMs: typeof m.replyMs === "number" ? m.replyMs : null,
+          stoppedMs: at === 0 ? timing.stoppedMs : 0,
+          startedAt: typeof m.startedAt === "number" ? m.startedAt : null,
+          sentAt: typeof m.sentAt === "number" ? m.sentAt : null,
+          parallel: true,
+          // Usage belongs to the wave, not to any one member: three chats
+          // answering at once move one meter, and there is no honest way to
+          // split that. It is recorded once, against the first member, and the
+          // others say why they're blank.
+          usedWeekly: at === 0 ? cost.weekly : null,
+          usedSession: at === 0 ? cost.session : null,
+          usageShared: at === 0 ? shared : true,
+          usageWave: at === 0 && members.length > 1,
+        }))
+      ),
+      lastProgressAt: i.now,
+      sentAt: null,
+      finishedAt: done ? i.now : null,
+      error: null,
+    });
+  }
+
   // Stopping keeps `phase` and `sentAt` deliberately. A step that failed AFTER
   // its message went out (the reply never came back, the tab went quiet) must
   // not be resumed by posting the same message again — the conversation would
@@ -1835,6 +2048,11 @@
     let stepIndex = typeof p.stepIndex === "number" ? Math.floor(p.stepIndex) : run.stepIndex;
     if (!(stepIndex >= 0)) stepIndex = 0;
     if (total > 0 && stepIndex > total - 1) stepIndex = total - 1;
+    // Restarting inside a wave restarts the wave. Its members all take the same
+    // hand-off and run together; beginning at the second of them would leave the
+    // step that follows waiting for a reply nothing was going to produce.
+    const startedWave = waveOf((runSource(run, null) || {}).steps || [], stepIndex);
+    if (startedWave) stepIndex = startedWave.members[0];
     const phase = p.phase === "awaiting-reply" ? "awaiting-reply" : "idle";
 
     const chats = Object.assign({}, run.chats);
@@ -1891,19 +2109,33 @@
     if (!run) return "";
     const src = runSource(run, wf);
     const total = run.totalSteps || src.steps.length;
+    // "2A" rather than "2" wherever a wave is involved, since that is what the
+    // editor and the Steps list call it.
+    const labels = stepLabels(src.steps || []);
+    const at = labels[run.stepIndex] || String(run.stepIndex + 1);
     if (run.status === "done") return "Finished all " + total + " steps";
-    if (run.status === "canceled") return "Canceled at step " + (run.stepIndex + 1);
-    if (run.status === "paused") return "Paused before step " + (run.stepIndex + 1) + " of " + total;
-    if (run.status === "error") return "Failed at step " + (run.stepIndex + 1) + " of " + total;
+    if (run.status === "canceled") return "Canceled at step " + at;
+    if (run.status === "paused") return "Paused before step " + at + " of " + total;
+    if (run.status === "error") return "Failed at step " + at + " of " + total;
     if (run.status === "draft")
       return "Not started · " + total + " step" + (total === 1 ? "" : "s") +
         " · add this matter's papers, then start it";
     if (run.status === "pending") return "Queued · " + total + " steps";
     const plan = planRun(src);
     const step = plan[run.stepIndex];
-    const where = step ? " · " + step.chatName : "";
     const verb = run.phase === "awaiting-reply" ? "waiting for Claude" : "sending";
-    return "Step " + (run.stepIndex + 1) + " of " + total + where + " — " + verb;
+    if (step && step.parallel) {
+      // A wave is one thing happening, in several chats at once — reporting it
+      // as "step 2A" would suggest the other two are still to come.
+      const names = step.wave.map((i) => plan[i].chatName).join(", ");
+      return (
+        "Steps " +
+        step.wave.map((i) => plan[i].label).join("/") +
+        " of " + total + " · " + names + " — " + verb + ", together"
+      );
+    }
+    const where = step ? " · " + step.chatName : "";
+    return "Step " + at + " of " + total + where + " — " + verb;
   }
 
   // ---- reading Claude's reply --------------------------------------------
@@ -2203,6 +2435,7 @@
     BEAT_PREFIX,
     runKey,
     beatKey,
+    memberKey,
     MAX_CHATS,
     STEP_TIMEOUT_MS,
     STALE_MS,
@@ -2279,6 +2512,11 @@
     heartbeat,
     withWindow,
     applyStepResult,
+    applyWaveResult,
+    stepWaves,
+    stepLabels,
+    waveOf,
+    foldWave,
     markError,
     resumePlan,
     exclusiveFix,

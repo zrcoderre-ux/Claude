@@ -542,10 +542,16 @@ function localDateStr(ms) {
 async function recordStepUsage(prev, run) {
   if (!run) return;
   const rows = run.transcript || [];
-  const t = rows[rows.length - 1];
-  if (!t || typeof t.usedWeekly !== "number" || t.usedWeekly <= 0) return;
-  // Only when this call is looking at a step that has just landed.
-  if (prev && (prev.transcript || []).length >= rows.length) return;
+  // Everything recorded since the last look — one row for an ordinary step,
+  // several for a wave, where only the first carries the figure because the
+  // meter can't be split between chats that ran at once.
+  const had = prev ? (prev.transcript || []).length : Math.max(0, rows.length - 1);
+  if (had >= rows.length) return;
+  const pct = rows
+    .slice(had)
+    .reduce((a, t) => a + (typeof t.usedWeekly === "number" ? t.usedWeekly : 0), 0);
+  if (!(pct > 0)) return;
+  const t = { usedWeekly: pct };
   const wf = W.getWorkflow((await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], run.workflowId);
   const ledger = (await get(WF_USAGE_KEY))[WF_USAGE_KEY] || U.EMPTY;
   await set({
@@ -950,7 +956,256 @@ async function refetchCarry(run, wf) {
   const source = W.runSource(run, wf);
   const src = W.carrySource(source, run.stepIndex);
   if (!src.needed) return { ok: true, text: null, skipped: true };
-  return harvestChat(run, source, src.chatId, src.chatName);
+  // One chat for an ordinary step, several where the step before was a wave —
+  // and then all of them, folded exactly as the run would have folded them.
+  const got = [];
+  for (const s of src.sources) {
+    const one = await harvestChat(run, source, s.chatId, s.chatName);
+    if (!one.ok) return one;
+    got.push(Object.assign({}, one, { label: s.label }));
+  }
+  if (got.length === 1) return got[0];
+  return {
+    ok: true,
+    text: W.foldWave(got.map((g) => ({ label: g.label, text: g.text }))),
+    from: got.map((g) => g.from).join(", "),
+    chars: got.reduce((a, g) => a + (g.chars || 0), 0),
+  };
+}
+
+// ---- steps that run at the same time --------------------------------------
+//
+// A wave is several steps taking the same hand-off, in separate chats, none of
+// them reading the others: three devil's-advocate reports written at once
+// rather than one after another, and then compared. The step after the wave
+// gets all of their replies.
+//
+// The worker drives it. Each page reports to a key of its OWN (see
+// W.memberKey) and never writes the run: three tabs doing read-modify-write on
+// one record would lose whichever write landed second, and what gets lost is a
+// reply that cost a full Claude turn. This collects them and writes once.
+//
+// A caveat worth knowing rather than discovering: Chrome throttles timers in
+// tabs that aren't in front, so the two members you aren't looking at may
+// notice their replies late — a minute or so, on a step that takes many. The
+// replies aren't lost, and the run doesn't stall; it just isn't three times
+// faster in the way the arithmetic suggests.
+async function memberState(runId, stepIndex) {
+  const key = W.memberKey(runId, stepIndex);
+  return (await get(key))[key] || null;
+}
+
+async function clearMembers(runId, indices) {
+  try {
+    await chrome.storage.local.remove(indices.map((i) => W.memberKey(runId, i)));
+  } catch (e) {
+    /* a leftover key costs nothing but space */
+  }
+}
+
+// The run arrives already marked as started and sending, and its clock is
+// already running — a wave is one thing the run is doing, so it is timed and
+// measured as one.
+async function driveWave(runId, run, src, plan, step) {
+  const members = step.wave.map((i) => plan[i]);
+
+  // Tabs first, one at a time. Two tab creations racing each other can put the
+  // run's window in two places, and then the third member opens in neither.
+  const opened = [];
+  for (const m of members) {
+    const chat = W.getChat(src, m.chatId) || {};
+    const saved = (run.chats && run.chats[m.chatId]) || {};
+    const { tab, windowId } = await stepTab(run, saved.url, chat);
+    if (windowId != null && windowId !== run.windowId)
+      run = await saveRun(W.withWindow(run, windowId));
+    if (!tab) {
+      await saveRun(
+        W.markError(await readRun(runId), "could not open a claude.ai tab for step " + m.label, Date.now())
+      );
+      notify("Workflow stopped", "Could not open a claude.ai tab.");
+      return { ok: false };
+    }
+    // Two members in one tab is two prompts posted into one conversation at
+    // once, each taking the other's answer as its own. validate() forbids it
+    // when the workflow is written; this is the same rule at the point where
+    // getting it wrong would be expensive rather than annoying.
+    if (opened.some((o) => o.tab.id === tab.id)) {
+      const clash = opened.find((o) => o.tab.id === tab.id);
+      await saveRun(
+        W.markError(
+          await readRun(runId),
+          "steps " + clash.m.label + " and " + m.label +
+            " run at the same time but landed in the same conversation — give each its own chat",
+          Date.now()
+        )
+      );
+      notify("Workflow stopped", "Two parallel steps share a conversation.");
+      return { ok: false };
+    }
+    opened.push({ m: m, tab: tab, saved: saved, chat: chat });
+  }
+
+  const startedAt = Date.now();
+  const results = await Promise.all(
+    opened.map((o) => runMember(runId, run, src, plan, o, startedAt))
+  );
+
+  const after = await readRun(runId);
+  if (!after || after.status === "canceled") return { ok: false };
+  const failed = results.filter((r) => !r.ok);
+  if (failed.length) {
+    // One member's page paused or cancelled the run itself — it has already
+    // said why, and saying it again over the top would replace the reason with
+    // a summary of it.
+    if (failed.some((f) => f.canceled || f.paused)) return { ok: false };
+    const first = failed[0];
+    await saveRun(
+      W.markError(after, "step " + first.label + ": " + (first.error || "unknown"), Date.now())
+    );
+    notify(
+      "Workflow stopped",
+      W.runLabel(after).title + " failed at step " + first.label + ": " + (first.error || "unknown")
+    );
+    return { ok: false };
+  }
+
+  // Everyone answered. What the meter did while they all ran belongs to the
+  // wave — three chats answering at once move one meter, and there's no honest
+  // way to split that between them.
+  const usageNow = W.usageSample((await get(STATE_KEY))[STATE_KEY]);
+  const activity = (await get("cum_activity")).cum_activity || null;
+  const mine = Object.keys(after.chats || {})
+    .map((cid) => (after.chats[cid] || {}).url)
+    .filter(Boolean)
+    .map(W.conversationKey);
+  const done = W.applyWaveResult(after, {
+    members: results.map((r) => r.member),
+    now: Date.now(),
+    total: plan.length,
+    usage: usageNow,
+    usageClean: W.soleActor(activity, { from: after.stepStartedAt, to: Date.now(), conv: mine }),
+  });
+  const saved = await saveRun(done);
+  await clearMembers(runId, step.wave);
+  await recordStepUsage(after, saved);
+  if (saved.status === "done") {
+    await noteRunUsage(saved);
+    notify("Workflow finished", W.runLabel(saved).title + " — all " + plan.length + " steps done.");
+    return { ok: false }; // nothing left to drive
+  }
+  return { ok: true };
+}
+
+// One member of a wave. Returns what the run needs to record it, and never
+// writes the run itself.
+async function runMember(runId, run, src, plan, opened, waveStartedAt) {
+  const { m, tab, saved, chat } = opened;
+  const label = m.label;
+  // Already answered — a wave that failed half way through is picked back up
+  // rather than asked again. Re-sending would post the same message into a
+  // conversation that has already replied to it.
+  const had = await memberState(runId, m.index);
+  if (had && typeof had.reply === "string" && had.reply) {
+    return {
+      ok: true,
+      label: label,
+      member: waveMember(m, had, waveStartedAt),
+    };
+  }
+
+  const docs = W.allDocs(src)
+    .filter((d) => m.docIds.indexOf(d.id) !== -1)
+    .map((d) => ({ id: d.id, name: d.name, type: d.type, bundled: d.bundled || 0 }));
+  const awaitOnly = !!(had && had.sent);
+  const payload = {
+    type: "cum-wf-step",
+    runId: runId,
+    stepIndex: m.index,
+    // Which step the RUN has to be sitting on for this to be current. A member
+    // isn't at run.stepIndex — its wave is — so it can't check its own index.
+    waveStart: m.waveStart,
+    waveKey: W.memberKey(runId, m.index),
+    label: label,
+    chatId: m.chatId,
+    chatName: m.chatName,
+    total: plan.length,
+    awaitOnly: awaitOnly,
+    sentAtKnown: (had && had.sentAt) || null,
+    marker: m.marker || null,
+    text: W.composeStepText(m, run.lastReply),
+    files: awaitOnly ? [] : docs,
+    model: m.model && (m.modelOverride || !saved.url) ? m.model : null,
+    firstInChat: m.firstInChat && !saved.url,
+    download: !!run.downloadFiles,
+    title:
+      run.nameChats !== false && m.firstInChat && !saved.url
+        ? W.chatTitle(run, m.chatName)
+        : null,
+    codeRepo: m.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
+  };
+
+  let res;
+  try {
+    res = await sendStep(tab.id, payload);
+  } catch (e) {
+    res = { ok: false, error: String((e && e.message) || e) };
+  }
+  if (res && !res.ok && /no response from page/.test(res.error || "")) {
+    // Same stale-content-script recovery as a lone step, and the same care: if
+    // the message got out before the page went quiet, the retry waits instead
+    // of posting it twice.
+    const mid = await memberState(runId, m.index);
+    try {
+      await chrome.tabs.reload(tab.id);
+      await waitTabComplete(tab.id, 30000);
+      await sleep(3000);
+      res = await sendStep(
+        tab.id,
+        mid && mid.sent ? Object.assign({}, payload, { awaitOnly: true, files: [] }) : payload
+      );
+    } catch (e) {
+      /* keep the original failure */
+    }
+  }
+  if (!res || !res.ok)
+    return {
+      ok: false,
+      label: label,
+      error: (res && res.error) || "unknown",
+      canceled: !!(res && res.canceled),
+      paused: !!(res && res.paused),
+    };
+
+  const state = (await memberState(runId, m.index)) || {};
+  const reply = typeof state.reply === "string" && state.reply ? state.reply : res.text || "";
+  if (!reply)
+    return { ok: false, label: label, error: "the page reported step " + label + " finished but saved no reply" };
+  return {
+    ok: true,
+    label: label,
+    member: waveMember(m, Object.assign({}, state, { reply: reply, url: state.url || res.url }), waveStartedAt),
+  };
+}
+
+function waveMember(m, state, waveStartedAt) {
+  const sentAt = typeof state.sentAt === "number" ? state.sentAt : null;
+  const at = typeof state.at === "number" ? state.at : Date.now();
+  return {
+    stepIndex: m.index,
+    label: m.chatName + " (" + m.label + ")",
+    chatId: m.chatId,
+    chatName: m.chatName,
+    reply: state.reply,
+    url: state.url || null,
+    docs: typeof state.docs === "number" ? state.docs : (m.docIds || []).length,
+    startedAt: waveStartedAt,
+    sentAt: sentAt,
+    // Measured per member, because the whole point is that they overlap: the
+    // wave takes as long as its slowest, not as long as all of them added up.
+    ms: Math.max(0, at - waveStartedAt),
+    sendMs: sentAt != null ? Math.max(0, sentAt - waveStartedAt) : null,
+    replyMs: sentAt != null ? Math.max(0, at - sentAt) : null,
+  };
 }
 
 async function driveRun(runId, opts) {
@@ -1063,6 +1318,16 @@ async function driveRun(runId, opts) {
           usageBefore
         )
       );
+
+      // Steps that run at the same time: sent together, waited on together, and
+      // folded into one hand-off when the last of them lands. Everything above
+      // — the outage gate, the usage check, the run's own clock — applies to the
+      // wave as a whole, which is why this sits here rather than earlier.
+      if (step.parallel) {
+        const waved = await driveWave(runId, run, src, plan, step);
+        if (!waved.ok) return;
+        continue;
+      }
 
       const chat = W.getChat(src, step.chatId) || {};
       const saved = (run.chats && run.chats[step.chatId]) || {};
@@ -1432,6 +1697,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       };
       let revised = W.reviseRun(run, patch, Date.now());
       let note = null;
+      // Anything a wave had already collected from the step being restarted on
+      // is thrown away. Told to do this step again, "again" has to mean the
+      // whole of it — otherwise two of the three chats would quietly keep the
+      // replies you just decided were worth redoing. Members before the resume
+      // point are past and their keys were cleared when their wave landed.
+      // …unless you've said the messages already went out, which is the one
+      // case where those records are the thing keeping the run from posting the
+      // same prompts into three conversations a second time.
+      if (patch.phase !== "awaiting-reply")
+        await clearMembers(
+          msg.runId,
+          Array.from({ length: (run.totalSteps || 0) + 1 }, (_, i) => i).filter(
+            (i) => i >= revised.stepIndex
+          )
+        );
       // Re-read the hand-off from the previous chat before starting, so the
       // resumed step carries what's actually in that conversation now — not
       // whatever this run last managed to capture.
