@@ -982,7 +982,8 @@ the ruling alone: from **NATURE OF PROCEEDINGS** through the end of the
 **CONCLUSION**, with the rules themselves dropped — including any *inside* the
 ruling, since the point is text you can paste straight in. It copies the
 **formatted** ruling as well as the plain text, so it lands in Word as a ruling
-rather than as `**NATURE OF PROCEEDINGS**`.
+rather than as `**NATURE OF PROCEEDINGS**` — see [what lands on the
+clipboard](#what-lands-on-the-clipboard).
 
 It appears **only on a reply that has a ruling in it**, and not while one is
 still being written. A second copy control under every answer in every chat
@@ -1020,8 +1021,31 @@ Where the boundaries come from, and why each is where it is:
   words sharing a line with something else. claude.ai's wording varies and none
   of them is wrong.
 
-Nothing is rewritten on the way: headings, emphasis and citations travel exactly
-as Claude wrote them.
+### What lands on the clipboard
+
+Both forms of it are written out deliberately, because the browser's own answer
+to each is wrong for a document you are about to paste into a minute order.
+
+**As text**, every block is separated by **exactly one blank line**. Left to
+itself the browser spaces blocks by their margins, so a heading and the
+paragraph under it come back glued together where two paragraphs come back with
+a line between them — and uneven spacing is the thing you then fix by hand,
+which is the work this button exists to save. A **list** is one block, its items
+a line each: a blank line between every bullet turns a four-item list into half
+a page. A **hard line break** inside a paragraph survives as a line break, rather
+than welding the words on either side of it together.
+
+**As formatted text**, it arrives in the document's own font. A clone taken off
+claude.ai's page carries claude.ai's page with it — its classes, and whatever
+Chrome bakes in from the computed style — so a paste would otherwise land in the
+chat's fonts, line height and margins. Every attribute is stripped, and headings
+become **bold paragraphs**: an `<h2>` pasted into Word is Word's own Heading
+style, blue and sans-serif, which is not what a section heading in a minute
+order looks like. What survives is the structure and the emphasis — the italics
+on a case name, which is the formatting that carries meaning.
+
+Nothing else is rewritten on the way: the words, the citations and the emphasis
+are exactly as Claude wrote them.
 
 ### Why it copied everything once
 

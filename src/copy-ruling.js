@@ -135,8 +135,87 @@
     };
   }
 
-  // Copy a run of blocks exactly as a selection would: both the formatted and
-  // the plain form, and synchronously, so the write belongs to the click that
+  // ---- what actually goes on the clipboard ---------------------------------
+  // Both forms are written out here rather than left to the browser, because
+  // the browser's own answer to both is wrong for a document you are going to
+  // paste into a minute order.
+  //
+  // **Plain.** Left to itself the serialiser spaces blocks by their margins, so
+  // a heading and the paragraph under it come back glued together where two
+  // paragraphs come back with a blank line between them. Uneven spacing in a
+  // ruling is the thing you then fix by hand, which is the work this button
+  // exists to save. Every block is separated by exactly one blank line.
+  //
+  // **Formatted.** A clone taken from claude.ai's page carries claude.ai's
+  // page with it — its classes, and whatever Chrome bakes in from the computed
+  // style — so a paste arrives in the chat's fonts, the chat's line height and
+  // the chat's margins rather than the document's. Every attribute is stripped,
+  // and headings become bold paragraphs: an <h1> pasted into Word is Word's own
+  // Heading style, blue and sans-serif, which is not what a section heading in
+  // a minute order looks like. What survives is the structure and the emphasis
+  // — the italics on a case name, which is the formatting that carries meaning.
+  const LIST_TAGS = { UL: 1, OL: 1 };
+  const BLOCK_TAGS = {
+    P: 1, DIV: 1, LI: 1, UL: 1, OL: 1, BLOCKQUOTE: 1, PRE: 1, TABLE: 1, TR: 1,
+    H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1,
+  };
+
+  // A block's text on one line — except where the page draws a line break, which
+  // is a break the writer asked for. textContent would run the words on either
+  // side of a <br> together into one.
+  function flatText(el) {
+    let s = "";
+    for (const n of Array.from(el.childNodes || [])) {
+      if (n.nodeType === 3) s += n.nodeValue || "";
+      else if (n.nodeType === 1) s += n.tagName === "BR" ? "\n" : flatText(n);
+    }
+    return s
+      .replace(/[ \t ]+/g, " ")
+      .replace(/ *\n */g, "\n")
+      .trim();
+  }
+
+  // One entry per block, in order, however deeply the page has nested them.
+  function plainBlocks(node, out) {
+    const kids = Array.from(node.children || []).filter((k) => BLOCK_TAGS[k.tagName]);
+    if (!kids.length) {
+      const t = flatText(node);
+      if (t) out.push(t);
+      return;
+    }
+    // A list is one block, its items a line each: a blank line between every
+    // bullet turns a four-item list into half a page.
+    if (LIST_TAGS[node.tagName]) {
+      const lines = [];
+      let n = 1;
+      for (const li of kids) {
+        const t = flatText(li);
+        if (t) lines.push((node.tagName === "OL" ? n++ + ". " : "• ") + t);
+      }
+      if (lines.length) out.push(lines.join("\n"));
+      return;
+    }
+    for (const k of kids) plainBlocks(k, out);
+  }
+
+  function neutralize(holder) {
+    for (const el of Array.from(holder.querySelectorAll("*"))) {
+      for (const attr of Array.from(el.attributes || [])) {
+        if (attr.name !== "href") el.removeAttribute(attr.name);
+      }
+    }
+    // Headings to bold paragraphs, so a paste lands in the document's own font.
+    for (const h of Array.from(holder.querySelectorAll("h1,h2,h3,h4,h5,h6"))) {
+      const p = document.createElement("p");
+      const b = document.createElement("strong");
+      b.innerHTML = h.innerHTML;
+      p.appendChild(b);
+      h.replaceWith(p);
+    }
+    return holder.innerHTML;
+  }
+
+  // Copy a run of blocks, synchronously, so the write belongs to the click that
   // asked for it. The blocks are cloned somewhere off-screen first, which is
   // what lets a rule INSIDE the ruling be dropped — a range over the live page
   // would have to take whatever sits between its ends.
@@ -154,11 +233,19 @@
       /* ignore */
     }
     if (!holder.childNodes.length) return { ok: false, text: "" };
-    // Off-screen rather than hidden: display:none can't be selected, and
-    // innerText needs a layout to put the line breaks in.
+
+    const parts = [];
+    for (const child of Array.from(holder.children)) plainBlocks(child, parts);
+    const text = parts.join("\n\n");
+    if (!text) return { ok: false, text: "" };
+    const html = neutralize(holder);
+
+    // Off-screen rather than hidden: display:none can't be selected, and the
+    // copy command needs a selection to consent to run at all. What it would
+    // have copied is then replaced with the two forms above.
     holder.style.cssText =
-      "position:fixed;left:-99999px;top:0;width:760px;white-space:normal;" +
-      "user-select:text;-webkit-user-select:text;pointer-events:none;";
+      "position:fixed;left:-99999px;top:0;width:760px;user-select:text;" +
+      "-webkit-user-select:text;pointer-events:none;";
     document.body.appendChild(holder);
 
     const sel = window.getSelection();
@@ -168,18 +255,27 @@
     } catch (e) {
       /* ignore */
     }
+    function onCopy(e) {
+      try {
+        e.preventDefault();
+        e.clipboardData.setData("text/plain", text);
+        e.clipboardData.setData("text/html", html);
+      } catch (err) {
+        /* let the selection's own content stand rather than copying nothing */
+      }
+    }
     let ok = false;
-    let text = "";
     try {
-      text = holder.innerText || holder.textContent || "";
       const range = document.createRange();
       range.selectNodeContents(holder);
       sel.removeAllRanges();
       sel.addRange(range);
+      document.addEventListener("copy", onCopy, true);
       ok = !!document.execCommand("copy");
     } catch (e) {
       ok = false;
     }
+    document.removeEventListener("copy", onCopy, true);
     try {
       sel.removeAllRanges();
       for (const r of saved) sel.addRange(r); // put your own selection back
