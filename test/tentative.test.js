@@ -196,6 +196,155 @@ test("windows line endings don't change the answer", () => {
   assert.equal(r.text, "NATURE OF PROCEEDINGS\n\nDemurrer.\n\nCONCLUSION\n\nGRANTED.");
 });
 
+// ---- the same decision over the page's own blocks -------------------------
+
+// The shape that came back wrong: remarks, a rule, the ruling, a rule, a change
+// report — with the rule written as a run of underscores.
+function blocks(...spec) {
+  return spec.map((s) =>
+    s === "hr"
+      ? { rule: true }
+      : typeof s === "string"
+        ? { text: s }
+        : s
+  );
+}
+
+test("the page's own <hr> ends the ruling, whatever the text of it would be", () => {
+  const list = blocks(
+    "Cleveland is stronger than I credited, and the full text settles two things.",
+    "The quotation is set out below, cited to Cleveland at 682-683.",
+    "hr",
+    { text: "NATURE OF PROCEEDINGS", heading: true },
+    "Hearing on Demurrer — with Motion to Strike.",
+    { text: "BACKGROUND", heading: true },
+    "Plaintiff filed this action against Defendant.",
+    { text: "CONCLUSION", heading: true },
+    "The Demurrer is sustained without leave to amend.",
+    "hr",
+    { text: "Change report", heading: true },
+    "Cleveland now carries the holding instead of being distinguished."
+  );
+  const p = T.planBlocks(list);
+  assert.equal(p.ok, true);
+  assert.equal(p.reason, null);
+  assert.equal(list[p.start].text, "NATURE OF PROCEEDINGS");
+  assert.equal(list[p.end].text, "The Demurrer is sustained without leave to amend.");
+});
+
+test("a heading after the conclusion ends it too, where there is no rule", () => {
+  // Claude doesn't always draw the line. A ruling has no section after its
+  // conclusion, so a heading there belongs to whatever was written underneath.
+  const list = blocks(
+    { text: "NATURE OF PROCEEDINGS", heading: true },
+    "Demurrer.",
+    { text: "CONCLUSION", heading: true },
+    "The Demurrer is OVERRULED.",
+    { text: "Change report", heading: true },
+    "Two further conclusions are quoted."
+  );
+  const p = T.planBlocks(list);
+  assert.equal(list[p.end].text, "The Demurrer is OVERRULED.");
+});
+
+test("a heading BEFORE the conclusion is just another section", () => {
+  const list = blocks(
+    { text: "NATURE OF PROCEEDINGS", heading: true },
+    "Demurrer.",
+    { text: "ANALYSIS", heading: true },
+    "The first cause of action fails.",
+    { text: "CONCLUSION", heading: true },
+    "SUSTAINED."
+  );
+  const p = T.planBlocks(list);
+  assert.equal(p.start, 0);
+  assert.equal(list[p.end].text, "SUSTAINED.");
+});
+
+test("a rule inside the ruling doesn't end it, on the page either", () => {
+  const list = blocks(
+    { text: "NATURE OF PROCEEDINGS", heading: true },
+    "Motion for Summary Judgment.",
+    "hr",
+    { text: "DISCUSSION", heading: true },
+    "Triable issues remain.",
+    { text: "CONCLUSION", heading: true },
+    "DENIED.",
+    "hr",
+    "Shall I expand the causation discussion?"
+  );
+  const p = T.planBlocks(list);
+  assert.equal(p.start, 0);
+  assert.equal(list[p.end].text, "DENIED.");
+});
+
+test("a block read off the page brings its own indentation, and still matches", () => {
+  // textContent carries the source's whitespace, so a wrapper holding the
+  // ruling begins with a newline. Taking its literal first line found nothing,
+  // and a ruling nested one element deeper than expected went unrecognised.
+  const wrapped = "\n      NATURE OF PROCEEDINGS\n      Hearing on Demurrer.\n      CONCLUSION\n      SUSTAINED.\n    ";
+  assert.equal(T.startsRuling(wrapped), true);
+  const p = T.planBlocks(blocks(wrapped, "hr", "Shall I revise?"));
+  assert.equal(p.ok, true);
+  assert.equal(p.start, 0);
+  assert.equal(p.end, 0);
+  // Its conclusion is inside it, so no caveat is reported: a warning about a
+  // ruling that plainly has a conclusion teaches you to ignore the warning.
+  assert.equal(p.reason, null);
+  assert.equal(T.hasConclusion(wrapped), true);
+  assert.equal(T.hasConclusion("NATURE OF PROCEEDINGS\nDemurrer."), false);
+});
+
+test("no ruling among the blocks is said so, not guessed at", () => {
+  assert.equal(T.planBlocks(blocks("Sure — which motion?", "hr", "Let me know.")).ok, false);
+  assert.equal(T.planBlocks([]).ok, false);
+  assert.equal(T.planBlocks(null).ok, false);
+});
+
+test("a ruling in blocks with no conclusion carries the caveat", () => {
+  const p = T.planBlocks(
+    blocks({ text: "NATURE OF PROCEEDINGS", heading: true }, "Demurrer.", "The pleading is uncertain.")
+  );
+  assert.equal(p.ok, true);
+  assert.equal(p.end, 2);
+  assert.match(p.reason, /no CONCLUSION/);
+});
+
+// ---- the underscore rule, which is what came back wrong -------------------
+
+test("a run of underscores is a break even with text directly above it", () => {
+  // Only `-` and `=` underline a setext heading. Requiring a blank line above
+  // every rule lost the end of a ruling in a reply whose paragraphs had none.
+  const bar = "________________________________________";
+  assert.equal(T.isBreak(["Some text.", bar], 1), true);
+  assert.equal(T.isBreak(["Some text.", "***"], 1), true);
+  // A dash rule still defers to the setext reading.
+  assert.equal(T.isBreak(["CONCLUSION", "---"], 1), false);
+  assert.equal(T.isBreak(["", "---"], 1), true);
+});
+
+test("the reply that came back wrong, as text, now cuts where it should", () => {
+  const tight = [
+    "Cleveland is stronger than I credited, and the full text settles two things.",
+    "The quotation is set out below, cited to Cleveland at 682-683.",
+    "________________________________________",
+    "NATURE OF PROCEEDINGS",
+    "Hearing on Demurrer — with Motion to Strike.",
+    "CONCLUSION",
+    "The Demurrer is sustained without leave to amend.",
+    "________________________________________",
+    "Change report",
+    "Cleveland now carries the holding instead of being distinguished.",
+  ].join("\n");
+  const r = T.extractRuling(tight);
+  assert.equal(r.ok, true);
+  assert.equal(r.text.includes("Cleveland is stronger"), false);
+  assert.equal(r.text.includes("Change report"), false);
+  assert.equal(r.text.includes("____"), false);
+  assert.ok(r.text.startsWith("NATURE OF PROCEEDINGS"));
+  assert.ok(r.text.endsWith("The Demurrer is sustained without leave to amend."));
+});
+
 test("whether a reply has a ruling at all is answerable off the page", () => {
   // Read from the DOM the blocks run together, so this can't be line-anchored.
   assert.equal(T.mentionsRuling("NATURE OF PROCEEDINGSDefendant's demurrer."), true);

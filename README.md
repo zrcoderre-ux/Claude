@@ -980,12 +980,23 @@ the bits around it, every time.
 **Ruling** sits in claude.ai's action bar beside its own Copy control and copies
 the ruling alone: from **NATURE OF PROCEEDINGS** through the end of the
 **CONCLUSION**, with the rules themselves dropped — including any *inside* the
-ruling, since the point is text you can paste straight in.
+ruling, since the point is text you can paste straight in. It copies the
+**formatted** ruling as well as the plain text, so it lands in Word as a ruling
+rather than as `**NATURE OF PROCEEDINGS**`.
 
 It appears **only on a reply that has a ruling in it**, and not while one is
 still being written. A second copy control under every answer in every chat
 would be clutter, and half a ruling pasted into a minute order is worse than
 none.
+
+**It reads the page, not the markdown.** On the page a horizontal rule is an
+`<hr>` — an element, which is why you can't select it. In text it's three
+characters that have to be told apart from a setext underline, a table border
+and a row of dashes someone typed. The page knows, so the cut is made there,
+and the copy is a **selection copy**: the same thing as selecting exactly that
+part of the answer and pressing ⌘C. That also means the write happens inside the
+click that asked for it, which is what makes it reliable — see
+[why it copied everything once](#why-it-copied-everything-once).
 
 Where the boundaries come from, and why each is where it is:
 
@@ -995,6 +1006,9 @@ Where the boundaries come from, and why each is where it is:
   start: a ruling of any length may well be ruled off between its own sections,
   and ending at the first one would hand back the first section alone. Not the
   last rule in the reply either, which would take the commentary with it.
+- **Failing a rule, the first heading after CONCLUSION.** Claude doesn't always
+  draw the line, and a ruling has no section after its conclusion — so a heading
+  there belongs to whatever was written underneath.
 - **CONCLUSION is looked for after the start**, so a "Conclusion" in Claude's
   own remarks underneath can't be mistaken for the ruling's.
 - **A rule directly under a line of text is left alone.** In Markdown that's a
@@ -1009,28 +1023,44 @@ Where the boundaries come from, and why each is where it is:
 Nothing is rewritten on the way: headings, emphasis and citations travel exactly
 as Claude wrote them.
 
-**Where the text comes from** is claude.ai's own copy box, clicked and caught
-through the clipboard hook (the same mechanism a workflow step uses to carry a
-reply between chats, now shared in `src/replycopy.js`). That's the only source
-that gives Claude's markdown as written — reading the rendered page instead
-would hand back something that looks the same and pastes flat, and the rules
-that mark the ruling's boundaries wouldn't be in it at all.
+### Why it copied everything once
 
-Two honest edges, both of which the button says out loud rather than leaving you
-to discover:
+The first version of this went through claude.ai's own copy box: click it, catch
+what it wrote, cut the ruling out of the markdown, put that back on the
+clipboard. Three things were wrong with that, and they compounded.
 
-- A reply whose ruling has **no CONCLUSION heading** is copied to the end of the
-  block and the button says `Copied (no CONCLUSION)` — it may have picked up a
-  sentence Claude added underneath.
-- Where the ruling **can't be found**, the button says `No ruling found` and
-  puts the clipboard back to the whole reply, exactly as claude.ai's own Copy
-  left it. Getting the text means letting the page copy the whole reply first,
-  and a clipboard quietly holding the wrong thing is the one outcome worth
-  going out of the way to prevent.
-- Where the copy box gives nothing at all, it falls back to the rendered page
-  and says `Copied (from the page)`. What's rendered has no `---` in it — a
-  horizontal rule draws as a line and reads as nothing — so the end of the
-  ruling is a guess there, and Claude's closing remark can ride along.
+**The write happened after an `await`.** A clipboard write that lands outside
+its own click can be refused, and when it was, the clipboard still held what
+claude.ai had just put there — the whole reply. So the button looked like it
+copied everything, which is exactly what it had done.
+
+**What it produced was plain markdown.** Pasted into a minute order that is
+`**NATURE OF PROCEEDINGS**`, not a heading.
+
+**And it had to guess at the rules.** A run of underscores directly under a line
+of text was being read as a setext underline rather than a break, so the end of
+the ruling was missed and the material below it came too.
+
+All three are gone: the cut is made on the page, and the copy is synchronous
+inside the click. The markdown route survives only as a fallback for a message
+whose shape can't be read — it is the one path that can leave the clipboard
+holding the whole reply, and it now says `Couldn't copy — whole reply` when it
+does, rather than reporting success.
+
+The five shapes it is checked against, in a real browser with a sentinel on the
+clipboard so a stale copy can't pass for a fresh one: rules either side of the
+ruling; no rules at all; the ruling wrapped a level deeper than expected; a rule
+inside the ruling as well; and a reply with no ruling in it, which offers no
+button.
+
+Two edges remain, and the button says both out loud rather than leaving you to
+find them:
+
+- A ruling with **no CONCLUSION heading** is copied to the end of its block and
+  the button says `Copied (no CONCLUSION)` — it may have picked up a sentence
+  Claude added underneath.
+- Where the ruling **can't be found**, it says `No ruling found` rather than
+  copying something else.
 
 The boundary rules live in `src/tentative.js` (no DOM/`chrome` deps) and are
 unit-tested in `test/tentative.test.js`; the button is `src/copy-ruling.js`.
