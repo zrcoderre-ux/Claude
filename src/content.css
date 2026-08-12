@@ -373,7 +373,8 @@
 }
 
 /* Auto-continue toast */
-#cum-ac-toast {
+#cum-ac-toast,
+#cum-dl-toast {
   position: fixed;
   left: 50%;
   bottom: 22px;
@@ -393,9 +394,16 @@
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-#cum-ac-toast.cum-ac-show {
+#cum-ac-toast.cum-ac-show,
+#cum-dl-toast.cum-ac-show {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+/* Two clickers can toast at once; stack the second above the first rather than
+   on top of it. */
+#cum-dl-toast {
+  bottom: 68px;
 }
 
 /* Dark mode — claude.ai sets a dark background; adapt via prefers-color-scheme. */

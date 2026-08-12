@@ -7,6 +7,7 @@
   const OVERAGE_KEY = "cum_show_overage";
   const ESTIMATE_KEY = "cum_estimate_decimals";
   const AUTOCONTINUE_KEY = "cum_autocontinue";
+  const AUTODOWNLOAD_KEY = "cum_autodownload";
   const STATUS_KEY = "cum_status";
   const STATUS_CFG_KEY = "cum_status_cfg";
 
@@ -27,6 +28,8 @@
     autoContinue: document.getElementById("auto-continue"),
     allowOnce: document.getElementById("allow-once"),
     acMax: document.getElementById("ac-max"),
+    autoDownload: document.getElementById("auto-download"),
+    dlMax: document.getElementById("dl-max"),
     openLog: document.getElementById("open-log"),
     svcStatus: document.getElementById("svc-status"),
     svcDetail: document.getElementById("svc-detail"),
@@ -122,6 +125,7 @@
   }
 
   let acCfg = { enabled: false, max: 50, allowOnce: false };
+  let dlCfg = { enabled: false, max: 20 };
   let statusCfg = { warn: true, holdSends: true };
 
   chrome.storage.local.get(
@@ -131,6 +135,7 @@
       OVERAGE_KEY,
       ESTIMATE_KEY,
       AUTOCONTINUE_KEY,
+      AUTODOWNLOAD_KEY,
       STATUS_KEY,
       STATUS_CFG_KEY,
     ],
@@ -143,6 +148,9 @@
       el.autoContinue.checked = !!acCfg.enabled;
       el.allowOnce.checked = !!acCfg.allowOnce;
       el.acMax.value = acCfg.max;
+      dlCfg = Object.assign(dlCfg, (res && res[AUTODOWNLOAD_KEY]) || {});
+      el.autoDownload.checked = !!dlCfg.enabled;
+      el.dlMax.value = dlCfg.max;
       // Both status toggles default ON, so only an explicit false turns them off.
       const sc = (res && res[STATUS_CFG_KEY]) || {};
       statusCfg = { warn: sc.warn !== false, holdSends: sc.holdSends !== false };
@@ -191,6 +199,24 @@
     el.acMax.value = n;
     acCfg.max = n;
     saveAc("Saved");
+  });
+
+  function saveDl(msg) {
+    chrome.storage.local.set({ [AUTODOWNLOAD_KEY]: dlCfg }, () => msg && flash(msg));
+  }
+
+  el.autoDownload.addEventListener("change", () => {
+    dlCfg.enabled = el.autoDownload.checked;
+    saveDl(dlCfg.enabled ? "Saving files Claude produces" : "Auto-download off");
+  });
+
+  el.dlMax.addEventListener("change", () => {
+    let n = parseInt(el.dlMax.value, 10);
+    if (!Number.isFinite(n) || n < 1) n = 1;
+    if (n > 200) n = 200;
+    el.dlMax.value = n;
+    dlCfg.max = n;
+    saveDl("Saved");
   });
 
   el.showOverage.addEventListener("change", () => {
