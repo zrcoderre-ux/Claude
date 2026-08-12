@@ -12,17 +12,24 @@
  * and a file that saves twice — or a whole chat's history re-saved on every
  * page load — is the extension writing junk to your disk unasked.
  *
- * Three rules carry that weight:
+ * **It is real-time only, and that is a rule rather than a hope.** A file is
+ * saved out of a reply this page watched being written, and out of nothing
+ * else. Four rules carry that:
  *
+ * - **Only a reply that landed in front of us** (`landed`, `rememberLive`, and
+ *   the `live` gate in `plan`). Opening a chat with forty files in it saves
+ *   none of them — not because they look old, but because no answer arrived
+ *   while anyone was watching. This holds however the page renders, however far
+ *   you scroll it, and whether or not the keying below is perfect.
+ * - **A census as well**, so nothing that was on the page when the ledger
+ *   started can be taken even if it later looks new. Belt to the braces above:
+ *   the two rules fail in different directions, and a backlog saved by accident
+ *   is the failure worth paying twice to avoid.
  * - **What counts as a save control.** Deliberately narrower than
  *   `CUMWorkflow.isDownloadLabel`, which a *step* uses under a run you started
  *   and are watching. This one runs unattended on every claude.ai page, so a
  *   bare "Save" — a caption claude.ai uses for saving things that aren't files
  *   at all — is not enough. "Download", or "Download <filename>", is.
- * - **A census before anything is clicked.** Nothing already on the page when
- *   the ledger starts is ever downloaded; it is adopted as seen. Otherwise
- *   opening an old chat, or turning the toggle on while reading one, would
- *   re-save every file in it.
  * - **A ceiling in both directions** — per reply and per page load — because a
  *   pathological message must not be able to fill a folder.
  */
@@ -92,6 +99,42 @@
     });
   }
 
+  // A reply this page watched being written, remembered by its opening. Kept
+  // short: only the newest few replies can still be offering a file, and an
+  // unbounded list of every turn in a long session is a leak with no use.
+  const LIVE_MAX = 4;
+  function rememberLive(live, sig, max) {
+    const cap = max > 0 ? max : LIVE_MAX;
+    const list = (live || []).slice(-cap);
+    const s = turnSignature(sig);
+    if (!s) return list;
+    // Moved along rather than repeated: a reply re-marked while its file card
+    // finishes rendering must not push the others off the end.
+    return list
+      .filter((x) => x !== s)
+      .concat([s])
+      .slice(-cap);
+  }
+
+  /**
+   * Has a new reply landed?
+   *
+   * A turn ending is not on its own the thing to act on: the signal can arrive
+   * before claude.ai has mounted the answer, and marking whatever is newest at
+   * that instant would mark the PREVIOUS reply — an old one, whose files are
+   * exactly the backlog this must never touch. So the reply that ended has to
+   * be demonstrably different from the one that was newest when it started,
+   * which is the same comparison a workflow step makes before it will take an
+   * answer as its own.
+   */
+  function landed(state) {
+    const s = state || {};
+    if (!s.armed || s.generating) return false;
+    const now = turnSignature(s.newest);
+    if (!now) return false;
+    return now !== turnSignature(s.before);
+  }
+
   function turnOf(key) {
     const s = str(key);
     const i = s.indexOf("|");
@@ -107,14 +150,22 @@
    *         holds its place, because the keys of the files around it are
    *         numbered against this list and a list that shrank would rename
    *         them.
-   * ctx:    { enabled, generating, baselined, seen[], count, max, maxPerTurn,
-   *           now, lastAt, cooldownMs }
+   * ctx:    { enabled, generating, pending, baselined, live[], seen[], count,
+   *           max, maxPerTurn, now, lastAt, cooldownMs }
    *
    * → { adopt: [key], take: offer|null, hold: reason|null }
    *
    * `adopt` is what the caller must record as seen whether or not anything was
    * clicked — the census is expressed here rather than in the caller so it is
    * covered by the same tests as the clicking.
+   *
+   * `live` is the list of replies this page watched being written (see
+   * rememberLive). **A file is only ever saved out of one of those.** This is
+   * the rule that makes the feature real-time rather than retrospective, and it
+   * is a stronger statement than the census: the census says "not what was here
+   * when I arrived", where this says "only what I saw arrive". Nothing about a
+   * chat you merely opened — however it renders, however you scroll it, however
+   * the extension might mis-key it — can satisfy it.
    *
    * One file per call. Saves are paced rather than fired in a burst: each one
    * may raise a Save-as dialog, and a stack of them is worse than a slow trickle.
@@ -124,10 +175,27 @@
     const list = Array.isArray(offers) ? offers : [];
     const none = { adopt: [], take: null, hold: null };
 
+    const live = {};
+    for (const s of c.live || []) live[s] = true;
+
     if (!c.enabled) return Object.assign({}, none, { hold: "off" });
-    // The census: everything already here is history, not output.
-    if (!c.baselined)
-      return { adopt: list.map((o) => o.key), take: null, hold: "baseline" };
+    if (!c.baselined) {
+      // The census does not close over a turn that is still in flight, or one
+      // whose answer we are still waiting to see: whatever it produces is
+      // output, and adopting it would file the thing this feature exists for
+      // as history. (`pending` is that wait — a turn has ended and its answer
+      // hasn't appeared yet.)
+      if (c.generating || c.pending) return Object.assign({}, none, { hold: "settling" });
+      // Nor does it adopt a reply we watched arrive. Turning the toggle on the
+      // moment an answer lands is a coin toss between the two rules otherwise,
+      // and the census is the one that should give way — it is the weaker
+      // statement of the two.
+      return {
+        adopt: list.filter((o) => !live[turnOf(o.key)]).map((o) => o.key),
+        take: null,
+        hold: "baseline",
+      };
+    }
 
     const seen = {};
     for (const k of c.seen || []) seen[k] = true;
@@ -150,6 +218,13 @@
     let held = null;
     for (const o of fresh) {
       const t = turnOf(o.key);
+      // Not a reply we watched being written. Every file in a chat you have
+      // merely opened lands here, and none of them is adopted: should this turn
+      // out to be the reply in flight after all, it is still saved.
+      if (!live[t]) {
+        held = held || "backlog";
+        continue;
+      }
       let n = 0;
       for (const k in seen) if (turnOf(k) === t) n++;
       if (n >= perTurn) {
@@ -174,11 +249,14 @@
     turnSignature,
     offerKeys,
     turnOf,
+    rememberLive,
+    landed,
     plan,
     MAX_PER_PAGE,
     MAX_PER_TURN,
     COOLDOWN_MS,
     TURN_SIG,
+    LIVE_MAX,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMAutoDl = api;
