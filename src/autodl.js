@@ -63,6 +63,29 @@
     return SAVE_RE.test(s);
   }
 
+  // The looser reading, used ONLY inside a file card — a card naming
+  // `ruling.docx` with one control on it is not ambiguous the way a button
+  // loose in a reply is, so "Download file" and "Save a copy" both count there.
+  const SAVE_WORD = /\b(?:download|save)\b/;
+  function mentionsSave(text) {
+    const s = normLabel(text);
+    if (!s || s.length > 80) return false;
+    return SAVE_WORD.test(s);
+  }
+
+  // Text that names a file. This is what identifies a card: claude.ai draws
+  // what Claude produced as a small panel with the filename on it, and the
+  // filename is the part that doesn't change when the markup does.
+  const FILE_EXT =
+    /(?:docx?|pdf|xlsx?|xls|csv|pptx?|md|markdown|txt|rtf|json|xml|ya?ml|zip|png|jpe?g|gif|svg|html?|ics)/;
+  const FILENAME_RE = new RegExp("([\\w][\\w ,'()\\[\\]&.\\u2014\\u2013-]{0,80}\\." + FILE_EXT.source + ")\\b", "i");
+  function fileNameIn(text) {
+    const s = str(text).replace(/\s+/g, " ").trim();
+    if (!s || s.length > 200) return "";
+    const m = FILENAME_RE.exec(s);
+    return m ? m[1].trim() : "";
+  }
+
   // The filename out of a control's caption, where it carries one. Used for the
   // ledger key and for what the toast says — never for deciding whether to
   // click, so getting nothing back here is not a failure.
@@ -245,6 +268,8 @@
   const api = {
     normLabel,
     isSaveLabel,
+    mentionsSave,
+    fileNameIn,
     fileName,
     turnSignature,
     offerKeys,
