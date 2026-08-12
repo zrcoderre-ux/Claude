@@ -1050,6 +1050,10 @@
   function extractNativeContext(el) {
     try {
       if (!el || el.nodeType !== 1 || !window.CUMWeights) return;
+      // Code only — and checked here rather than when the observer is set up,
+      // because the SPA moves between a chat and Code without reloading, and an
+      // observer that had declined to start would never notice the arrival.
+      if (!isCodeChat()) return;
       if (els && els.root && els.root.contains(el)) return; // ignore our own UI
       const txt = el.textContent || "";
       if (!txt || txt.length > 300000 || !/context window/i.test(txt)) return;
@@ -1242,9 +1246,32 @@
     }
   }
 
+  // Context is shown on **Claude Code only**.
+  //
+  // There, claude.ai computes the figure itself and puts it in its own usage
+  // menu, so what the meter shows is a real token count read out of the page —
+  // worth having, and the reason the scraping below exists at all.
+  //
+  // On a Home chat there is no such number anywhere: the web app exposes no
+  // token count in its API and draws none in its UI, so the only thing that
+  // could be shown is our own count of characters divided by four. That
+  // estimate cannot see the system prompt, the tools, or an attachment's real
+  // cost, and drawn as a meter with a percentage under it, it gets read as a
+  // measurement. A figure that looks precise and isn't is worse than no figure,
+  // so a chat has neither the row in the panel nor the alarm pill.
+  //
+  // The estimate itself is still made — it is a parse of a payload the page
+  // fetches anyway, and it is what teaches the model weights behind Daily
+  // Usage's split (see liveLearnTokens). It just isn't shown to you as if it
+  // were the context window.
+  function contextIsShown() {
+    return currentSurface() === "code";
+  }
+
   // The context figure to show: the real one read from claude.ai's panel when we
   // have it for this conversation, else our per-conversation estimate (marked ~).
   function contextForDisplay() {
+    if (!contextIsShown()) return null;
     const key = convKey();
     if (nativeCtx && nativeCtx.key === key && nativeCtx.window > 0) {
       return {
@@ -1295,6 +1322,17 @@
 
   function updateContextPill() {
     if (!els || !els.ctxPill) return;
+    // Off the Code surface the pill goes, and its latch with it — a pill left
+    // showing from the Code tab you were just in would be reporting that
+    // conversation's context against the chat you are now reading.
+    if (!contextIsShown()) {
+      els.ctxPill.hidden = true;
+      ctxPillPermanent = false;
+      ctxPillTransientUntil = 0;
+      ctxPillKey = null;
+      ctxPillMaxBucket = 0;
+      return;
+    }
     const cd = contextForDisplay();
     if (!cd || cd.pct == null) {
       if (!ctxPillPermanent && Date.now() >= ctxPillTransientUntil) els.ctxPill.hidden = true;

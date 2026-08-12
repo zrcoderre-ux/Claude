@@ -14,11 +14,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
 - Click the pill for a detail panel with up to four meters:
   - **Session · 5 hr** and **Weekly · 7 day** rate-limit windows, each with its
     own reset.
-  - **Context window** — an **estimate** of how full the current conversation
-    is, e.g. `~64% · ~128k / 200k` (marked `est.`). claude.ai's web app does not
-    expose token counts, so this is derived from the conversation's text length
-    (≈4 chars/token) — approximate, and it can't see system prompt / tools /
-    attachments.
+  - **Context window** — **on Claude Code only**, where claude.ai computes the
+    figure itself and the meter reads the real one out of its usage panel
+    (`70% · 696.1k / 1.0M`, marked `actual`). A Home chat gets no context row
+    and no context alarm: see [Context is a Code
+    figure](#context-is-a-code-figure).
   - **Extra usage** — your pay-as-you-go spend (`$0.00 / $30.00`), **opt-in**
     via the popup toggle (off by default).
 - A toolbar popup mirrors the data, toggles extra usage, and can pin the
@@ -1241,8 +1241,7 @@ The background worker polls
 Atlassian Statuspage, so the schema is the documented v2 one — every 5 minutes,
 and every minute while something is wrong. The reading drives two things:
 
-- **A status line in the pill's panel**, directly under the Context bar and
-  **always shown**: a coloured dot plus the status page's own wording — green
+- **A status line in the pill's panel**, **always shown**: a coloured dot plus the status page's own wording — green
   `All Systems Operational` on a normal day, amber when degraded, red during an
   outage, blue for maintenance, grey when the check itself couldn't complete.
   Green is reserved for a check that came back clean, never one that failed, so
@@ -1290,9 +1289,28 @@ unit-tested in `test/status.test.js`.
 
 The rate-limit windows come back as **whole-number percentages** (the server
 rounds them — there are no `anthropic-ratelimit-*` headers on these calls to
-derive anything finer). claude.ai's web app does **not** expose token counts
-anywhere, so the **context meter is an estimate** (text length ÷ ~4), shown with
-a `~` and an `est.` badge.
+derive anything finer).
+
+### Context is a Code figure
+
+The context meter appears on **Claude Code only**.
+
+There, claude.ai computes the number itself and puts it in its own usage menu,
+so what the meter shows is a **real token count** read out of the page — worth
+having, and the reason the scraping below exists at all.
+
+On a Home chat there is no such number anywhere: the web app exposes no token
+count in its API and draws none in its UI. The only thing that could be shown is
+our own count of characters divided by four — which can't see the system prompt,
+the tools, or what an attachment actually costs. Drawn as a meter with a
+percentage under it, an estimate like that gets read as a measurement. A figure
+that looks precise and isn't is worse than no figure, so a chat has neither the
+context row in the panel nor the context alarm pill.
+
+The estimate is still *made*. It's a parse of a payload the page fetches anyway,
+and it's what teaches the model weights behind [Daily
+Usage](#what-a-run-costs)'s split. It simply isn't shown to you as though it
+were the context window.
 
 **Estimate decimals (experimental, opt-in).** With the toggle on, the session
 meter adds an estimated tenths place (`48.3%`). Since usage only climbs within a
@@ -1301,7 +1319,8 @@ divides the tokens consumed since the last jump by that rate. It always snaps to
 the authoritative server integer and caps the fraction below the next whole
 number, so it only ever affects the tenths place. It's an estimate — the
 per-turn cost is itself the text-length estimate (claude.ai exposes no token
-counts), it can't see usage from other tabs/devices/the API, and the per-model
+counts — see [Context is a Code figure](#context-is-a-code-figure)), it can't
+see usage from other tabs/devices/the API, and the per-model
 weighting isn't documented — which is why it's off by default and labelled
 experimental. The calibration lives in `src/estimate.js` and is unit-tested.
 
@@ -1342,10 +1361,13 @@ three ways, in order of preference:
 3. **Manual pin (optional).** Paste the exact usage request URL into the
    toolbar popup to override discovery.
 
-The **context meter** is estimated from the conversation payload
-(`GET /api/organizations/{uuid}/chat_conversations/{uuid}?…`), which contains
-each message's text but no token counts — so it approximates tokens as
-characters ÷ 4. The **extra-usage** line, when enabled, reads
+The **context figure on Claude Code** is read out of claude.ai's own usage panel
+— the web app tokenizes client-side and publishes the result nowhere else. A
+**chat's** context is only ever estimated from the conversation payload
+(`GET /api/organizations/{uuid}/chat_conversations/{uuid}?…`), which carries each
+message's text but no token counts, so it approximates tokens as characters ÷ 4;
+that estimate feeds the model weights and is [not shown as a
+meter](#context-is-a-code-figure). The **extra-usage** line, when enabled, reads
 `/api/organizations/{uuid}/overage_spend_limit` (credit amounts are minor units,
 so `3000` → `$30.00`).
 
