@@ -38,7 +38,8 @@ bottom-right corner of [claude.ai](https://claude.ai).
 - **Auto-download files Claude produces** (opt-in, separate toggle) — when a
   reply hands you a file, its **Download** button is clicked for you once the
   answer has finished, so a produced document lands in your Downloads folder
-  without you going back for it. See
+  without you going back for it. **New files only** — it saves out of replies it
+  watched arrive, never out of a chat's backlog. See
   [Auto-downloading what Claude produces](#auto-downloading-what-claude-produces).
 - **Outage warnings** — watches
   [status.claude.com](https://status.claude.com/) and warns on the pill when
@@ -86,7 +87,27 @@ file Claude produces is saved as soon as the answer it came with is finished.
 
 **Off by default, with its own switch**, like every other clicker here — it
 writes to your disk, and that isn't a decision an extension gets to make on your
-behalf. What it will and won't do:
+behalf.
+
+**It is real-time only, and that is a rule rather than a hope.** A file is saved
+out of a reply this page *watched being written*, and out of nothing else. Open
+a chat with forty files in it and none of them is saved — not because they look
+old, but because no answer arrived while anyone was watching. Turn the toggle on
+mid-conversation and the answer already on screen isn't saved either; the next
+one is. (A reply still being *written* when you flick the switch counts as the
+next one — it lands in front of the watcher, which is the whole test.)
+
+The signal is the one a workflow step trusts: `src/inject.js` reports when the
+assistant's `text/event-stream` opens and when its body finishes reading, which
+is the turn genuinely ending and doesn't care whether the tab is in front. The
+page's own **Stop** control is the fallback where that hook never fires. And a
+turn ending is not on its own enough — the answer has to actually be *on the
+page*, differing from the one that was newest when the turn began, because the
+end-of-turn signal can beat claude.ai's rendering of the answer, and acting on
+it then would mark the **previous** reply as the live one. That reply is old,
+and its files are precisely the backlog this must never touch.
+
+What it will and won't do besides:
 
 - **Only files a reply offers directly** — the download control on a file card
   inside the message. An **artifact** you would download from its own side
@@ -96,11 +117,11 @@ behalf. What it will and won't do:
 - **Only once the turn has finished.** A file card can appear while Claude is
   still writing, and a save dialog landing mid-answer is exactly the
   interruption this exists to spare you.
-- **Nothing that was already there.** Whatever is on the page when the watcher
-  starts — when you open a conversation, or turn the toggle on while reading one
-  — is recorded as already handled without being clicked. Otherwise opening an
-  old chat would re-save every file in it, which is the failure that would make
-  this worse than doing it by hand.
+- **A census as well.** Whatever is on the page when the watcher starts — when
+  you open a conversation, or turn the toggle on while reading one — is recorded
+  as already handled without being clicked. That is belt to the braces above:
+  the two rules fail in different directions, and a backlog saved by accident is
+  the failure worth paying twice to avoid.
 - **Buttons, and links that carry a `download` attribute.** A plain link
   captioned *"Download …"* navigates, and being taken away from the conversation
   you're reading is a worse accident than a file that didn't save.
@@ -114,10 +135,17 @@ behalf. What it will and won't do:
   can't fill a folder. They're paced rather than fired in a burst, since each
   one may raise a Save-as dialog.
 
-It watches only the newest reply or two, which is what makes scrolling safe:
-claude.ai unmounts messages that scroll out of view and mounts them again when
-you scroll back, so a watcher reading the whole transcript would see a chat's
-entire history arrive as "new" every time you scrolled up.
+It watches only the newest reply or two, which is what makes scrolling cheap as
+well as safe: claude.ai unmounts messages that scroll out of view and mounts
+them again when you scroll back, so a watcher reading the whole transcript would
+be re-examining a chat's entire history every time you scrolled up.
+
+One thing it deliberately does **not** do is reset itself when a new chat
+acquires its URL. claude.ai renames a conversation from `/new` to
+`/chat/{uuid}` part-way through its first answer, and a watcher that took a
+fresh census at that moment would file that answer's file under history — which
+is both the commonest way to ask Claude for a file and the one case where
+getting it wrong is most obvious.
 
 The decisions live in `src/autodl.js` (no DOM/`chrome` deps) and are unit-tested
 in `test/autodl.test.js`; the DOM around them is `src/autodownload.js`.

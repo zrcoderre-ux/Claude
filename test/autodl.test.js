@@ -86,6 +86,9 @@ function ctx(over) {
       enabled: true,
       generating: false,
       baselined: true,
+      // The default context is a reply we watched arrive — that being the only
+      // situation in which anything is ever saved.
+      live: ["t1", "t2"],
       seen: [],
       count: 0,
       max: 20,
@@ -106,10 +109,31 @@ test("off means off — nothing is taken and nothing is even adopted", () => {
 test("the census adopts what is already on the page without saving any of it", () => {
   // Opening a chat full of files, or turning the toggle on while reading one,
   // must never write a folder's worth of history to disk.
-  const r = A.plan(OFFERS, ctx({ baselined: false }));
+  const r = A.plan(OFFERS, ctx({ baselined: false, live: [] }));
   assert.equal(r.take, null);
   assert.deepEqual(r.adopt, ["t1|a.docx", "t1|b.csv"]);
   assert.equal(r.hold, "baseline");
+});
+
+test("the census waits for a turn in flight rather than closing over it", () => {
+  // Turning the toggle on, or landing on the page, while Claude is mid-answer.
+  // Closing the census here would adopt the answer being written as history.
+  const mid = A.plan(OFFERS, ctx({ baselined: false, generating: true }));
+  assert.deepEqual(mid.adopt, []);
+  assert.equal(mid.hold, "settling");
+  // Same while the turn has ended and its answer hasn't appeared yet.
+  const waiting = A.plan(OFFERS, ctx({ baselined: false, pending: true }));
+  assert.deepEqual(waiting.adopt, []);
+  assert.equal(waiting.hold, "settling");
+});
+
+test("the census never adopts a reply we watched arrive", () => {
+  const offers = [{ key: "old|history.pdf" }, { key: "new|report.docx" }];
+  const r = A.plan(offers, ctx({ baselined: false, live: ["new"] }));
+  assert.deepEqual(r.adopt, ["old|history.pdf"]);
+  // ...so the file that just landed is still saved on the next pass.
+  const after = A.plan(offers, ctx({ live: ["new"], seen: ["old|history.pdf"] }));
+  assert.equal(after.take.key, "new|report.docx");
 });
 
 test("a file that arrives after the census is saved, once", () => {
@@ -185,9 +209,64 @@ test("a control that can't be clicked yet holds its place and waits its turn", (
 test("the census counts what isn't clickable yet as history too", () => {
   // Otherwise a chat you opened would save itself as its cards finished
   // rendering, which is the one thing the census exists to prevent.
-  const r = A.plan([{ key: "t1|a.docx", ready: false }], ctx({ baselined: false }));
+  const r = A.plan(
+    [{ key: "t1|a.docx", ready: false }],
+    ctx({ baselined: false, live: [] })
+  );
   assert.deepEqual(r.adopt, ["t1|a.docx"]);
   assert.equal(r.take, null);
+});
+
+// ---- real-time only ------------------------------------------------------
+
+test("a chat's backlog is never saved, however new its files look", () => {
+  // The census is not what does this work: even with an empty ledger and a
+  // clean page, a file out of a reply nobody watched arrive is not taken.
+  const r = A.plan(OFFERS, ctx({ live: [], seen: [] }));
+  assert.equal(r.take, null);
+  assert.equal(r.hold, "backlog");
+  // And it is not adopted either — if that reply turns out to be the one in
+  // flight, its file is still saved when the turn lands.
+  assert.deepEqual(r.adopt, []);
+});
+
+test("only the reply that landed is drawn from, not the one beside it", () => {
+  const offers = [{ key: "old|history.pdf" }, { key: "new|report.docx" }];
+  const r = A.plan(offers, ctx({ live: ["new"] }));
+  assert.equal(r.take.key, "new|report.docx");
+  // ...and with that one saved there is nothing further to take.
+  const after = A.plan(offers, ctx({ live: ["new"], seen: ["new|report.docx"] }));
+  assert.equal(after.take, null);
+  assert.equal(after.hold, "backlog");
+});
+
+test("a reply counts as landed only once its answer is actually on the page", () => {
+  // The turn-end signal can beat claude.ai's rendering of the answer. Acting on
+  // it then would mark the PREVIOUS reply as live — an old one, whose files are
+  // precisely the backlog this must never touch.
+  assert.equal(A.landed({ armed: true, newest: "the answer", before: "the one before" }), true);
+  assert.equal(A.landed({ armed: true, newest: "same reply", before: "same reply" }), false);
+  assert.equal(A.landed({ armed: true, newest: "", before: "" }), false);
+  // Nothing has ended yet.
+  assert.equal(A.landed({ armed: false, newest: "an answer", before: "" }), false);
+  // Still writing.
+  assert.equal(A.landed({ armed: true, generating: true, newest: "a", before: "b" }), false);
+  assert.equal(A.landed(null), false);
+});
+
+test("the live list remembers the last few replies and no more", () => {
+  let live = [];
+  for (const s of ["one", "two", "three", "four", "five", "six"])
+    live = A.rememberLive(live, s);
+  assert.equal(live.length, A.LIVE_MAX);
+  assert.equal(live[live.length - 1], "six");
+  assert.equal(live.indexOf("one"), -1);
+  // Re-marking the same reply moves it along rather than filling the list with
+  // copies — a card that renders late does exactly that.
+  const twice = A.rememberLive(A.rememberLive([], "a"), "a");
+  assert.deepEqual(twice, ["a"]);
+  // Nothing to mark leaves the list as it was.
+  assert.deepEqual(A.rememberLive(["a"], ""), ["a"]);
 });
 
 test("no offers at all is quiet — no hold, nothing adopted", () => {
