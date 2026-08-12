@@ -33,6 +33,35 @@ test("the word has to lead, and a caption has to be caption-sized", () => {
   assert.equal(A.isSaveLabel("Download " + "x".repeat(200)), false);
 });
 
+test("a file card is recognised by the filename on it", () => {
+  // This is what finds a card whose control is an unlabelled icon — no amount
+  // of label-matching ever will.
+  assert.equal(A.fileNameIn("Smith v Jones — MSJ.docx"), "Smith v Jones — MSJ.docx");
+  assert.equal(A.fileNameIn("ruling.docx 24 KB"), "ruling.docx");
+  assert.equal(A.fileNameIn("Exhibit A (redacted).pdf"), "Exhibit A (redacted).pdf");
+  assert.equal(A.fileNameIn("tentative.md"), "tentative.md");
+  assert.equal(A.fileNameIn("data.csv"), "data.csv");
+  // Not a filename: prose, a citation, a bare word, or a wall of text.
+  assert.equal(A.fileNameIn("Cleveland at 682-683."), "");
+  assert.equal(A.fileNameIn("no extension here"), "");
+  assert.equal(A.fileNameIn("x".repeat(300) + " ruling.docx"), "");
+  assert.equal(A.fileNameIn(""), "");
+  assert.equal(A.fileNameIn(null), "");
+});
+
+test("the looser save wording is available, for use inside a card", () => {
+  // Loose on purpose, and only ever applied where a filename is already on the
+  // card — "Save a copy" beside `ruling.docx` is not ambiguous the way a button
+  // loose in a reply is.
+  assert.equal(A.mentionsSave("Download file"), true);
+  assert.equal(A.mentionsSave("Save a copy"), true);
+  assert.equal(A.mentionsSave("Preview"), false);
+  assert.equal(A.mentionsSave("Copy"), false);
+  assert.equal(A.mentionsSave(""), false);
+  // The strict rule stays strict — it is the one used out in the open.
+  assert.equal(A.isSaveLabel("Save a copy"), false);
+});
+
 // ---- naming -------------------------------------------------------------
 
 test("a filename is taken out of the caption where there is one", () => {

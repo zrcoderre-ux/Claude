@@ -105,6 +105,35 @@
     return [];
   }
 
+  // One step out from the element claude.ai marks as the message, so long as
+  // that step doesn't swallow a second reply. An attachment is often drawn as a
+  // sibling of the prose rather than inside it, and a watcher looking only at
+  // the prose would never see the card at all.
+  function repliesIn(el) {
+    let n = 0;
+    for (const sel of ASSISTANT_SELECTORS) {
+      try {
+        n = Math.max(n, el.querySelectorAll(sel).length);
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    return n;
+  }
+  function widen(msgEl) {
+    let scope = msgEl;
+    // Climb while the ancestor still holds this reply and no other. That is the
+    // turn's own wrapper, whatever claude.ai calls it this month, and the
+    // attachment is inside it even when it is outside the prose.
+    for (let i = 0; i < 4; i++) {
+      const p = scope.parentElement;
+      if (!p || p === document.body || p === document.documentElement) break;
+      if (repliesIn(p) > 1) break;
+      scope = p;
+    }
+    return scope;
+  }
+
   function newestSignature() {
     const list = assistantMessages();
     if (!list.length || !A) return "";
@@ -113,30 +142,132 @@
 
   // A filename near a control that didn't name one. The card usually says what
   // the file is called even where the button only says "Download".
-  const FILENAME_RE = /([\w][\w \-()[\]]{0,60}\.[a-z0-9]{1,8})\b/i;
   function cardName(node) {
     let el = node;
     for (let i = 0; i < 4 && el; i++, el = el.parentElement) {
-      const t = (el.textContent || "").replace(/\s+/g, " ").trim();
-      if (!t || t.length > 160) continue;
-      const m = FILENAME_RE.exec(t);
-      if (m) return m[1].trim();
+      const n = A.fileNameIn(el.textContent);
+      if (n) return n;
     }
     return "";
   }
 
-  // Clickable right now. A control that fails this still keeps its place in
-  // the list (see offersIn) — it is only barred from being the one clicked.
+  // Clickable at all. **Not** "visible": a card's download control is commonly
+  // revealed on hover, which means it sits at zero opacity until the pointer is
+  // over it — and a watcher that insisted on seeing it would wait forever for a
+  // button that is right there and clicks perfectly well. This is what made the
+  // feature do nothing: the control was found every time and ruled out every
+  // time. Disabled still counts, and so does having been clicked already.
   function ready(el) {
     if (!el) return false;
     if (el.getAttribute && el.getAttribute("data-cum-dl")) return false; // saved already
     if (el.disabled) return false;
     if (el.getAttribute && el.getAttribute("aria-disabled") === "true") return false;
-    try {
-      return C.isVisible(el);
-    } catch (e) {
-      return false;
+    if (!el.isConnected) return false;
+    return true;
+  }
+
+  // Nudge a card, so anything it only draws under the pointer exists to be
+  // found. The same trick src/replycopy.js uses on the action bar.
+  function hover(el) {
+    for (const type of ["pointerover", "mouseover", "mouseenter", "mousemove"]) {
+      try {
+        el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      } catch (e) {
+        /* ignore */
+      }
     }
+  }
+
+  // The file cards in a reply: the smallest element that names a file and has
+  // something clickable on it. Found by the FILENAME rather than by the
+  // control, because the filename is the part that doesn't change when
+  // claude.ai's markup does — and because a card's control may be an icon with
+  // no caption at all, which no amount of label-matching will ever find.
+  const CARD_SCOPE = "div,span,a,li,article,section,figure";
+  const CARD_MAX_TEXT = 120; // a card says a filename and a size, not a sentence
+  function cardsIn(root) {
+    const cards = [];
+    let nodes;
+    try {
+      nodes = root.querySelectorAll(CARD_SCOPE);
+    } catch (e) {
+      return cards;
+    }
+    const named = [];
+    for (const el of nodes) {
+      if (C.isOurs(el)) continue;
+      const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (text.length > CARD_MAX_TEXT) continue;
+      // Recognised by its FILENAME, and by nothing else. Requiring a control
+      // here is what made a card whose download button only exists under the
+      // pointer invisible to this: it had no control, so it was not a card, so
+      // it was never hovered, so it never got one. Chicken, meet egg.
+      if (!A.fileNameIn(text)) continue;
+      named.push(el);
+    }
+    // Start at the innermost thing that names the file — usually the label
+    // inside the card — then climb to the nearest ancestor that has a control
+    // on it. The label is a sibling of the download button, not its parent, so
+    // stopping at the label finds nothing to press; and stopping at the first
+    // ancestor with a filename would stop at the label too.
+    const CONTROLS = 'button,[role="button"],a[download],a[href^="blob:"]';
+    for (const start of named) {
+      if (named.some((o) => o !== start && start.contains(o))) continue; // not innermost
+      // How far out the card can be: a card says the filename and little else —
+      // a size, a file type, a bullet between them. Once the text runs past
+      // that, the climb has left the card and is into the prose around it, and
+      // a "card" that is really a paragraph would hand back whatever button
+      // happened to be in the same reply.
+      const name = A.fileNameIn(start.textContent) || "";
+      const room = Math.min(CARD_MAX_TEXT, name.length + 40);
+      let card = start;
+      for (let i = 0; i < 3; i++) {
+        try {
+          if (card.querySelector(CONTROLS)) break;
+        } catch (e) {
+          break;
+        }
+        const p = card.parentElement;
+        if (!p) break;
+        const t = (p.textContent || "").replace(/\s+/g, " ").trim();
+        if (t.length > room) break;
+        card = p;
+      }
+      if (!cards.some((c) => c === card || c.contains(card))) cards.push(card);
+    }
+    return cards.filter((el) => !cards.some((other) => other !== el && el.contains(other)));
+  }
+
+  // The control on a card that saves the file, best first. A card with exactly
+  // one control at all is that control: an icon-only download button is the
+  // ordinary shape, and refusing to press the only thing on a card that plainly
+  // holds a file is refusing to do the job.
+  function controlIn(card) {
+    const q = (sel) => {
+      try {
+        return Array.from(card.querySelectorAll(sel)).filter((el) => !C.isOurs(el));
+      } catch (e) {
+        return [];
+      }
+    };
+    const named = (els, test) =>
+      els.find((el) =>
+        test(el.getAttribute("aria-label")) || test(el.getAttribute("title")) || test(el.textContent)
+      );
+    const links = q('a[download],a[href^="blob:"]');
+    if (links.length) return links[0];
+    const tagged = q('[data-testid*="download" i],[data-test-id*="download" i]');
+    if (tagged.length) return tagged[0];
+    const buttons = q('button,[role="button"]');
+    // The last resort — press the only thing on the card — applies only to a
+    // card that is a card: a filename and a size. On anything bigger, "the only
+    // button" could be anything at all.
+    const small = (card.textContent || "").replace(/\s+/g, " ").trim().length <= CARD_MAX_TEXT;
+    return (
+      named(buttons, A.isSaveLabel) ||
+      named(buttons, A.mentionsSave) ||
+      (small && buttons.length === 1 ? buttons[0] : null)
+    );
   }
 
   // Every file this reply is offering. Document order, and everything that
@@ -146,28 +277,33 @@
   function offersIn(msgEl) {
     const found = [];
     const nodes = new Set();
+    const add = (node, name) => {
+      if (!node || nodes.has(node) || C.isOurs(node)) return;
+      nodes.add(node);
+      found.push({ node, name: name || cardName(node), ready: ready(node) });
+    };
     try {
-      for (const a of msgEl.querySelectorAll("a[download]")) {
-        if (nodes.has(a) || C.isOurs(a)) continue;
-        nodes.add(a);
-        const attr = (a.getAttribute("download") || "").trim();
-        found.push({
-          node: a,
-          name: attr || A.fileName(a.textContent) || cardName(a),
-          ready: ready(a),
-        });
-      }
-      // Buttons only. A bare link would navigate rather than save.
+      for (const a of msgEl.querySelectorAll("a[download]"))
+        add(a, (a.getAttribute("download") || "").trim() || A.fileName(a.textContent));
+      // A control labelled as a save, anywhere in the reply. Buttons only —
+      // a bare link would navigate rather than save.
       for (const b of msgEl.querySelectorAll('button, [role="button"]')) {
-        if (nodes.has(b) || C.isOurs(b)) continue;
         const label =
           b.getAttribute("aria-label") || b.getAttribute("title") || b.textContent;
-        if (!A.isSaveLabel(label)) continue;
-        nodes.add(b);
-        found.push({ node: b, name: A.fileName(label) || cardName(b), ready: ready(b) });
+        if (A.isSaveLabel(label)) add(b, A.fileName(label));
+      }
+      // ...and whatever the file cards themselves offer, which is the path that
+      // finds an unlabelled icon.
+      for (const card of cardsIn(msgEl)) {
+        let ctrl = controlIn(card);
+        if (!ctrl) {
+          hover(card); // a control drawn only under the pointer
+          ctrl = controlIn(card);
+        }
+        if (ctrl) add(ctrl, A.fileNameIn(card.textContent));
       }
     } catch (e) {
-      return [];
+      return found;
     }
     return found;
   }
@@ -178,7 +314,11 @@
     const recent = assistantMessages().slice(-2);
     const offers = [];
     for (const m of recent) {
-      const found = offersIn(m);
+      // The card can sit just outside the prose element claude.ai marks as the
+      // message, so the reply's own container is searched where it holds no
+      // other reply.
+      const scope = widen(m);
+      const found = offersIn(scope);
       if (!found.length) continue;
       const keys = A.offerKeys(
         A.turnSignature(m.textContent),
@@ -277,7 +417,8 @@
       live = A.rememberLive(live, newest);
     }
 
-    const res = A.plan(collect(), {
+    const offers = collect();
+    const res = A.plan(offers, {
       enabled: cfg.enabled,
       generating,
       pending: armed, // a turn ended; its answer hasn't shown up yet
@@ -289,6 +430,7 @@
       now: Date.now(),
       lastAt,
     });
+    report(offers, res, generating);
 
     for (const k of res.adopt) if (seen.indexOf(k) === -1) seen.push(k);
     if (res.hold === "baseline") {
@@ -303,6 +445,34 @@
       return;
     }
     save(res.take);
+  }
+
+  // ---- What it can see -----------------------------------------------------
+  // "It isn't working" is three different faults with one symptom: the turn
+  // wasn't seen to land, no file was found in it, or the file was found and
+  // held back. Without this the only way to tell them apart is to guess, which
+  // is what made this take three rounds. The last reading is written where the
+  // popup can show it, and only when it changes, so an idle tab writes nothing.
+  let lastReport = "";
+  function report(offers, res, generating) {
+    const line =
+      offers.length +
+      " offered · " +
+      (res.take ? "saving" : res.hold || "nothing new") +
+      " · " +
+      live.length +
+      (live.length === 1 ? " reply watched" : " replies watched") +
+      (generating ? " · generating" : "") +
+      (baselined ? "" : " · census open");
+    if (line === lastReport) return;
+    lastReport = line;
+    try {
+      chrome.storage?.local.set({
+        cum_autodownload_last: { at: Date.now(), line, saved: count },
+      });
+    } catch (e) {
+      /* a diagnostic that throws would be its own joke */
+    }
   }
 
   // ---- Toast -------------------------------------------------------------

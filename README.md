@@ -130,15 +130,54 @@ What it will and won't do besides:
 - **Buttons, and links that carry a `download` attribute.** A plain link
   captioned *"Download …"* navigates, and being taken away from the conversation
   you're reading is a worse accident than a file that didn't save.
-- **The word has to lead the caption** — `Download`, `Download ruling.docx`,
-  `Save as PDF`. A bare **Save** is deliberately *not* enough here, though a
-  workflow step does take it: a step runs under a run you started and are
-  watching, where this runs unattended on every claude.ai page, and claude.ai
-  says "Save" over things that aren't files.
+- **The card is found by its filename**, not by its button. See
+  [finding the button](#finding-the-button) — this is what made the first
+  version of the feature do nothing at all.
 - **Ceilings in both directions** — at most **6 files from any one reply**, and
   **20 per page load** (adjustable in the popup), so a pathological message
   can't fill a folder. They're paced rather than fired in a burst, since each
   one may raise a Save-as dialog.
+
+### Finding the button
+
+The first version looked for a control captioned `Download`, and on the real
+page it found nothing — so the feature sat there doing nothing, silently, which
+is the worst way for it to fail. Two reasons, and both are now the other way
+round.
+
+**A card's control is often unlabelled and often not there yet.** claude.ai
+draws what Claude produced as a small card with the filename on it and an icon
+to save it; the icon may carry no caption at all, and it may not exist in the
+page until the pointer is over the card. So the card is found by the **filename**
+— the part that doesn't change when the markup does — and the button is looked
+for inside it: an `a[download]` or a blob link first, then a `data-testid`
+naming a download, then a caption that says download or save, and failing all of
+those, the only control on a card that plainly holds a file. A card with nothing
+on it is **hovered** first, since a button drawn only under the pointer can't be
+found by looking.
+
+**And "visible" was the wrong test.** A control revealed on hover sits at zero
+opacity until then, so insisting on seeing it meant waiting forever for a button
+that was right there and clicks perfectly well. Being disabled still counts;
+being invisible no longer does.
+
+Widened, too: the search covers the **turn's own wrapper**, not just the prose
+element, climbing while the ancestor holds this reply and no other — an
+attachment is often drawn beside the answer rather than inside it.
+
+Eight card shapes are driven through a whole turn in Chromium, from the page's
+events rather than the extension's internals: a labelled button, an unlabelled
+icon, a button added to the page on hover, a button at zero opacity until hover,
+a blob link, a `data-testid` with no caption, a card outside the message
+element, and a reply with no file in it, which must produce no click at all.
+
+### When it says it isn't working
+
+"It isn't working" is three faults with one symptom: the turn wasn't seen to
+land, no file was found in it, or one was found and held back. The popup now
+says which, under the toggle — `1 offered · saving · 1 reply watched`, or
+`0 offered · nothing new · 0 replies watched · census open`. It's written only
+when the reading changes, so an idle tab writes nothing.
 
 It watches only the newest reply or two, which is what makes scrolling cheap as
 well as safe: claude.ai unmounts messages that scroll out of view and mounts

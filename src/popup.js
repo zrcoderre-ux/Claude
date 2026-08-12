@@ -8,6 +8,7 @@
   const ESTIMATE_KEY = "cum_estimate_decimals";
   const AUTOCONTINUE_KEY = "cum_autocontinue";
   const AUTODOWNLOAD_KEY = "cum_autodownload";
+  const AUTODOWNLOAD_SEEN_KEY = "cum_autodownload_last";
   const STATUS_KEY = "cum_status";
   const STATUS_CFG_KEY = "cum_status_cfg";
 
@@ -30,6 +31,7 @@
     acMax: document.getElementById("ac-max"),
     autoDownload: document.getElementById("auto-download"),
     dlMax: document.getElementById("dl-max"),
+    dlSeen: document.getElementById("dl-seen"),
     openLog: document.getElementById("open-log"),
     svcStatus: document.getElementById("svc-status"),
     svcDetail: document.getElementById("svc-detail"),
@@ -136,6 +138,7 @@
       ESTIMATE_KEY,
       AUTOCONTINUE_KEY,
       AUTODOWNLOAD_KEY,
+      AUTODOWNLOAD_SEEN_KEY,
       STATUS_KEY,
       STATUS_CFG_KEY,
     ],
@@ -151,6 +154,7 @@
       dlCfg = Object.assign(dlCfg, (res && res[AUTODOWNLOAD_KEY]) || {});
       el.autoDownload.checked = !!dlCfg.enabled;
       el.dlMax.value = dlCfg.max;
+      renderDlSeen(res && res[AUTODOWNLOAD_SEEN_KEY]);
       // Both status toggles default ON, so only an explicit false turns them off.
       const sc = (res && res[STATUS_CFG_KEY]) || {};
       statusCfg = { warn: sc.warn !== false, holdSends: sc.holdSends !== false };
@@ -175,7 +179,9 @@
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STATUS_KEY]) renderStatus(changes[STATUS_KEY].newValue);
+    if (area !== "local") return;
+    if (changes[STATUS_KEY]) renderStatus(changes[STATUS_KEY].newValue);
+    if (changes[AUTODOWNLOAD_SEEN_KEY]) renderDlSeen(changes[AUTODOWNLOAD_SEEN_KEY].newValue);
   });
 
   function saveAc(msg) {
@@ -201,12 +207,23 @@
     saveAc("Saved");
   });
 
+  // What the watcher last saw. Three faults share the symptom "it isn't
+  // working" — the turn wasn't seen to land, no file was found in it, or one was
+  // found and held back — and this is the line that tells them apart.
+  function renderDlSeen(snap) {
+    if (!el.dlSeen) return;
+    const show = !!(snap && snap.line && dlCfg.enabled);
+    el.dlSeen.hidden = !show;
+    if (show) el.dlSeen.textContent = "Last seen " + timeAgo(snap.at) + ": " + snap.line;
+  }
+
   function saveDl(msg) {
     chrome.storage.local.set({ [AUTODOWNLOAD_KEY]: dlCfg }, () => msg && flash(msg));
   }
 
   el.autoDownload.addEventListener("change", () => {
     dlCfg.enabled = el.autoDownload.checked;
+    if (!dlCfg.enabled && el.dlSeen) el.dlSeen.hidden = true;
     saveDl(dlCfg.enabled ? "Saving files Claude produces" : "Auto-download off");
   });
 
