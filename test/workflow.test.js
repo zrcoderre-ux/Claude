@@ -1306,6 +1306,74 @@ test("a run stops when there's no usage left to send into", () => {
   assert.equal(W.usageExhausted({ percent: null, weeklyPercent: undefined }), false);
 });
 
+test("a run out of usage arranges to pick itself back up", () => {
+  const NOW2 = 1893456000000;
+  const back = NOW2 + 3 * 60 * 60 * 1000;
+  const run = { id: "r1", status: "running", stepIndex: 3, totalSteps: 9 };
+  const paused = W.markPausedForUsage(run, NOW2, back);
+  assert.equal(paused.status, "paused");
+  assert.equal(paused.resumeOnUsage, true);
+  assert.equal(paused.resumeAt, back);
+  assert.equal(paused.stepIndex, 3); // it keeps its place
+  // The meter not knowing when isn't a reason to give up on resuming — the
+  // reading is asked again either way; there is just no time to set an alarm by.
+  assert.equal(W.markPausedForUsage(run, NOW2, null).resumeOnUsage, true);
+  assert.equal(W.markPausedForUsage(run, NOW2, null).resumeAt, null);
+});
+
+test("pausing a run by hand means it stays paused", () => {
+  const NOW2 = 1893456000000;
+  const auto = W.markPausedForUsage({ id: "r1", status: "running" }, NOW2, NOW2 + 1000);
+  // Pausing it yourself is a decision that it waits for you, so the standing
+  // arrangement goes.
+  const byHand = W.markPaused(auto, NOW2 + 5);
+  assert.equal(byHand.resumeOnUsage, false);
+  assert.equal(byHand.resumeAt, null);
+  // ...and so does Stay paused, which changes nothing else about the run.
+  const held = W.holdPaused(auto);
+  assert.equal(held.resumeOnUsage, false);
+  assert.equal(held.status, "paused");
+  assert.equal(held.stepIndex, auto.stepIndex);
+});
+
+test("the runs waiting on the meter are picked out, and the first one dated", () => {
+  const t = 1893456000000;
+  const runs = [
+    { id: "a", status: "paused" }, // paused by hand
+    { id: "b", status: "paused", resumeOnUsage: true, resumeAt: t + 9000 },
+    { id: "c", status: "paused", resumeOnUsage: true, resumeAt: t + 1000 },
+    { id: "d", status: "running", resumeOnUsage: true, resumeAt: t }, // already going
+  ];
+  assert.deepEqual(W.usageWaitingRuns(runs).map((r) => r.id), ["b", "c"]);
+  // The alarm is set by whichever expects to go first.
+  assert.equal(W.nextUsageResume(runs), t + 1000);
+  // One with no time on it doesn't stop the others being dated.
+  assert.equal(W.nextUsageResume([{ id: "e", status: "paused", resumeOnUsage: true }]), null);
+  assert.deepEqual(W.usageWaitingRuns([]), []);
+  assert.equal(W.nextUsageResume(null), null);
+});
+
+test("a reading that has outlived its own window doesn't block anything", () => {
+  const t = 1893456000000;
+  // Current and full: blocked, and the run pauses.
+  assert.equal(W.usageBlocked({ percent: 1, resetAt: t + 1000, updatedAt: t }, t), true);
+  // The window it describes has since reset — that percent belongs to a window
+  // that has ended, so it says nothing about this one.
+  assert.equal(W.usageBlocked({ percent: 1, resetAt: t - 1000, updatedAt: t - 2000 }, t), false);
+  // Old enough that it cannot be describing now. Usage is read by claude.ai's
+  // own pages, so a browser with no tab open refreshes nothing — and a run that
+  // ran out overnight would otherwise wait on a number that can never change.
+  assert.equal(
+    W.usageBlocked({ percent: 1, resetAt: t + 99999999, updatedAt: t - W.USAGE_STALE_MS - 1 }, t),
+    false
+  );
+  // Fresh and not full: nothing to block.
+  assert.equal(W.usageBlocked({ percent: 0.3, resetAt: t + 1000, updatedAt: t }, t), false);
+  // A meter that knows nothing blocks nothing.
+  assert.equal(W.usageBlocked({}, t), false);
+  assert.equal(W.usageBlocked(null, t), false);
+});
+
 test("a paused run can say when its usage comes back", () => {
   const t = 1893456000000;
   assert.equal(W.usageBackAt({ percent: 1, resetAt: t }), t);

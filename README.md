@@ -828,19 +828,48 @@ to it.
 **Running out of usage pauses the run.** Before each step, and every twenty
 seconds while one waits, the run reads the meter it already keeps. At 100% of
 either window — the 5-hour session or the 7-day week, since a weekly limit blocks
-a fresh session just as firmly — it **pauses** and says when usage comes back.
+a fresh session just as firmly — it **pauses**, keeping its place, and says when
+usage comes back.
 
 It reads the **meter**, never the page. A reply that discusses running out of
 usage must not be able to pause a healthy run, and the message text is the one
 place that sentence is likely to turn up.
 
-Pausing rather than holding is deliberate. An outage is over when it's over, so a
-held run picks itself back up; a usage window reopens on a schedule, and a run
-that resumed itself at 3am would start a nine-step afternoon's work with nobody
-watching. It waits for you. Where the message had already gone out, the pause
-keeps the phase, so **Resume** waits for that answer rather than sending the same
-message into a second turn. A turn already generating is left to finish — it's
-paid for; what will never arrive is the reply that hasn't started.
+**And it picks itself back up when usage returns.** Nothing about a usage pause
+needs deciding — the run stopped because the window was empty, and the window
+refills on a schedule — so the pause carries the time it expects to be able to
+go again and lifts itself then. The row says so while it waits: *carrying on by
+itself when it returns at 3:14 PM*.
+
+The **meter** decides that too, never the clock. The reset time a run recorded
+when it stopped is only what the alarm is set by; a window can reopen early,
+late, or at a time the meter had wrong, so a wake-up that arrives while usage is
+still gone does nothing and leaves the run where it is. Every meter reading is
+another chance, which is sooner and more reliable than any alarm.
+
+Two consequences of that worth stating, because both are ways this could sit
+there doing nothing:
+
+- **A reading that has outlived its own window doesn't count as "you are out".**
+  Usage is read by claude.ai's own pages, so a browser with no claude.ai tab open
+  refreshes nothing. A run that ran out overnight would otherwise wait forever on
+  a number that cannot change. A reading whose own reset time has passed, or one
+  older than the window it measures, is treated as saying nothing rather than as
+  saying no.
+- **The gate and the resume ask the same question.** If the run's own check
+  paused on a reading the resume then treated as expired, the two would take
+  turns forever and never open a tab to find out. One predicate answers both.
+
+**Stay paused**, on the run's row, is how you tell it not to. The run stays
+exactly where it is and waits for you instead of for the meter — which is the
+answer when a nine-step afternoon's work resuming itself at 3am is not what you
+want. Pausing a run by hand means the same thing: a pause you asked for is never
+lifted by anything but you.
+
+Where the message had already gone out, the pause keeps the phase — so resuming,
+by itself or by hand, waits for that answer rather than sending the same message
+into a second turn. A turn already generating is left to finish; it's paid for.
+What will never arrive is the reply that hasn't started.
 
 **When things go wrong.** A run is driven through the real UI, so it needs your
 browser open and logged in. If Claude is down it **waits mid-workflow** and picks
