@@ -58,6 +58,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
 - **Save chat** — a button in claude.ai's own header, in with the file and share
   controls, that saves the whole conversation as a **Markdown file** you can hand
   to the next chat. See [Saving a chat](#saving-a-chat).
+- **Copy ruling** — a second copy button in claude.ai's own action bar, beside
+  the one that copies the whole reply. It copies **only the tentative ruling**:
+  NATURE OF PROCEEDINGS through the end of the CONCLUSION, without the note
+  Claude wrote above it, the offer to revise underneath, or the horizontal rules
+  between. See [Copying just the ruling](#copying-just-the-ruling).
 - **Table of contents** — a floating list of **your own messages** in the
   conversation you're reading, so a long chat is navigable instead of a scroll
   bar. Each entry carries the time it was sent and, where a workflow sent it,
@@ -962,6 +967,74 @@ quietly claim to be more than it is:
 Where it goes is [the header slot](#the-header-slot), which it shares with the
 table of contents' toggle.
 
+## Copying just the ruling
+
+A reply that contains a tentative ruling usually contains other things too: a
+note about what was assumed, a question about a missing paper, an offer to
+revise. Claude separates those from the ruling with a horizontal rule — which
+you can't select on the page, but which the copy box copies as `---`, along with
+everything on either side of it. What goes into a minute order is the ruling and
+nothing else, so copying the reply means pasting it somewhere and then deleting
+the bits around it, every time.
+
+**Ruling** sits in claude.ai's action bar beside its own Copy control and copies
+the ruling alone: from **NATURE OF PROCEEDINGS** through the end of the
+**CONCLUSION**, with the rules themselves dropped — including any *inside* the
+ruling, since the point is text you can paste straight in.
+
+It appears **only on a reply that has a ruling in it**, and not while one is
+still being written. A second copy control under every answer in every chat
+would be clutter, and half a ruling pasted into a minute order is worse than
+none.
+
+Where the boundaries come from, and why each is where it is:
+
+- **The start is the heading**, not the top of the reply. Anything Claude says
+  before the ruling is commentary, whether or not a rule separates it.
+- **The end is the first rule after CONCLUSION.** Not the first rule after the
+  start: a ruling of any length may well be ruled off between its own sections,
+  and ending at the first one would hand back the first section alone. Not the
+  last rule in the reply either, which would take the commentary with it.
+- **CONCLUSION is looked for after the start**, so a "Conclusion" in Claude's
+  own remarks underneath can't be mistaken for the ruling's.
+- **A rule directly under a line of text is left alone.** In Markdown that's a
+  setext heading rather than a break — `CONCLUSION` with `---` under it *is* the
+  conclusion heading, and reading it as the end would cut off the disposition,
+  which is the one line that has to travel.
+- **The heading is matched however it was decorated** — `## NATURE OF
+  PROCEEDINGS`, `**NATURE OF PROCEEDINGS**`, `NATURE OF PROCEEDINGS:`, or the
+  words sharing a line with something else. claude.ai's wording varies and none
+  of them is wrong.
+
+Nothing is rewritten on the way: headings, emphasis and citations travel exactly
+as Claude wrote them.
+
+**Where the text comes from** is claude.ai's own copy box, clicked and caught
+through the clipboard hook (the same mechanism a workflow step uses to carry a
+reply between chats, now shared in `src/replycopy.js`). That's the only source
+that gives Claude's markdown as written — reading the rendered page instead
+would hand back something that looks the same and pastes flat, and the rules
+that mark the ruling's boundaries wouldn't be in it at all.
+
+Two honest edges, both of which the button says out loud rather than leaving you
+to discover:
+
+- A reply whose ruling has **no CONCLUSION heading** is copied to the end of the
+  block and the button says `Copied (no CONCLUSION)` — it may have picked up a
+  sentence Claude added underneath.
+- Where the ruling **can't be found**, the button says `No ruling found` and
+  puts the clipboard back to the whole reply, exactly as claude.ai's own Copy
+  left it. Getting the text means letting the page copy the whole reply first,
+  and a clipboard quietly holding the wrong thing is the one outcome worth
+  going out of the way to prevent.
+- Where the copy box gives nothing at all, it falls back to the rendered page
+  and says `Copied (from the page)`. What's rendered has no `---` in it — a
+  horizontal rule draws as a line and reads as nothing — so the end of the
+  ruling is a guess there, and Claude's closing remark can ride along.
+
+The boundary rules live in `src/tentative.js` (no DOM/`chrome` deps) and are
+unit-tested in `test/tentative.test.js`; the button is `src/copy-ruling.js`.
+
 ## Table of contents
 
 A nine-step run leaves a conversation you'll want to read back through, and a
@@ -1295,6 +1368,9 @@ src/incognito-watch.js Keeps a copy while an incognito chat is open
 src/mdexport.js        A conversation as Markdown (pure)
 src/headerslot.js      Finds the file/share cluster and puts our buttons in it
 src/save-chat.js       The Save button in claude.ai's header
+src/replycopy.js       claude.ai's copy box: where it is, and what it wrote
+src/tentative.js       The tentative ruling out of a reply (pure)
+src/copy-ruling.js     The Copy-ruling button, beside claude.ai's own Copy
 src/toc.js             Table-of-contents labelling (pure)
 src/stamp.js           When each turn happened, and the gap between (pure)
 src/stamps.js          Puts that time under every turn on the page
@@ -1312,6 +1388,7 @@ test/mdexport.test.js  Unit tests for the Markdown export
 test/incognito.test.js Unit tests for incognito recovery + expiry
 test/autocontinue.test.js  Unit tests for the button-label predicates
 test/autodl.test.js    Unit tests for the auto-download ledger + ceilings
+test/tentative.test.js Unit tests for the ruling's start and end boundaries
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only
 ```

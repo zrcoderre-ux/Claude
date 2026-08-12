@@ -1334,3 +1334,37 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   .cum-run-n { background: rgba(255, 255, 255, 0.08); color: #e08765; }
   .cum-run-row.done .cum-run-n { color: #a5a29a; }
 }
+
+/* ---- Copy ruling ---------------------------------------------------------
+   A second copy control, in claude.ai's action bar beside its own. Sized down
+   to sit in a row of icon buttons without shouting over them — it is the
+   narrower tool of the two, and shouldn't look like the main one. */
+.cum-ruling-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 2px;
+  padding: 3px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.cum-ruling-btn:hover { background: rgba(0, 0, 0, 0.06); opacity: 1; }
+.cum-ruling-btn:disabled { opacity: 0.55; cursor: default; }
+.cum-ruling-btn.cum-ruling-bad { color: #d23f31; border-color: rgba(210, 63, 49, 0.5); }
+.cum-ruling-ico { font-size: 12px; line-height: 1; opacity: 0.75; }
+
+@media (prefers-color-scheme: dark) {
+  .cum-ruling-btn { border-color: rgba(255, 255, 255, 0.22); }
+  .cum-ruling-btn:hover { background: rgba(255, 255, 255, 0.08); }
+  .cum-ruling-btn.cum-ruling-bad { color: #ff8a7a; border-color: rgba(255, 138, 122, 0.5); }
+}
