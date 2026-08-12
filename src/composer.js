@@ -114,6 +114,10 @@
     const cls = el.className ? String(el.className) : "";
     if (cls.indexOf("cumjf") === 0 || cls.indexOf(" cumjf") !== -1) return true;
     if (cls.indexOf("cumwf") === 0 || cls.indexOf(" cumwf") !== -1) return true;
+    // Anything we inject into claude.ai's own furniture — the Copy-ruling
+    // button sits in its action bar — carries a cum- class. An id is no use
+    // there: there is one of those buttons per reply.
+    if (/(^|\s)cum-/.test(cls)) return true;
     const id = el.id || "";
     return id.indexOf("cum-") === 0;
   }
