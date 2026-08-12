@@ -93,6 +93,19 @@
       this off if you want to read each prompt. Stops after 100 clicks per page
       load; toggle off/on to resume.</p>
 
+    <label class="toggle">
+      <input id="auto-download" type="checkbox" />
+      <span>Auto-download files Claude produces</span>
+    </label>
+    <p class="hint">Off by default. When a reply hands you a file, its
+      <b>Download</b> button is clicked for you once the answer has finished —
+      so a produced document lands in your Downloads folder without you fetching
+      it. Only files a reply offers directly; an artifact you'd download from
+      its own panel isn't one. Nothing already in a chat is ever re-saved when
+      you open it, and it stops after
+      <input id="dl-max" type="number" min="1" max="200" class="inline-num" /> files
+      per page load.</p>
+
     <label class="field-label" for="endpoint">Usage endpoint (optional)</label>
     <input
       id="endpoint"

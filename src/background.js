@@ -18,6 +18,7 @@
 importScripts("jobstore.js", "status.js", "workflow.js", "wfusage.js", "incognito.js");
 
 const CFG_KEY = "cum_autocontinue";
+const DL_CFG_KEY = "cum_autodownload"; // { enabled, max } — the file saver
 const JOBS_KEY = "cum_jobs";
 const WORKFLOWS_KEY = "cum_workflows";
 const RUNS_KEY = "cum_wf_runs";
@@ -108,13 +109,14 @@ function notify(title, message) {
 
 // ==== Auto-continue keepalive ===========================================
 // Any of the auto-clickers being on is reason to keep nudging: a backgrounded
-// tab's own timers throttle, and the Allow-once clicker has its own toggle
-// independent of Continue's.
+// tab's own timers throttle, and each clicker has its own toggle — Allow-once
+// independent of Continue's, and the file saver independent of both.
 function acEnabled() {
   return new Promise((resolve) => {
-    get(CFG_KEY).then((r) => {
+    get([CFG_KEY, DL_CFG_KEY]).then((r) => {
       const c = r[CFG_KEY] || {};
-      resolve(!!(c.enabled || c.allowOnce));
+      const d = r[DL_CFG_KEY] || {};
+      resolve(!!(c.enabled || c.allowOnce || d.enabled));
     });
   });
 }
@@ -2065,7 +2067,7 @@ chrome.alarms.onAlarm.addListener((a) => {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (changes[CFG_KEY]) {
+  if (changes[CFG_KEY] || changes[DL_CFG_KEY]) {
     ensureKeepalive();
     acBurst();
   }

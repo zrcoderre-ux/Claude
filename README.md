@@ -35,6 +35,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
   *Allow for this chat* — so nothing is granted beyond the single call in front of
   it. You are approving those calls sight-unseen, which is why it's off by
   default and has its own switch rather than riding on auto-continue's.
+- **Auto-download files Claude produces** (opt-in, separate toggle) — when a
+  reply hands you a file, its **Download** button is clicked for you once the
+  answer has finished, so a produced document lands in your Downloads folder
+  without you going back for it. See
+  [Auto-downloading what Claude produces](#auto-downloading-what-claude-produces).
 - **Outage warnings** — watches
   [status.claude.com](https://status.claude.com/) and warns on the pill when
   Claude is degraded, down, or under maintenance. A **scheduled send waits out an
@@ -72,6 +77,50 @@ bottom-right corner of [claude.ai](https://claude.ai).
   then a final pass. Editable, copyable, deletable, with one pre-built. Each run
   is timed and measured against your usage, and **Usage → Workflows** shows what
   share of your weekly usage they account for. See [Workflows](#workflows).
+
+## Auto-downloading what Claude produces
+
+A workflow step can already be told to save whatever its reply offers. This is
+the same thing for the chats you drive yourself: turn it on in the popup and a
+file Claude produces is saved as soon as the answer it came with is finished.
+
+**Off by default, with its own switch**, like every other clicker here — it
+writes to your disk, and that isn't a decision an extension gets to make on your
+behalf. What it will and won't do:
+
+- **Only files a reply offers directly** — the download control on a file card
+  inside the message. An **artifact** you would download from its own side
+  panel is not one of these: that control lives outside the message, behind a
+  menu, and reaching into it is a different feature with different ways to go
+  wrong.
+- **Only once the turn has finished.** A file card can appear while Claude is
+  still writing, and a save dialog landing mid-answer is exactly the
+  interruption this exists to spare you.
+- **Nothing that was already there.** Whatever is on the page when the watcher
+  starts — when you open a conversation, or turn the toggle on while reading one
+  — is recorded as already handled without being clicked. Otherwise opening an
+  old chat would re-save every file in it, which is the failure that would make
+  this worse than doing it by hand.
+- **Buttons, and links that carry a `download` attribute.** A plain link
+  captioned *"Download …"* navigates, and being taken away from the conversation
+  you're reading is a worse accident than a file that didn't save.
+- **The word has to lead the caption** — `Download`, `Download ruling.docx`,
+  `Save as PDF`. A bare **Save** is deliberately *not* enough here, though a
+  workflow step does take it: a step runs under a run you started and are
+  watching, where this runs unattended on every claude.ai page, and claude.ai
+  says "Save" over things that aren't files.
+- **Ceilings in both directions** — at most **6 files from any one reply**, and
+  **20 per page load** (adjustable in the popup), so a pathological message
+  can't fill a folder. They're paced rather than fired in a burst, since each
+  one may raise a Save-as dialog.
+
+It watches only the newest reply or two, which is what makes scrolling safe:
+claude.ai unmounts messages that scroll out of view and mounts them again when
+you scroll back, so a watcher reading the whole transcript would see a chat's
+entire history arrive as "new" every time you scrolled up.
+
+The decisions live in `src/autodl.js` (no DOM/`chrome` deps) and are unit-tested
+in `test/autodl.test.js`; the DOM around them is `src/autodownload.js`.
 
 ## Scheduled sends
 
@@ -1211,6 +1260,8 @@ src/scheduler-run.js   Sends a queued job through the composer
 src/workflow-run.js    Runs one workflow step and reads Claude's reply
 src/jobform.js         Shared scheduled-send form (options page + pill modal)
 src/workflowform.js    Workflow editor (options page)
+src/autodl.js          Which files a reply offers, and whether to save (pure)
+src/autodownload.js    Clicks the download on a file Claude just produced
 src/incognito.js       Incognito recovery records (pure)
 src/incognito-watch.js Keeps a copy while an incognito chat is open
 src/mdexport.js        A conversation as Markdown (pure)
@@ -1232,6 +1283,7 @@ test/stamp.test.js     Unit tests for turn times and the gaps between them
 test/mdexport.test.js  Unit tests for the Markdown export
 test/incognito.test.js Unit tests for incognito recovery + expiry
 test/autocontinue.test.js  Unit tests for the button-label predicates
+test/autodl.test.js    Unit tests for the auto-download ledger + ceilings
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only
 ```
