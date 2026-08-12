@@ -491,9 +491,22 @@ async function reschedule() {
     chrome.alarms.clear(RESET_ALARM);
     const resetAt = state && state.resetAt;
     const wantsReset = J.hasPendingResetJobs(list) || W.pendingResetRuns(runs).length > 0;
-    if (wantsReset && typeof resetAt === "number" && resetAt > Date.now()) {
+    // A run that paused for usage wakes on the same alarm, but not necessarily
+    // at the same time: it may be the WEEKLY window it ran out of, which resets
+    // long after the 5-hour one. Whichever comes first is when the worker needs
+    // to be awake — it decides what is actually due once it is.
+    const wakeAt = [
+      wantsReset && typeof resetAt === "number" ? resetAt : null,
+      W.nextUsageResume(runs),
+    ].filter((t) => typeof t === "number" && t > Date.now());
+    if (wakeAt.length) {
       // Fire shortly after the window resets so fresh usage is available.
-      chrome.alarms.create(RESET_ALARM, { when: resetAt + 5000 });
+      chrome.alarms.create(RESET_ALARM, { when: Math.min.apply(null, wakeAt) + 5000 });
+    } else if (W.usageWaitingRuns(runs).length) {
+      // Waiting on a window whose reset time the meter never gave us. Keep a
+      // slow heartbeat rather than nothing at all: a run that quietly never
+      // resumed would be worse than one that checked every half hour.
+      chrome.alarms.create(RESET_ALARM, { when: Date.now() + 30 * 60 * 1000 });
     }
   } catch (e) {}
 
@@ -1322,24 +1335,26 @@ async function driveRun(runId, opts) {
       }
       // Nothing left to send into. Pause rather than post a message that will
       // be refused and then wait an hour for a reply that can't come — and
-      // pause rather than hold, because a run that resumed itself at reset
-      // would start a nine-step afternoon while nobody was watching.
+      // pause holding an arrangement to pick itself back up, since the only
+      // thing it is waiting for arrives on a schedule.
       const meter = (await get(STATE_KEY))[STATE_KEY];
-      if (W.usageExhausted(meter)) {
+      if (W.usageBlocked(meter, Date.now())) {
         const back = W.usageBackAt(meter);
         await saveRun(
-          Object.assign({}, W.markPaused(run, Date.now()), {
+          Object.assign({}, W.markPausedForUsage(run, Date.now(), back), {
             note:
-              "paused before step " + (run.stepIndex + 1) + " — your Claude usage has run out" +
-              (back ? ", back at " + new Date(back).toLocaleTimeString() : "") +
-              ". Resume when it has.",
+              "paused before step " + (run.stepIndex + 1) + " — your Claude usage has run out. " +
+              (back
+                ? "Carrying on by itself when it returns at " + new Date(back).toLocaleTimeString() + "."
+                : "Carrying on by itself when it returns."),
           })
         );
         notify(
           "Workflow paused",
           W.runLabel(run).title + " — out of usage before step " + (run.stepIndex + 1) +
-            (back ? ". Usage returns at " + new Date(back).toLocaleTimeString() : "") + "."
+            (back ? ". Resumes itself at " + new Date(back).toLocaleTimeString() : ". Resumes itself when usage returns") + "."
         );
+        await reschedule();
         return;
       }
 
@@ -1527,6 +1542,59 @@ async function driveRun(runId, opts) {
 
 // Start (or continue) whatever the given event makes due. Runs go one at a time
 // — each one is already driving a full conversation.
+// A run that paused only because the window was empty lifts its own pause.
+//
+// The METER decides, never the clock: the reset time a run recorded when it
+// stopped is what the alarm is set by, but a window can reopen early, late, or
+// at a time the meter had wrong, and the reading is the only thing that knows.
+// So a wake-up that arrives while usage is still gone does nothing at all and
+// leaves the run exactly as it is — the next reading will come along, and the
+// storage listener means every meter update is one.
+let resumeBusy = null; // the alarm and a meter update can arrive together
+async function resumeUsageRuns() {
+  if (resumeBusy) return resumeBusy;
+  resumeBusy = doResumeUsageRuns().finally(() => {
+    resumeBusy = null;
+  });
+  return resumeBusy;
+}
+
+async function doResumeUsageRuns() {
+  const runs = await readRuns();
+  if (!W.usageWaitingRuns(runs).length) return;
+  const meter = (await get(STATE_KEY))[STATE_KEY];
+  if (W.usageBlocked(meter, Date.now())) return; // early wake-up; nothing to do yet
+  let woke = false;
+  for (const r of W.usageWaitingRuns(runs)) {
+    // Re-read: this can be reached from the alarm and from a meter update at
+    // once, and resuming a run twice would drive the same step in two places.
+    const run = await readRun(r.id);
+    if (!run || run.status !== "paused" || !run.resumeOnUsage) continue;
+    const resumed = W.reviseRun(
+      run,
+      {
+        stepIndex: run.stepIndex,
+        // A message that already went out is waited for, not sent again — the
+        // same distinction Resume makes by hand.
+        phase: run.phase === "awaiting-reply" ? "awaiting-reply" : "idle",
+      },
+      Date.now()
+    );
+    await saveRun(
+      Object.assign({}, W.holdPaused(resumed), {
+        note: "carried on by itself — usage is back",
+      })
+    );
+    notify(
+      "Workflow resumed",
+      W.runLabel(run).title + " — usage is back, carrying on from step " + (run.stepIndex + 1) + "."
+    );
+    woke = true;
+    driveRun(run.id);
+  }
+  if (woke) await reschedule();
+}
+
 async function startRuns(kind /* "time" | "reset" | "hold" | "pickup" */) {
   const runs = await readRuns();
   const now = Date.now();
@@ -1713,6 +1781,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const run = await readRun(msg.runId);
       if (!run) return { ok: false, error: "run not found" };
       await saveRun(W.markPaused(run, Date.now()));
+      await reschedule();
+      return { ok: true };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
+  // Stop a usage pause lifting itself. Not a cancel and not a resume — the run
+  // stays exactly where it is, and waits for you instead of for the meter.
+  if (msg && msg.type === "cum-wf-hold-usage" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "run not found" };
+      await saveRun(
+        Object.assign({}, W.holdPaused(run), {
+          note: "paused at step " + (run.stepIndex + 1) + " — waiting for you, not for usage",
+        })
+      );
       await reschedule();
       return { ok: true };
     })()
@@ -2030,6 +2116,9 @@ chrome.runtime.onStartup.addListener(() => {
   reschedule();
   runJobs("time"); // catch anything whose time passed while the browser was off
   startRuns("time");
+  // ...and a run whose window reopened while the browser was closed, which is
+  // the ordinary case for one that ran out overnight.
+  resumeUsageRuns();
   sweepGhosts(); // a browser left closed for a week must not preserve them
   // ...and anything an outage parked before the browser closed. The stored
   // reading is hours old by now, so this always fetches.
@@ -2045,12 +2134,16 @@ chrome.alarms.onAlarm.addListener((a) => {
     // The keepalive is also the workflow watchdog: a run left between steps by a
     // worker that died mid-await gets picked up here, within 30 seconds.
     startRuns("pickup");
+    // And the backstop for a usage pause, for the case where no meter reading
+    // arrives to prompt one — a tab left on a page that isn't asking.
+    resumeUsageRuns();
   } else if (a.name === TIME_ALARM) {
     runJobs("time");
     startRuns("time");
   } else if (a.name === RESET_ALARM) {
     runJobs("reset");
     startRuns("reset");
+    resumeUsageRuns();
   } else if (a.name === STATUS_ALARM) {
     // Always retry held jobs after a refresh — the gate itself decides whether
     // things have recovered, so this needs no separate recovery check.
@@ -2077,6 +2170,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     (k) => k === W.RUN_IDS_KEY || (k.indexOf(W.RUN_PREFIX) === 0 && k.indexOf(W.BEAT_PREFIX) !== 0)
   );
   if (changes[JOBS_KEY] || changes[STATE_KEY] || runChanged) reschedule();
+  // The meter is the authority on whether usage is back, so every reading is a
+  // chance to lift a usage pause — sooner and more reliably than the alarm,
+  // which can only ever fire at the time the meter last predicted.
+  if (changes[STATE_KEY]) resumeUsageRuns();
   // Turning the gate off should release anything it is holding right now.
   if (changes[STATUS_CFG_KEY]) {
     statusCfg().then((cfg) => {

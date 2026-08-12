@@ -538,7 +538,7 @@
           const generatingNow = C.isGenerating() || streamStartedAt > streamDoneAt;
           if (!generatingNow) {
             const meter = (await C.storageGet("cum_state")).cum_state;
-            if (W.usageExhausted(meter))
+            if (W.usageBlocked(meter, Date.now()))
               return { el: null, canceled: false, outOfUsage: true, backAt: W.usageBackAt(meter) };
           }
         }
@@ -786,11 +786,13 @@
     // the same message into a second turn.
     if (outOfUsage) {
       await updateRun(runId, (r) =>
-        Object.assign({}, W.markPaused(r, Date.now()), {
+        Object.assign({}, W.markPausedForUsage(r, Date.now(), backAt), {
           note:
-            "paused at step " + (msg.label || r.stepIndex + 1) + " — your Claude usage ran out while waiting" +
-            (backAt ? ", back at " + new Date(backAt).toLocaleTimeString() : "") +
-            ". The message is already in the chat, so Resume waits for the answer.",
+            "paused at step " + (msg.label || r.stepIndex + 1) + " — your Claude usage ran out while waiting. " +
+            (backAt
+              ? "Carrying on by itself when it returns at " + new Date(backAt).toLocaleTimeString() + ". "
+              : "Carrying on by itself when it returns. ") +
+            "The message is already in the chat, so it waits for the answer rather than sending again.",
         })
       );
       return { ok: false, paused: true, error: "out of usage while waiting for the reply" };

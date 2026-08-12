@@ -1212,6 +1212,12 @@
           (WF.isRunActive(run)
             ? `<button class="job-edit wf-run-pause" data-id="${run.id}" title="Stop at the next step so you can change something">Pause</button>`
             : "") +
+          // A run that will lift its own pause when usage returns needs a way
+          // to be told not to — otherwise the only alternatives are resuming it
+          // into a window that is still empty, or cancelling it outright.
+          (run.resumeOnUsage && run.status === "paused"
+            ? `<button class="job-edit wf-run-hold" data-id="${run.id}" title="Leave it paused — don't pick it back up when usage returns">Stay paused</button>`
+            : "") +
           (run.status !== "running" && run.status !== "done"
             ? `<button class="${WF.isDraft(run) ? "job-run" : "job-edit"} wf-run-edit" data-id="${
                 run.id
@@ -1336,6 +1342,15 @@
           b.disabled = true;
           b.textContent = "Pausing…";
           chrome.runtime.sendMessage({ type: "cum-wf-pause", runId: b.getAttribute("data-id") }, renderRuns);
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-run-hold").forEach((b) =>
+        b.addEventListener("click", () => {
+          b.disabled = true;
+          chrome.runtime.sendMessage(
+            { type: "cum-wf-hold-usage", runId: b.getAttribute("data-id") },
+            renderRuns
+          );
         })
       );
       wfui.runs.querySelectorAll(".wf-run-edit").forEach((b) =>

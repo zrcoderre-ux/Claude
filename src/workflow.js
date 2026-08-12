@@ -1320,8 +1320,55 @@
   // Stop at the next step boundary, keeping everything else — where it is, what
   // it's carrying, which conversations it's in. A step already in flight is
   // allowed to finish; pausing is not cancelling.
+  // Paused, and waiting for you. Any standing arrangement to pick itself back
+  // up is dropped: pausing a run by hand is a decision that it should stay
+  // where it is until you say otherwise.
   function markPaused(run, now) {
-    return Object.assign({}, stopStepClock(run, now), { status: "paused", lastProgressAt: now });
+    return Object.assign({}, stopStepClock(run, now), {
+      status: "paused",
+      lastProgressAt: now,
+      resumeOnUsage: false,
+      resumeAt: null,
+    });
+  }
+
+  // Paused, and waiting for the meter. A run that stopped only because the
+  // window was empty is in a different position from one you stopped: nothing
+  // needs deciding, and the thing it is waiting for arrives on a schedule. So
+  // it carries the time it expects to be able to go again and picks itself up
+  // then — which is what `usageWaitingRuns` below is for.
+  //
+  // The old behaviour was to wait for a person, on the reasoning that a run
+  // resuming itself at 3am starts an afternoon's work with nobody watching.
+  // That reasoning is still true; it is now the user's call rather than this
+  // module's, and `Stay paused` on the run's row is how it is made.
+  function markPausedForUsage(run, now, backAt) {
+    return Object.assign({}, markPaused(run, now), {
+      resumeOnUsage: true,
+      resumeAt: typeof backAt === "number" && backAt > 0 ? backAt : null,
+    });
+  }
+
+  // Stop it lifting its own pause, without cancelling it or starting it now.
+  function holdPaused(run) {
+    if (!run) return run;
+    return Object.assign({}, run, { resumeOnUsage: false, resumeAt: null });
+  }
+
+  // Runs waiting on the meter rather than on you.
+  function usageWaitingRuns(runs) {
+    return (runs || []).filter((r) => r && r.status === "paused" && r.resumeOnUsage);
+  }
+
+  // When the first of them expects to be able to go again, for the alarm that
+  // wakes the worker. Null where none of them knows — the meter is asked again
+  // on every reading either way, so a run with no time on it is not lost, it
+  // just isn't what the alarm is set by.
+  function nextUsageResume(runs) {
+    const times = usageWaitingRuns(runs)
+      .map((r) => r.resumeAt)
+      .filter((t) => typeof t === "number" && t > 0);
+    return times.length ? Math.min.apply(null, times) : null;
   }
 
   // Apply an edit to a run in progress: steps inserted or reworded, chats
@@ -1637,6 +1684,39 @@
     const s = state || {};
     const at = (v) => typeof v === "number" && isFinite(v) && v >= USAGE_FULL;
     return at(s.percent) || at(s.weeklyPercent);
+  }
+
+  // Is the meter's reading still describing NOW?
+  //
+  // It stops doing so in two ways. The window it describes may since have
+  // reset, in which case its own resets_at is in the past and the percent it
+  // carries belongs to a window that has ended. Or the reading may simply be
+  // old: usage is read by claude.ai's own pages, so a browser with no claude.ai
+  // tab open refreshes nothing, and a run that ran out overnight would sit
+  // watching a number that cannot change. Either way the honest answer is "this
+  // doesn't say", not "this says you are out".
+  //
+  // Six hours because the shorter window is five: a reading older than the
+  // window it measures has outlived the thing it was measuring.
+  const USAGE_STALE_MS = 6 * 60 * 60 * 1000;
+  function usageReadingCurrent(state, now) {
+    const s = state || {};
+    const t = typeof now === "number" ? now : Date.now();
+    const back = usageBackAt(s);
+    if (typeof back === "number" && back > 0 && back <= t) return false; // window has since rolled over
+    const at = typeof s.updatedAt === "number" ? s.updatedAt : 0;
+    if (!at || t - at > USAGE_STALE_MS) return false;
+    return true;
+  }
+
+  // Is there nothing to send into, as far as anyone can currently tell?
+  //
+  // This is the question both the run's own gate and its resume ask, and they
+  // have to ask the same one. Asking `usageExhausted` alone would have the gate
+  // pause a run on a stale reading that the resume then treats as expired —
+  // resume, re-pause, resume, forever, and never a tab opened to find out.
+  function usageBlocked(state, now) {
+    return usageExhausted(state) && usageReadingCurrent(state, now);
   }
 
   // When it comes back, so a paused run can say. Null when the meter doesn't
@@ -2541,6 +2621,8 @@
     dueRuns,
     pendingResetRuns,
     heldRuns,
+    usageWaitingRuns,
+    nextUsageResume,
     pickupRuns,
     isStale,
     nextRunTrigger,
@@ -2554,6 +2636,9 @@
     formatMs,
     usageExhausted,
     usageBackAt,
+    usageReadingCurrent,
+    usageBlocked,
+    USAGE_STALE_MS,
     usageSample,
     usageCost,
     conversationKey,
@@ -2592,6 +2677,8 @@
     runLabel,
     workflowFromRun,
     markPaused,
+    markPausedForUsage,
+    holdPaused,
     applyRunEdit,
     markHeld,
     markCanceled,
