@@ -1035,7 +1035,14 @@ a line each: a blank line between every bullet turns a four-item list into half
 a page. A **hard line break** inside a paragraph survives as a line break, rather
 than welding the words on either side of it together.
 
-**As formatted text**, it arrives in the document's own font. A clone taken off
+**As formatted text**, every block carries **one thing of its own**: a bottom
+margin, so the paragraphs stay separated. Stripping claude.ai's styling takes
+its paragraph margins with it, and a target whose own paragraph style has no
+space after it — which a pleading template usually hasn't, being double-spaced
+and indented instead — would then run every paragraph of the ruling into the one
+below it. NATURE OF PROCEEDINGS is not the first line of the paragraph under it.
+
+Otherwise it arrives in the document's own font. A clone taken off
 claude.ai's page carries claude.ai's page with it — its classes, and whatever
 Chrome bakes in from the computed style — so a paste would otherwise land in the
 chat's fonts, line height and margins. Every attribute is stripped, and headings

@@ -198,6 +198,16 @@
     for (const k of kids) plainBlocks(k, out);
   }
 
+  // The one thing the formatted form states for itself. Stripping claude.ai's
+  // styling takes its paragraph margins with it, and a target whose own
+  // paragraph style has no space after it — which a pleading template usually
+  // hasn't, being double-spaced and indented instead — then runs every
+  // paragraph of the ruling into the one below it. Separation is what the
+  // document is FOR: NATURE OF PROCEEDINGS is not the first line of the
+  // paragraph under it. So it is carried explicitly, and it is the only thing
+  // carried: no font, no size, no line height, no colour.
+  const BLOCK_GAP = "margin:0 0 1em 0";
+
   function neutralize(holder) {
     for (const el of Array.from(holder.querySelectorAll("*"))) {
       for (const attr of Array.from(el.attributes || [])) {
@@ -211,6 +221,9 @@
       b.innerHTML = h.innerHTML;
       p.appendChild(b);
       h.replaceWith(p);
+    }
+    for (const el of Array.from(holder.querySelectorAll("p,ul,ol,blockquote,pre,table"))) {
+      if (!el.closest("li")) el.setAttribute("style", BLOCK_GAP);
     }
     return holder.innerHTML;
   }
