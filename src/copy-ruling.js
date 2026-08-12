@@ -8,23 +8,36 @@
  * rules dividing them. What that means exactly, and why each boundary is where
  * it is, is src/tentative.js — this is the button around it.
  *
- * Three decisions worth stating:
+ * **It copies the page, not the markdown.** The first version of this went
+ * through claude.ai's own copy box — click it, catch what it wrote, cut the
+ * ruling out of the markdown, put that back on the clipboard. Three things were
+ * wrong with that, and they compounded:
  *
- * - **It only appears on a reply that has a ruling in it.** A second copy
- *   control under every answer in every chat would be clutter, and one that did
- *   nothing when pressed would be worse. Detection reads the page, which is
- *   enough to know whether the words are there.
- * - **The text comes from claude.ai's own copy box**, clicked and caught
- *   through src/replycopy.js. That is the only source that gives Claude's
- *   markdown — headings, emphasis, block quotes — as written. Reading the
- *   rendered page instead would hand back something that looks the same and
- *   pastes flat, and the rules that mark the ruling's boundaries would not be
- *   in it at all.
- * - **It never leaves the clipboard holding the wrong thing.** Getting the text
- *   means letting claude.ai copy the whole reply first; if the ruling can't
- *   then be cut out of it, the button says so and puts the clipboard back to
- *   what it held before, rather than leaving you to paste the lot into a minute
- *   order without knowing.
+ * 1. The write happens after an `await`, and a clipboard write that lands
+ *    outside the click's own turn can be refused. When it was, the clipboard
+ *    still held what claude.ai had just put there — the whole reply — so the
+ *    button appeared to copy everything.
+ * 2. What it produced was plain markdown. Pasted into a minute order that is
+ *    `**NATURE OF PROCEEDINGS**`, not a heading.
+ * 3. A horizontal rule in markdown is three characters that have to be told
+ *    apart from a setext underline and a row of dashes someone typed. On the
+ *    page it is an `<hr>`. The page knows, and guessing was losing.
+ *
+ * So it now takes the ruling out of the **rendered message**: find the blocks
+ * between the NATURE OF PROCEEDINGS heading and the rule after CONCLUSION, copy
+ * those. The copy is a selection copy — the same thing as selecting exactly that
+ * part of the answer and pressing ⌘C — which means it is **synchronous inside
+ * the click** (nothing to be refused later), and it carries both the formatted
+ * and the plain versions, so it pastes into Word as a ruling and into a text box
+ * as text.
+ *
+ * The markdown route survives as a fallback for a message whose shape this
+ * can't read. It is the only path that can leave the clipboard holding the
+ * whole reply, and it says so when it does.
+ *
+ * It appears **only on a reply that has a ruling in it**, and not while one is
+ * still being written: a second copy control under every answer in every chat
+ * would be clutter, and one that did nothing when pressed would be worse.
  */
 (function () {
   "use strict";
@@ -68,6 +81,135 @@
     return false;
   }
 
+  // ---- the ruling, out of the rendered message -----------------------------
+  // The element the ruling starts at. Capped in length so the match is the
+  // HEADING rather than some wrapper that contains the whole answer.
+  const HEAD_SEL = "h1,h2,h3,h4,h5,h6,p,div,li,blockquote";
+  const MAX_HEAD = 200;
+  function findStartEl(msgEl) {
+    let nodes;
+    try {
+      nodes = msgEl.querySelectorAll(HEAD_SEL);
+    } catch (e) {
+      return null;
+    }
+    for (const el of nodes) {
+      const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (!t || t.length > MAX_HEAD) continue;
+      if (T.startsRuling(t)) return el;
+    }
+    return null;
+  }
+
+  // The level of the message the ruling's blocks sit at.
+  //
+  // An ancestor with an <hr> directly under it is the answer where there is
+  // one: that is demonstrably the level Claude's own separators live at. Where
+  // the reply has no rules at all — which happens, and is exactly the reply
+  // that most needs this to work — fall back to the nearest ancestor holding
+  // more than one block, since a wrapper holding a single child tells us
+  // nothing about where the ruling begins and ends.
+  function proseRoot(msgEl, startEl) {
+    let el = startEl;
+    let roomy = null;
+    while (el && el.parentElement && el !== msgEl) {
+      const p = el.parentElement;
+      try {
+        if (p.querySelector(":scope > hr")) return p;
+      } catch (e) {
+        /* :scope is well supported; if it isn't, keep climbing */
+      }
+      if (!roomy && p.children.length > 1) roomy = p;
+      if (p === msgEl) break;
+      el = p;
+    }
+    return roomy || msgEl;
+  }
+
+  const HEADING_TAGS = { H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1 };
+  function describe(el) {
+    return {
+      text: el.textContent || "",
+      rule: el.tagName === "HR",
+      heading: !!HEADING_TAGS[el.tagName],
+    };
+  }
+
+  // Copy a run of blocks exactly as a selection would: both the formatted and
+  // the plain form, and synchronously, so the write belongs to the click that
+  // asked for it. The blocks are cloned somewhere off-screen first, which is
+  // what lets a rule INSIDE the ruling be dropped — a range over the live page
+  // would have to take whatever sits between its ends.
+  function copyBlocks(nodes) {
+    const holder = document.createElement("div");
+    holder.className = "cum-ruling-clip";
+    for (const n of nodes) {
+      if (n.tagName === "HR") continue;
+      holder.appendChild(n.cloneNode(true));
+    }
+    try {
+      for (const hr of holder.querySelectorAll("hr")) hr.remove();
+      for (const own of holder.querySelectorAll(".cum-ruling-btn")) own.remove();
+    } catch (e) {
+      /* ignore */
+    }
+    if (!holder.childNodes.length) return { ok: false, text: "" };
+    // Off-screen rather than hidden: display:none can't be selected, and
+    // innerText needs a layout to put the line breaks in.
+    holder.style.cssText =
+      "position:fixed;left:-99999px;top:0;width:760px;white-space:normal;" +
+      "user-select:text;-webkit-user-select:text;pointer-events:none;";
+    document.body.appendChild(holder);
+
+    const sel = window.getSelection();
+    const saved = [];
+    try {
+      for (let i = 0; i < sel.rangeCount; i++) saved.push(sel.getRangeAt(i));
+    } catch (e) {
+      /* ignore */
+    }
+    let ok = false;
+    let text = "";
+    try {
+      text = holder.innerText || holder.textContent || "";
+      const range = document.createRange();
+      range.selectNodeContents(holder);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      ok = !!document.execCommand("copy");
+    } catch (e) {
+      ok = false;
+    }
+    try {
+      sel.removeAllRanges();
+      for (const r of saved) sel.addRange(r); // put your own selection back
+    } catch (e) {
+      /* ignore */
+    }
+    holder.remove();
+    return { ok, text };
+  }
+
+  // → { ok, reason } | null when the message's shape can't be read at all, which
+  // is the caller's cue to fall back to the markdown route.
+  function copyFromPage(msgEl) {
+    const startEl = findStartEl(msgEl);
+    if (!startEl) return null;
+    const root = proseRoot(msgEl, startEl);
+    const blocks = Array.from(root.children);
+    if (blocks.length < 2) return null;
+    const plan = T.planBlocks(blocks.map(describe));
+    if (!plan.ok) return null;
+    // The block the plan chose has to be the one actually holding the heading.
+    // Two ways of finding the same thing agreeing is the check; where they
+    // don't, the markdown route is a better answer than a confident wrong cut.
+    const chosen = blocks[plan.start];
+    if (!chosen || !(chosen === startEl || chosen.contains(startEl))) return null;
+    const out = copyBlocks(blocks.slice(plan.start, plan.end + 1));
+    if (!out.ok) return null;
+    return { ok: true, reason: plan.reason };
+  }
+
   // ---- the clipboard -------------------------------------------------------
   async function write(text) {
     try {
@@ -107,6 +249,17 @@
 
   async function copyRuling(btn, msgEl) {
     if (btn.disabled) return;
+    // The page first, and without awaiting anything on the way: this write has
+    // to happen inside the click that asked for it.
+    try {
+      const page = copyFromPage(msgEl);
+      if (page) {
+        say(btn, page.reason ? "Copied (no CONCLUSION)" : "Ruling copied");
+        return;
+      }
+    } catch (e) {
+      /* fall through to the markdown route */
+    }
     btn.disabled = true;
     try {
       // claude.ai's copy box holds the whole reply for a moment on the way past.
@@ -124,12 +277,15 @@
         return;
       }
       if (!(await write(cut.text))) {
-        say(btn, "Couldn't copy", true);
+        // The clipboard is still holding claude.ai's copy of the WHOLE reply,
+        // and saying nothing here is how the last version of this button
+        // appeared to copy everything.
+        say(btn, "Couldn't copy — whole reply", true);
         return;
       }
       // A caveat is worth a moment of the label rather than a silent success.
-      const caveat = !whole ? "from the page" : cut.reason ? "no CONCLUSION" : "";
-      say(btn, caveat ? "Copied (" + caveat + ")" : "Ruling copied");
+      const caveat = cut.reason ? "no CONCLUSION" : "as text";
+      say(btn, "Copied (" + caveat + ")");
     } catch (e) {
       say(btn, "Couldn't copy", true);
     } finally {
@@ -183,6 +339,10 @@
       }
     }
   }
+
+  // Exposed for tests: the page is the only place this can be exercised, and a
+  // button that silently falls back is a button that looks like it worked.
+  window.CUMCopyRuling = { findStartEl, proseRoot, describe, copyBlocks, copyFromPage };
 
   setInterval(place, PLACE_MS);
 

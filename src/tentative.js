@@ -70,12 +70,17 @@
   // run of dashes long enough to be a rule rather than punctuation.
   const RULE_RE = /^\s{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|[—–]{3,})$/;
 
-  // ...but only where the line above is blank. A rule directly under text is a
-  // setext heading — `CONCLUSION` underlined with `---` is the conclusion
+  // ...but a run of DASHES directly under a line of text is a setext heading
+  // rather than a break — `CONCLUSION` underlined with `---` is the conclusion
   // HEADING, and reading it as the end of the ruling would drop the disposition
-  // the whole document exists to state.
+  // the whole document exists to state. Only `-` and `=` do that in Markdown,
+  // so `___` and `***` are breaks wherever they appear: requiring a blank line
+  // above them lost the ruling's end in a reply whose paragraphs weren't
+  // separated by one.
   function isBreak(lines, i) {
-    if (!RULE_RE.test(str(lines[i]))) return false;
+    const line = str(lines[i]);
+    if (!RULE_RE.test(line)) return false;
+    if (!/^\s{0,3}-/.test(line)) return true;
     if (i === 0) return true;
     return str(lines[i - 1]).trim() === "";
   }
@@ -106,6 +111,91 @@
     while (out.length && !out[0].trim()) out.shift();
     while (out.length && !out[out.length - 1].trim()) out.pop();
     return out;
+  }
+
+  // The first line that says anything. Not simply the first: a block read off
+  // the page carries the source's own indentation, so a wrapper holding the
+  // ruling begins with a newline and its "first line" is empty — which is how a
+  // ruling nested one element deeper than expected went unrecognised.
+  function firstLine(text) {
+    for (const line of str(text).split("\n")) if (line.trim()) return line;
+    return "";
+  }
+
+  function startsRuling(text) {
+    const t = firstLine(text);
+    return START_LINE.test(bareLine(t)) || START_CAPS.test(t);
+  }
+  function startsConclusion(text) {
+    const t = firstLine(text);
+    return END_LINE.test(bareLine(t)) || END_CAPS.test(t);
+  }
+  // A conclusion heading anywhere in a block, for a ruling that arrives as one
+  // block rather than as a run of them.
+  function hasConclusion(text) {
+    for (const line of str(text).split("\n")) {
+      if (!line.trim()) continue;
+      if (END_LINE.test(bareLine(line)) || END_CAPS.test(line)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The same decision, over the reply as the page has drawn it.
+   *
+   * blocks: [{ text, rule, heading }] — the message's own top-level blocks in
+   *         order. `rule` is an <hr>, which is the whole reason this exists: on
+   *         the page a horizontal rule is an ELEMENT, where in text it is three
+   *         characters that have to be told apart from a setext underline, a
+   *         table border and a row of dashes someone typed. The page knows.
+   *
+   * → { ok, start, end, reason } — indices into `blocks`, inclusive.
+   */
+  function planBlocks(blocks) {
+    const list = Array.isArray(blocks) ? blocks : [];
+    const fail = (reason) => ({ ok: false, start: -1, end: -1, reason });
+
+    let start = -1;
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i] || {};
+      if (b.rule) continue;
+      if (startsRuling(b.text)) {
+        start = i;
+        break;
+      }
+    }
+    if (start === -1) return fail("no NATURE OF PROCEEDINGS heading");
+
+    let concl = -1;
+    for (let i = start + 1; i < list.length; i++) {
+      const b = list[i] || {};
+      if (!b.rule && startsConclusion(b.text)) {
+        concl = i;
+        break;
+      }
+    }
+    // A ruling that arrives as ONE block carries its conclusion inside it. The
+    // cut is the same either way; what changes is whether the button reports a
+    // caveat, and reporting one about a ruling that plainly has a conclusion
+    // teaches you to ignore the caveat that matters.
+    if (concl === -1 && hasConclusion((list[start] || {}).text)) concl = start;
+
+    // The end: the first rule after the conclusion. Failing that, the first
+    // HEADING after it — a ruling has no section after its conclusion, so a
+    // heading there belongs to whatever Claude wrote underneath. Failing both,
+    // the last block.
+    let end = list.length - 1;
+    let reason = concl === -1 ? "no CONCLUSION heading — took the ruling to the end" : null;
+    for (let i = (concl === -1 ? start : concl) + 1; i < list.length; i++) {
+      const b = list[i] || {};
+      if (b.rule || (concl !== -1 && b.heading)) {
+        end = i - 1;
+        break;
+      }
+    }
+    while (end > start && !str((list[end] || {}).text).trim()) end--;
+    if (end < start) return fail("the ruling came out empty");
+    return { ok: true, start, end, reason };
   }
 
   /**
@@ -158,6 +248,10 @@
     bareLine,
     mentionsRuling,
     isBreak,
+    startsRuling,
+    startsConclusion,
+    hasConclusion,
+    planBlocks,
     extractRuling,
     START_LINE,
     END_LINE,
