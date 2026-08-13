@@ -1737,8 +1737,16 @@ test("a re-run continuing in the same chats keeps them and re-uploads nothing", 
   const { run } = finishedRun();
   const again = W.rerunOf(run, { stepIndex: 1, freshChats: false }, "r2", NOW + 1);
 
-  assert.equal(again.status, "draft", "it waits like any other new run");
+  // It goes. A re-run is the same matter again — there is nothing left to set
+  // up, which is the point of it being one press rather than Create run and a
+  // trip through the editor.
+  assert.equal(again.status, "pending");
+  assert.equal(again.trigger.type, "now");
   assert.equal(again.stepIndex, 1, "skipping the step that produced what the rest works on");
+  // ...unless the caller parks it, which is what a re-run being set up rather
+  // than started looks like.
+  const parked = W.rerunOf(run, { stepIndex: 1, freshChats: false, start: false }, "r3", NOW + 1);
+  assert.equal(parked.trigger.type, "draft");
   assert.equal(again.rerunOf, "r1");
   assert.equal(again.name, "8.11.26 MSJ (Run 2)", "the original was Run 1");
   assert.deepEqual(again.chats, run.chats, "carries on in the conversations it built");
@@ -1789,7 +1797,10 @@ test("a run from a workflow with no re-run answers still has usable ones", () =>
   // The button must not depend on the workflow having had an opinion.
   const { run } = finishedRun();
   const d = W.rerunSettings(run);
-  assert.equal(d.stepIndex, 1, "the second step — the common case");
+  // Step ONE. The point of a re-run is that it is quick: press it and the
+  // matter goes again from the top. A workflow whose first step produces the
+  // thing the rest of it works on says so itself, and its runs inherit that.
+  assert.equal(d.stepIndex, 0);
   assert.equal(d.freshChats, false);
   assert.equal(d.carryFinal, true);
   assert.equal(d.reuseDocs, true);

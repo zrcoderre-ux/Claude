@@ -788,19 +788,22 @@ off: a run you never re-run costs a button you don't press, where a run you do
 want again and can't costs the whole thing.
 
 The workflow also holds **the answers**, because for most workflows
-they're the same every time: a ruling workflow re-run is always "start at step 2,
-fresh conversations, carry the last ruling in". Each run keeps its own copy of
-those answers as well as of the switch, so one matter can differ without touching
-the template — and **Re-run still asks**, so you can change your mind for a single
-run. A run made before the workflow had any answers, or from a workflow that has
-none, falls back to sensible ones rather than losing the button.
+they're the same every time. Each run keeps its own copy of those answers as well
+as of the switch, so one matter can differ without touching the template — and
+**Re-run still asks**, so you can change your mind for a single run. A run made
+before the workflow had any answers, or from a workflow that has none, falls back
+to the same defaults rather than losing the button.
 
-**Re-run** on a finished row asks three things.
+**Start re-run** on a finished row asks three things and then **goes** — it opens
+its own window and begins as you press it. A re-run is the same matter again;
+there is nothing left to set up, which is the point of it being one press rather
+than Create run and a trip through the editor.
 
-**Which step to start at**, with that step's prompt shown as you pick — a
-workflow that opens by producing the thing the rest of it works on has nothing to
-produce the second time, and starting from the top would throw the first run's
-work away and spend a turn doing it again.
+**Which step to start at** — **step 1 unless the workflow says otherwise**, with
+that step's prompt shown as you pick. A workflow that opens by producing the
+thing the rest of it works on has nothing to produce the second time, and says so
+on the template so that every one of its runs inherits the answer; a workflow
+that has said nothing means the whole thing, again, from the top.
 
 **Whether to use fresh conversations.** The two answers differ in what the chats
 already hold:
@@ -823,11 +826,11 @@ it off for a re-run that only needs the hand-off, where sending twenty exhibits 
 again would waste the turn. The documents stay on the run either way — the record
 of what the matter had doesn't change, they simply don't go up.
 
-What you get is a **draft run** at the top of the list, named
+What you get is a **run already going**, at the top of the list, named
 `8.11.26 MSJ (Run 2)` — counted the way you'd say it out loud, the original being
-Run 1 — opened in its own editor so you can add papers, change a prompt and say
-when it starts. Nothing runs until you say so. A third pass is `(Run 3)`, not
-`(Run 2) (Run 2)`: the old suffix is stripped before the new one is added.
+Run 1. A third pass is `(Run 3)`, not `(Run 2) (Run 2)`: the old suffix is
+stripped before the new one is added. **Pause** is there if you want it back —
+it stops every chat at once and stops the answer being written.
 
 Its **conversations** are named the same way, with the number **at the end**:
 `8.11.26 MSJ: Drafting (A)` for the first run and

@@ -715,12 +715,11 @@
   function openRerun(run, wf) {
     const plan = WF.planRun(WF.runSource(run, wf));
     rerunRunId = run.id;
-    // Default to the second step. A workflow that opens by producing the thing
-    // the rest of it works on has nothing to produce the second time — that
-    // being the whole reason a re-run asks where to start.
-    // The workflow's answers, carried onto this run when it was made. A run
-    // from before the workflow had any — or from one that has none — falls back
-    // to sensible ones rather than losing the button.
+    // The workflow's answers, carried onto this run when it was made — step one
+    // unless the workflow says otherwise, which is what a workflow whose first
+    // step produces the thing the rest works on will have said. A run from
+    // before the workflow had any answers falls back to the same defaults
+    // rather than losing the button.
     const d = WF.rerunSettings(run);
     rerunDraft = {
       stepIndex: Math.min(d.stepIndex, Math.max(0, plan.length - 1)),
@@ -784,8 +783,10 @@
           `the new conversations start empty, so otherwise they'd never arrive. Off where a re-run only ` +
           `needs the hand-off and re-uploading the papers would waste the turn.</div>`
         : "") +
-      `<div class="wf-fix-row"><button class="job-run wf-rr-go" data-id="${run.id}">Create re-run</button>` +
+      `<div class="wf-fix-row"><button class="job-run wf-rr-go" data-id="${run.id}">Start re-run</button>` +
       `<button class="job-edit wf-rr-cancel" data-id="${run.id}">Cancel</button></div>` +
+      `<div class="wf-fix-note">It opens its own window and begins as soon as you press it — a re-run ` +
+      `is the same matter again, so there is nothing left to set up.</div>` +
       `</div>`
     );
   }
@@ -829,15 +830,15 @@
           ),
         };
         go.disabled = true;
-        go.textContent = "Creating…";
+        go.textContent = "Starting…";
         chrome.runtime.sendMessage({ type: "cum-wf-rerun", runId: id, opts }, (res) => {
           rerunRunId = null;
           rerunDraft = null;
           if (!res || !res.ok)
-            return alert("Could not create the re-run: " + ((res && res.error) || "unknown error"));
-          // Straight into its editor, the same as Create run — that's where its
-          // papers, its name and when it starts are settled.
-          renderRuns().then(() => openRunEditor(res.runId));
+            return alert("Could not start the re-run: " + ((res && res.error) || "unknown error"));
+          // It is already going. A re-run is the same matter again — there is
+          // nothing to set up, which is the point of it being one press.
+          renderRuns();
         });
       });
   }
@@ -1235,7 +1236,7 @@
             ? `<button class="job-run wf-run-show" data-id="${run.id}" title="Bring this run's window forward, reopening its chats if they were closed">Open chats</button>`
             : "") +
           (WF.canRerun(run)
-            ? `<button class="job-run wf-run-again" data-id="${run.id}" title="Run this again — you choose which step it starts on">${
+            ? `<button class="job-run wf-run-again" data-id="${run.id}" title="Run this again — it starts as soon as you press Start re-run">${
                 rerunRunId === run.id ? "Cancel re-run" : "Re-run"
               }</button>`
             : "") +

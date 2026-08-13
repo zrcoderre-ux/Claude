@@ -1148,9 +1148,14 @@
   // answered once, copied onto each run so one matter can differ, and still
   // asked at the moment of pressing Re-run — a run made before the workflow had
   // an opinion, or from a workflow that has none, must still be re-runnable.
+  // The workflow's standing answers for a re-run. `stepIndex` defaults to 0 —
+  // step ONE — because the point of a re-run is that it is quick: press it and
+  // the matter goes again from the top. A workflow whose first step produces
+  // the thing the rest of it works on sets its own answer, and every run
+  // inherits that; this is only what a workflow that has said nothing means.
   function rerunDefaults(x) {
     const d = x || {};
-    let stepIndex = typeof d.stepIndex === "number" ? Math.floor(d.stepIndex) : 1;
+    let stepIndex = typeof d.stepIndex === "number" ? Math.floor(d.stepIndex) : 0;
     if (!(stepIndex >= 0)) stepIndex = 0;
     return {
       stepIndex: stepIndex,
@@ -1241,7 +1246,11 @@
       },
       id,
       now,
-      { type: "draft" },
+      // Straight away unless the caller wants it parked. A re-run is the same
+      // matter again — there is nothing left to set up, which is the whole
+      // reason it is one press rather than Create run and a trip through the
+      // editor.
+      o.start === false ? { type: "draft" } : { type: "now" },
       docs
     );
 

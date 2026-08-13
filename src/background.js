@@ -1789,7 +1789,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!next) return { ok: false, error: "could not build the re-run" };
       await saveRun(next);
       await reschedule();
-      return { ok: true, runId: next.id };
+      // Armed to go, unless the caller parked it. Not awaited — a run is hours.
+      const started = next.trigger && next.trigger.type === "now";
+      if (started) driveRun(next.id);
+      return { ok: true, runId: next.id, started: started };
     })()
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
