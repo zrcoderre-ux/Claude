@@ -210,6 +210,17 @@ about markup that can't be inspected from where the code is written — claude.a
 is behind a login. A report that can be pasted turns the next round from a
 guess into a fix.
 
+`scripts/dl-probe.js` is the same thing to paste at the **DevTools console**,
+depending on neither the extension nor its modules — useful when the question
+is whether the extension is running at all. It sees one thing the in-page
+button can't: it counts down first so you can put your **pointer** over the
+card, and a control the page only *adds* under a real pointer isn't in the DOM
+for anything else to find. (A control merely *revealed* by hover is a different
+matter — it is in the DOM the whole time, at zero opacity, and the extension
+clicks it happily. The report says which of the two you have.) It prints the
+controls with their attributes, the short pieces of text, and a stripped-down
+copy of the markup, then puts the lot on the clipboard.
+
 It watches only the newest reply or two, which is what makes scrolling cheap as
 well as safe: claude.ai unmounts messages that scroll out of view and mounts
 them again when you scroll back, so a watcher reading the whole transcript would
@@ -1724,6 +1735,7 @@ test/autodl.test.js    Unit tests for the auto-download ledger + ceilings
 test/tentative.test.js Unit tests for the ruling's start and end boundaries
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only
+scripts/dl-probe.js    Paste at the DevTools console: what a reply really holds
 ```
 
 ## Privacy
