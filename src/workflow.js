@@ -138,6 +138,19 @@
 
   // ---- steps --------------------------------------------------------------
 
+  // Whole minutes, and never negative. Zero means indefinite — there is no
+  // useful "pause for no time", so the falsy value takes the meaning that has
+  // to be expressible.
+  const PAUSE_MAX_MINUTES = 7 * 24 * 60; // a week; past that, Not yet is the answer
+  function pauseMinutes(x) {
+    const n = Math.floor(Number(x));
+    if (!isFinite(n) || n <= 0) return 0;
+    return Math.min(n, PAUSE_MAX_MINUTES);
+  }
+  function isPauseStep(step) {
+    return !!(step && step.kind === "pause");
+  }
+
   function newStep(fields, id) {
     const f = fields || {};
     return {
@@ -157,6 +170,16 @@
       // Steps sharing a group id, and sitting next to each other, run at the
       // same time — see stepWaves.
       group: trimmed(f.group) || null,
+      // A step that is a PAUSE rather than a prompt: the run stops here so what
+      // it has produced can be read before the rest of it is built on top.
+      //
+      // Two kinds, and the difference is what happens when you aren't there.
+      // Indefinite waits for Resume, which is right when reviewing the
+      // intermediate output is the point. A timed one waits that long and then
+      // carries on by itself — which is right when you would LIKE to look but
+      // would rather the run finished than sat all night waiting for you.
+      kind: f.kind === "pause" ? "pause" : "prompt",
+      pauseMinutes: pauseMinutes(f.pauseMinutes),
       // This STEP is expected to produce a finished ruling, and a reply that
       // isn't one must not be handed on. Claude's first answer is often a
       // clarifying question, a note that a paper is missing, or a prompt to
@@ -403,12 +426,18 @@
   // silently drop a hand-off in the middle of a reshuffle. Reordering therefore
   // gives such a step its default back, and only carries a genuine no across.
   function positionForbidsCarry(list, i) {
+    if (isPauseStep(list[i])) return true; // a gate carries nothing
     const wave = waveOf(list, i);
     const start = wave ? wave.members[0] : i;
     // A wave carries from what came before it, so what matters for every member
     // is the step before the FIRST of them — 2B's neighbour is 2A, but 2A is
     // not where 2B's material comes from.
-    return start === 0 || !!(list[start - 1] && list[start - 1].chatId === list[i].chatId);
+    //
+    // ...and a pause is not that step. It produces nothing and belongs to no
+    // chat, so the question is asked of the last step that did something.
+    let prev = start - 1;
+    while (prev >= 0 && isPauseStep(list[prev])) prev--;
+    return prev < 0 || !!(list[prev] && list[prev].chatId === list[i].chatId);
   }
 
   function reorderSteps(steps, ids) {
@@ -634,11 +663,16 @@
     // Chats first, since whether a step carries depends on the one before it
     // having been resolved.
     const placed = (wf.steps || []).map((s) =>
-      Object.assign({}, s, {
-        // A step whose chat was deleted moves to the last remaining chat rather
-        // than being thrown away — its prompt is the expensive part.
-        chatId: ids.has(s.chatId) ? s.chatId : fallback,
-      })
+      isPauseStep(s)
+        ? // A pause has no chat to lose. Handing it the fallback would put a
+          // gate into a conversation and, worse, make the step after it look
+          // like a second step in that chat and lose its hand-off.
+          Object.assign({}, s, { chatId: null })
+        : Object.assign({}, s, {
+            // A step whose chat was deleted moves to the last remaining chat
+            // rather than being thrown away — its prompt is the expensive part.
+            chatId: ids.has(s.chatId) ? s.chatId : fallback,
+          })
     );
     wf.steps = placed.map((s, i) =>
       Object.assign({}, s, {
@@ -894,6 +928,19 @@
     const waveFor = [];
     for (const w of waves) for (const m of w.members) waveFor[m] = w;
 
+    // A pause is a gate between steps, not a step anything talks to: the step
+    // after one carries from the step before it, and the step before one hands
+    // to the step after it. Reading the literal neighbour would have a pause
+    // swallow the hand-off it sits in the middle of.
+    const realBefore = (i) => {
+      for (let k = i - 1; k >= 0; k--) if (!isPauseStep(steps[k])) return k;
+      return -1;
+    };
+    const realAfter = (i) => {
+      for (let k = i + 1; k < steps.length; k++) if (!isPauseStep(steps[k])) return k;
+      return -1;
+    };
+
     const seen = new Set();
     // What model each chat is currently on, so a step only has to switch when
     // it actually wants something different — and so a step that DOES switch
@@ -901,6 +948,31 @@
     // if you had picked it yourself.
     const on = new Map();
     return steps.map((s, i) => {
+      if (isPauseStep(s))
+        return {
+          index: i,
+          id: s.id,
+          kind: "pause",
+          pauseMinutes: pauseMinutes(s.pauseMinutes),
+          label: labels[i] || String(i + 1),
+          chatId: null,
+          chatName: "",
+          prompt: "",
+          wave: [i],
+          waveIndex: i,
+          waveStart: i,
+          waveAt: 0,
+          parallel: false,
+          carry: false,
+          carryLabel: "",
+          firstInChat: false,
+          model: null,
+          modelOn: null,
+          modelOverride: false,
+          docIds: [],
+          handsOn: false,
+          marker: null,
+        };
       const firstInChat = !seen.has(s.chatId);
       seen.add(s.chatId);
       const chat = getChat(wf, s.chatId) || {};
@@ -914,8 +986,8 @@
       // its sibling, and the two never see each other.
       const wave = waveFor[i] || { members: [i], index: i };
       const waveStart = wave.members[0];
-      const consumerAt = wave.members[wave.members.length - 1] + 1;
-      const consumer = steps[consumerAt];
+      const consumerAt = realAfter(wave.members[wave.members.length - 1]);
+      const consumer = consumerAt === -1 ? null : steps[consumerAt];
       const handsOn = !!(consumer && consumer.carry !== false && consumer.chatId !== s.chatId);
       const opening = firstInChat
         ? docs
@@ -932,6 +1004,8 @@
       return {
         index: i,
         id: s.id,
+        kind: "prompt",
+        pauseMinutes: 0,
         chatId: s.chatId,
         chatName: chatName(wf, s.chatId),
         prompt: str(s.prompt),
@@ -947,7 +1021,7 @@
         // Carrying is measured from the step before the WAVE. Every member gets
         // the same hand-off — that being what makes them parallel — so 2B does
         // not carry from 2A, it carries from 1 exactly as 2A does.
-        carry: waveStart > 0 && s.carry !== false,
+        carry: realBefore(waveStart) !== -1 && s.carry !== false,
         carryLabel: trimmed(s.carryLabel) || "material from the previous step",
         firstInChat: firstInChat,
         // The model to pick before sending. Null when the chat is already on the
@@ -1440,6 +1514,43 @@
   function holdPaused(run) {
     if (!run) return run;
     return Object.assign({}, run, { resumeOnUsage: false, resumeAt: null });
+  }
+
+  // Stopped by a pause step. The run has already stepped PAST the pause — it is
+  // done, the way any step is done once it has happened — so Resume, whether
+  // yours or the clock's, carries straight on with the step after it.
+  //
+  // `resumeAt` is the clock's; without one it waits for you.
+  function markPausedForStep(run, now, atMs) {
+    return Object.assign({}, markPaused(run, now), {
+      pausedByStep: true,
+      resumeAt: typeof atMs === "number" && atMs > 0 ? atMs : null,
+    });
+  }
+
+  // Runs a timed pause step is holding, and whose time is up. The meter has
+  // nothing to do with these — they are waiting on a clock and nothing else.
+  function clockWaitingRuns(runs, now) {
+    const t = typeof now === "number" ? now : Date.now();
+    return (runs || []).filter(
+      (r) =>
+        r &&
+        r.status === "paused" &&
+        !r.resumeOnUsage &&
+        typeof r.resumeAt === "number" &&
+        r.resumeAt > 0 &&
+        r.resumeAt <= t
+    );
+  }
+
+  // When the first of them is due, for the alarm that wakes the worker.
+  function nextClockResume(runs, now) {
+    const t = typeof now === "number" ? now : Date.now();
+    const times = (runs || [])
+      .filter((r) => r && r.status === "paused" && !r.resumeOnUsage)
+      .map((r) => r.resumeAt)
+      .filter((at) => typeof at === "number" && at > t);
+    return times.length ? Math.min.apply(null, times) : null;
   }
 
   // Runs waiting on the meter rather than on you.
@@ -2350,7 +2461,16 @@
     const at = labels[run.stepIndex] || String(run.stepIndex + 1);
     if (run.status === "done") return "Finished all " + total + " steps";
     if (run.status === "canceled") return "Canceled at step " + at;
-    if (run.status === "paused") return "Paused before step " + at + " of " + total;
+    if (run.status === "paused")
+      return (
+        "Paused before step " + at + " of " + total +
+        // A pause the workflow asked for, with a time on it, is a different
+        // thing from one waiting on you — and the row is where you find out
+        // which without opening anything.
+        (run.pausedByStep && typeof run.resumeAt === "number" && run.resumeAt > Date.now()
+          ? " · carries on by itself in " + formatMs(run.resumeAt - Date.now())
+          : "")
+      );
     if (run.status === "error") return "Failed at step " + at + " of " + total;
     if (run.status === "draft") {
       // Asking for the papers is only useful while there aren't any. A run set
@@ -2697,6 +2817,9 @@
     getChat,
     chatName,
     newStep,
+    isPauseStep,
+    pauseMinutes,
+    PAUSE_MAX_MINUTES,
     newDoc,
     docsForChat,
     newWorkflow,
@@ -2792,6 +2915,9 @@
     workflowFromRun,
     markPaused,
     markPausedForUsage,
+    markPausedForStep,
+    clockWaitingRuns,
+    nextClockResume,
     holdPaused,
     applyRunEdit,
     markHeld,

@@ -1209,3 +1209,8 @@ td .approx {
   .wf-step-row.here .wf-step-state { color: #e08765; }
   .wf-step-prompt-view { background: rgba(0, 0, 0, 0.28); color: #f0efea; }
 }
+
+/* A pause built into a workflow: a gate between steps rather than a step, so
+   it is drawn quieter than the work on either side of it. */
+.wf-step-row.wf-step-pause .wf-step-meta { font-style: italic; color: #8a8a8a; }
+.wf-step-row.wf-step-pause { border-style: dashed; }
