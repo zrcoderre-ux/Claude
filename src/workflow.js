@@ -103,22 +103,15 @@
       // at the first step that isn't in this chat — a step 0 that already
       // happened, by hand.
       seedFromLatest: !!f.seedFromLatest,
-      // This chat is expected to produce a finished ruling, and a reply that
-      // isn't one must not be handed on. Claude's first answer is often a
-      // clarifying question, a note that a paper is missing, or a prompt to
-      // continue — all perfectly good replies, and none of them the thing the
-      // next chat is being asked to attack.
-      expectsRuling: !!f.expectsRuling,
-      outputMarker: trimmed(f.outputMarker) || null,
     };
   }
 
-  // The phrase a chat's output must contain before it can travel. Only the
-  // real thing carries it, which makes it a cheap and honest test.
+  // The phrase a step's reply must contain before it can travel. Only the real
+  // thing carries it, which makes it a cheap and honest test.
   const DEFAULT_OUTPUT_MARKER = "NATURE OF PROCEEDINGS";
-  function chatMarker(chat) {
-    if (!chat || !chat.expectsRuling) return null;
-    return trimmed(chat.outputMarker) || DEFAULT_OUTPUT_MARKER;
+  function stepMarker(step) {
+    if (!step || !step.expectsRuling) return null;
+    return trimmed(step.outputMarker) || DEFAULT_OUTPUT_MARKER;
   }
   function hasMarker(text, marker) {
     const m = trimmed(marker).replace(/\s+/g, " ").toLowerCase();
@@ -164,6 +157,19 @@
       // Steps sharing a group id, and sitting next to each other, run at the
       // same time — see stepWaves.
       group: trimmed(f.group) || null,
+      // This STEP is expected to produce a finished ruling, and a reply that
+      // isn't one must not be handed on. Claude's first answer is often a
+      // clarifying question, a note that a paper is missing, or a prompt to
+      // continue — all perfectly good replies, and none of them the thing the
+      // next chat is being asked to attack.
+      //
+      // It belongs to the step rather than the chat because a chat does more
+      // than one thing: the drafting conversation writes the ruling, then
+      // revises it, then takes a style pass over it, and the answer to "must
+      // this reply be a ruling" differs between them. Asked of the chat, one
+      // answer had to cover them all.
+      expectsRuling: !!f.expectsRuling,
+      outputMarker: trimmed(f.outputMarker) || null,
     };
   }
 
@@ -512,6 +518,77 @@
     return out.slice(0, typeof limit === "number" ? limit : 5);
   }
 
+  // ---- carrying older workflows forward ------------------------------------
+  //
+  // Three of the settings above changed shape or default, and a stored workflow
+  // records what it was given rather than what it meant. `bundleText: false` on
+  // a workflow saved last month is the OLD DEFAULT written down, not a decision
+  // to send twenty attachments — so leaving it alone would mean the new default
+  // never reached the workflows anyone actually has. And the ruling marker
+  // moved from the chat to the step, which is not a rename: without moving the
+  // value with it, a workflow that checks its output would quietly stop.
+  //
+  // Marked with a version so it happens once. After that, a `false` is a
+  // decision, and this leaves it alone.
+  const SETTINGS_VERSION = 2;
+  function migrateSettings(wf) {
+    if (!wf || typeof wf !== "object") return wf;
+    if (wf.sv >= SETTINGS_VERSION) return wf;
+    const out = Object.assign({}, wf, { sv: SETTINGS_VERSION });
+    // The two switches that are now on by default.
+    if (!out.bundleText) out.bundleText = true;
+    if (!out.allowRerun) out.allowRerun = true;
+    // The one that went away, replaced by the extension-wide file saver.
+    delete out.downloadFiles;
+    // And the marker, onto every step of the chat that carried it. Every step,
+    // because that is what the chat-level setting meant — the narrowing to
+    // particular steps is the point of the move, and it is yours to make.
+    const marked = {};
+    for (const c of out.chats || []) {
+      if (c && c.expectsRuling)
+        marked[c.id] = trimmed(c.outputMarker) || DEFAULT_OUTPUT_MARKER;
+    }
+    if (Object.keys(marked).length) {
+      out.steps = (out.steps || []).map((s) =>
+        s && marked[s.chatId] && !s.expectsRuling
+          ? Object.assign({}, s, { expectsRuling: true, outputMarker: marked[s.chatId] })
+          : s
+      );
+    }
+    out.chats = (out.chats || []).map((c) => {
+      if (!c) return c;
+      const copy = Object.assign({}, c);
+      delete copy.expectsRuling;
+      delete copy.outputMarker;
+      return copy;
+    });
+    return out;
+  }
+
+  // The same for a run, which keeps its own copy of the chats and steps and so
+  // carries its own copy of the marker. Deliberately narrower than the workflow
+  // version: `bundleText` is left exactly as it is, because a run's documents
+  // are bundled once when it starts and changing the answer underneath one
+  // already in flight would decide something it has already done.
+  function migrateRunSettings(run) {
+    if (!run || typeof run !== "object") return run;
+    if (run.sv >= SETTINGS_VERSION) return run;
+    const shaped = migrateSettings({
+      sv: 0,
+      bundleText: true, // not read back — see above
+      allowRerun: run.allowRerun,
+      chats: (run.plan && run.plan.chats) || [],
+      steps: (run.plan && run.plan.steps) || [],
+    });
+    const out = Object.assign({}, run, {
+      sv: SETTINGS_VERSION,
+      allowRerun: shaped.allowRerun,
+      plan: { chats: shaped.chats, steps: shaped.steps },
+    });
+    delete out.downloadFiles;
+    return out;
+  }
+
   function newWorkflow(fields, id, now) {
     const f = fields || {};
     const wf = {
@@ -526,16 +603,13 @@
       builtin: !!f.builtin,
       // Send several text documents as one labelled file. claude.ai will accept
       // twenty attachments and quietly show Claude fewer; one file can't be
-      // partly there.
-      bundleText: !!f.bundleText,
+      // partly there. On unless turned off — a batch that arrives incomplete is
+      // a worse default than one labelled file.
+      bundleText: f.bundleText !== false,
       nameChats: f.nameChats !== false,
-      // Click whatever a reply offers for download. Off unless asked for: it
-      // writes to your disk, which is not something a run should decide.
-      downloadFiles: !!f.downloadFiles,
-      // Offer to run a finished run again. Off unless asked for: most workflows
-      // are done when they're done, and a Re-run button on every finished row
-      // is a button whose only use is to be pressed by mistake.
-      allowRerun: !!f.allowRerun,
+      // Offer to run a finished run again. On unless turned off; a run you
+      // never re-run costs a button you don't press.
+      allowRerun: f.allowRerun !== false,
       rerun: rerunDefaults(f.rerun),
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
       docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
@@ -543,6 +617,8 @@
       // What its runs have cost, averaged over them — measured, not authored,
       // so it survives an edit rather than being reset by one.
       usage: f.usage && f.usage.runs > 0 ? f.usage : null,
+      // A workflow built here is already in the current shape.
+      sv: SETTINGS_VERSION,
       createdAt: typeof f.createdAt === "number" ? f.createdAt : now,
       updatedAt: now,
     };
@@ -885,7 +961,7 @@
         docIds: opening.concat(added),
         handsOn: handsOn,
         // The phrase this step's reply must contain before it can be handed on.
-        marker: handsOn ? chatMarker(getChat(wf, s.chatId)) : null,
+        marker: handsOn ? stepMarker(s) : null,
       };
     });
   }
@@ -984,12 +1060,15 @@
       // This matter's papers, handed over at Start so the template can be
       // cleared and re-armed while this run is still going.
       docs: (docs || (wf && wf.docs) || []).map((d) => newDoc(d, d && d.id)),
-      bundleText: !!(wf && wf.bundleText),
+      // Every switch the workflow carries is the run's too, and carried the
+      // same way: only an explicit "off" is off. A setting that failed to
+      // travel would be a run quietly doing something other than what the
+      // template you set up says.
+      bundleText: !(wf && wf.bundleText === false),
       // Name each conversation this run opens after the run. Scoped to the ones
       // it opens, so it can never retitle a chat you pointed it at.
       nameChats: !(wf && wf.nameChats === false),
-      downloadFiles: !!(wf && wf.downloadFiles),
-      allowRerun: !!(wf && wf.allowRerun),
+      allowRerun: !(wf && wf.allowRerun === false),
       // The workflow's answers, copied so this matter can differ from the next.
       rerun: rerunDefaults(wf && wf.rerun),
       // And its own copy of the chats and steps. A run executes THIS, not the
@@ -1094,7 +1173,7 @@
   }
 
   function canRerun(run) {
-    return !!run && run.status === "done" && run.allowRerun === true;
+    return !!run && run.status === "done" && run.allowRerun !== false;
   }
 
   // Runs are numbered as you'd count them out loud: the original is Run 1, its
@@ -1157,7 +1236,6 @@
         docs: docs,
         bundleText: run.bundleText,
         nameChats: run.nameChats,
-        downloadFiles: run.downloadFiles,
         allowRerun: run.allowRerun,
         rerun: run.rerun,
       },
@@ -1406,7 +1484,6 @@
       totalSteps: shaped.steps.length,
       bundleText: flag("bundleText"),
       nameChats: flag("nameChats"),
-      downloadFiles: flag("downloadFiles"),
       allowRerun: flag("allowRerun"),
       rerun: p.rerun ? rerunDefaults(p.rerun) : run.rerun,
       lastProgressAt: now,
@@ -2375,10 +2452,10 @@
     return COPY_LABELS.indexOf(s) !== -1;
   }
 
-  // A control that saves a file rather than copying one. Two uses: keeping it
-  // out of the running when the copy box is being looked for — a click on the
-  // wrong one downloads something AND returns no text — and finding it on
-  // purpose when a step is set to save what Claude produced.
+  // A control that saves a file rather than copying one, used to keep it out of
+  // the running when the copy box is being looked for: a click on the wrong one
+  // downloads something AND returns no text. (Finding such a control on purpose
+  // is src/autodl.js's job now, for every chat rather than only a run's.)
   //
   // "Download" alone, or leading a filename ("Download ruling.docx"). Not
   // anywhere in a string: a button captioned with a sentence isn't this.
@@ -2576,7 +2653,10 @@
     defaultChatName,
     newChatSlot,
     looksLikeChatUrl,
-    chatMarker,
+    stepMarker,
+    migrateSettings,
+    migrateRunSettings,
+    SETTINGS_VERSION,
     hasMarker,
     DEFAULT_OUTPUT_MARKER,
     startChats,

@@ -1,10 +1,10 @@
 /**
  * Claude Usage Meter — auto-download of the files a reply produces (pure).
  *
- * A workflow step can already be told to save whatever its reply offers
- * (`downloadFiles`, see src/workflow.js). This is the same idea for the chats
- * you drive yourself: with the toggle on, a file Claude hands you in a reply
- * lands in your Downloads folder without you reaching for the button.
+ * With the toggle on, a file Claude hands you in a reply lands in your Downloads
+ * folder without you reaching for the button. A workflow step once had a switch
+ * of its own for this; it was removed in favour of this one, which does the same
+ * thing for every chat rather than only for a run's.
  *
  * Everything here is the decision; the DOM work is in src/autodownload.js. The
  * decision is the part worth testing, because both ways of getting it wrong are
@@ -25,11 +25,11 @@
  *   started can be taken even if it later looks new. Belt to the braces above:
  *   the two rules fail in different directions, and a backlog saved by accident
  *   is the failure worth paying twice to avoid.
- * - **What counts as a save control.** Deliberately narrower than
- *   `CUMWorkflow.isDownloadLabel`, which a *step* uses under a run you started
- *   and are watching. This one runs unattended on every claude.ai page, so a
- *   bare "Save" — a caption claude.ai uses for saving things that aren't files
- *   at all — is not enough. "Download", or "Download <filename>", is.
+ * - **What counts as a save control.** Out in the open, deliberately narrow:
+ *   this runs unattended on every claude.ai page, so a bare "Save" — a caption
+ *   claude.ai uses for saving things that aren't files at all — is not enough.
+ *   "Download", or "Download <filename>", is. Inside a file card, where a
+ *   filename is already on the thing, the looser reading applies.
  * - **A ceiling in both directions** — per reply and per page load — because a
  *   pathological message must not be able to fill a folder.
  */

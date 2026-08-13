@@ -213,20 +213,15 @@
       `Text pasted anywhere here that isn't a box becomes a .txt document, named from its first line.</p>` +
       `<label class="cumwf-check"><input class="cumwf-bundle" type="checkbox" /> Combine text documents into ` +
       `one labelled file before uploading</label>` +
-      `<p class="cumwf-hint">Twenty separate attachments is where claude.ai starts showing Claude fewer than ` +
-      `were sent. One file, with each document announced by name inside it, either arrives or doesn't. PDFs and ` +
-      `Word files still go up on their own — only text is combined.</p>` +
+      `<p class="cumwf-hint">On by default. Twenty separate attachments is where claude.ai starts showing Claude ` +
+      `fewer than were sent. One file, with each document announced by name inside it, either arrives or doesn't. ` +
+      `PDFs and Word files still go up on their own — only text is combined.</p>` +
       `<div class="cumwf-docs cumwf-list"></div>` +
 
       `<label class="cumwf-check"><input class="cumwf-name-chats" type="checkbox" /> Name each conversation ` +
       `after the run — “<span class="cumwf-name-eg">Matter</span>: Chat A”</label>` +
       `<p class="cumwf-hint">Only conversations a run opens itself. A chat you point it at keeps the name ` +
       `it has: retitling work you started is not the extension's business.</p>` +
-      `<label class="cumwf-check"><input class="cumwf-download" type="checkbox" /> Save any file a reply ` +
-      `offers for download</label>` +
-      `<p class="cumwf-hint">Off by default — it writes to your Downloads folder, so it's yours to ask for. ` +
-      `Best-effort either way: a file that won't save is a note on the run, never a failed step.</p>` +
-
       `<label class="cumwf-check"><input class="cumwf-rerun" type="checkbox" /> Offer to run a finished ` +
       `run again</label>` +
       `<p class="cumwf-hint">Adds a Re-run button to this workflow's finished runs. Off by default; each ` +
@@ -285,7 +280,6 @@
       pick: q(".cumwf-pick"),
       bundle: q(".cumwf-bundle"),
       nameChats: q(".cumwf-name-chats"),
-      download: q(".cumwf-download"),
       rerun: q(".cumwf-rerun"),
       rerunRow: q(".cumwf-rerun-row"),
       rrStep: q(".cumwf-rr-step"),
@@ -378,15 +372,6 @@
           `<input class="wf-chat-start" type="text" placeholder="Or start in an existing chat — paste its link" value="${esc(
             chat.startUrl || ""
           )}" />` +
-          `<label class="cumwf-check"><input class="wf-chat-ruling" type="checkbox" ${
-            chat.expectsRuling ? "checked" : ""
-          } /> Its output is a tentative ruling — don't hand it to another chat unless the reply contains</label>` +
-          `<input class="wf-chat-marker" type="text" placeholder="${esc(W.DEFAULT_OUTPUT_MARKER)}" value="${esc(
-            chat.outputMarker || ""
-          )}"${chat.expectsRuling ? "" : " hidden"} />` +
-          `<p class="cumwf-hint"${chat.expectsRuling ? "" : " hidden"}>A clarifying question, a note that a paper ` +
-          `is missing, or an offer to continue are all real replies — none of them the ruling. This waits for the ` +
-          `one that is, which is usually the reply after auto-continue clicks Continue.</p>` +
           `<label class="cumwf-check"><input class="wf-chat-seed" type="checkbox" ${
             chat.seedFromLatest ? "checked" : ""
           } /> Treat that chat as step 0 — take its latest reply as the opening hand-off, and skip this ` +
@@ -432,15 +417,6 @@
         startEl.addEventListener("input", () => (chat.startUrl = startEl.value.trim() || null));
         const seedEl = card.querySelector(".wf-chat-seed");
         seedEl.addEventListener("change", () => (chat.seedFromLatest = seedEl.checked));
-        const rulingEl = card.querySelector(".wf-chat-ruling");
-        const markerEl = card.querySelector(".wf-chat-marker");
-        const markerHint = markerEl.nextElementSibling;
-        rulingEl.addEventListener("change", () => {
-          chat.expectsRuling = rulingEl.checked;
-          markerEl.hidden = !rulingEl.checked;
-          if (markerHint) markerHint.hidden = !rulingEl.checked;
-        });
-        markerEl.addEventListener("input", () => (chat.outputMarker = markerEl.value.trim() || null));
         ui.chats.appendChild(card);
       });
     }
@@ -689,7 +665,19 @@
                     " is handed all of their replies together."
                   : "Add a step after them to read all of their replies together."
               }</p>`
-            : "");
+            : "") +
+          // Per STEP, not per chat: the drafting conversation writes the ruling,
+          // then revises it, then takes a style pass over it, and only some of
+          // those replies have to be a ruling before they travel.
+          `<label class="cumwf-check"><input class="wf-step-ruling" type="checkbox" ${
+            step.expectsRuling ? "checked" : ""
+          } /> Its output is a tentative ruling — don't hand it on unless the reply contains</label>` +
+          `<input class="wf-step-marker" type="text" placeholder="${esc(W.DEFAULT_OUTPUT_MARKER)}" value="${esc(
+            step.outputMarker || ""
+          )}"${step.expectsRuling ? "" : " hidden"} />` +
+          `<p class="cumwf-hint"${step.expectsRuling ? "" : " hidden"}>A clarifying question, a note that a paper ` +
+          `is missing, or an offer to continue are all real replies — none of them the ruling. This waits for the ` +
+          `one that is, which is usually the reply after auto-continue clicks Continue.</p>`;
         const chatEl = card.querySelector(".wf-step-chat");
         chatEl.value = step.chatId || (wf.chats[0] && wf.chats[0].id) || "";
         chatEl.addEventListener("change", () => (step.chatId = chatEl.value));
@@ -705,6 +693,17 @@
         if (carryEl) carryEl.addEventListener("change", () => (step.carry = carryEl.checked));
         const labelEl = card.querySelector(".wf-step-label");
         if (labelEl) labelEl.addEventListener("input", () => (step.carryLabel = labelEl.value));
+        const rulingEl = card.querySelector(".wf-step-ruling");
+        const markerEl = card.querySelector(".wf-step-marker");
+        const markerHint = markerEl && markerEl.nextElementSibling;
+        if (rulingEl && markerEl)
+          rulingEl.addEventListener("change", () => {
+            step.expectsRuling = rulingEl.checked;
+            markerEl.hidden = !rulingEl.checked;
+            if (markerHint) markerHint.hidden = !rulingEl.checked;
+          });
+        if (markerEl)
+          markerEl.addEventListener("input", () => (step.outputMarker = markerEl.value.trim() || null));
         wireStepDrag(card);
         card.querySelector(".wf-up").addEventListener("click", () => moveStep(i, -1));
         card.querySelector(".wf-down").addEventListener("click", () => moveStep(i, 1));
@@ -1059,7 +1058,6 @@
       ui.desc.value = wf.description || "";
       ui.bundle.checked = !!wf.bundleText;
       ui.nameChats.checked = wf.nameChats !== false;
-      ui.download.checked = !!wf.downloadFiles;
       ui.rerun.checked = !!wf.allowRerun;
       const rr = W.rerunDefaults(wf.rerun);
       ui.rrFresh.checked = rr.freshChats;
@@ -1152,7 +1150,6 @@
       wf.description = ui.desc.value;
       wf.bundleText = ui.bundle.checked;
       wf.nameChats = ui.nameChats.checked;
-      wf.downloadFiles = ui.download.checked;
       wf.allowRerun = ui.rerun.checked;
       wf.rerun = {
         stepIndex: parseInt(ui.rrStep.value, 10) || 0,
