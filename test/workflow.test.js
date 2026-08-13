@@ -2665,3 +2665,36 @@ test("the clock lifts a timed pause, and only once it is due", () => {
   assert.equal(W.nextClockResume([forever], NOW), null);
   assert.equal(W.nextClockResume([], NOW), null);
 });
+
+test("stillness only settles a turn if we watched it become still", () => {
+  const base = {
+    text: "a finished-looking reply",
+    generating: false,
+    unchangedMs: 60000,
+    stablePolls: 9,
+    streamDone: false,
+    streamOpen: false,
+  };
+  // Watched: the text moved, or a turn mounted, while we were looking.
+  assert.equal(W.settleReason(Object.assign({}, base, { watched: true })), "stable");
+  // Not watched: it was already there when we arrived and never moved. That is
+  // the PREVIOUS answer sitting where it always was — and taking it is how a
+  // run restarted at an earlier step walks through the rest of itself in
+  // seconds, collecting each stale reply in turn.
+  assert.equal(W.settleReason(Object.assign({}, base, { watched: false })), null);
+  // Said nothing: unchanged, since every other caller of this means "stable".
+  assert.equal(W.settleReason(base), "stable");
+  // The stream outranks all of it. A stream that closed after this message went
+  // out is proof the turn happened, whether or not we saw the text move.
+  assert.equal(
+    W.settleReason(Object.assign({}, base, { watched: false, streamDone: true, unchangedMs: 2000 })),
+    "stream"
+  );
+  // And a stalled turn is still judged on its own terms.
+  assert.equal(
+    W.settleReason(
+      Object.assign({}, base, { watched: false, generating: true, unchangedMs: 20 * 60000 })
+    ),
+    "stalled"
+  );
+});
