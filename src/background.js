@@ -874,6 +874,25 @@ async function ensureWindowSize(windowId) {
   }
 }
 
+// Press Stop in every tab of a run's window. Best-effort and fire-and-forget:
+// a tab with no content script listening, or none generating, simply says
+// nothing. An answer nobody is going to read is still an answer being paid for.
+function stopGeneratingIn(run) {
+  if (!run || typeof run.windowId !== "number") return;
+  tabsInWindow(run.windowId).then((tabs) => {
+    for (const t of tabs) {
+      if (t.id == null) continue;
+      try {
+        chrome.tabs.sendMessage(t.id, { type: "cum-wf-stop-generating" }, () => {
+          void chrome.runtime.lastError;
+        });
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  });
+}
+
 async function tabsInWindow(windowId) {
   return new Promise((resolve) => {
     try {
@@ -1802,6 +1821,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const run = await readRun(msg.runId);
       if (!run) return { ok: false, error: "run not found" };
       await saveRun(W.markPaused(run, Date.now()));
+      // Every chat this run is using, not only the one Pause was pressed in.
+      // The pages driving a step see the pause in storage and stop their own
+      // answer; this covers the rest of the run's window — a tab whose step has
+      // already handed back but whose reply is still being written, and a tab
+      // the worker was about to give a step to.
+      stopGeneratingIn(run);
       await reschedule();
       return { ok: true };
     })()
@@ -1849,6 +1874,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const run = await readRun(msg.runId);
       if (!run) return { ok: false, error: "run not found" };
       await saveRun(W.markCanceled(run, Date.now()));
+      stopGeneratingIn(run); // the same reasoning as Pause, and more so
       await reschedule();
       return { ok: true };
     })()

@@ -1511,6 +1511,21 @@
     );
   }
 
+  // Has this run been told to stop? One definition, asked by every page a run
+  // is driving and at every point a step could stand down — before it sends,
+  // while it is sending, and while it waits for the answer.
+  //
+  // It has to be run-wide rather than per-chat. A wave is three conversations
+  // working at once, and Pause pressed in one of them is a decision about the
+  // run, not about the tab it was pressed in: leaving the other two to finish
+  // is leaving two long answers to be paid for and thrown away.
+  function runHalted(run) {
+    if (!run) return "gone";
+    if (run.status === "canceled") return "canceled";
+    if (run.status === "paused") return "paused";
+    return null;
+  }
+
   function heldRuns(runs) {
     return (runs || []).filter((r) => r && r.status === "waiting");
   }
@@ -2710,6 +2725,7 @@
     dueRuns,
     pendingResetRuns,
     heldRuns,
+    runHalted,
     usageWaitingRuns,
     nextUsageResume,
     pickupRuns,
