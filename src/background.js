@@ -152,9 +152,18 @@ async function acBurst() {
 // below needs a reading it can get on its own.
 let statusBusy = null; // in-flight refresh, so concurrent callers coalesce
 
+// What claude.ai answers on when nothing says otherwise. Used to decide whether
+// an outage confined to particular models is one of yours: a workflow that names
+// no model isn't using "no model", it is using whatever your account is set to.
+const DEFAULT_MODEL = "Opus 5";
+
 async function statusCfg() {
   const c = (await get(STATUS_CFG_KEY))[STATUS_CFG_KEY] || {};
-  return { warn: c.warn !== false, holdSends: c.holdSends !== false };
+  return {
+    warn: c.warn !== false,
+    holdSends: c.holdSends !== false,
+    defaultModel: (typeof c.defaultModel === "string" && c.defaultModel.trim()) || DEFAULT_MODEL,
+  };
 }
 
 async function readStatus() {
@@ -348,9 +357,16 @@ async function findChatTab(chatUrl) {
 async function outageGate(job, opts) {
   const cfg = await statusCfg();
   if (!cfg.holdSends || (opts && opts.force)) return { hold: false };
+  const o = opts || {};
   return S.holdDecision(await statusForGate(), {
     enabled: true,
     heldSince: typeof job.heldSince === "number" ? job.heldSince : null,
+    // The model this particular piece of work would answer on. An outage the
+    // status page attributes to other models isn't one that stops it. Work
+    // that names none is on whatever your account is set to, which is the
+    // point of the default — falling back to null here would mean a plain
+    // scheduled send waits out every model-specific outage.
+    model: S.modelKey(o.model || cfg.defaultModel),
     now: Date.now(),
   });
 }
@@ -379,7 +395,12 @@ async function executeJob(job, opts) {
   // leaves is its own failure.
   const heldNote = gate.expired
     ? "sent after waiting " + S.fmtWaited(gate.waitedMs) + " for " + gate.reason
-    : null;
+    : // Or not held at all, because the outage is confined to models this send
+      // isn't using — worth saying, since the pill is showing an outage warning
+      // at the same moment.
+      gate.spared
+      ? "sent during an outage confined to " + gate.spared
+      : null;
 
   await updateJob(job.id, {
     status: "running",
@@ -1397,7 +1418,16 @@ async function driveRun(runId, opts) {
       // Same gate as a scheduled send: a run driven through the real UI has
       // nothing to fall back on if Claude is down, so it waits — with the same
       // 6-hour ceiling, and Run now still overrides it.
-      const gate = await outageGate(run, opts);
+      const gate = await outageGate(
+        run,
+        Object.assign({}, opts, {
+          // Told in advance not to wait one out.
+          force: (opts && opts.force) || W.ignoresOutage(run),
+          // The step's model, or the chat's. Naming none leaves outageGate to
+          // fall back to your default.
+          model: W.stepModel(run, wf, null),
+        })
+      );
       if (gate.hold) {
         const firstHold = run.status !== "waiting";
         await saveRun(W.markHeld(run, gate.reason, Date.now()));
@@ -1437,7 +1467,12 @@ async function driveRun(runId, opts) {
 
       const heldNote = gate.expired
         ? "step " + (run.stepIndex + 1) + " sent after waiting " + S.fmtWaited(gate.waitedMs)
-        : null;
+        : // Not held at all, because the outage is somebody else's models. Said
+          // out loud: an outage warning on the pill and a run carrying on
+          // regardless needs an explanation on the run itself.
+          gate.spared
+          ? "Claude is down for " + gate.spared + " — this run isn't on it"
+          : null;
 
       // A chat standing in as step 0: take its latest reply as the opening
       // hand-off. Read here rather than at Start, because a scheduled run may
@@ -1900,6 +1935,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // the worker was about to give a step to.
       stopGeneratingIn(run);
       await reschedule();
+      return { ok: true };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
+  // Push on through an outage. Not a resume — the run may be perfectly happy —
+  // it is the answer to "this outage doesn't touch what I'm doing". Sticky for
+  // the rest of the run, since being asked again every twenty seconds would be
+  // its own kind of hold.
+  if (msg && msg.type === "cum-wf-ignore-outage" && msg.runId) {
+    (async () => {
+      const run = await readRun(msg.runId);
+      if (!run) return { ok: false, error: "run not found" };
+      const going = Object.assign({}, run, {
+        ignoreOutage: true,
+        note: "carrying on through the outage — you said it doesn't affect this",
+      });
+      // A run parked BY the outage goes back to running; one that was merely
+      // told in advance keeps whatever it was doing.
+      await saveRun(
+        going.status === "waiting"
+          ? Object.assign({}, W.reviseRun(going, { stepIndex: going.stepIndex, phase: going.phase }, Date.now()), {
+              note: going.note,
+            })
+          : going
+      );
+      await reschedule();
+      if (run.status === "waiting") driveRun(run.id);
       return { ok: true };
     })()
       .then(sendResponse)

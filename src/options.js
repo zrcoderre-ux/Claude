@@ -1136,6 +1136,7 @@
             bundleText: !!edited.bundleText,
             nameChats: edited.nameChats !== false,
             allowRerun: !!edited.allowRerun,
+            ignoreOutage: !!edited.ignoreOutage,
           },
         },
         (res) => {
@@ -1232,6 +1233,10 @@
           // into a window that is still empty, or cancelling it outright.
           (run.resumeOnUsage && run.status === "paused"
             ? `<button class="job-edit wf-run-hold" data-id="${run.id}" title="Leave it paused — don't pick it back up when usage returns">Stay paused</button>`
+            : "") +
+          // Waiting out an outage that doesn't touch what this run is doing.
+          (run.status === "waiting" && !run.ignoreOutage
+            ? `<button class="job-run wf-run-anyway" data-id="${run.id}" title="This outage doesn't affect what this run is doing — carry on now, and don't wait out another">Go anyway</button>`
             : "") +
           (run.status !== "running" && run.status !== "done"
             ? `<button class="${WF.isDraft(run) ? "job-run" : "job-edit"} wf-run-edit" data-id="${
@@ -1359,6 +1364,16 @@
           b.disabled = true;
           b.textContent = "Pausing…";
           chrome.runtime.sendMessage({ type: "cum-wf-pause", runId: b.getAttribute("data-id") }, renderRuns);
+        })
+      );
+      wfui.runs.querySelectorAll(".wf-run-anyway").forEach((b) =>
+        b.addEventListener("click", () => {
+          b.disabled = true;
+          b.textContent = "Going…";
+          chrome.runtime.sendMessage(
+            { type: "cum-wf-ignore-outage", runId: b.getAttribute("data-id") },
+            renderRuns
+          );
         })
       );
       wfui.runs.querySelectorAll(".wf-run-hold").forEach((b) =>

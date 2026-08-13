@@ -321,3 +321,147 @@ test("a malformed payload degrades to ok rather than throwing", () => {
     assert.equal(snap.blocking, false);
   }
 });
+
+// ---- Which models an outage is about --------------------------------------
+
+test("modelKey reads a model out of prose, an api id, or a bare family", () => {
+  assert.deepEqual(S.modelKey("Claude Opus 4.5"), { family: "opus", version: "4.5" });
+  assert.deepEqual(S.modelKey("opus 4.5"), { family: "opus", version: "4.5" });
+  // api ids write the version with a hyphen; both normalise to the dotted form.
+  assert.deepEqual(S.modelKey("claude-opus-4-5"), { family: "opus", version: "4.5" });
+  assert.deepEqual(S.modelKey("Sonnet"), { family: "sonnet", version: null });
+  assert.deepEqual(S.modelKey("Opus 5"), { family: "opus", version: "5" });
+  assert.equal(S.modelKey("no model here"), null);
+  assert.equal(S.modelKey(null), null);
+});
+
+test("modelsIn finds every distinct model named, once each", () => {
+  assert.deepEqual(S.modelsIn("Elevated errors for Opus 4.5 and Sonnet 4.5"), [
+    { family: "opus", version: "4.5" },
+    { family: "sonnet", version: "4.5" },
+  ]);
+  // Repeats collapse — a title and its update usually say the same name twice.
+  assert.deepEqual(S.modelsIn("Opus 4.5 — Opus 4.5 is recovering"), [
+    { family: "opus", version: "4.5" },
+  ]);
+  assert.deepEqual(S.modelsIn("Elevated error rates"), []);
+});
+
+test("modelAffected: an unnamed model, or an unknown one of ours, assumes the worst", () => {
+  // Nothing named = the outage is about everything.
+  assert.equal(S.modelAffected([], { family: "opus", version: "5" }), true);
+  assert.equal(S.modelAffected(null, { family: "opus", version: "5" }), true);
+  // We don't know what we'd be sending on, so we don't get to skip the wait.
+  assert.equal(S.modelAffected([{ family: "sonnet", version: "4.5" }], null), true);
+});
+
+test("modelAffected matches on family, and on version only when both give one", () => {
+  const mine = { family: "opus", version: "5" };
+  assert.equal(S.modelAffected([{ family: "opus", version: "5" }], mine), true);
+  assert.equal(S.modelAffected([{ family: "opus", version: "4.5" }], mine), false);
+  // "Opus is degraded" covers every Opus.
+  assert.equal(S.modelAffected([{ family: "opus", version: null }], mine), true);
+  // ...and so does an outage on a versionless model of ours.
+  assert.equal(
+    S.modelAffected([{ family: "opus", version: "4.5" }], { family: "opus", version: null }),
+    true
+  );
+  assert.equal(S.modelAffected([{ family: "sonnet", version: "5" }], mine), false);
+  // Any one of several naming yours is enough.
+  assert.equal(
+    S.modelAffected([{ family: "sonnet", version: "5" }, { family: "opus", version: "5" }], mine),
+    true
+  );
+});
+
+function incidentAbout(title, body) {
+  return summary({
+    status: { indicator: "major", description: "Partial System Outage" },
+    incidents: [
+      {
+        id: "i1",
+        name: title,
+        status: "identified",
+        impact: "major",
+        components: [{ id: "c1", name: "Claude.ai" }],
+        incident_updates: body ? [{ body: body, created_at: "2027-01-15T10:01:00Z" }] : [],
+      },
+    ],
+  });
+}
+
+test("an outage that names models is narrowed to them", () => {
+  const snap = S.parseSummary(incidentAbout("Elevated errors for Claude Opus 4.5"), NOW);
+  assert.equal(snap.blocking, true);
+  assert.deepEqual(snap.models, [{ family: "opus", version: "4.5" }]);
+});
+
+test("an outage that names no model is about everything", () => {
+  const snap = S.parseSummary(incidentAbout("Elevated errors on message send"), NOW);
+  assert.equal(snap.blocking, true);
+  // null, not [] — "we could not establish that this is model-specific".
+  assert.equal(snap.models, null);
+});
+
+test("a model named only in an update still counts", () => {
+  const snap = S.parseSummary(
+    incidentAbout("Elevated error rates", "Requests to Sonnet 4.5 are failing."),
+    NOW
+  );
+  assert.deepEqual(snap.models, [{ family: "sonnet", version: "4.5" }]);
+});
+
+test("one blocking incident about everything widens the whole outage", () => {
+  const s = incidentAbout("Opus 4.5 errors");
+  s.incidents.push({
+    id: "i2",
+    name: "Elevated latency",
+    status: "investigating",
+    impact: "major",
+    components: [{ id: "c1", name: "Claude.ai" }],
+  });
+  assert.equal(S.parseSummary(s, NOW).models, null);
+});
+
+test("a component outage on its own is not model-specific", () => {
+  // Surfaces are how a model incident shows; reading "Claude.ai: major outage"
+  // as "no model named" would make every outage model-specific and spare
+  // everything.
+  const snap = S.parseSummary(comp("Claude.ai", "major_outage"), NOW);
+  assert.equal(snap.blocking, true);
+  assert.equal(snap.models, null);
+});
+
+test("holdDecision spares a run on a model nobody has reported", () => {
+  const snap = S.parseSummary(incidentAbout("Elevated errors for Claude Opus 4.5"), NOW);
+  const spared = S.holdDecision(snap, { now: NOW, model: { family: "opus", version: "5" } });
+  assert.equal(spared.hold, false);
+  assert.equal(spared.spared, "Opus 4.5");
+  // ...and holds the run that IS on it.
+  const held = S.holdDecision(snap, { now: NOW, model: { family: "opus", version: "4.5" } });
+  assert.equal(held.hold, true);
+  // A caller that names no model is held, as it always was.
+  assert.equal(S.holdDecision(snap, { now: NOW }).hold, true);
+});
+
+test("holdDecision holds through a model-specific outage when the outage names everything", () => {
+  const snap = S.parseSummary(incidentAbout("Elevated errors on message send"), NOW);
+  assert.equal(S.holdDecision(snap, { now: NOW, model: { family: "opus", version: "5" } }).hold, true);
+});
+
+test("describeModels reads as a list", () => {
+  assert.equal(S.describeModels([{ family: "opus", version: "4.5" }]), "Opus 4.5");
+  assert.equal(
+    S.describeModels([{ family: "opus", version: "4.5" }, { family: "sonnet", version: null }]),
+    "Opus 4.5 and Sonnet"
+  );
+  assert.equal(
+    S.describeModels([
+      { family: "opus", version: "4.5" },
+      { family: "sonnet", version: "4.5" },
+      { family: "haiku", version: null },
+    ]),
+    "Opus 4.5, Sonnet 4.5 and Haiku"
+  );
+  assert.equal(S.describeModels([]), "");
+});

@@ -37,6 +37,7 @@
     svcDetail: document.getElementById("svc-detail"),
     statusWarn: document.getElementById("status-warn"),
     statusHold: document.getElementById("status-hold"),
+    statusModel: document.getElementById("status-model"),
   };
 
   function flash(text) {
@@ -128,7 +129,7 @@
 
   let acCfg = { enabled: false, max: 50, allowOnce: false };
   let dlCfg = { enabled: false, max: 20 };
-  let statusCfg = { warn: true, holdSends: true };
+  let statusCfg = { warn: true, holdSends: true, defaultModel: "" };
 
   chrome.storage.local.get(
     [
@@ -157,9 +158,17 @@
       renderDlSeen(res && res[AUTODOWNLOAD_SEEN_KEY]);
       // Both status toggles default ON, so only an explicit false turns them off.
       const sc = (res && res[STATUS_CFG_KEY]) || {};
-      statusCfg = { warn: sc.warn !== false, holdSends: sc.holdSends !== false };
+      statusCfg = {
+        warn: sc.warn !== false,
+        holdSends: sc.holdSends !== false,
+        // Blank means "whatever the worker's default is", which the
+        // placeholder already says — storing "Opus 5" here would freeze
+        // today's default into the settings.
+        defaultModel: typeof sc.defaultModel === "string" ? sc.defaultModel : "",
+      };
       el.statusWarn.checked = statusCfg.warn;
       el.statusHold.checked = statusCfg.holdSends;
+      el.statusModel.value = statusCfg.defaultModel;
       renderStatus((res && res[STATUS_KEY]) || null);
       askStatus(false); // and refresh it if the worker's reading has gone stale
     }
@@ -175,6 +184,16 @@
     saveStatusCfg(
       statusCfg,
       statusCfg.holdSends ? "Sends will wait out an outage" : "Sends will fire regardless"
+    );
+  });
+
+  el.statusModel.addEventListener("change", () => {
+    statusCfg.defaultModel = el.statusModel.value.trim();
+    saveStatusCfg(
+      statusCfg,
+      statusCfg.defaultModel
+        ? "Assuming " + statusCfg.defaultModel
+        : "Back to the built-in default"
     );
   });
 

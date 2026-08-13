@@ -44,7 +44,9 @@ bottom-right corner of [claude.ai](https://claude.ai).
 - **Outage warnings** — watches
   [status.claude.com](https://status.claude.com/) and warns on the pill when
   Claude is degraded, down, or under maintenance. A **scheduled send waits out an
-  outage** instead of firing into it. See [Outage detection](#outage-detection).
+  outage** instead of firing into it — unless the outage is confined to models
+  it isn't using, or you tell it to press on. See
+  [Outage detection](#outage-detection).
 - **Usage log + CSV** (Options) — records when you hit 100% and the usage % at
   each 5-hour reset; export to a spreadsheet.
 - **Scheduled sends** — queue files (pick individually or **a whole folder**) +
@@ -361,6 +363,16 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   against an exact list of labels, so `Download` can never be taken for it, and a
   file card's own controls sit inside the message where the copy-box search never
   looks.
+
+- **Keep going during a claude.ai outage** (off by default) — a run normally
+  holds while [status.claude.com](https://status.claude.com/) reports an outage,
+  and picks itself back up when it clears. Most outages are partial, so a run
+  that never touches the broken part can lose an afternoon waiting for nothing.
+  Ticked, this one presses on regardless. Its runs inherit the answer and can
+  differ from it, and a run already **Waiting** has a **Go anyway** button that
+  sets the same switch. You rarely need either: an outage that names models
+  already spares a run on a different one — see
+  [Outage detection](#outage-detection).
 
 - **Completing a prompt you've written before** — the same prompts recur, and
   retyping one is a chance to get it subtly different from the version that
@@ -1479,8 +1491,40 @@ Claude still answers, so blocking a send would cost more than it saves. *Partial
 outage*, *major outage* and *under maintenance* **hold**, because a send driven
 through the real UI has nothing to fall back on.
 
+**Which models is it.** Plenty of outages are one model — "Elevated errors for
+Claude Opus 4.5" — and a run on a different one has nothing to wait for. The
+status page has no component per model (its components are *surfaces*: Claude.ai,
+Claude Code, api.anthropic.com), so the models are read out of what the incidents
+**say**: their titles and their updates, matching `Opus`/`Sonnet`/`Haiku`/`Fable`
+with or without a version, in prose (`Opus 4.5`) or as an api id
+(`claude-opus-4-5`).
+
+The narrowing only ever *releases* a hold, and only on a positive statement:
+
+- If **any** blocking incident names no model, the outage is about everything and
+  every run waits, exactly as before. That's also what a bare component outage
+  (`Claude.ai: major outage`) means — a surface going red is *how* a model
+  incident shows, so it is never read as "model-specific".
+- A family named without a version (`Sonnet is degraded`) covers every version of
+  it.
+- A run whose model can't be established waits. The failure mode of this parser
+  is a run that waits when it needn't, never one that sends into an outage.
+
+The model a run is compared against is the **step's** model, or failing that the
+**chat's**, or failing that **the model your account is normally on** — a
+workflow that names no model isn't using "no model", it's using whatever
+claude.ai is set to. That default is `Opus 5`, editable in the popup under the
+outage toggles.
+
 And the escape hatches, because a queued send that never leaves is its own
 failure:
+
+- **Keep going during a claude.ai outage** — a per-workflow switch (off by
+  default), inherited by its runs and editable on a run of its own. Ticked, that
+  run never waits one out.
+- **Go anyway** appears on a run that is already **Waiting**: the answer to "this
+  outage doesn't touch what I'm doing". It carries on immediately and, being the
+  same switch, doesn't ask again for the rest of the run.
 
 - After **6 hours** of waiting a job sends anyway, with a note saying how long it
   waited and why.

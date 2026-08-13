@@ -639,6 +639,11 @@
       // Offer to run a finished run again. On unless turned off; a run you
       // never re-run costs a button you don't press.
       allowRerun: f.allowRerun !== false,
+      // Push on through an outage rather than waiting it out. Off by default —
+      // the wait exists because a run driven through the real UI has nothing to
+      // fall back on — but a minor outage often doesn't touch what a run does,
+      // and this is how you say so in advance.
+      ignoreOutage: !!f.ignoreOutage,
       rerun: rerunDefaults(f.rerun),
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
       docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
@@ -1143,6 +1148,7 @@
       // it opens, so it can never retitle a chat you pointed it at.
       nameChats: !(wf && wf.nameChats === false),
       allowRerun: !(wf && wf.allowRerun === false),
+      ignoreOutage: !!(wf && wf.ignoreOutage),
       // The workflow's answers, copied so this matter can differ from the next.
       rerun: rerunDefaults(wf && wf.rerun),
       // And its own copy of the chats and steps. A run executes THIS, not the
@@ -1317,6 +1323,7 @@
         nameChats: run.nameChats,
         allowRerun: run.allowRerun,
         rerun: run.rerun,
+        ignoreOutage: run.ignoreOutage,
       },
       id,
       now,
@@ -1605,6 +1612,7 @@
       bundleText: flag("bundleText"),
       nameChats: flag("nameChats"),
       allowRerun: flag("allowRerun"),
+      ignoreOutage: flag("ignoreOutage"),
       rerun: p.rerun ? rerunDefaults(p.rerun) : run.rerun,
       lastProgressAt: now,
       updatedAt: now,
@@ -1629,6 +1637,27 @@
     return (runs || []).filter(
       (r) => r && r.status === "pending" && r.trigger && r.trigger.type === "reset"
     );
+  }
+
+  // Which model the step about to run will answer on.
+  //
+  // The step's own choice, then the chat's, then your default — because a
+  // workflow that names no model isn't using "no model", it is using whatever
+  // claude.ai is set to, and an outage confined to that one still stops it.
+  // planRun has already resolved the first two into modelOn.
+  function stepModel(run, wf, fallback) {
+    const src = runSource(run, wf);
+    const plan = planRun(src);
+    const step = plan[run && run.stepIndex] || null;
+    return trimmed(step && step.modelOn) || trimmed(fallback) || null;
+  }
+
+  // Should this run wait out an outage at all? A workflow can say it would
+  // rather push on — a minor outage often doesn't touch what a run is doing,
+  // and a run that waits six hours for something that never affected it has
+  // cost you the afternoon for nothing.
+  function ignoresOutage(run) {
+    return !!(run && run.ignoreOutage);
   }
 
   // Has this run been told to stop? One definition, asked by every page a run
@@ -2867,6 +2896,8 @@
     pendingResetRuns,
     heldRuns,
     runHalted,
+    stepModel,
+    ignoresOutage,
     usageWaitingRuns,
     nextUsageResume,
     pickupRuns,

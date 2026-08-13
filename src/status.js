@@ -96,6 +96,72 @@
     return OFF_TOPIC_RE.test(String(name || ""));
   }
 
+  // ---- which models an incident is about ----------------------------------
+  //
+  // The status page has no component per model — its components are surfaces
+  // (Claude.ai, Claude Code, api.anthropic.com), and which MODEL is in trouble
+  // is said in the incident's title and its updates: "Elevated errors for Claude
+  // Opus 4.5", "Sonnet degraded". So that is where this reads it from.
+  //
+  // Deliberately conservative in one direction. Finding no model named means
+  // the incident is about everything, which holds a run exactly as it does
+  // today — the failure of this parser is a run that waits when it needn't,
+  // never a run that sends into an outage it should have waited out.
+  const FAMILIES = "opus|sonnet|haiku|fable";
+  // "Opus 4.5", "Claude Sonnet 4", "Haiku 4.5", or a bare family name. The
+  // version is optional because an incident often names only the family.
+  // The version may be written "4.5" in prose or "4-5" in an api id
+  // (claude-opus-4-5), so both are read and normalised to the dotted form.
+  const MODEL_RE = new RegExp(
+    "\\b(?:claude[\\s-]+)?(" + FAMILIES + ")(?:[\\s-]+(\\d+(?:[.-]\\d+)?))?\\b",
+    "gi"
+  );
+  function version(raw) {
+    return raw ? String(raw).replace("-", ".") : null;
+  }
+
+  // A model as this compares them: family, and version where one was given.
+  // "Claude Opus 4.5" and "opus 4.5" are the same model; "Opus" and "Opus 4.5"
+  // are the same FAMILY, which is what an incident naming only the family means.
+  function modelKey(text) {
+    MODEL_RE.lastIndex = 0;
+    const m = MODEL_RE.exec(String(text == null ? "" : text));
+    if (!m) return null;
+    return { family: m[1].toLowerCase(), version: version(m[2]) };
+  }
+
+  // Every model named in a piece of text.
+  function modelsIn(text) {
+    const out = [];
+    const seen = Object.create(null);
+    const str_ = String(text == null ? "" : text);
+    MODEL_RE.lastIndex = 0;
+    let m;
+    while ((m = MODEL_RE.exec(str_))) {
+      const key = m[1].toLowerCase() + "|" + (version(m[2]) || "");
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push({ family: m[1].toLowerCase(), version: version(m[2]) });
+    }
+    return out;
+  }
+
+  // Does an incident about `named` cover the model you are about to use?
+  //
+  // A version named on either side has to agree; a family named without one
+  // covers every version of it, which is what "Sonnet is degraded" means. And
+  // an incident that named no model at all covers everything — see above.
+  function modelAffected(named, mine) {
+    if (!named || !named.length) return true; // about everything
+    if (!mine) return true; // we don't know what we'd be using, so assume the worst
+    for (const n of named) {
+      if (n.family !== mine.family) continue;
+      if (!n.version || !mine.version) return true; // family-wide either way
+      if (n.version === mine.version) return true;
+    }
+    return false;
+  }
+
   function rank(level) {
     const r = RANK[level];
     return typeof r === "number" ? r : 0;
@@ -223,6 +289,38 @@
    * Normalise a summary.json payload into the snapshot everything else reads.
    * `now` is injectable for tests.
    */
+  // The models an outage is about, taken from what the incidents SAY.
+  //
+  // null means "not model-specific" — either nothing named a model, or
+  // something that is blocking named none, in which case the outage is about
+  // everything until told otherwise. Only when every blocking incident names
+  // models is the outage narrowed to them.
+  //
+  // Components are not consulted on purpose: they are surfaces, and a surface
+  // being degraded is how a model incident SHOWS. Reading "Claude.ai: degraded"
+  // as "no model named" would mean no outage was ever model-specific.
+  function outageModels(incidents, maintenances) {
+    const blocking = (incidents || [])
+      .concat(maintenances || [])
+      .filter((x) => x && rank(x.level) >= BLOCKING_RANK);
+    if (!blocking.length) return null;
+    const all = [];
+    const seen = Object.create(null);
+    for (const b of blocking) {
+      const named = modelsIn(
+        [b.name, b.latest, (b.components || []).join(" ")].filter(Boolean).join(" — ")
+      );
+      if (!named.length) return null; // one blocking thing about everything is enough
+      for (const m of named) {
+        const key = m.family + "|" + (m.version || "");
+        if (seen[key]) continue;
+        seen[key] = true;
+        all.push(m);
+      }
+    }
+    return all.length ? all : null;
+  }
+
   function parseSummary(json, now) {
     const at = typeof now === "number" ? now : Date.now();
     const components = readComponents(json, false);
@@ -255,6 +353,10 @@
     const affected = components.filter((c) => c.level !== "ok");
     return {
       ok: true,
+      // Which models this outage is about, or null for "we can't tell, so all
+      // of them". See outageModels — the null is what keeps a parser that
+      // learns nothing from letting a run send into an outage.
+      models: outageModels(incidents, maintenances),
       // fetchedAt is the age of the DATA; checkedAt is when we last tried. They
       // diverge when a reading is kept alive across a failed poll (see the
       // caller's grace window), which is what keeps a retry loop from spinning.
@@ -376,6 +478,11 @@
     const none = { hold: false, reason: null, waitedMs: null, expired: false };
     if (o.enabled === false || o.force) return none;
     if (!snapshot || !snapshot.ok || !snapshot.blocking) return none;
+    // An outage confined to models you aren't using is somebody else's outage.
+    // `models` is null wherever that can't be established, so this only ever
+    // releases a hold on a positive statement about what is broken.
+    if (o.model && snapshot.models && !modelAffected(snapshot.models, o.model))
+      return Object.assign({}, none, { spared: describeModels(snapshot.models) });
     const reason = shortLabel(snapshot);
     if (typeof o.heldSince === "number") {
       const waited = now - o.heldSince;
@@ -386,6 +493,16 @@
       return { hold: true, reason, waitedMs: waited, expired: false };
     }
     return { hold: true, reason, waitedMs: 0, expired: false };
+  }
+
+  // "Opus 4.5", "Sonnet and Haiku 4.5" — for saying why a run wasn't held.
+  function describeModels(models) {
+    const names = (models || []).map((m) =>
+      m.family.charAt(0).toUpperCase() + m.family.slice(1) + (m.version ? " " + m.version : "")
+    );
+    if (!names.length) return "";
+    if (names.length === 1) return names[0];
+    return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
   }
 
   /** "2h 05m" — for the held-job badge and the sent-anyway note. */
@@ -409,6 +526,11 @@
     COMPONENT_TEXT,
     INDICATOR_LEVEL,
     isOffTopic,
+    modelKey,
+    modelsIn,
+    modelAffected,
+    describeModels,
+    outageModels,
     rank,
     worse,
     worstOf,
