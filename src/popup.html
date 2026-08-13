@@ -55,6 +55,12 @@
       job sends anyway rather than never leaving, and <b>Run now</b> always
       overrides the wait.</p>
 
+    <p class="hint">An outage often names a model — “errors for Claude Opus
+      4.5” — and a run that isn't on it doesn't wait for it. A workflow that
+      picks no model uses whatever claude.ai is set to, which here is
+      <input id="status-model" type="text" class="inline-text" placeholder="Opus 5"
+        autocomplete="off" spellcheck="false" />.</p>
+
     <label class="toggle">
       <input id="show-overage" type="checkbox" />
       <span>Show extra-usage spend ($)</span>

@@ -252,6 +252,13 @@
       `re-run begins knowing nothing of what came before, and its papers never arrive. Every answer here ` +
       `is a default — Re-run still asks, so you can change your mind for one run.</p></div>` +
 
+      `<label class="cumwf-check"><input class="cumwf-ignore-outage" type="checkbox" /> Keep going during a ` +
+      `claude.ai outage</label>` +
+      `<p class="cumwf-hint">Off by default: when status.claude.com reports trouble, a run holds until it ` +
+      `clears. Most outages are partial, and a run that never touches the broken part loses hours waiting ` +
+      `for nothing. Tick this and it presses on regardless. An outage that names models is already handled ` +
+      `— a run on a model nobody has reported never waits.</p>` +
+
       `<label class="cumwf-label">Steps</label>` +
       `<div class="cumwf-steps cumwf-list"></div>` +
       `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-add-step" type="button">+ Add step</button>` +
@@ -294,6 +301,7 @@
       nameChats: q(".cumwf-name-chats"),
       rerun: q(".cumwf-rerun"),
       rerunRow: q(".cumwf-rerun-row"),
+      ignoreOutage: q(".cumwf-ignore-outage"),
       rrStep: q(".cumwf-rr-step"),
       rrFresh: q(".cumwf-rr-fresh"),
       rrCarry: q(".cumwf-rr-carry"),
@@ -1159,6 +1167,7 @@
       ui.bundle.checked = !!wf.bundleText;
       ui.nameChats.checked = wf.nameChats !== false;
       ui.rerun.checked = !!wf.allowRerun;
+      ui.ignoreOutage.checked = !!wf.ignoreOutage;
       const rr = W.rerunDefaults(wf.rerun);
       ui.rrFresh.checked = rr.freshChats;
       ui.rrCarry.checked = rr.carryFinal;
@@ -1259,6 +1268,7 @@
       wf.bundleText = ui.bundle.checked;
       wf.nameChats = ui.nameChats.checked;
       wf.allowRerun = ui.rerun.checked;
+      wf.ignoreOutage = ui.ignoreOutage.checked;
       wf.rerun = {
         stepIndex: parseInt(ui.rrStep.value, 10) || 0,
         freshChats: ui.rrFresh.checked,
@@ -1357,6 +1367,14 @@
               chats: plan.chats || [],
               docs: run.docs || [],
               steps: plan.steps || [],
+              // The run's own copies of the switches, not the template's
+              // defaults — this editor writes every one of them back, so
+              // opening it with defaults would quietly undo the run's answers.
+              bundleText: run.bundleText,
+              nameChats: run.nameChats,
+              allowRerun: run.allowRerun,
+              rerun: run.rerun,
+              ignoreOutage: run.ignoreOutage,
             },
             run.id,
             Date.now()

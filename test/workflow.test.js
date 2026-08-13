@@ -2698,3 +2698,80 @@ test("stillness only settles a turn if we watched it become still", () => {
     "stalled"
   );
 });
+
+// ---- Which model a step runs on, and waiting out an outage -----------------
+
+function modelWorkflow() {
+  return W.newWorkflow(
+    {
+      name: "Models",
+      chats: [
+        { id: "a", name: "Drafting", model: "Opus 4.5" },
+        { id: "b", name: "Critic" },
+      ],
+      steps: [
+        { id: "s1", chatId: "a", prompt: "draft" },
+        { id: "s2", chatId: "a", prompt: "again", model: "Sonnet 5" },
+        { id: "s3", chatId: "b", prompt: "criticise" },
+      ],
+    },
+    "w1",
+    NOW
+  );
+}
+
+test("stepModel: the step's own model, then the chat's, then your default", () => {
+  const wf = modelWorkflow();
+  const run = W.newRun(wf, "r1", NOW);
+  const at = (i) => W.stepModel(Object.assign({}, run, { stepIndex: i }), wf, "Opus 5");
+  assert.equal(at(0), "Opus 4.5"); // the chat's
+  assert.equal(at(1), "Sonnet 5"); // the step's, overriding it
+  assert.equal(at(2), "Opus 5"); // a chat that names none — your default
+});
+
+test("stepModel: a chat stays on the model a step switched it to", () => {
+  const wf = modelWorkflow();
+  wf.steps.push({ id: "s4", chatId: "a", prompt: "and again" });
+  const run = W.newRun(wf, "r1", NOW);
+  assert.equal(W.stepModel(Object.assign({}, run, { stepIndex: 3 }), wf, "Opus 5"), "Sonnet 5");
+});
+
+test("stepModel falls back to nothing when there is no default either", () => {
+  const wf = modelWorkflow();
+  const run = W.newRun(wf, "r1", NOW);
+  assert.equal(W.stepModel(Object.assign({}, run, { stepIndex: 2 }), wf, ""), null);
+  // Past the end of the plan there is no step to ask about.
+  assert.equal(W.stepModel(Object.assign({}, run, { stepIndex: 9 }), wf, "Opus 5"), "Opus 5");
+});
+
+test("waiting out an outage is opt-out, and the answer travels to the run", () => {
+  const patient = W.newWorkflow({ name: "x", chats: [{ id: "a" }] }, "w1", NOW);
+  assert.equal(patient.ignoreOutage, false);
+  assert.equal(W.ignoresOutage(W.newRun(patient, "r1", NOW)), false);
+
+  const impatient = W.newWorkflow(
+    { name: "x", chats: [{ id: "a" }], ignoreOutage: true },
+    "w2",
+    NOW
+  );
+  assert.equal(impatient.ignoreOutage, true);
+  assert.equal(W.ignoresOutage(W.newRun(impatient, "r2", NOW)), true);
+  assert.equal(W.ignoresOutage(null), false);
+});
+
+test("Go anyway is remembered on the run, and only on that run", () => {
+  const wf = W.newWorkflow({ name: "x", chats: [{ id: "a" }] }, "w1", NOW);
+  const run = W.newRun(wf, "r1", NOW);
+  const going = W.applyRunEdit(run, { ignoreOutage: true }, NOW);
+  assert.equal(W.ignoresOutage(going), true);
+  assert.equal(wf.ignoreOutage, false);
+  // ...and can be taken back.
+  assert.equal(W.ignoresOutage(W.applyRunEdit(going, { ignoreOutage: false }, NOW)), false);
+});
+
+test("a re-run inherits the run's outage answer, not the workflow's", () => {
+  const wf = W.newWorkflow({ name: "x", chats: [{ id: "a" }], steps: [{ chatId: "a", prompt: "go" }] }, "w1", NOW);
+  const run = Object.assign({}, W.newRun(wf, "r1", NOW), { status: "done", ignoreOutage: true });
+  const again = W.rerunOf(run, { stepIndex: 0 }, "r2", NOW + 1);
+  assert.equal(W.ignoresOutage(again), true);
+});
