@@ -164,11 +164,52 @@
   }
 
   // Claude is mid-turn when a Stop control is on screen.
-  function isGenerating() {
+  function findStop() {
     const stop =
       document.querySelector('button[aria-label*="Stop" i]') ||
       document.querySelector('[data-testid="stop-button"]');
-    return !!(stop && isVisible(stop));
+    return stop && isVisible(stop) ? stop : null;
+  }
+  function isGenerating() {
+    return !!findStop();
+  }
+
+  // End the turn that is being written. The page's own Stop control first,
+  // since that is the thing that exists to do this; Escape after it, which
+  // claude.ai treats the same way and which covers a Stop we failed to find.
+  //
+  // Worth doing rather than just walking away: an answer nobody is going to
+  // read is still an answer being paid for, and a run paused because the prompt
+  // was wrong is precisely when the rest of that answer is worth nothing.
+  function stopGenerating() {
+    let clicked = false;
+    const stop = findStop();
+    if (stop) {
+      try {
+        robustClick(stop);
+        clicked = true;
+      } catch (e) {
+        /* fall through to Escape */
+      }
+    }
+    try {
+      const target = findEditor() || document.body;
+      for (const type of ["keydown", "keyup"]) {
+        target.dispatchEvent(
+          new KeyboardEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            key: "Escape",
+            code: "Escape",
+            keyCode: 27,
+            which: 27,
+          })
+        );
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return clicked;
   }
 
   function waitFor(finder, timeoutMs) {
@@ -694,6 +735,19 @@
     const o = opts || {};
     const notes = [];
     const files = o.files || [];
+    // Asked between the slow phases — attaching, uploading, typing — because a
+    // pause pressed while twenty exhibits are going up should stop the message,
+    // not be noticed a minute later when it has already gone.
+    const halted = () => {
+      try {
+        return typeof o.stop === "function" ? o.stop() : null;
+      } catch (e) {
+        return null;
+      }
+    };
+    const standDown = (why) => ({ ok: false, halted: why, error: "stopped — " + why, notes });
+    let why = halted();
+    if (why) return standDown(why);
 
     if (files.length) await waitFor(findFileInput, 15000); // may legitimately not exist
     const editor = await waitFor(findEditor);
@@ -736,6 +790,8 @@
           " (" + att.uploads + " upload(s) confirmed)"
       );
       await sleep(600);
+      why = halted();
+      if (why) return standDown(why);
     }
 
     if (o.text) {
@@ -743,6 +799,10 @@
       await sleep(400);
     }
     if (!o.text && !files.length) return { ok: false, error: "nothing to send", notes };
+
+    // The last look before it goes out. After this the message is Claude's.
+    why = halted();
+    if (why) return standDown(why);
 
     const before = ((editor && editor.textContent) || "").trim();
     const send = await waitSendEnabled(15000);
@@ -780,6 +840,8 @@
     findFileInput,
     findSend,
     isGenerating,
+    findStop,
+    stopGenerating,
     waitFor,
     storageGet,
     dataUrlToFile,

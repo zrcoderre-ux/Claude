@@ -659,11 +659,37 @@ convincingly. The run keeps its place and its phase, so once you've looked at th
 chat (and asked Claude to continue there, if that's what it needs), **Resume**
 waits for a fresh reply rather than sending the message again.
 
-**Pause** stops it at the next step boundary, keeping its place, what it's
-carrying, and which conversations it's in. A step already in flight is allowed to
-finish; pausing is not cancelling. **Edit run** then opens the same editor the
-workflow uses, on the run's own copy: insert a step, reword a prompt, rename a
-chat, add documents. **Resume** picks up from exactly where it stopped.
+**Pause stops it now, in every chat**, keeping its place, what it's carrying,
+and which conversations it's in. It is a decision about the **run**, not about
+the tab you pressed it in — a wave is three conversations working at once, and
+leaving the other two to finish is two long answers paid for and thrown away.
+
+What "now" means depends on where each chat had got to:
+
+- **The message hasn't gone yet** — it doesn't go. Every slow phase of a send
+  asks first, so a pause pressed while twenty exhibits are uploading stops it
+  there rather than being noticed a minute later, after it has gone.
+- **The message has gone and Claude is writing** — the answer is **stopped**.
+  The page's own Stop control, and Escape after it, which claude.ai treats the
+  same way and which covers a Stop we failed to find. The rest of that answer is
+  being paid for, and a run paused because the prompt was wrong is exactly when
+  it is worth nothing.
+
+Every tab a run is driving watches the run's own record and acts the moment it
+changes, rather than at its next poll — which for a step mid-upload is no moment
+at all. The worker also presses Stop across the run's whole window, which covers
+a tab whose step has already handed back but whose reply is still being written.
+**Cancel** does the same, and more so.
+
+The run's row then says how far each chat got, because that is the difference
+between the two things **Resume** can do: stopped before the message went out,
+there is nothing in the chat and the step sends afresh; stopped after, the
+message is in the chat and the answer under it is a **fragment** — so the chat is
+worth reading first.
+
+**Edit run** opens the same editor the workflow uses, on the run's own copy:
+insert a step, reword a prompt, rename a chat, add documents. **Resume** picks up
+from exactly where it stopped.
 
 Documents added to a run already under way can't ride a chat's opening message —
 that having been sent — so they go up with the **next step in each of their

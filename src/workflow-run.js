@@ -352,6 +352,63 @@
     return location.href;
   }
 
+  // ---- standing down ------------------------------------------------------
+  //
+  // Pause is a decision about the RUN, not about the tab it was pressed in. A
+  // wave is three conversations working at once, and leaving the other two to
+  // finish is leaving two long answers to be paid for and thrown away.
+  //
+  // So while a step is in this tab's hands, the tab watches the run's own
+  // storage key and acts the moment it changes — rather than at the next poll,
+  // which for a step that is mid-upload is no moment at all:
+  //
+  //   the message hasn't gone yet  → it doesn't go. Every slow phase of the
+  //     send asks, so a pause during a twenty-exhibit upload stops it there.
+  //   the message has gone and Claude is writing  → press Stop. The rest of
+  //     that answer is being paid for and, if the pause was because the prompt
+  //     was wrong, is worth nothing.
+  let halted = null; // "paused" | "canceled" | "gone", once the run says so
+  let haltWatch = null;
+
+  function watchForHalt(runId) {
+    halted = null;
+    const key = W.runKey(runId);
+    const onChange = (changes, area) => {
+      if (area !== "local" || !changes[key]) return;
+      const why = W.runHalted(changes[key].newValue);
+      if (!why || halted) return;
+      halted = why;
+      // Immediately, and from here rather than from the worker: this tab is the
+      // one with the conversation in it.
+      try {
+        C.stopGenerating();
+      } catch (e) {
+        /* the step still stands down; only the turn keeps its tokens */
+      }
+    };
+    try {
+      chrome.storage.onChanged.addListener(onChange);
+      haltWatch = () => {
+        try {
+          chrome.storage.onChanged.removeListener(onChange);
+        } catch (e) {
+          /* ignore */
+        }
+        haltWatch = null;
+      };
+    } catch (e) {
+      haltWatch = null;
+    }
+    // Whatever it already said, before the listener existed.
+    readRun(runId).then((r) => {
+      const why = W.runHalted(r);
+      if (why && !halted) halted = why;
+    });
+    return () => {
+      if (haltWatch) haltWatch();
+    };
+  }
+
   // A step can take the better part of an hour (uploads, then a long turn). The
   // background worker treats a quiet run as abandoned and takes it over, so the
   // whole time a step is in this tab's hands it says so — otherwise a worker
@@ -445,11 +502,15 @@
 
     try {
       while (Date.now() < deadline) {
+        // The watcher sees a pause the instant it is written and has already
+        // pressed Stop on the answer; this is the same news, read here so the
+        // loop lets go rather than waiting out its poll.
+        if (halted) return { el: null, canceled: true, halted: halted };
         const run = await readRun(runId);
         // Paused counts as "let go" too — the run keeps its place and its
         // phase, so resuming waits for this reply rather than re-sending.
-        if (!run || run.status === "canceled" || run.status === "paused")
-          return { el: null, canceled: true };
+        const why = W.runHalted(run);
+        if (why) return { el: null, canceled: true, halted: why };
         const now = Date.now();
         const list = assistantMessages();
         const el = list.length ? list[list.length - 1] : null;
@@ -601,9 +662,13 @@
   // ---- one step ----------------------------------------------------------
   async function runStep(msg) {
     const stop = startHeartbeat(msg.runId);
+    // Watched for the whole life of the step, so a Pause pressed in ANY of the
+    // run's chats reaches this one at once rather than at its next poll.
+    const unwatch = watchForHalt(msg.runId);
     try {
       return await runStepInner(msg);
     } finally {
+      unwatch();
       stop();
     }
   }
@@ -618,11 +683,37 @@
     await storageSet({ [msg.waveKey]: Object.assign({}, had, fields) });
   }
 
+  // What a step that stood down reports back. Paused rather than failed: the run
+  // keeps its place and its phase, so Resume picks up from exactly here.
+  //
+  // The note says how far it got, because that is the difference between the
+  // two things Resume can do. Stopped before the message went out, there is
+  // nothing in the chat and the step sends afresh. Stopped after, the message is
+  // in the chat and the answer under it is a FRAGMENT — Stop was pressed on it —
+  // so the chat is worth reading before carrying on.
+  async function standDown(runId, why, when, notes) {
+    const list = (notes || []).slice();
+    list.push(when);
+    const note = "paused — " + when;
+    try {
+      await updateRun(runId, (r) => Object.assign({}, r, { note: note }));
+    } catch (e) {
+      /* the pause itself is already recorded; this is only the wording */
+    }
+    if (why === "canceled" || why === "gone")
+      return { ok: false, canceled: true, error: "canceled " + when, note: list.join("; ") };
+    return { ok: false, paused: true, error: note, note: list.join("; ") };
+  }
+
   async function runStepInner(msg) {
     const runId = msg.runId;
     const run = await readRun(runId);
     if (!run) return { ok: false, error: "run not found" };
-    if (run.status === "canceled") return { ok: false, canceled: true, error: "canceled" };
+    const already = W.runHalted(run);
+    if (already)
+      return already === "paused"
+        ? { ok: false, paused: true, error: "paused before this step began" }
+        : { ok: false, canceled: true, error: already };
     // Is this step still the one the run is on? A member of a wave never sits
     // at run.stepIndex — its wave does — so it asks about the wave instead.
     const at = typeof msg.waveStart === "number" ? msg.waveStart : msg.stepIndex;
@@ -659,13 +750,23 @@
       const folded = (msg.files || []).filter((f) => f && f.bundled > 1);
       for (const f of folded)
         notes.push(f.bundled + " text documents went up as one combined file");
+      if (halted)
+        return await standDown(runId, halted, "stopped before this step's message went out", notes);
       const sent = await C.sendMessage({
         files,
         text: msg.text || "",
         model: msg.model || null,
         codeRepo: msg.codeRepo || null,
+        stop: () => halted,
       });
       if (sent.notes && sent.notes.length) notes.push.apply(notes, sent.notes);
+      if (sent.halted)
+        return await standDown(
+          runId,
+          sent.halted,
+          "stopped while this step's message was going out",
+          notes
+        );
       if (!sent.ok)
         return { ok: false, error: sent.error, note: notes.join("; ") || null };
       sentAt = Date.now();
@@ -723,6 +824,7 @@
       el,
       apiText,
       canceled,
+      halted: haltedWhileWaiting,
       timedOut,
       interrupted,
       unreadable,
@@ -737,6 +839,15 @@
       sentAt,
       msg.marker || null
     );
+    if (haltedWhileWaiting)
+      return await standDown(
+        runId,
+        haltedWhileWaiting,
+        msg.awaitOnly
+          ? "stopped while waiting for the answer — read the chat before resuming"
+          : "stopped while Claude was answering — the reply in the chat is a fragment",
+        notes
+      );
     if (canceled) return { ok: false, canceled: true, error: "canceled" };
     // Pause rather than fail: the message went out, the reply is a fragment, and
     // what happens next is a judgement call. The run keeps its place and its
@@ -945,6 +1056,20 @@
 
   chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;
+    // Pause was pressed somewhere in this run. Whether or not this tab is
+    // mid-step, if Claude is writing in it the rest of that answer is being
+    // paid for and thrown away.
+    if (msg.type === "cum-wf-stop-generating") {
+      if (!halted) halted = "paused";
+      let stopped = false;
+      try {
+        stopped = C.stopGenerating();
+      } catch (e) {
+        /* ignore */
+      }
+      sendResponse({ ok: true, stopped: stopped });
+      return true;
+    }
     if (msg.type === "cum-wf-step") {
       runStep(msg)
         .then((res) => sendResponse(res))

@@ -2537,3 +2537,20 @@ test("a run already under way is carried over more carefully", () => {
   // it has already done.
   assert.equal(moved.bundleText, false);
 });
+
+test("a pause is a decision about the run, not about the tab it was pressed in", () => {
+  // One definition, asked by every page a run is driving and at every point a
+  // step could stand down. A wave is three conversations working at once, and
+  // leaving the other two to finish is two long answers paid for and discarded.
+  assert.equal(W.runHalted({ status: "running" }), null);
+  assert.equal(W.runHalted({ status: "paused" }), "paused");
+  assert.equal(W.runHalted({ status: "canceled" }), "canceled");
+  // A run that has gone from storage isn't a run any step should keep driving.
+  assert.equal(W.runHalted(null), "gone");
+  assert.equal(W.runHalted(undefined), "gone");
+  // Everything else carries on: waiting out an outage and finishing are not
+  // reasons for a step in flight to drop what it is doing.
+  assert.equal(W.runHalted({ status: "waiting" }), null);
+  assert.equal(W.runHalted({ status: "done" }), null);
+  assert.equal(W.runHalted({ status: "pending" }), null);
+});
