@@ -708,6 +708,29 @@ async function readBeats(ids) {
 }
 
 // One-time move from the old single-array store. Runs in flight survive it.
+// Carry stored workflows and runs into the current shape of the settings: the
+// ruling marker moved from the chat to the step, two switches changed their
+// default, and one went away. A stored record holds what it was given rather
+// than what it meant, so this is done once, in storage, rather than guessed at
+// by every reader — see CUMWorkflow.migrateSettings for what "once" means.
+async function migrateSettings() {
+  try {
+    const list = (await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [];
+    const next = list.map((wf) => W.migrateSettings(wf));
+    if (next.some((wf, i) => wf !== list[i])) await set({ [WORKFLOWS_KEY]: next });
+  } catch (e) {
+    /* a migration that throws must not stop the worker starting */
+  }
+  try {
+    for (const run of await readRuns()) {
+      const moved = W.migrateRunSettings(run);
+      if (moved !== run) await saveRun(moved);
+    }
+  } catch (e) {
+    /* ignore */
+  }
+}
+
 async function migrateRuns() {
   const store = await get([RUNS_KEY, W.RUN_IDS_KEY]);
   const old = store[RUNS_KEY];
@@ -1215,7 +1238,6 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
     files: awaitOnly ? [] : docs,
     model: m.model && (m.modelOverride || !saved.url) ? m.model : null,
     firstInChat: m.firstInChat && !saved.url,
-    download: !!run.downloadFiles,
     title:
       run.nameChats !== false && m.firstInChat && !saved.url
         ? W.chatTitle(run, m.chatName)
@@ -1452,8 +1474,7 @@ async function driveRun(runId, opts) {
         firstInChat: step.firstInChat && !saved.url,
         // Save what the reply offers. Off unless the workflow asks: it writes
         // to your disk, which is not a run's decision to make.
-        download: !!run.downloadFiles,
-        title:
+            title:
           run.nameChats !== false && step.firstInChat && !saved.url
             ? W.chatTitle(run, step.chatName)
             : null,
@@ -2105,7 +2126,7 @@ chrome.runtime.onInstalled.addListener(() => {
   ensureKeepalive();
   acBurst();
   seedWorkflows();
-  migrateRuns().then(reschedule);
+  migrateRuns().then(migrateSettings).then(reschedule);
   refreshStatus();
   sweepGhosts();
 });
@@ -2113,6 +2134,7 @@ chrome.runtime.onStartup.addListener(() => {
   ensureKeepalive();
   acBurst();
   seedWorkflows();
+  migrateSettings();
   reschedule();
   runJobs("time"); // catch anything whose time passed while the browser was off
   startRuns("time");
@@ -2187,7 +2209,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 ensureKeepalive();
 seedWorkflows();
-migrateRuns().then(reschedule);
+migrateRuns().then(migrateSettings).then(reschedule);
 reschedule();
 ensureStatusAlarm(null);
 refreshStatusIfStale();

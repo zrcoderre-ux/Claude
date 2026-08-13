@@ -853,18 +853,18 @@ test("two steps in the same chat never paste into each other", () => {
   assert.match(W.composeStepText(plan[2], "THE DRAFT"), /THE DRAFT/);
 });
 
-test("a chat whose output is a ruling only hands on a reply that is one", () => {
+test("a step whose output is a ruling only hands on a reply that is one", () => {
   const wf = W.newWorkflow(
     {
       name: "x",
       chats: [
-        { id: "a", name: "Drafting", expectsRuling: true },
+        { id: "a", name: "Drafting" },
         { id: "b", name: "Critic" },
       ],
       steps: [
-        { chatId: "a", prompt: "draft" },
+        { chatId: "a", prompt: "draft", expectsRuling: true },
         { chatId: "b", prompt: "attack" },
-        { chatId: "a", prompt: "revise" },
+        { chatId: "a", prompt: "revise", expectsRuling: true },
       ],
     },
     "w",
@@ -873,7 +873,7 @@ test("a chat whose output is a ruling only hands on a reply that is one", () => 
   const plan = W.planRun(wf);
   assert.equal(plan[0].handsOn, true);
   assert.equal(plan[0].marker, "NATURE OF PROCEEDINGS", "step 1's reply goes to chat B");
-  assert.equal(plan[1].marker, null, "chat B isn't marked as producing a ruling");
+  assert.equal(plan[1].marker, null, "step 2 isn't marked as producing a ruling");
   assert.equal(plan[2].marker, null, "the last step's reply goes nowhere");
 
   // The gate itself.
@@ -888,15 +888,15 @@ test("a chat whose output is a ruling only hands on a reply that is one", () => 
 });
 
 test("the ruling gate is off wherever nothing is pasted onward", () => {
-  // Same chat twice: the second step's reply isn't handed anywhere, so a chat
-  // marked as producing rulings imposes nothing on it.
+  // Same chat twice: the second step's reply isn't handed anywhere, so a step
+  // marked as producing a ruling imposes nothing on it.
   const wf = W.newWorkflow(
     {
       name: "x",
-      chats: [{ id: "a", name: "Drafting", expectsRuling: true }, { id: "b", name: "B" }],
+      chats: [{ id: "a", name: "Drafting" }, { id: "b", name: "B" }],
       steps: [
-        { chatId: "a", prompt: "draft" },
-        { chatId: "a", prompt: "style pass" },
+        { chatId: "a", prompt: "draft", expectsRuling: true },
+        { chatId: "a", prompt: "style pass", expectsRuling: true },
         { chatId: "b", prompt: "attack", carry: false },
       ],
     },
@@ -906,8 +906,31 @@ test("the ruling gate is off wherever nothing is pasted onward", () => {
   const plan = W.planRun(wf);
   assert.equal(plan[0].marker, null, "next step is the same chat — nothing travels");
   assert.equal(plan[1].marker, null, "the step after doesn't carry");
-  assert.equal(W.chatMarker({ expectsRuling: true, outputMarker: "  CONCLUSION " }), "CONCLUSION");
-  assert.equal(W.chatMarker({ expectsRuling: false, outputMarker: "CONCLUSION" }), null);
+  assert.equal(W.stepMarker({ expectsRuling: true, outputMarker: "  CONCLUSION " }), "CONCLUSION");
+  assert.equal(W.stepMarker({ expectsRuling: false, outputMarker: "CONCLUSION" }), null);
+});
+
+test("the marker is a step's business, so one chat can differ across its steps", () => {
+  // The drafting chat writes the ruling, then takes a style pass over it. Only
+  // the first has to BE a ruling before it travels — asked of the chat, one
+  // answer had to cover both.
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "Drafting" }, { id: "b", name: "Critic" }],
+      steps: [
+        { chatId: "a", prompt: "draft", expectsRuling: true },
+        { chatId: "b", prompt: "attack" },
+        { chatId: "a", prompt: "style pass" },
+        { chatId: "b", prompt: "check it again" },
+      ],
+    },
+    "w",
+    NOW
+  );
+  const plan = W.planRun(wf);
+  assert.equal(plan[0].marker, "NATURE OF PROCEEDINGS", "the draft must be a ruling to travel");
+  assert.equal(plan[2].marker, null, "the style pass, in the same chat, need not be");
 });
 
 test("carrySource points at the chat that produced the hand-off", () => {
@@ -1861,9 +1884,9 @@ test("a step index outside the plan is clamped, not obeyed", () => {
 
 test("a run's own switches survive an edit of that run", () => {
   const { run } = finishedRun();
-  const off = W.applyRunEdit(run, { allowRerun: false, downloadFiles: true }, NOW + 1);
+  const off = W.applyRunEdit(run, { allowRerun: false, bundleText: true }, NOW + 1);
   assert.equal(off.allowRerun, false, "turned off for this run without touching the workflow");
-  assert.equal(off.downloadFiles, true);
+  assert.equal(off.bundleText, true);
   assert.equal(off.nameChats, run.nameChats, "and an edit that says nothing changes nothing");
   assert.equal(W.applyRunEdit(run, {}, NOW + 1).allowRerun, true);
 });
@@ -2397,4 +2420,108 @@ test("the pre-built workflow is the owner's tentative-ruling loop", () => {
     Object.assign({}, wf, { docs: [W.newDoc({ name: "papers.pdf", chats: [wf.chats[0].id] }, "d")] })
   );
   assert.deepEqual(W.planRun(withDocs)[0].docIds, ["d"]);
+});
+
+// ---- the settings, their defaults, and their journey to the run ------------
+
+test("combining documents and offering a re-run are on unless turned off", () => {
+  const fresh = W.newWorkflow({ name: "x" }, "w", NOW);
+  assert.equal(fresh.bundleText, true, "one labelled file beats twenty attachments");
+  assert.equal(fresh.allowRerun, true);
+  assert.equal(fresh.nameChats, true);
+  // A decision to the contrary is still a decision.
+  const off = W.newWorkflow({ name: "x", bundleText: false, allowRerun: false }, "w", NOW);
+  assert.equal(off.bundleText, false);
+  assert.equal(off.allowRerun, false);
+  // And the switch that went away, replaced by the extension's own file saver,
+  // is not carried around any more.
+  assert.equal("downloadFiles" in fresh, false);
+});
+
+test("every switch a workflow carries reaches its run", () => {
+  // The point of this test is the loop: a setting added to a workflow and
+  // forgotten in newRun is a run quietly doing something other than what the
+  // template you set up says.
+  const SWITCHES = ["bundleText", "nameChats", "allowRerun"];
+  for (const value of [true, false]) {
+    const fields = { name: "x", chats: [{ id: "a", name: "A" }], steps: [{ chatId: "a", prompt: "go" }] };
+    for (const k of SWITCHES) fields[k] = value;
+    const wf = W.newWorkflow(fields, "w", NOW);
+    const run = W.newRun(wf, "r", NOW, { type: "now" }, wf.docs);
+    for (const k of SWITCHES) assert.equal(run[k], value, k + " should have travelled as " + value);
+  }
+  // A run made with no workflow at all still lands on the defaults rather than
+  // on false — "nothing said" is not "turned off".
+  const bare = W.newRun(null, "r", NOW, { type: "now" }, []);
+  assert.equal(bare.bundleText, true);
+  assert.equal(bare.allowRerun, true);
+});
+
+test("a finished run offers a re-run unless it was told not to", () => {
+  const done = { status: "done" };
+  assert.equal(W.canRerun(Object.assign({}, done, { allowRerun: true })), true);
+  assert.equal(W.canRerun(Object.assign({}, done, { allowRerun: false })), false);
+  // A run stored before the switch existed said nothing, which now reads as yes.
+  assert.equal(W.canRerun(done), true);
+  assert.equal(W.canRerun({ status: "running", allowRerun: true }), false);
+});
+
+test("an older workflow is carried into the new shape once", () => {
+  const old = {
+    id: "w",
+    name: "x",
+    // The old defaults, written down — not decisions.
+    bundleText: false,
+    allowRerun: false,
+    downloadFiles: true,
+    chats: [
+      { id: "a", name: "Drafting", expectsRuling: true, outputMarker: "CONCLUSION" },
+      { id: "b", name: "Critic" },
+    ],
+    steps: [
+      { id: "s1", chatId: "a", prompt: "draft" },
+      { id: "s2", chatId: "b", prompt: "attack" },
+      { id: "s3", chatId: "a", prompt: "revise" },
+    ],
+  };
+  const moved = W.migrateSettings(old);
+  assert.equal(moved.bundleText, true);
+  assert.equal(moved.allowRerun, true);
+  assert.equal("downloadFiles" in moved, false);
+  // The marker moves onto every step of the chat that carried it — that is what
+  // the chat-level setting meant. Narrowing it to particular steps is the point
+  // of the move, and is the user's to do.
+  assert.deepEqual(
+    moved.steps.map((s) => [s.id, !!s.expectsRuling, s.outputMarker || null]),
+    [["s1", true, "CONCLUSION"], ["s2", false, null], ["s3", true, "CONCLUSION"]]
+  );
+  assert.equal("expectsRuling" in moved.chats[0], false, "and off the chat, which no longer holds it");
+
+  // Once. After this a `false` is a decision, and is left alone.
+  const again = W.migrateSettings(Object.assign({}, moved, { bundleText: false }));
+  assert.equal(again.bundleText, false);
+  assert.equal(W.migrateSettings(moved), moved, "nothing to do is nothing done");
+});
+
+test("a run already under way is carried over more carefully", () => {
+  const run = {
+    id: "r",
+    status: "running",
+    allowRerun: false,
+    downloadFiles: true,
+    bundleText: false,
+    plan: {
+      chats: [{ id: "a", name: "Drafting", expectsRuling: true }],
+      steps: [{ id: "s1", chatId: "a", prompt: "draft" }],
+    },
+  };
+  const moved = W.migrateRunSettings(run);
+  assert.equal(moved.plan.steps[0].expectsRuling, true, "the marker still has to travel");
+  assert.equal(moved.plan.steps[0].outputMarker, W.DEFAULT_OUTPUT_MARKER);
+  assert.equal(moved.allowRerun, true);
+  assert.equal("downloadFiles" in moved, false);
+  // ...but NOT bundleText: a run's documents are bundled once, when it starts,
+  // and changing the answer under one already in flight would decide something
+  // it has already done.
+  assert.equal(moved.bundleText, false);
 });

@@ -296,8 +296,9 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   done about it. A workflow's row doesn't show it at all: a template's papers
   belong to whatever matter is next, and warning that one will upload nothing is
   warning about a run that doesn't exist yet.
-- **Combine text documents into one labelled file** (optional) — twenty separate
-  attachments is where claude.ai starts showing Claude fewer than were sent. One
+- **Combine text documents into one labelled file** (on by default) — twenty
+  separate attachments is where claude.ai starts showing Claude fewer than were
+  sent, and a batch that arrives incomplete is a worse default than one file. One
   file, listing its contents at the top and marking where each document begins
   and ends, either arrives or doesn't. Only real text is folded in; PDFs and Word
   files still go up on their own. This is deliberately **not** a zip: claude.ai
@@ -346,21 +347,17 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   claude.ai titles a new conversation itself a moment after the first answer
   lands and would otherwise write over it.
 
-- **Save any file a reply offers** (optional, off by default) — some replies come
-  with a document attached rather than only prose. Ticked, each step clicks
-  whatever that reply offers for download, after the answer has been read, so a
-  save dialog can never come between the copy box and the click on it. It's
-  entirely best-effort: a file that won't save is a note on the run, never a
-  failed step, and at most six per reply so a pathological message can't fill
-  your Downloads folder. Off by default because it writes to your disk, which
-  isn't a run's decision to make.
-
-  A file in a reply doesn't disturb a run either way. The copy box is matched
-  against an exact list of labels, so `Download` can never be taken for it —
-  clicking the wrong one would save something unasked *and* hand back no text —
-  and a file card's own controls sit inside the message, where the copy-box
-  search never looks. The file's name landing in the copied text is harmless and
-  travels on with it.
+- **Files a reply produces** are no longer a workflow's business. A run used to
+  have its own switch for clicking whatever a reply offered for download; that is
+  now [Auto-download files Claude
+  produces](#auto-downloading-what-claude-produces), which does the same thing
+  for every chat rather than only for a run's, and does it better — it finds the
+  card by its filename rather than by a caption. Two switches for one job meant
+  a run saving files while an ordinary chat didn't, for no reason either could
+  explain. A file in a reply still doesn't disturb a run: the copy box is matched
+  against an exact list of labels, so `Download` can never be taken for it, and a
+  file card's own controls sit inside the message where the copy-box search never
+  looks.
 
 - **Completing a prompt you've written before** — the same prompts recur, and
   retyping one is a chance to get it subtly different from the version that
@@ -415,7 +412,7 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   on the right model doesn't touch the picker at all. A workflow that switches
   models says so on its row (`Opus 4.1 → Sonnet 4.5`), and **Steps** names the
   model each step answers on, marking the ones that differ from their chat.
-- **"Its output is a tentative ruling"** — a chat can insist that its reply
+- **"Its output is a tentative ruling"** — a **step** can insist that its reply
   contain a phrase (`NATURE OF PROCEEDINGS` by default, editable) before it may
   be handed to another chat. Claude's first answer is often a clarifying
   question, a note that a paper is missing, or an offer to continue; those are
@@ -424,6 +421,11 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   the answer that arrives after auto-continue clicks **Continue** is the one that
   travels. The check applies **only where something is pasted onward**: a step
   whose reply stays in its own chat can say anything at all.
+
+  It sits on the step rather than on the chat because a chat does more than one
+  thing. The drafting conversation writes the ruling, then revises it, then takes
+  a style pass over it — and "must this reply be a ruling" has a different answer
+  for each. Asked of the chat, one answer had to cover them all.
 
 ### Steps that run at the same time
 
@@ -470,6 +472,19 @@ they're blank.
 the members you aren't looking at may notice their replies a minute or so late.
 Nothing is lost and the run doesn't stall — but three at once is not quite three
 times faster in the way the arithmetic suggests.
+
+**Every switch the workflow carries is the run's too**, and carried the same
+way: only an explicit *off* is off. A setting that failed to travel would be a
+run quietly doing something other than what the template you set up says, so
+`newRun` is checked against the list rather than trusted to remember.
+
+Workflows saved before any of this are **carried forward once**, in storage: the
+two switches that changed default are turned on, the one that went away is
+dropped, and the ruling marker is moved from each chat onto that chat's steps.
+A stored record holds what it was given rather than what it meant — a
+`bundleText: false` from last month is the old default written down, not a
+decision — so it is done once and then left alone. After that a *false* is a
+decision.
 
 ### A workflow is a template
 
@@ -724,11 +739,11 @@ rather than dragging it down for a reason nothing on the row explains.
 
 ### Running one again
 
-Off unless asked for — **Offer to run a finished run again**, on the workflow —
-because most runs are done when they're done, and a Re-run button on every
-finished row is a button whose only use is to be pressed by mistake.
+**Offer to run a finished run again**, on the workflow, is on unless you turn it
+off: a run you never re-run costs a button you don't press, where a run you do
+want again and can't costs the whole thing.
 
-Tick it and the workflow also holds **the answers**, because for most workflows
+The workflow also holds **the answers**, because for most workflows
 they're the same every time: a ruling workflow re-run is always "start at step 2,
 fresh conversations, carry the last ruling in". Each run keeps its own copy of
 those answers as well as of the switch, so one matter can differ without touching

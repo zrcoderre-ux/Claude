@@ -1119,7 +1119,6 @@
             docs: edited.docs,
             bundleText: !!edited.bundleText,
             nameChats: edited.nameChats !== false,
-            downloadFiles: !!edited.downloadFiles,
             allowRerun: !!edited.allowRerun,
           },
         },
