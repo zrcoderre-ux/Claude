@@ -177,11 +177,36 @@ a stricter rule: only a control that *names itself* a download is pressed on
 one. The looser "press the only control on the card" applies solely to a card
 that carried a real filename.
 
-**A control that opens a menu rather than saving.** Plenty of cards hang the
-download off a `…` instead of giving it a button. The first version pressed
-that, waited, then dismissed the menu with **Escape** — the one shape where the
-feature looked *exactly* like doing nothing at all. Now whatever pops up is read
-for the item that says Download, and Escape is only for when there wasn't one.
+**Not every `.font-claude-response` is a reply.** `[data-testid="assistant-message"]`
+is gone from claude.ai, so the cascade now falls through to the response font —
+and a **project's title in the content panel** is drawn in that font too, inside
+an `<a href="/project/…">`. That panel renders *after* the conversation, so "the
+newest reply" was the panel, and everything downstream was reading the wrong
+part of the page: the wrong signature, the wrong turn, the wrong file cards. A
+reply is never inside a link, a button, or a file thumbnail, and that is the
+whole of the rule now applied.
+
+**A card's only button is often the card.** claude.ai wraps a file thumbnail in
+a single `<button aria-label="ruling.docx, docx, 117 lines">`, and pressing it
+**opens a preview** — it saves nothing. Pressing that and then closing what it
+opened is precisely the shape "it doesn't even attempt to download" takes. It's
+still worth pressing, because the Download usually lives *inside* what it opens,
+but it is an **entry** rather than the thing itself.
+
+**So what a click opens is chased.** A press does one of three things — saves
+the file, opens a menu with Download in it, or opens a preview panel with
+Download in it — and rather than guess which container claude.ai is calling
+what this month, a census of every control on the page is taken *before* the
+click and compared with what is there after. A **new** control that names itself
+a download is pressed, wherever it turned up; the strict reading only, since a
+sweep of the whole document is not the inside of a card, and a new control that
+doesn't say what it does could be Delete. Twice — a menu draws in a frame, a
+preview panel takes longer.
+
+**And the card is hovered first, always.** The thumbnail's action slot is empty
+markup until the pointer arrives — claude.ai renders the per-file buttons on
+mouse-enter — so looking before hovering finds the card's own preview button and
+settles for it when a real Download was one event away.
 
 Card shapes are driven through a whole turn in Chromium, from the page's events
 rather than the extension's internals: a labelled button, an unlabelled icon, a
@@ -208,7 +233,9 @@ gate is currently holding it. **Copy report** puts the lot on the clipboard.
 That button exists because this feature has now failed three times on guesses
 about markup that can't be inspected from where the code is written — claude.ai
 is behind a login. A report that can be pasted turns the next round from a
-guess into a fix.
+guess into a fix — the first one run in anger found two bugs in a minute: the
+project panel being mistaken for the newest reply, and the card's only button
+being a preview trigger.
 
 `scripts/dl-probe.js` is the same thing to paste at the **DevTools console**,
 depending on neither the extension nor its modules — useful when the question
@@ -217,9 +244,12 @@ button can't: it counts down first so you can put your **pointer** over the
 card, and a control the page only *adds* under a real pointer isn't in the DOM
 for anything else to find. (A control merely *revealed* by hover is a different
 matter — it is in the DOM the whole time, at zero opacity, and the extension
-clicks it happily. The report says which of the two you have.) It prints the
-controls with their attributes, the short pieces of text, and a stripped-down
-copy of the markup, then puts the lot on the clipboard.
+clicks it happily. The report says which of the two you have.) It also describes
+**what is under the pointer** — the element, the card around it, its controls
+and its markup — which is what settles the question of *which* thing on the page
+everyone is talking about, and lists **every** message candidate rather than
+only the one it picked, so a selector matching page furniture is visible in the
+report instead of silently changing the answer.
 
 It watches only the newest reply or two, which is what makes scrolling cheap as
 well as safe: claude.ai unmounts messages that scroll out of view and mounts

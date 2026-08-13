@@ -112,6 +112,38 @@
     return copy.outerHTML.replace(/>\s+</g, "><").slice(0, MAX_HTML);
   }
 
+  // Where the pointer is. The single most useful thing in the report, because
+  // it removes every question of which element we are talking about — the first
+  // run of this probe described a project-content panel that happened to render
+  // after the conversation, and nobody could tell from the report that it had.
+  let at = null;
+  document.addEventListener("mousemove", (e) => (at = { x: e.clientX, y: e.clientY }), true);
+
+  function underPointer(say) {
+    say("");
+    say("--- under your pointer ---");
+    if (!at) return say("  (the pointer never moved — put it on the file card and run this again)");
+    let el = document.elementFromPoint(at.x, at.y);
+    if (!el) return say("  (nothing there)");
+    // Climb to something that looks like a whole card rather than the label
+    // inside it: a testid, or the first ancestor carrying a control.
+    let card = el;
+    for (let i = 0; i < 6; i++) {
+      const p = card.parentElement;
+      if (!p || p === document.body) break;
+      if (card.getAttribute("data-testid")) break;
+      if (norm(card.textContent).length > 200) break;
+      card = p;
+    }
+    say("  innermost: " + describe(el));
+    say("  card: " + describe(card));
+    const ctrls = Array.from(card.querySelectorAll(CONTROLS)).filter((e) => !ours(e));
+    say("  controls on it: " + (ctrls.length || "none"));
+    for (const c of ctrls.slice(0, 20)) say("    " + describe(c));
+    say("  markup:");
+    say(skeleton(card));
+  }
+
   function dump() {
     const out = [];
     const say = (s) => out.push(s);
@@ -119,12 +151,24 @@
 
     const { sel, list } = messages();
     say("assistant messages: " + list.length + (sel ? " (matched " + sel + ")" : " — NO SELECTOR MATCHED"));
+    // Every candidate, not just the last. A selector that also matches page
+    // furniture is invisible in a report that only ever describes one element,
+    // and the furniture is often what renders last.
+    list.forEach((el, i) => {
+      const inLink = el.closest('a[href],button,[role="button"],[data-testid="file-thumbnail"]');
+      say(
+        "  [" + i + "] " + JSON.stringify(norm(el.textContent).slice(0, 60)) +
+          (inLink ? "  <- inside a " + inLink.tagName.toLowerCase() + ", so NOT a reply" : "")
+      );
+    });
     if (!list.length) {
       say("That is already the bug: nothing on this page reads as an assistant message.");
+      underPointer(say);
       return finish(out);
     }
 
-    const msg = list[list.length - 1];
+    const real = list.filter((el) => !el.closest('a[href],button,[role="button"],[data-testid="file-thumbnail"]'));
+    const msg = (real.length ? real : list)[(real.length ? real : list).length - 1];
     const scope = widen(msg, sel);
     say("newest reply opens: " + JSON.stringify(norm(msg.textContent).slice(0, 90)));
     say("scope: " + (scope === msg ? "the message element itself" : scope.tagName.toLowerCase() + " above it"));
@@ -147,8 +191,10 @@
     }
     if (!n) say("  (none)");
 
+    underPointer(say);
+
     say("");
-    say("--- markup (classes trimmed, svg emptied) ---");
+    say("--- markup of the whole reply (classes trimmed, svg emptied) ---");
     say(skeleton(scope));
     return finish(out);
   }

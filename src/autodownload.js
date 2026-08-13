@@ -40,6 +40,7 @@
   const CFG_KEY = "cum_autodownload"; // { enabled, max }
   const SELF_POLL_MS = 2000;
   const MENU_MS = 350; // let a menu the click opened draw before reading it
+  const PANEL_MS = 700; // ...and a preview panel, which is slower than a menu
   const ESCAPE_MS = 700; // let a click land before dismissing any menu it opened
   const SETTLE_MS = 20000; // how long a just-landed reply is still settling
 
@@ -50,6 +51,7 @@
   let baselined = false;
   let where = ""; // the conversation this ledger belongs to
   let toldCap = false;
+  let followed = ""; // the last file whose Download had to be chased into a panel
 
   // ---- which replies landed in front of us --------------------------------
   // Page-scoped rather than per-conversation, deliberately: a brand-new chat
@@ -92,6 +94,23 @@
     ".font-claude-message",
     "[data-is-streaming]",
   ];
+  // Not every `.font-claude-response` is a reply. claude.ai uses the same
+  // response font for furniture — a project's title in the content panel is
+  // one, inside an `<a href="/project/…">` — and that panel renders AFTER the
+  // conversation, so "the last one" was the panel and everything downstream
+  // was reading the wrong part of the page. A reply is never inside a link, a
+  // button, or a file thumbnail; that is the whole of the rule.
+  const NOT_A_MESSAGE = 'a[href],button,[role="button"],[data-testid="file-thumbnail"]';
+  function isMessage(el) {
+    if (!el || C.isOurs(el)) return false;
+    try {
+      if (el.closest(NOT_A_MESSAGE)) return false;
+    } catch (e) {
+      /* a browser without closest() would be a bigger problem than this */
+    }
+    return true;
+  }
+
   function assistantMessages() {
     for (const sel of ASSISTANT_SELECTORS) {
       let nodes;
@@ -100,7 +119,7 @@
       } catch (e) {
         continue;
       }
-      const list = Array.from(nodes).filter((el) => !C.isOurs(el));
+      const list = Array.from(nodes).filter(isMessage);
       if (list.length) return list;
     }
     return [];
@@ -307,7 +326,28 @@
     // card that is a card: a filename and a size. On anything bigger, "the only
     // button" could be anything at all.
     const small = (card.textContent || "").replace(/\s+/g, " ").trim().length <= CARD_MAX_TEXT;
-    return small && buttons.length === 1 ? buttons[0] : null;
+    if (!small || buttons.length !== 1) return null;
+    return buttons[0];
+  }
+
+  // Is this control the card itself rather than something on it?
+  //
+  // claude.ai wraps the whole thumbnail in a `<button aria-label="ruling.docx,
+  // docx, 117 lines">`, and pressing it **opens a preview** — it saves nothing.
+  // That is the shape this feature kept failing in: a control was found, it was
+  // pressed, a panel opened over the conversation, and Escape shut it again. It
+  // is still worth pressing, because the Download control usually lives inside
+  // what it opens — but it is an ENTRY, not the thing itself, so save() knows
+  // to go looking afterwards.
+  function isOpener(card, ctrl) {
+    if (!ctrl) return false;
+    const name = A.fileNameIn(card.textContent || "");
+    if (!name) return false;
+    const label =
+      (ctrl.getAttribute("aria-label") || "") + " " + (ctrl.textContent || "");
+    if (A.isSaveLabel(ctrl.getAttribute("aria-label")) || A.isSaveLabel(ctrl.textContent))
+      return false;
+    return label.replace(/\s+/g, " ").indexOf(name) !== -1;
   }
 
   // Every file this reply is offering. Document order, and everything that
@@ -317,10 +357,10 @@
   function offersIn(msgEl) {
     const found = [];
     const nodes = new Set();
-    const add = (node, name) => {
+    const add = (node, name, opener) => {
       if (!node || nodes.has(node) || C.isOurs(node)) return;
       nodes.add(node);
-      found.push({ node, name: name || cardName(node), ready: ready(node) });
+      found.push({ node, name: name || cardName(node), ready: ready(node), opener: !!opener });
     };
     try {
       for (const a of msgEl.querySelectorAll("a[download]"))
@@ -335,12 +375,14 @@
       // ...and whatever the file cards themselves offer, which is the path that
       // finds an unlabelled icon.
       for (const card of cardsIn(msgEl)) {
-        let ctrl = controlIn(card.el, card.strict);
-        if (!ctrl) {
-          hover(card.el); // a control drawn only under the pointer
-          ctrl = controlIn(card.el, card.strict);
-        }
-        if (ctrl) add(ctrl, A.fileNameIn(card.el.textContent));
+        // Hovered FIRST, always, rather than only when nothing was found. The
+        // thumbnail's action slot is empty markup until the pointer arrives —
+        // claude.ai renders the per-file buttons on mouse-enter — so looking
+        // before hovering finds the card's own preview button and settles for
+        // it, when a real Download was one event away.
+        hover(card.el);
+        const ctrl = controlIn(card.el, card.strict);
+        if (ctrl) add(ctrl, A.fileNameIn(card.el.textContent), isOpener(card.el, ctrl));
       }
     } catch (e) {
       return found;
@@ -365,50 +407,54 @@
         found.map((f) => f.name)
       );
       found.forEach((f, i) =>
-        offers.push({ key: keys[i], name: f.name, node: f.node, ready: f.ready })
+        offers.push({ key: keys[i], name: f.name, node: f.node, ready: f.ready, opener: f.opener })
       );
     }
     return offers;
   }
 
-  // A menu the click just opened. Plenty of cards hang the download off a "…"
-  // rather than off a button of its own, and the old code pressed that, waited,
-  // then dismissed the menu with Escape — the one shape where this looked
-  // exactly like doing nothing at all. So: look in whatever popped up for the
-  // item that says Download, and only dismiss if there wasn't one.
-  const MENU_SCOPE = '[role="menu"],[role="listbox"],[role="dialog"],[data-radix-popper-content-wrapper]';
-  const MENU_ITEM = '[role="menuitem"],[role="option"],button,a[download],a[href^="blob:"]';
-  function followMenu(seenBefore) {
-    let menus;
+  // What the click just put on the page.
+  //
+  // Pressing a card does one of three things, and this doesn't need to know
+  // which: it saves the file, it opens a menu with Download in it, or it opens
+  // a preview panel with Download in it. The old code assumed the first, and
+  // where it was really the second or third it pressed the card, waited, then
+  // dismissed what had opened with Escape — the one shape where the feature
+  // looked exactly like doing nothing at all.
+  //
+  // So rather than guess at the container — menu, dialog, popper, drawer, none
+  // of which claude.ai promises to keep calling the same thing — take a census
+  // of every control on the page before the click and look at what is NEW
+  // afterwards. A new control that names itself a download is the one to press,
+  // wherever it turned up. Nothing else is pressed: a new control that doesn't
+  // say what it does could be Delete.
+  const ANY_CONTROL = 'button,[role="button"],[role="menuitem"],[role="option"],a[download],a[href^="blob:"]';
+  function controlCensus() {
     try {
-      menus = Array.from(document.querySelectorAll(MENU_SCOPE));
-    } catch (e) {
-      return null;
-    }
-    for (const menu of menus) {
-      if (seenBefore.has(menu) || C.isOurs(menu)) continue;
-      let items;
-      try {
-        items = Array.from(menu.querySelectorAll(MENU_ITEM));
-      } catch (e) {
-        continue;
-      }
-      const hit = items.find((el) => {
-        if (C.isOurs(el)) return false;
-        const label = el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent;
-        return A.isSaveLabel(label) || A.mentionsSave(label);
-      });
-      if (hit) return hit;
-    }
-    return null;
-  }
-
-  function openMenus() {
-    try {
-      return new Set(Array.from(document.querySelectorAll(MENU_SCOPE)));
+      return new Set(Array.from(document.querySelectorAll(ANY_CONTROL)));
     } catch (e) {
       return new Set();
     }
+  }
+
+  function newSaveControl(before_) {
+    let all;
+    try {
+      all = Array.from(document.querySelectorAll(ANY_CONTROL));
+    } catch (e) {
+      return null;
+    }
+    for (const el of all) {
+      if (before_.has(el) || C.isOurs(el)) continue;
+      if (el.tagName === "A" && el.hasAttribute("download")) return el;
+      // The strict reading only. Inside a card that already names a file,
+      // "Save a copy" is unambiguous; a sweep of the whole document is not the
+      // inside of anything, and claude.ai captions plenty of unrelated things
+      // "Save". The word has to lead: Download, Download …, Save as, Save file.
+      const label = el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent;
+      if (A.isSaveLabel(label)) return el;
+    }
+    return null;
   }
 
   function escape() {
@@ -422,33 +468,40 @@
   function save(offer) {
     lastAt = Date.now();
     count++;
+    followed = ""; // this save's own story, not the last one's
     try {
       offer.node.setAttribute("data-cum-dl", "1");
     } catch (e) {
       /* the ledger key is the real guard; this is the belt to its braces */
     }
-    const before_ = openMenus();
+    const before_ = controlCensus();
     try {
       offer.node.click();
     } catch (e) {
       return; // one that won't click is a file not saved, and nothing more
     }
-    setTimeout(() => {
-      const item = followMenu(before_);
+    // Twice, because a menu draws in a frame and a preview panel takes rather
+    // longer — and an opener that saved nothing is worth a second look before
+    // its panel gets shut again.
+    const chase = (attempt) => {
+      const item = newSaveControl(before_);
       if (item) {
         try {
           item.click();
         } catch (e) {
           /* ignore */
         }
-        // Whatever is left of the menu after taking the item out of it.
-        setTimeout(escape, ESCAPE_MS);
+        followed = offer.name || "a file";
+        setTimeout(escape, ESCAPE_MS); // shut whatever is left of what opened
         return;
       }
-      // Nothing to follow, so the click either saved the file or opened
-      // something we don't want sitting over the conversation you're reading.
+      if (attempt < 2) return setTimeout(() => chase(attempt + 1), PANEL_MS);
+      // Nothing turned up. Either the click saved the file outright — the happy
+      // case — or it opened something that must not be left sitting over the
+      // conversation you're reading.
       escape();
-    }, MENU_MS);
+    };
+    setTimeout(() => chase(1), MENU_MS);
     const cap = cfg.max > 0 ? cfg.max : A.MAX_PER_PAGE;
     toast(`Saved ${offer.name || "a file"} (${count} / ${cap})`);
   }
@@ -557,7 +610,8 @@
       live.length +
       (live.length === 1 ? " reply watched" : " replies watched") +
       (generating ? " · generating" : "") +
-      (baselined ? "" : " · census open");
+      (baselined ? "" : " · census open") +
+      (followed ? " · chased " + followed + " into a panel" : "");
     if (line === lastReport) return;
     lastReport = line;
     try {
@@ -633,13 +687,15 @@
       say("cards found: " + cards.length);
       for (const c of cards) {
         const text = (c.el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
-        let ctrl = controlIn(c.el, c.strict);
-        if (!ctrl) {
-          hover(c.el);
-          ctrl = controlIn(c.el, c.strict);
-        }
+        hover(c.el);
+        const ctrl = controlIn(c.el, c.strict);
         say("  " + (c.strict ? "[by type chip] " : "[by filename] ") + JSON.stringify(text));
-        say("    control: " + (ctrl ? label(ctrl) : "NONE FOUND — this is why nothing is clicked"));
+        say(
+          "    control: " +
+            (ctrl
+              ? label(ctrl) + (isOpener(c.el, ctrl) ? "  (the card itself — opens a panel, then Download is chased inside it)" : "")
+              : "NONE FOUND — this is why nothing is clicked")
+        );
       }
 
       const offers = offersIn(scope);
