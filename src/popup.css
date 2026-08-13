@@ -189,6 +189,25 @@ input#endpoint:focus {
   background: #b85838;
 }
 
+/* The probe's report. Monospace because it is a list of captions and markup
+   names, and every one of them has to survive being pasted somewhere else
+   exactly as it was written. */
+.dl-probe-out {
+  margin: 8px 0 0;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: #fbfaf7;
+  color: #3a3a3a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .status {
   margin-top: 8px;
   font-size: 11.5px;
@@ -273,6 +292,11 @@ input#endpoint:focus {
     background: #1f1e1c;
     border-color: rgba(255, 255, 255, 0.16);
     color: #f0efea;
+  }
+  .dl-probe-out {
+    background: #191817;
+    border-color: rgba(255, 255, 255, 0.14);
+    color: #cfccc4;
   }
   .hint {
     color: #8a877f;

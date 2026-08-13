@@ -309,3 +309,25 @@ test("nonsense in gets nothing out rather than throwing", () => {
   assert.equal(A.plan(null, ctx()).take, null);
   assert.equal(A.plan(undefined, undefined).hold, "off");
 });
+
+test("a file-type chip is the WHOLE of a piece of text, never a word in one", () => {
+  for (const s of ["DOCX", "docx", ".docx", "PDF", " XLSX ", ".pdf", "MD", "CSV"])
+    assert.equal(A.isTypeChip(s), true, s);
+  // A sentence that mentions a file type is not a card, and treating it as one
+  // means climbing out of prose to press whatever button is nearest.
+  for (const s of [
+    "Here is the PDF",
+    "the PDF you asked for",
+    "PDF version",
+    "ruling.docx",
+    "",
+    null,
+    "DOCX (18 KB)",
+  ])
+    assert.equal(A.isTypeChip(s), false, String(s));
+});
+
+test("a chip is only a chip for a type we'd actually save", () => {
+  assert.equal(A.isTypeChip("EXE"), false);
+  assert.equal(A.isTypeChip("Ruling"), false);
+});

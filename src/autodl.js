@@ -86,6 +86,23 @@
     return m ? m[1].trim() : "";
   }
 
+  // A file-TYPE chip: the little uppercase token claude.ai puts beside a file's
+  // name — `DOCX`, `PDF`, `XLSX`. It matters because a card's name often
+  // carries no extension at all ("Tentative Ruling" + a `DOCX` chip), and a
+  // card found only by `fileNameIn` above is then invisible.
+  //
+  // Deliberately only the WHOLE of a piece of text, never a word inside one.
+  // "Here's the PDF." is a sentence, and treating it as a file card would mean
+  // climbing out of it and pressing whatever button was nearest — which in a
+  // reply is the Copy button. The caller pays for the looser identification by
+  // insisting on a control that names itself; see cardsIn.
+  const TYPE_CHIP_RE = new RegExp("^\\.?(?:" + FILE_EXT.source + ")$", "i");
+  function isTypeChip(text) {
+    const s = str(text).replace(/\s+/g, " ").trim();
+    if (!s || s.length > 12) return false;
+    return TYPE_CHIP_RE.test(s);
+  }
+
   // The filename out of a control's caption, where it carries one. Used for the
   // ledger key and for what the toast says — never for deciding whether to
   // click, so getting nothing back here is not a failure.
@@ -270,6 +287,7 @@
     isSaveLabel,
     mentionsSave,
     fileNameIn,
+    isTypeChip,
     fileName,
     turnSignature,
     offerKeys,

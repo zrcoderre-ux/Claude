@@ -113,6 +113,15 @@
       <input id="dl-max" type="number" min="1" max="200" class="inline-num" /> files
       per page load.</p>
     <p class="hint dl-seen" id="dl-seen" hidden></p>
+    <div class="btn-row">
+      <button id="dl-probe" type="button">What can it see?</button>
+      <button id="dl-copy" type="button" hidden>Copy report</button>
+    </div>
+    <p class="hint">Open the conversation with the file in it and press this. It
+      writes down what it found in the newest reply — every button and its
+      caption, every filename and file-type chip, and which gate is holding it
+      — so “it isn't working” can be read rather than guessed at.</p>
+    <pre class="dl-probe-out" id="dl-probe-out" hidden></pre>
 
     <label class="field-label" for="endpoint">Usage endpoint (optional)</label>
     <input

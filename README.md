@@ -132,7 +132,7 @@ What it will and won't do besides:
 - **Buttons, and links that carry a `download` attribute.** A plain link
   captioned *"Download …"* navigates, and being taken away from the conversation
   you're reading is a worse accident than a file that didn't save.
-- **The card is found by its filename**, not by its button. See
+- **The card is found by what it says**, not by its button. See
   [finding the button](#finding-the-button) — this is what made the first
   version of the feature do nothing at all.
 - **Ceilings in both directions** — at most **6 files from any one reply**, and
@@ -167,11 +167,28 @@ Widened, too: the search covers the **turn's own wrapper**, not just the prose
 element, climbing while the ancestor holds this reply and no other — an
 attachment is often drawn beside the answer rather than inside it.
 
-Eight card shapes are driven through a whole turn in Chromium, from the page's
-events rather than the extension's internals: a labelled button, an unlabelled
-icon, a button added to the page on hover, a button at zero opacity until hover,
-a blob link, a `data-testid` with no caption, a card outside the message
-element, and a reply with no file in it, which must produce no click at all.
+**A card whose name has no extension.** `ruling.docx` is easy; `Tentative
+Ruling` with a small `DOCX` beside it is the same card saying the same thing in
+a way a filename match can't see. So a **file-type chip** is a second way in —
+but only where it is the *whole* of a piece of text, never a word inside one,
+because `I've attached the **PDF**` is a sentence and climbing out of it to
+press the nearest button would press **Copy**. Cards found that way are held to
+a stricter rule: only a control that *names itself* a download is pressed on
+one. The looser "press the only control on the card" applies solely to a card
+that carried a real filename.
+
+**A control that opens a menu rather than saving.** Plenty of cards hang the
+download off a `…` instead of giving it a button. The first version pressed
+that, waited, then dismissed the menu with **Escape** — the one shape where the
+feature looked *exactly* like doing nothing at all. Now whatever pops up is read
+for the item that says Download, and Escape is only for when there wasn't one.
+
+Card shapes are driven through a whole turn in Chromium, from the page's events
+rather than the extension's internals: a labelled button, an unlabelled icon, a
+button added to the page on hover, a button at zero opacity until hover, a blob
+link, a `data-testid` with no caption, a card outside the message element, an
+extensionless name with a type chip, an overflow menu holding the real control,
+and a reply with no file in it, which must produce no click at all.
 
 ### When it says it isn't working
 
@@ -180,6 +197,18 @@ land, no file was found in it, or one was found and held back. The popup now
 says which, under the toggle — `1 offered · saving · 1 reply watched`, or
 `0 offered · nothing new · 0 replies watched · census open`. It's written only
 when the reading changes, so an idle tab writes nothing.
+
+And when that isn't enough, **What can it see?** in the popup asks the
+conversation you're looking at to write down what it actually found: every
+control in the newest reply with its caption, `aria-label`, `data-testid` and
+`href`; every piece of text that reads as a filename or a file-type chip; which
+of them it took for a card and what control it would press on each; and which
+gate is currently holding it. **Copy report** puts the lot on the clipboard.
+
+That button exists because this feature has now failed three times on guesses
+about markup that can't be inspected from where the code is written — claude.ai
+is behind a login. A report that can be pasted turns the next round from a
+guess into a fix.
 
 It watches only the newest reply or two, which is what makes scrolling cheap as
 well as safe: claude.ai unmounts messages that scroll out of view and mounts
