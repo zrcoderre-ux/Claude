@@ -756,6 +756,61 @@
     return finishProbe(out);
   }
 
+  /**
+   * Press it now, on the reply that's on screen, and say what happened.
+   *
+   * Every gate off: no census, no live rule, no waiting for a turn to land.
+   * Those exist so this never saves a chat's backlog unasked — but you asking
+   * for this file, on this reply, in front of you, is not unasked. It runs the
+   * SAME code the automatic path runs, which is the point: if this saves the
+   * file, the finding and the clicking work and the gates are what held it; if
+   * it doesn't, it says which step failed and there is nothing left to guess at.
+   */
+  function tryNow() {
+    const out = [];
+    const say = (s) => out.push(s);
+    try {
+      if (!A || !C) return finishProbe(["The page's modules didn't load — nothing here is running."]);
+      const list = assistantMessages();
+      if (!list.length)
+        return finishProbe(["No assistant reply found on this page. Nothing to take a file from."]);
+      const msg = list[list.length - 1];
+      const scope = widen(msg);
+      say("Newest reply: " + JSON.stringify(A.turnSignature(msg.textContent).slice(0, 60)));
+
+      const cards = cardsIn(scope);
+      say(cards.length + (cards.length === 1 ? " file card found" : " file cards found"));
+      const offers = offersIn(scope);
+      if (!offers.length) {
+        say("Nothing to press. No control on this reply reads as a way to save a file.");
+        for (const c of cards)
+          say("  card " + JSON.stringify((c.el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60)) +
+            " — " + (c.strict ? "found by its file type, so only a control that says Download counts" : "found by its filename") +
+            ", and it has none");
+        return finishProbe(out);
+      }
+
+      const take = offers.filter((o) => o.ready);
+      say(offers.length + " offered, " + take.length + " ready to press");
+      for (const o of offers)
+        say("  " + JSON.stringify(o.name || "(unnamed)") + " — " + label(o.node) +
+          (o.ready ? "" : " — already pressed this page load") +
+          (o.opener ? " — the card itself, so Download gets chased into whatever it opens" : ""));
+      if (!take.length) return finishProbe(out.concat(["Nothing left to press — reload the page to start over."]));
+
+      // Remembered, so the automatic path doesn't come back and press it again.
+      const keys = A.offerKeys(A.turnSignature(msg.textContent), offers.map((o) => o.name));
+      offers.forEach((o, i) => {
+        if (o === take[0] && keys[i] && seen.indexOf(keys[i]) === -1) seen.push(keys[i]);
+      });
+      say("Pressing it now. If a panel opens, Download is looked for inside it and pressed too.");
+      save(take[0]);
+    } catch (e) {
+      say("threw: " + String((e && e.message) || e));
+    }
+    return finishProbe(out);
+  }
+
   function finishProbe(lines) {
     const text = lines.join("\n").slice(0, PROBE_MAX);
     try {
@@ -827,6 +882,10 @@
       if (msg === "cum-ac-poll") tick();
       if (msg === "cum-dl-probe" || (msg && msg.type === "cum-dl-probe")) {
         sendResponse({ ok: true, text: probe() });
+        return true;
+      }
+      if (msg === "cum-dl-try" || (msg && msg.type === "cum-dl-try")) {
+        sendResponse({ ok: true, text: tryNow() });
         return true;
       }
     });

@@ -39,6 +39,7 @@
     statusHold: document.getElementById("status-hold"),
     statusModel: document.getElementById("status-model"),
     dlProbe: document.getElementById("dl-probe"),
+    dlTry: document.getElementById("dl-try"),
     dlCopy: document.getElementById("dl-copy"),
     dlProbeOut: document.getElementById("dl-probe-out"),
   };
@@ -243,12 +244,14 @@
   // popup has to name the tab itself: the content script is per-page, and the
   // answer is only meaningful for the conversation with the file in it.
   let probeText = "";
-  function runProbe() {
-    el.dlProbe.disabled = true;
-    el.dlProbe.textContent = "Looking…";
+  function runProbe(what) {
+    const btn = what === "try" ? el.dlTry : el.dlProbe;
+    const was = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = what === "try" ? "Saving…" : "Looking…";
     const done = (text) => {
-      el.dlProbe.disabled = false;
-      el.dlProbe.textContent = "What can it see?";
+      btn.disabled = false;
+      btn.textContent = was;
       probeText = text || "";
       el.dlProbeOut.hidden = !probeText;
       el.dlProbeOut.textContent = probeText;
@@ -259,7 +262,7 @@
         const tab = (tabs || [])[0];
         if (!tab || !/^https:\/\/claude\.ai\//.test(tab.url || ""))
           return done("Open the claude.ai conversation with the file in it, then press this again.");
-        chrome.tabs.sendMessage(tab.id, "cum-dl-probe", (res) => {
+        chrome.tabs.sendMessage(tab.id, what === "try" ? "cum-dl-try" : "cum-dl-probe", (res) => {
           if (chrome.runtime.lastError)
             return done(
               "That tab didn't answer — " + chrome.runtime.lastError.message +
@@ -273,7 +276,8 @@
     }
   }
 
-  if (el.dlProbe) el.dlProbe.addEventListener("click", runProbe);
+  if (el.dlProbe) el.dlProbe.addEventListener("click", () => runProbe("see"));
+  if (el.dlTry) el.dlTry.addEventListener("click", () => runProbe("try"));
   if (el.dlCopy)
     el.dlCopy.addEventListener("click", () => {
       try {

@@ -223,6 +223,16 @@ says which, under the toggle — `1 offered · saving · 1 reply watched`, or
 `0 offered · nothing new · 0 replies watched · census open`. It's written only
 when the reading changes, so an idle tab writes nothing.
 
+**Save it now**, in the popup, presses the download on the reply you're looking
+at this second, with **every gate off** — no census, no live rule, no waiting
+for a turn to land. Those gates exist so a chat's backlog is never saved
+unasked; you asking for this file, on this reply, in front of you, is not
+unasked. It runs the *same* finding and clicking the automatic path runs, which
+is what makes it a diagnosis as well as a button: if it saves the file, the
+finding and the clicking work and a gate was what held it; if it doesn't, it
+names the step that failed — no card found, a card with no control on it,
+nothing left to press.
+
 And when that isn't enough, **What can it see?** in the popup asks the
 conversation you're looking at to write down what it actually found: every
 control in the newest reply with its caption, `aria-label`, `data-testid` and
