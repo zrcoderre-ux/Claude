@@ -1545,8 +1545,10 @@ async function driveRun(runId, opts) {
         chatName: step.chatName,
         total: plan.length,
         awaitOnly: awaitOnly,
-        // Only set when this step's reply gets pasted into another chat: the
-        // phrase that reply must contain before it's allowed to travel.
+        // The phrase this step's reply must contain before the run moves on.
+        // Computed from the plan at dispatch, never stored — which is what
+        // makes a change to the rule reach workflows and runs that already
+        // exist, including one paused mid-flight.
         marker: step.marker || null,
         text: W.composeStepText(step, run.lastReply),
         files: awaitOnly ? [] : docs,

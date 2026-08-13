@@ -874,7 +874,11 @@ test("a step whose output is a ruling only hands on a reply that is one", () => 
   assert.equal(plan[0].handsOn, true);
   assert.equal(plan[0].marker, "NATURE OF PROCEEDINGS", "step 1's reply goes to chat B");
   assert.equal(plan[1].marker, null, "step 2 isn't marked as producing a ruling");
-  assert.equal(plan[2].marker, null, "the last step's reply goes nowhere");
+  assert.equal(
+    plan[2].marker,
+    "NATURE OF PROCEEDINGS",
+    "the last step's reply goes nowhere, but it is still a ruling this run must produce"
+  );
 
   // The gate itself.
   assert.ok(W.hasMarker("…\nNATURE OF PROCEEDINGS: Hearing on Demurrer\n…", "NATURE OF PROCEEDINGS"));
@@ -887,9 +891,10 @@ test("a step whose output is a ruling only hands on a reply that is one", () => 
   assert.equal(W.hasMarker("anything", null), true, "no marker, no gate");
 });
 
-test("the ruling gate is off wherever nothing is pasted onward", () => {
-  // Same chat twice: the second step's reply isn't handed anywhere, so a step
-  // marked as producing a ruling imposes nothing on it.
+test("the ruling gate guards moving on, not only pasting onward", () => {
+  // Same chat twice. Nothing is pasted between them — but a second step sent on
+  // top of half a ruling is still a second step working from half a ruling, so
+  // a step told to produce one has to produce one either way.
   const wf = W.newWorkflow(
     {
       name: "x",
@@ -904,8 +909,9 @@ test("the ruling gate is off wherever nothing is pasted onward", () => {
     NOW
   );
   const plan = W.planRun(wf);
-  assert.equal(plan[0].marker, null, "next step is the same chat — nothing travels");
-  assert.equal(plan[1].marker, null, "the step after doesn't carry");
+  assert.equal(plan[0].marker, "NATURE OF PROCEEDINGS", "same chat, but still must be a ruling");
+  assert.equal(plan[1].marker, "NATURE OF PROCEEDINGS", "and so must the step after it");
+  assert.equal(plan[2].marker, null, "a step that never claimed to produce one is ungated");
   assert.equal(W.stepMarker({ expectsRuling: true, outputMarker: "  CONCLUSION " }), "CONCLUSION");
   assert.equal(W.stepMarker({ expectsRuling: false, outputMarker: "CONCLUSION" }), null);
 });
@@ -929,8 +935,8 @@ test("the marker is a step's business, so one chat can differ across its steps",
     NOW
   );
   const plan = W.planRun(wf);
-  assert.equal(plan[0].marker, "NATURE OF PROCEEDINGS", "the draft must be a ruling to travel");
-  assert.equal(plan[2].marker, null, "the style pass, in the same chat, need not be");
+  assert.equal(plan[0].marker, "NATURE OF PROCEEDINGS", "the draft must be a ruling");
+  assert.equal(plan[2].marker, null, "the style pass wasn't asked to produce one");
 });
 
 test("carrySource points at the chat that produced the hand-off", () => {
@@ -2621,7 +2627,7 @@ test("two steps in one chat still don't carry across a pause between them", () =
   );
   const plan = W.planRun(wf);
   assert.equal(plan[2].carry, false, "that conversation already has it");
-  assert.equal(plan[0].handsOn, false, "so there is nothing to insist on either");
+  assert.equal(plan[0].handsOn, false, "so nothing is pasted between them");
 });
 
 test("a pause is either indefinite or a number of minutes", () => {
@@ -2774,4 +2780,87 @@ test("a re-run inherits the run's outage answer, not the workflow's", () => {
   const run = Object.assign({}, W.newRun(wf, "r1", NOW), { status: "done", ignoreOutage: true });
   const again = W.rerunOf(run, { stepIndex: 0 }, "r2", NOW + 1);
   assert.equal(W.ignoresOutage(again), true);
+});
+
+// ---- the marker is the ruling's first line, not its last -------------------
+
+test("a reply that matches the marker still has to hold still", () => {
+  const quiet = 60000;
+  // Still being written — the marker is the heading, and everything under it
+  // is yet to arrive.
+  assert.equal(W.rulingReady({ generating: true, unchangedMs: quiet * 2 }), false);
+  assert.equal(
+    W.rulingReady({ streamOpen: true, unchangedMs: quiet * 2 }),
+    false,
+    "a completion stream open for this turn settles it, whatever the text is doing"
+  );
+  // Idle, but only just — a ruling that pauses to verify a citation looks
+  // exactly like this, and taking it here is taking a fragment.
+  assert.equal(W.rulingReady({ unchangedMs: 5000 }), false);
+  assert.equal(W.rulingReady({ unchangedMs: quiet - 1 }), false);
+  assert.equal(W.rulingReady({ unchangedMs: quiet }), true);
+  assert.equal(W.rulingReady({ unchangedMs: quiet * 3 }), true);
+  // A caller may shorten it, which is how the tests above run in a second.
+  assert.equal(W.rulingReady({ unchangedMs: 40, quietMs: 30 }), true);
+  assert.equal(W.rulingReady({}), false, "nothing observed is not the same as quiet");
+});
+
+test("the quiet window is much longer than an ordinary settle", () => {
+  // Being early costs a whole run; being late costs a minute.
+  assert.ok(W.RULING_QUIET_MS >= 30000, "generous on purpose");
+});
+
+test("the continue prompt asks for the whole thing, and names the marker", () => {
+  const p = W.continuePrompt("NATURE OF PROCEEDINGS");
+  assert.ok(/^Continue from exactly where you stopped/.test(p));
+  assert.ok(p.indexOf("NATURE OF PROCEEDINGS") !== -1);
+  assert.ok(/not a summary/.test(p), "the failure mode being guarded is a précis of the ruling");
+  // A step with its own marker gets its own marker back.
+  assert.ok(W.continuePrompt("CONCLUSION").indexOf("CONCLUSION") !== -1);
+  // And one with none falls back rather than asking for “”.
+  assert.ok(W.continuePrompt("").indexOf(W.DEFAULT_OUTPUT_MARKER) !== -1);
+  assert.ok(W.continuePrompt(null).indexOf(W.DEFAULT_OUTPUT_MARKER) !== -1);
+});
+
+test("the ruling gate reaches workflows that already exist, and runs already going", () => {
+  // Nothing about the gate is stored. It is computed from the plan every time a
+  // step is dispatched, which is what makes a change to the rule apply to a
+  // workflow saved months ago — and to a run paused halfway through one — with
+  // no migration and no re-creating anything.
+  //
+  // The old shape: the marker on the CHAT, and two steps in that one chat. Under
+  // the rule this replaces, neither step was gated (nothing was pasted between
+  // them, and the second handed nowhere). Both are gated now.
+  const old = {
+    id: "w",
+    name: "Tentative ruling",
+    chats: [{ id: "a", name: "Drafting", expectsRuling: true }],
+    steps: [
+      { id: "s1", chatId: "a", prompt: "draft" },
+      { id: "s2", chatId: "a", prompt: "revise it" },
+    ],
+  };
+  const plan = W.planRun(W.migrateSettings(old));
+  assert.deepEqual(
+    plan.map((s) => s.marker),
+    [W.DEFAULT_OUTPUT_MARKER, W.DEFAULT_OUTPUT_MARKER],
+    "both steps, though neither hands anything over"
+  );
+
+  // And a run in flight, planned from its own stored copy rather than the
+  // template's — including one sitting at its second step.
+  const run = W.migrateRunSettings({
+    id: "r",
+    status: "paused",
+    stepIndex: 1,
+    plan: {
+      chats: [{ id: "a", name: "Drafting", expectsRuling: true }],
+      steps: [
+        { id: "s1", chatId: "a", prompt: "draft" },
+        { id: "s2", chatId: "a", prompt: "revise it" },
+      ],
+    },
+  });
+  const running = W.planRun(W.runSource(run, null));
+  assert.equal(running[run.stepIndex].marker, W.DEFAULT_OUTPUT_MARKER);
 });

@@ -753,13 +753,17 @@
           // those replies have to be a ruling before they travel.
           `<label class="cumwf-check"><input class="wf-step-ruling" type="checkbox" ${
             step.expectsRuling ? "checked" : ""
-          } /> Its output is a tentative ruling — don't hand it on unless the reply contains</label>` +
+          } /> Its output is a tentative ruling — don't move to the next step unless the reply contains</label>` +
           `<input class="wf-step-marker" type="text" placeholder="${esc(W.DEFAULT_OUTPUT_MARKER)}" value="${esc(
             step.outputMarker || ""
           )}"${step.expectsRuling ? "" : " hidden"} />` +
           `<p class="cumwf-hint"${step.expectsRuling ? "" : " hidden"}>A clarifying question, a note that a paper ` +
-          `is missing, or an offer to continue are all real replies — none of them the ruling. This waits for the ` +
-          `one that is, which is usually the reply after auto-continue clicks Continue.</p>`;
+          `is missing, or a turn cut off at the tool-use limit are all real replies — none of them the ruling. ` +
+          `Applies whether or not the next step is in another chat: a second step sent on top of half a ruling is ` +
+          `still working from half a ruling. A reply that isn't one gets <b>one</b> request to carry on; if the ` +
+          `next one still isn't the ruling the run <b>pauses</b> rather than building on it. And the phrase turning ` +
+          `up doesn't end the wait — it's the ruling's first line, so the reply then has to hold still for a minute ` +
+          `before it counts as finished.</p>`;
         const chatEl = card.querySelector(".wf-step-chat");
         chatEl.value = step.chatId || (wf.chats[0] && wf.chats[0].id) || "";
         chatEl.addEventListener("change", () => (step.chatId = chatEl.value));

@@ -524,19 +524,47 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   models says so on its row (`Opus 4.1 → Sonnet 4.5`), and **Steps** names the
   model each step answers on, marking the ones that differ from their chat.
 - **"Its output is a tentative ruling"** — a **step** can insist that its reply
-  contain a phrase (`NATURE OF PROCEEDINGS` by default, editable) before it may
-  be handed to another chat. Claude's first answer is often a clarifying
-  question, a note that a paper is missing, or an offer to continue; those are
-  real replies, and none of them is the ruling the next chat is meant to attack.
-  A reply without the phrase is left where it is and the step keeps waiting — so
-  the answer that arrives after auto-continue clicks **Continue** is the one that
-  travels. The check applies **only where something is pasted onward**: a step
-  whose reply stays in its own chat can say anything at all.
+  contain a phrase (`NATURE OF PROCEEDINGS` by default, editable) before the run
+  **moves to the next step**. Claude's first answer is often a clarifying
+  question, a note that a paper is missing, or a turn cut off at the tool-use
+  limit part-way through; those are real replies, and none of them is the ruling.
+
+  It guards *moving on*, not only pasting onward. A drafting conversation that
+  writes the ruling and then revises it in the **same chat** hands nothing over —
+  but a second step sent on top of half a ruling is still a second step working
+  from half a ruling, and nothing in the run would ever say so.
+
+  **A reply that isn't the ruling gets one request to carry on.** The commonest
+  reason for one is the turn ending at the tool-use limit mid-ruling, and the fix
+  for that is a sentence: *"Continue from exactly where you stopped and output the
+  complete text in this reply…"*, naming the phrase it must contain. Once, and
+  only once — a chat that has now been told twice what to produce is not going to
+  be argued into it, and a run that keeps nudging is quietly burning the usage the
+  rest of it needs. If the next reply still isn't the ruling the run **pauses**,
+  with its phase intact, so Resume waits for a fresh reply rather than re-sending:
+  finish the ruling in the chat yourself and that is the reply it takes.
+
+  **And finding the phrase does not end the wait.** `NATURE OF PROCEEDINGS` is a
+  ruling's *first line*. A step that took the reply the moment it saw those words
+  would be taking a heading and whatever had been written in the second since. So
+  a matching reply then has to go quiet — nothing generating, no completion stream
+  open, and the text unmoved for **a minute** — before it counts as finished. Much
+  longer than the ordinary settle, because a ruling that verifies authority by
+  live retrieval goes silent for minutes in the middle, and being early here costs
+  a whole run where being late costs a minute.
 
   It sits on the step rather than on the chat because a chat does more than one
   thing. The drafting conversation writes the ruling, then revises it, then takes
   a style pass over it — and "must this reply be a ruling" has a different answer
   for each. Asked of the chat, one answer had to cover them all.
+
+  **None of this is stored, so all of it is retroactive.** The gate is computed
+  from the plan every time a step is dispatched, never written into a workflow or
+  a run — so a workflow saved months ago behaves by today's rule, and so does a
+  run already in flight, including one paused halfway through. There is nothing
+  to migrate and nothing to re-create. (A workflow that predates the step-level
+  switch had the marker on the *chat*; that one moved onto every step of that
+  chat when it was migrated, which is what the chat-level setting meant.)
 
 ### Steps that run at the same time
 
