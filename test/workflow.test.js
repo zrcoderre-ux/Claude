@@ -1468,6 +1468,18 @@ test("a draft run exists but nothing picks it up", () => {
   assert.deepEqual(W.pickupRuns([draft], NOW + W.STALE_MS + 1, W.STALE_MS), []);
   assert.deepEqual(W.heldRuns([draft]), []);
   assert.match(W.progressText(draft, wf), /Not started/);
+  // With no papers on it yet, the row asks for them.
+  assert.match(W.progressText(Object.assign({}, draft, { docs: [] }), wf), /add this matter's papers/);
+  // With papers on it, it stops asking — a run set up with its exhibits
+  // already attached, still being told to attach them, reads as though they
+  // hadn't arrived.
+  const withDocs = Object.assign({}, draft, {
+    docs: [{ id: "d1", name: "Motion.pdf" }, { id: "d2", name: "Opposition.pdf" }],
+  });
+  const said = W.progressText(withDocs, wf);
+  assert.match(said, /2 documents ready/);
+  assert.equal(/add this matter's papers/.test(said), false);
+  assert.match(W.progressText(draft, wf), /1 document ready/, "singular where there is one");
 });
 
 test("a run made from a resting template starts unnamed, but knows its workflow", () => {

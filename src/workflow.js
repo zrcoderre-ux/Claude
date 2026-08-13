@@ -2328,9 +2328,18 @@
     if (run.status === "canceled") return "Canceled at step " + at;
     if (run.status === "paused") return "Paused before step " + at + " of " + total;
     if (run.status === "error") return "Failed at step " + at + " of " + total;
-    if (run.status === "draft")
-      return "Not started · " + total + " step" + (total === 1 ? "" : "s") +
-        " · add this matter's papers, then start it";
+    if (run.status === "draft") {
+      // Asking for the papers is only useful while there aren't any. A run set
+      // up with its exhibits already on it, still being told to add them, reads
+      // as though they hadn't arrived.
+      const docs = (run.docs || []).length;
+      return (
+        "Not started · " + total + " step" + (total === 1 ? "" : "s") + " · " +
+        (docs
+          ? docs + " document" + (docs === 1 ? "" : "s") + " ready — start it when you are"
+          : "add this matter's papers, then start it")
+      );
+    }
     if (run.status === "pending") return "Queued · " + total + " steps";
     const plan = planRun(src);
     const step = plan[run.stepIndex];

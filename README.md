@@ -273,7 +273,10 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   that draft into the devil's advocate chat, exactly as though it had drafted it
   itself. The reply is read **when the run goes**, not when you press Start, so a
   run scheduled for the small hours takes whatever is in that chat by then.
-- **Documents** — dropped in, or **pasted**: text pasted anywhere in the editor
+- **Documents** — **on the run, not on the workflow.** Papers are a matter's, and
+  a template that held them would hand the last matter's exhibits to the next
+  one; so the workflow editor has no documents field at all, and a run's does.
+  Dropped in, or **pasted**: text pasted anywhere in the run's editor
   that isn't a box you were typing in becomes a `.txt` document, the way
   claude.ai turns a large paste into an attachment. It's named from its own first
   line — `Opposition to Motion to Compel.txt` tells you what it is in the list
@@ -489,14 +492,29 @@ decision.
 ### A workflow is a template
 
 The same workflow runs many matters, so it isn't meant to keep any one of them.
-The editor has two names for that reason:
+There are two names for that reason, and **each editor shows only its own**:
 
-- **Workflow name** — the template's own, and durable. It keeps this one.
-- **Run name** — the matter in front of you, and only that. It does **not**
-  default to the workflow's name: a run that borrowed it would sit in the runs
-  list looking like a second copy of the workflows list, telling you nothing
-  about which matter is which. An unnamed run shows *Untitled run* in grey,
-  which is a prompt rather than a name.
+- **Workflow name** — the template's own, and durable. It keeps this one. Editing
+  a workflow is where it can be changed; a run's editor doesn't offer it, because
+  renaming the workflow from inside one of its matters would rename it for every
+  other matter too.
+- **Run name** — the matter in front of you, and only that. Editing a run is
+  where it can be changed; a template's editor doesn't offer it, because a
+  template holding a matter's name is a template that hands it to the next
+  matter. It does **not** default to the workflow's name either: a run that
+  borrowed it would sit in the runs list looking like a second copy of the
+  workflows list, telling you nothing about which matter is which. An unnamed run
+  shows *Untitled run* in grey, which is a prompt rather than a name.
+
+The same split runs through the rest of the editor. **What it does** — the one
+line describing the workflow — is the template's, so a run's editor doesn't show
+it: a run is one use of a workflow, not a place to redescribe it. **Documents**
+are the matter's, so only a run's editor has them. What the two share are the
+switches, which the template sets and every run inherits.
+
+And a run that already has its papers **stops asking for them**: the row reads
+*3 documents ready — start it when you are* rather than *add this matter's
+papers, then start it*, which read as though they hadn't arrived.
 
 Either way the run **keeps the workflow it came from**, shown as a badge beside
 its own name and recorded on the run itself — so it survives the template being

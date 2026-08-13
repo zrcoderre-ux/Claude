@@ -1222,7 +1222,9 @@
                 run.id
               }" title="${
                 WF.isDraft(run)
-                  ? "Name this matter, add its papers, tweak its steps — this run only"
+                  ? (run.docs || []).length
+                    ? "Name this matter, tweak its steps — this run only"
+                    : "Name this matter, add its papers, tweak its steps — this run only"
                   : "Add a step, fix a prompt, add documents — this run only"
               }">${WF.isDraft(run) ? "Set up" : "Edit run"}</button>`
             : "") +
