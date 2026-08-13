@@ -192,12 +192,12 @@
       `<input class="cumwf-template" type="text" placeholder="e.g. Tentative ruling — 3× devil's advocate" />` +
       `<p class="cumwf-hint">The template's own name. It keeps this one — it's what the workflow goes back ` +
       `to after each run starts.</p></div>` +
-      `<label class="cumwf-label">Run name</label>` +
+      `<div class="cumwf-name-row"><label class="cumwf-label">Run name</label>` +
       `<input class="cumwf-name" type="text" placeholder="e.g. Demurrer — Smith v. Jones" />` +
       `<p class="cumwf-hint">This matter, this run. A run keeps the name of the workflow it came from ` +
-      `either way — this is what tells one matter from another.</p>` +
-      `<label class="cumwf-label">What it does (optional)</label>` +
-      `<input class="cumwf-desc" type="text" placeholder="One line, for the list" />` +
+      `either way — this is what tells one matter from another.</p></div>` +
+      `<div class="cumwf-desc-row"><label class="cumwf-label">What it does (optional)</label>` +
+      `<input class="cumwf-desc" type="text" placeholder="One line, for the list" /></div>` +
 
       `<label class="cumwf-label">Chats worked between</label>` +
       `<div class="cumwf-row"><input class="cumwf-count" type="number" min="1" max="6" step="1" style="width:80px" />` +
@@ -205,18 +205,24 @@
       `carrying the last reply across.</p></div>` +
       `<div class="cumwf-chats cumwf-list"></div>` +
 
-      `<label class="cumwf-label">Documents</label>` +
+      // Documents are a MATTER's, so they live on the run. A template holding
+      // papers is a template that quietly sends the last matter's exhibits to
+      // the next one.
+      `<div class="cumwf-docs-row"><label class="cumwf-label">Documents</label>` +
       `<div class="cumwf-drop" tabindex="0"><p class="cumwf-dz-text">Drag files here, paste text, or</p>` +
       `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-pick" type="button">Choose files…</button></div></div>` +
       `<input class="cumwf-file-input" type="file" multiple hidden />` +
       `<p class="cumwf-hint">Tick the chats that should receive each document — it goes up with that chat's first message. ` +
       `Text pasted anywhere here that isn't a box becomes a .txt document, named from its first line.</p>` +
+      `<div class="cumwf-docs cumwf-list"></div></div>` +
+
+      // ...but HOW they upload is the template's business, and travels to every
+      // run, so it sits with the other switches rather than with the papers.
       `<label class="cumwf-check"><input class="cumwf-bundle" type="checkbox" /> Combine text documents into ` +
       `one labelled file before uploading</label>` +
       `<p class="cumwf-hint">On by default. Twenty separate attachments is where claude.ai starts showing Claude ` +
       `fewer than were sent. One file, with each document announced by name inside it, either arrives or doesn't. ` +
       `PDFs and Word files still go up on their own — only text is combined.</p>` +
-      `<div class="cumwf-docs cumwf-list"></div>` +
 
       `<label class="cumwf-check"><input class="cumwf-name-chats" type="checkbox" /> Name each conversation ` +
       `after the run — “<span class="cumwf-name-eg">Matter</span>: Chat A”</label>` +
@@ -273,6 +279,7 @@
       name: q(".cumwf-name"),
       template: q(".cumwf-template"),
       tmplRow: q(".cumwf-tmpl-row"),
+      nameRow: q(".cumwf-name-row"),
       desc: q(".cumwf-desc"),
       count: q(".cumwf-count"),
       chats: q(".cumwf-chats"),
@@ -288,6 +295,8 @@
       rrDocs: q(".cumwf-rr-docs"),
       fileInput: q(".cumwf-file-input"),
       docs: q(".cumwf-docs"),
+      docsRow: q(".cumwf-docs-row"),
+      descRow: q(".cumwf-desc-row"),
       steps: q(".cumwf-steps"),
       addStep: q(".cumwf-add-step"),
       whenRow: q(".cumwf-when-row"),
@@ -449,6 +458,9 @@
 
     el.addEventListener("paste", (e) => {
       if (el.hidden) return;
+      // Nowhere for it to go while the papers are the run's. Pasting into a
+      // template's editor would otherwise make a document you couldn't see.
+      if (ui.docsRow && ui.docsRow.hidden) return;
       // Never steal a paste meant for a prompt, a name or a link.
       const t = e.target;
       const tag = (t && t.tagName) || "";
@@ -1046,8 +1058,28 @@
     ui.addStep.addEventListener("click", () => insertStep(wf.steps.length));
 
     // ---- open / close ----------------------------------------------------
+    // Which of the two things is open. A workflow and a run are edited by the
+    // same form, and nearly every difference between them comes back to this:
+    // the template owns its name and what it does, the run owns the matter's
+    // name and the matter's papers, and neither should be offered the other's.
+    let editingRun = false;
+
+    function applyMode() {
+      // The template's own name, and the one line saying what it does. Both are
+      // the workflow's: a run is one use of it, not a place to rename or
+      // redescribe it.
+      if (ui.tmplRow) ui.tmplRow.hidden = editingRun;
+      if (ui.descRow) ui.descRow.hidden = editingRun;
+      // The matter's name, and the matter's papers. Both are the run's: a
+      // template carrying either would hand the last matter's name and the last
+      // matter's exhibits to the next one.
+      if (ui.nameRow) ui.nameRow.hidden = !editingRun;
+      if (ui.docsRow) ui.docsRow.hidden = !editingRun;
+    }
+
     function open(workflow) {
       wf = workflow;
+      editingRun = false;
       originalDocIds = (wf.docs || []).map((d) => d.id);
       pendingFiles.clear();
       ui.template.value = wf.templateName || wf.name || "";
@@ -1056,6 +1088,7 @@
       // read as "this run is called the same as the template".
       ui.name.value = wf.name && wf.name !== ui.template.value ? wf.name : "";
       ui.desc.value = wf.description || "";
+      applyMode();
       ui.bundle.checked = !!wf.bundleText;
       ui.nameChats.checked = wf.nameChats !== false;
       ui.rerun.checked = !!wf.allowRerun;
@@ -1144,10 +1177,18 @@
       if (!wf) return;
       // The workflow's own name is the durable one; the run name is this
       // matter's, and a template sitting idle simply wears its own.
-      const template = ui.template.value.trim() || ui.name.value.trim();
-      wf.templateName = template;
-      wf.name = ui.name.value.trim() || template;
-      wf.description = ui.desc.value;
+      // Each editor writes only its own name. A template's two names are the
+      // same name — it wears its own until a run borrows it — and a run's
+      // template name is history, not a field: renaming the workflow from
+      // inside one of its runs would rename it for every other matter.
+      if (editingRun) {
+        wf.name = ui.name.value.trim() || wf.name;
+      } else {
+        const template = ui.template.value.trim() || wf.templateName || wf.name;
+        wf.templateName = template;
+        wf.name = template;
+        wf.description = ui.desc.value;
+      }
       wf.bundleText = ui.bundle.checked;
       wf.nameChats = ui.nameChats.checked;
       wf.allowRerun = ui.rerun.checked;
@@ -1254,7 +1295,8 @@
             Date.now()
           )
         );
-        if (ui.tmplRow) ui.tmplRow.hidden = true; // a run has no resting name
+        editingRun = true;
+        applyMode();
         ui.name.value = run.name || "";
         // The workflow it came from, named where the template's own name would
         // be — a run keeps that association even after the template is renamed
