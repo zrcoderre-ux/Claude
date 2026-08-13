@@ -685,6 +685,27 @@ convincingly. The run keeps its place and its phase, so once you've looked at th
 chat (and asked Claude to continue there, if that's what it needs), **Resume**
 waits for a fresh reply rather than sending the message again.
 
+**A step never settles on an answer it didn't watch arrive.** The reply a step
+takes has to be one that appeared while it was looking: either the response
+stream for *this* message closed, or the text on screen moved, or a turn mounted
+after the baseline was read. Text that was already there and never moved is the
+*previous* answer sitting where it always was.
+
+That rule earns its place on the one path that used to break without it.
+Restart a run at an earlier step and every chat after that point already holds
+replies — so a baseline read before the page had drawn the transcript made each
+old reply look new, and each step settled on it about six seconds after sending,
+one after another, without waiting for anything. So the baseline is now taken
+only once the conversation has actually rendered (and only where the URL names
+one — a chat being opened fresh has nothing to wait for), and while the page is
+still behind the conversation, messages mounting count as history arriving
+rather than as an answer.
+
+The exception is deliberate and narrow: re-attaching to a message whose reply is
+already sitting there, and re-reading a chat on purpose, both say *whatever is on
+screen is the answer* — and requiring a change there would be waiting out the
+hour for something that arrived before anyone was looking.
+
 **Pause stops it now, in every chat**, keeping its place, what it's carrying,
 and which conversations it's in. It is a decision about the **run**, not about
 the tab you pressed it in — a wave is three conversations working at once, and

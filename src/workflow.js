@@ -2698,6 +2698,15 @@
       return unchanged >= stalled ? "stalled" : null;
     }
 
+    // Nothing has been watched to arrive. Text that was ALREADY THERE when the
+    // wait began and never moved is not a finished answer — it is the previous
+    // answer, sitting where it always was. Without this, a step re-run in a
+    // chat that already holds replies settles on the old one within seconds,
+    // and the run walks through the rest of itself taking each stale reply in
+    // turn. `streamDone` above is the other, better, way to know; this branch
+    // is what happens when there is no stream to consult.
+    if (s.watched === false) return null;
+
     return unchanged >= (typeof s.minStableMs === "number" ? s.minStableMs : 6000) &&
       (s.stablePolls || 0) >= (typeof s.minStablePolls === "number" ? s.minStablePolls : 3)
       ? "stable"

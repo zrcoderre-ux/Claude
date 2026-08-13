@@ -468,9 +468,24 @@
     let lastUsageAt = Date.now();
     const deadline = startedAt + (timeoutMs || W.STEP_TIMEOUT_MS);
     const since = typeof sentAt === "number" ? sentAt : startedAt;
-    let lastText = "";
+    // null rather than "": the FIRST text this loop sees is not a change, it is
+    // the baseline. Treating it as a change would count "there was already a
+    // reply here" as evidence that one just arrived.
+    let lastText = null;
     let lastChangeAt = Date.now();
     let stablePolls = 0;
+    // Did anything happen while we watched — a turn mounting, or text moving?
+    // Stillness we did not watch become still is not a finished answer; it is
+    // whatever was on screen when we got here. See CUMWorkflow.settleReason.
+    let watched = false;
+    const watchedCount = assistantMessages().length;
+    // The conversation has replies in it that the page hasn't drawn. Anything
+    // that mounts from here is HISTORY arriving, not an answer — so growth
+    // proves nothing while this holds, and only the text actually moving, or
+    // the conversation API (which is comparing against its own baseline), can
+    // say a new reply came. Without this, a tab still rendering a long chat
+    // hands the step whatever was already at the bottom of it.
+    const domBlind = !!(before && before.apiText && !watchedCount);
     // The last thing this loop saw, so a timeout can say what it was looking at
     // rather than only that it gave up. Two objects, not one: the DOM's story is
     // rebuilt from scratch every poll, and merging the conversation's into it
@@ -566,11 +581,17 @@
 
         if (el) {
           const text = renderedText(el);
+          // Has anything happened since we started watching? A new turn
+          // mounting, or the text moving. Either is evidence that what we are
+          // looking at is THIS step's answer arriving; neither, and it is
+          // whatever was on screen when we got here.
+          if (!domBlind && list.length > watchedCount) watched = true;
           // A cut-off reply, whatever cut it off. Stop here rather than settle:
           // what's on screen is a fragment, and the rest of the run would build
           // on it without ever saying so.
           if (interruptedAt(el)) return { el, canceled: false, interrupted: true };
           if (text !== lastText) {
+            if (lastText !== null) watched = true; // it moved while we watched
             lastText = text;
             lastChangeAt = now;
             stablePolls = 0;
@@ -601,6 +622,14 @@
             minStableMs: STABLE_MS,
             minStablePolls: STABLE_POLLS,
             stalledMs: STALLED_MS,
+            // Stillness only counts as a finished answer if we watched it
+            // become still — EXCEPT where the caller has already decided that
+            // whatever is on screen is the answer. That is what the -1 baseline
+            // means: re-attaching to a message whose reply is already sitting
+            // there, and re-reading a chat on purpose. Requiring a change there
+            // would be waiting out the hour for an answer that arrived before
+            // anyone was looking.
+            watched: watched || before.count === -1,
           });
           last = { fresh, generating, streamDone, chars: text.length, stablePolls, marker };
           // The turn is over and nothing new can be read. Waiting out the rest
@@ -632,7 +661,9 @@
                 last.skipped = skipped.size;
               }
               before = { count: list.length, text: text };
-              lastText = "";
+              // Back to a baseline, not to "seen nothing": this reply IS the
+              // thing to beat now, and the next one has to arrive on top of it.
+              lastText = null;
               lastChangeAt = now;
               stablePolls = 0;
               await C.sleep(POLL_MS);
@@ -724,6 +755,25 @@
     // When this step's message went out — the line after which a closing
     // response stream belongs to THIS turn and not the one before it.
     let sentAt = Date.now();
+
+    // Let the conversation RENDER before reading it. The baseline taken here is
+    // what says "the reply we end up with can't be the one that was already on
+    // screen" — and a baseline read from a tab that hasn't drawn the transcript
+    // yet says the chat was empty. Everything already in it then looks new, and
+    // a step re-run in a chat that already holds replies settles on the old one
+    // within seconds. Restart a run at an earlier step and every step after it
+    // does the same, one after another, in a few seconds each.
+    //
+    // Only where the URL names a conversation: a chat being opened fresh has
+    // nothing to wait for, and waiting anyway would cost every first step ten
+    // seconds for nothing.
+    await C.waitFor(C.findEditor, 20000);
+    if (conversationUuid()) {
+      const until = Date.now() + 10000;
+      while (Date.now() < until && !assistantMessages().length) await C.sleep(400);
+      // ...and a moment more, so a transcript mid-mount isn't sampled halfway.
+      await C.sleep(600);
+    }
     // What the transcript looked like BEFORE we sent, so the reply we take can't
     // be the one that was already on screen.
     const priorList = assistantMessages();
