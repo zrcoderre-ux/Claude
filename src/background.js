@@ -476,9 +476,12 @@ async function reschedule() {
   const list = jobs || [];
   const runs = await readRuns();
 
-  const times = [J.nextTimeTrigger(list, Date.now()), W.nextRunTrigger(runs, Date.now())].filter(
-    (t) => typeof t === "number"
-  );
+  const times = [
+    J.nextTimeTrigger(list, Date.now()),
+    W.nextRunTrigger(runs, Date.now()),
+    // A run held by a timed pause step wakes on the same alarm.
+    W.nextClockResume(runs, Date.now()),
+  ].filter((t) => typeof t === "number");
   const nextTime = times.length ? Math.min.apply(null, times) : null;
   try {
     chrome.alarms.clear(TIME_ALARM);
@@ -1358,6 +1361,39 @@ async function driveRun(runId, opts) {
         return;
       }
 
+      // A pause the workflow itself asked for. Handled here rather than in a
+      // tab: there is no conversation involved, nothing to send, and nothing to
+      // read — it is a gate between two steps.
+      //
+      // The run steps PAST it first, the way any step is done once it has
+      // happened, so Resume — yours or the clock's — carries straight on with
+      // the step after it rather than pausing again on the same gate.
+      const planned = W.planRun(W.runSource(run, wf))[run.stepIndex];
+      if (planned && planned.kind === "pause") {
+        const mins = planned.pauseMinutes;
+        const at = mins > 0 ? Date.now() + mins * 60000 : null;
+        const past = Object.assign({}, run, { stepIndex: run.stepIndex + 1 });
+        const label = W.runLabel(run).title;
+        await saveRun(
+          Object.assign({}, W.markPausedForStep(past, Date.now(), at), {
+            note: at
+              ? "paused by step " + planned.label + " for " + W.formatMs(mins * 60000) +
+                " — carrying on by itself at " + new Date(at).toLocaleTimeString() +
+                ", or Resume to go now"
+              : "paused by step " + planned.label + " — read the work so far, then Resume",
+          })
+        );
+        notify(
+          at ? "Workflow paused for a while" : "Workflow paused for you",
+          label + " — " +
+            (at
+              ? "step " + planned.label + " pauses it for " + W.formatMs(mins * 60000) + "."
+              : "step " + planned.label + " pauses it until you resume.")
+        );
+        await reschedule();
+        return;
+      }
+
       // Same gate as a scheduled send: a run driven through the real UI has
       // nothing to fall back on if Claude is down, so it waits — with the same
       // 6-hour ceiling, and Run now still overrides it.
@@ -1590,6 +1626,39 @@ async function driveRun(runId, opts) {
 // So a wake-up that arrives while usage is still gone does nothing at all and
 // leaves the run exactly as it is — the next reading will come along, and the
 // storage listener means every meter update is one.
+// A timed pause step's time is up. The same act as Resume, and deliberately the
+// same code path: what the clock does when you aren't there must be what you
+// would have done if you were.
+async function resumeClockRuns() {
+  const due = W.clockWaitingRuns(await readRuns(), Date.now());
+  if (!due.length) return;
+  for (const r of due) {
+    const run = await readRun(r.id);
+    if (!run || run.status !== "paused" || run.resumeOnUsage) continue;
+    if (!(typeof run.resumeAt === "number" && run.resumeAt <= Date.now())) continue;
+    const resumed = W.reviseRun(
+      run,
+      {
+        stepIndex: run.stepIndex,
+        phase: run.phase === "awaiting-reply" ? "awaiting-reply" : "idle",
+      },
+      Date.now()
+    );
+    await saveRun(
+      Object.assign({}, W.holdPaused(resumed), {
+        pausedByStep: false,
+        note: "carried on by itself — the pause was up",
+      })
+    );
+    notify(
+      "Workflow resumed",
+      W.runLabel(run).title + " — the pause is up, carrying on from step " + (run.stepIndex + 1) + "."
+    );
+    driveRun(run.id);
+  }
+  await reschedule();
+}
+
 let resumeBusy = null; // the alarm and a meter update can arrive together
 async function resumeUsageRuns() {
   if (resumeBusy) return resumeBusy;
@@ -2170,6 +2239,7 @@ chrome.runtime.onStartup.addListener(() => {
   // ...and a run whose window reopened while the browser was closed, which is
   // the ordinary case for one that ran out overnight.
   resumeUsageRuns();
+  resumeClockRuns(); // ...and a pause that expired while the browser was closed
   sweepGhosts(); // a browser left closed for a week must not preserve them
   // ...and anything an outage parked before the browser closed. The stored
   // reading is hours old by now, so this always fetches.
@@ -2188,9 +2258,12 @@ chrome.alarms.onAlarm.addListener((a) => {
     // And the backstop for a usage pause, for the case where no meter reading
     // arrives to prompt one — a tab left on a page that isn't asking.
     resumeUsageRuns();
+    // ...and for a timed pause whose alarm was lost to a browser restart.
+    resumeClockRuns();
   } else if (a.name === TIME_ALARM) {
     runJobs("time");
     startRuns("time");
+    resumeClockRuns();
   } else if (a.name === RESET_ALARM) {
     runJobs("reset");
     startRuns("reset");

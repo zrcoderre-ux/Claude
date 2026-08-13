@@ -385,6 +385,32 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   in the time one of them used to take. See
   [Steps that run at the same time](#steps-that-run-at-the-same-time).
 
+- **A pause, built into the workflow** — `+ Add pause` puts a gate between two
+  steps: the run stops there so you can read what it has produced before the
+  rest of it is built on top. It has no chat, no prompt and no model, because it
+  isn't a conversation with anything; it's a stop.
+
+  Two kinds, and the difference is what happens when you *aren't* there.
+  **Indefinite** waits for **Resume**, however long that takes — the answer when
+  reviewing the intermediate output is the point of putting it there.
+  **Timed** waits the number of minutes you give it and then carries on by
+  itself, with Resume going sooner if you're at your desk. That's the answer for
+  work you would *like* to look over but would rather not have sitting all night
+  waiting for you: a run that pauses forty minutes after the draft lands is one
+  you can catch if you're there and which finishes if you're not.
+
+  A pause doesn't disturb the hand-off it sits in the middle of. The step after
+  one carries from the last step that actually produced something, and the step
+  before one hands to the next that actually reads — so dropping a pause between
+  two chats changes when they talk, not whether. Two steps in the *same* chat
+  still don't carry across a pause between them, for the same reason they don't
+  without one: that conversation already has the material.
+
+  The run steps **past** the gate before stopping, the way any step is done once
+  it has happened, so Resume carries on with what follows rather than stopping on
+  the same gate again. The row says which kind it is and, for a timed one, how
+  long is left.
+
 - **Adding a step where you want it** — every step's card carries a `＋` beside
   its `✕`, which puts a new step directly below that one and drops the cursor in
   its empty prompt. `+ Add step` at the bottom still adds to the end. Building a

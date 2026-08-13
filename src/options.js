@@ -646,6 +646,21 @@
         const here = s.wave.indexOf(run.stepIndex) !== -1;
         const cls = "wf-step-row" + (done ? " done" : "") + (here ? " here" : "");
         const state = done ? "done" : here ? "next" : "";
+        // A pause has no chat, no prompt and no model. Rendering it through the
+        // ordinary row would show a blank conversation and "(no prompt)", which
+        // reads as a step someone forgot to finish.
+        if (s.kind === "pause")
+          return (
+            `<div class="${cls} wf-step-pause">` +
+            `<div class="wf-step-no"><b>${escapeHtml(s.label)}</b>${
+              state ? `<span class="wf-step-state">${state}</span>` : ""
+            }</div>` +
+            `<div class="wf-step-body"><div class="wf-step-meta">` +
+            (s.pauseMinutes > 0
+              ? `pause · carries on by itself after ${escapeHtml(WF.formatMs(s.pauseMinutes * 60000))}`
+              : "pause · waits for Resume") +
+            `</div>${stepTimingLine(timings[s.index])}</div></div>`
+          );
         return (
           `<div class="${cls}${s.parallel ? " par" : ""}">` +
           `<div class="wf-step-no"><b>${escapeHtml(s.label)}</b>${

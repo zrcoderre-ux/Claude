@@ -67,6 +67,9 @@
       margin-left:10px; }
     .cumwf-card.cumwf-par-first { border-top-left-radius:10px; }
     .cumwf-card.cumwf-par-last { border-bottom-left-radius:10px; }
+    /* A pause is a gate between steps, not a step: drawn flatter and quieter so
+       the list reads as work with a stop in it. */
+    .cumwf-card.cumwf-pause { background:rgba(0,0,0,0.04); border-style:dashed; }
     .cumwf-par-tag { flex:0 0 auto; font-size:11px; font-weight:700; letter-spacing:.03em;
       color:#c96442; background:rgba(201,100,66,0.12); border:none; border-radius:999px;
       padding:2px 8px; cursor:pointer; font-family:inherit; }
@@ -121,6 +124,7 @@
       .cumwf-grip { color:#8a877f; }
       .cumwf-grip:hover { background:rgba(255,255,255,0.08); color:#d4d1c9; }
       .cumwf-rerun-row { border-left-color:rgba(255,255,255,0.16); }
+      .cumwf-card.cumwf-pause { background:rgba(255,255,255,0.05); }
       .cumwf-ac { background:rgba(201,100,66,0.14); border-color:rgba(224,135,101,0.5); }
       .cumwf-ac-text { color:#d4d1c9; }
       .cumwf-ac-key { color:#e08765; }
@@ -250,7 +254,8 @@
 
       `<label class="cumwf-label">Steps</label>` +
       `<div class="cumwf-steps cumwf-list"></div>` +
-      `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-add-step" type="button">+ Add step</button></div>` +
+      `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-add-step" type="button">+ Add step</button>` +
+      `<button class="cumwf-btn ghost cumwf-add-pause" type="button" title="Stop the run here so you can read what it has produced">+ Add pause</button></div>` +
 
       // Runs only: when this one should go. It lives here rather than on the
       // workflow's row because it belongs to the matter, not the template —
@@ -299,6 +304,7 @@
       descRow: q(".cumwf-desc-row"),
       steps: q(".cumwf-steps"),
       addStep: q(".cumwf-add-step"),
+      addPause: q(".cumwf-add-pause"),
       whenRow: q(".cumwf-when-row"),
       when: q(".cumwf-when"),
       at: q(".cumwf-at"),
@@ -578,6 +584,58 @@
       if (e.dataTransfer && e.dataTransfer.files) addFiles(Array.from(e.dataTransfer.files));
     });
 
+    // A pause: the run stops here so what it has produced can be read. No chat,
+    // no prompt, no model — it is a gate between two steps, and its card says
+    // only the one thing there is to decide about it.
+    function pauseCard(step, i, labels) {
+      const card = doc.createElement("div");
+      card.className = "cumwf-card cumwf-pause";
+      card.setAttribute("data-step-id", step.id);
+      const mins = W.pauseMinutes(step.pauseMinutes);
+      card.innerHTML =
+        `<div class="cumwf-card-head">` +
+        `<button class="cumwf-grip" type="button" title="Drag to reorder" aria-label="Drag to reorder">⠿</button>` +
+        `<span class="cumwf-card-title">Step ${esc(labels[i] || i + 1)} — pause</span>` +
+        `<button class="cumwf-btn mini wf-up" type="button" title="Move up">↑</button>` +
+        `<button class="cumwf-btn mini wf-down" type="button" title="Move down">↓</button>` +
+        `<button class="cumwf-btn mini wf-add" type="button" title="Add a step below this one">＋</button>` +
+        `<button class="cumwf-btn mini wf-del" type="button" title="Remove this pause">✕</button>` +
+        `</div>` +
+        `<div class="cumwf-row"><label class="cumwf-check"><input class="wf-pause-timed" type="checkbox" ${
+          mins > 0 ? "checked" : ""
+        } /> Carry on by itself after</label>` +
+        `<input class="wf-pause-mins" type="number" min="1" max="${W.PAUSE_MAX_MINUTES}" step="1" ` +
+        `style="width:90px" value="${mins > 0 ? mins : 60}"${mins > 0 ? "" : " hidden"} />` +
+        `<span class="cumwf-hint wf-pause-unit"${mins > 0 ? "" : " hidden"}>minutes</span></div>` +
+        `<p class="cumwf-hint">${
+          mins > 0
+            ? "It waits " +
+              esc(W.formatMs(mins * 60000)) +
+              ", then carries on without you — Resume goes sooner. For work you would LIKE to " +
+              "look over but would rather not have waiting all night if you don't."
+            : "It waits for Resume, however long that takes. For work you mean to read before " +
+              "the rest of the run is built on top of it."
+        }</p>`;
+      const timed = card.querySelector(".wf-pause-timed");
+      const box = card.querySelector(".wf-pause-mins");
+      timed.addEventListener("change", () => {
+        step.pauseMinutes = timed.checked ? W.pauseMinutes(box.value) || 60 : 0;
+        renderSteps();
+      });
+      box.addEventListener("input", () => {
+        step.pauseMinutes = W.pauseMinutes(box.value);
+      });
+      wireStepDrag(card);
+      card.querySelector(".wf-up").addEventListener("click", () => moveStep(i, -1));
+      card.querySelector(".wf-down").addEventListener("click", () => moveStep(i, 1));
+      card.querySelector(".wf-add").addEventListener("click", () => insertStep(i + 1));
+      card.querySelector(".wf-del").addEventListener("click", () => {
+        wf.steps.splice(i, 1);
+        renderSteps();
+      });
+      return card;
+    }
+
     // ---- steps -----------------------------------------------------------
     function renderSteps() {
       ui.steps.innerHTML = "";
@@ -588,6 +646,10 @@
       const waveFor = [];
       for (const w of waves) for (const m of w.members) waveFor[m] = w;
       (wf.steps || []).forEach((step, i) => {
+        if (W.isPauseStep(step)) {
+          ui.steps.appendChild(pauseCard(step, i, labels));
+          return;
+        }
         const wave = waveFor[i] || { members: [i] };
         const parallel = wave.members.length > 1;
         const card = doc.createElement("div");
@@ -1056,6 +1118,11 @@
     }
 
     ui.addStep.addEventListener("click", () => insertStep(wf.steps.length));
+    if (ui.addPause)
+      ui.addPause.addEventListener("click", () => {
+        wf.steps.push(W.newStep({ kind: "pause", pauseMinutes: 0 }, uuid()));
+        renderSteps();
+      });
 
     // ---- open / close ----------------------------------------------------
     // Which of the two things is open. A workflow and a run are edited by the

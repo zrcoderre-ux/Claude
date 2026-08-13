@@ -2565,3 +2565,103 @@ test("a pause is a decision about the run, not about the tab it was pressed in",
   assert.equal(W.runHalted({ status: "done" }), null);
   assert.equal(W.runHalted({ status: "pending" }), null);
 });
+
+// ---- a pause built into the workflow ---------------------------------------
+
+function pausedWorkflow(mins) {
+  return W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "A" }, { id: "b", name: "B" }],
+      steps: [
+        { chatId: "a", prompt: "draft" },
+        { kind: "pause", pauseMinutes: mins },
+        { chatId: "b", prompt: "attack" },
+      ],
+    },
+    "w",
+    NOW
+  );
+}
+
+test("a pause step is a gate, not a conversation", () => {
+  const wf = pausedWorkflow(0);
+  const gate = wf.steps[1];
+  assert.equal(W.isPauseStep(gate), true);
+  assert.equal(gate.chatId, null, "a gate in a chat would put a stop inside a conversation");
+  assert.equal(gate.carry, false);
+  const plan = W.planRun(wf);
+  assert.equal(plan[1].kind, "pause");
+  assert.equal(plan[1].handsOn, false);
+  assert.deepEqual(plan[1].docIds, []);
+  assert.equal(plan[1].parallel, false);
+});
+
+test("a pause doesn't swallow the hand-off it sits in the middle of", () => {
+  // Step 1 drafts in A, a pause, then B attacks. B still carries A's reply, and
+  // A still has to produce something worth carrying.
+  const plan = W.planRun(pausedWorkflow(0));
+  assert.equal(plan[0].handsOn, true, "the step after the pause is in another chat");
+  assert.equal(plan[2].carry, true, "and it carries, the pause notwithstanding");
+});
+
+test("two steps in one chat still don't carry across a pause between them", () => {
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "A" }],
+      steps: [
+        { chatId: "a", prompt: "draft" },
+        { kind: "pause", pauseMinutes: 30 },
+        { chatId: "a", prompt: "revise" },
+      ],
+    },
+    "w",
+    NOW
+  );
+  const plan = W.planRun(wf);
+  assert.equal(plan[2].carry, false, "that conversation already has it");
+  assert.equal(plan[0].handsOn, false, "so there is nothing to insist on either");
+});
+
+test("a pause is either indefinite or a number of minutes", () => {
+  assert.equal(W.pauseMinutes(0), 0, "indefinite — waits for you");
+  assert.equal(W.pauseMinutes(-10), 0);
+  assert.equal(W.pauseMinutes(null), 0);
+  assert.equal(W.pauseMinutes("45"), 45);
+  assert.equal(W.pauseMinutes(45.7), 45);
+  assert.equal(W.pauseMinutes(1e9), W.PAUSE_MAX_MINUTES, "past a week, Not yet is the answer");
+});
+
+test("a run stopped by a pause step steps past it first", () => {
+  // The gate has happened, the way any step has happened once it is done — so
+  // Resume, yours or the clock's, carries on with what follows rather than
+  // stopping on the same gate again.
+  const run = { id: "r", status: "running", stepIndex: 1, totalSteps: 3 };
+  const at = NOW + 30 * 60000;
+  const held = W.markPausedForStep(Object.assign({}, run, { stepIndex: 2 }), NOW, at);
+  assert.equal(held.status, "paused");
+  assert.equal(held.stepIndex, 2);
+  assert.equal(held.resumeAt, at);
+  assert.equal(held.pausedByStep, true);
+  assert.equal(held.resumeOnUsage, false, "it is waiting on a clock, not on the meter");
+  // Indefinite: no time on it at all, so nothing but Resume lifts it.
+  assert.equal(W.markPausedForStep(run, NOW, null).resumeAt, null);
+});
+
+test("the clock lifts a timed pause, and only once it is due", () => {
+  const soon = { id: "a", status: "paused", resumeAt: NOW + 1000 };
+  const due = { id: "b", status: "paused", resumeAt: NOW - 1 };
+  const forever = { id: "c", status: "paused" };
+  const meter = { id: "d", status: "paused", resumeOnUsage: true, resumeAt: NOW - 1 };
+  const runs = [soon, due, forever, meter];
+  assert.deepEqual(W.clockWaitingRuns(runs, NOW).map((r) => r.id), ["b"]);
+  // A run waiting on the METER is not this — it is asked of the reading, not
+  // of the clock, and lifting it here would send it into an empty window.
+  assert.equal(W.clockWaitingRuns(runs, NOW).some((r) => r.id === "d"), false);
+  // The alarm is set by whichever is due first, and an indefinite pause sets no
+  // alarm at all.
+  assert.equal(W.nextClockResume(runs, NOW), NOW + 1000);
+  assert.equal(W.nextClockResume([forever], NOW), null);
+  assert.equal(W.nextClockResume([], NOW), null);
+});
