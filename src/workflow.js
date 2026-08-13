@@ -119,6 +119,48 @@
     return str(text).replace(/\s+/g, " ").toLowerCase().indexOf(m) !== -1;
   }
 
+  /**
+   * The marker turning up is the START of the ruling, not the end of it.
+   *
+   * "NATURE OF PROCEEDINGS" is the first line a tentative ruling has. A step
+   * that took the reply the moment it saw those words would be taking a heading
+   * and whatever had been written under it in the second since — and a ruling
+   * that verifies authority by live retrieval goes quiet for minutes at a time
+   * in the middle, so "it stopped changing" is a weak reading on its own. Both
+   * failures are silent: the rest of the run builds on half a ruling and reads
+   * perfectly well doing it.
+   *
+   * So a matching reply has to go QUIET before it counts: nothing generating,
+   * no completion stream open for this turn, and the text unmoved for a good
+   * while. Much longer than the ordinary settle, because being early here costs
+   * a whole run and being late costs a minute.
+   */
+  const RULING_QUIET_MS = 60000;
+  function rulingReady(state) {
+    const s = state || {};
+    if (s.generating || s.streamOpen) return false;
+    const quiet = typeof s.quietMs === "number" ? s.quietMs : RULING_QUIET_MS;
+    return (s.unchangedMs || 0) >= quiet;
+  }
+
+  /**
+   * What to say to a chat that answered without producing the ruling.
+   *
+   * The commonest reason is the turn ending at the tool-use limit part-way
+   * through — Claude has more to write and is waiting to be told to carry on.
+   * Asked once, and only once: a chat that has now been told twice what to
+   * produce and still hasn't is not going to be argued into it, and a run that
+   * keeps nudging is a run quietly burning the usage the rest of it needs.
+   */
+  function continuePrompt(marker) {
+    const m = trimmed(marker) || DEFAULT_OUTPUT_MARKER;
+    return (
+      "Continue from exactly where you stopped and output the complete text in " +
+      "this reply — the whole of it, not a summary, not a diff, and not a " +
+      "description of what you would write. It must contain “" + m + "”."
+    );
+  }
+
   // A claude.ai conversation link, near enough to warn about a wrong paste
   // without refusing a shape claude.ai might legitimately use.
   function looksLikeChatUrl(url) {
@@ -1039,8 +1081,15 @@
         modelOverride: !!trimmed(s.model),
         docIds: opening.concat(added),
         handsOn: handsOn,
-        // The phrase this step's reply must contain before it can be handed on.
-        marker: handsOn ? stepMarker(s) : null,
+        // The phrase this step's reply must contain before the run moves on.
+        //
+        // Not only where the reply travels to another chat. A drafting
+        // conversation that writes the ruling and then revises it in the SAME
+        // chat pastes nothing — but a second step sent on top of half a ruling
+        // is still a second step working from half a ruling, and the run would
+        // never say so. What the marker guards is the run moving on, which is
+        // every step that expects one.
+        marker: stepMarker(s),
       };
     });
   }
@@ -2849,6 +2898,9 @@
     migrateRunSettings,
     SETTINGS_VERSION,
     hasMarker,
+    rulingReady,
+    continuePrompt,
+    RULING_QUIET_MS,
     DEFAULT_OUTPUT_MARKER,
     startChats,
     seedPlan,

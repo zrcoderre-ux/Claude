@@ -466,8 +466,8 @@
     // never come because the window emptied should stop, not sit out its hour.
     const USAGE_EVERY_MS = 20000;
     let lastUsageAt = Date.now();
-    const deadline = startedAt + (timeoutMs || W.STEP_TIMEOUT_MS);
-    const since = typeof sentAt === "number" ? sentAt : startedAt;
+    let deadline = startedAt + (timeoutMs || W.STEP_TIMEOUT_MS);
+    let since = typeof sentAt === "number" ? sentAt : startedAt;
     // null rather than "": the FIRST text this loop sees is not a change, it is
     // the baseline. Treating it as a change would count "there was already a
     // reply here" as evidence that one just arrived.
@@ -494,6 +494,14 @@
     // answering all along, and pointed diagnosis at the wrong half of the code.
     let last = { fresh: false, noMessage: true };
     let api = {};
+    // A reply that matches the marker but may still be growing. The marker is
+    // the ruling's FIRST line, so seeing it proves the ruling has started, not
+    // that it has finished — see CUMWorkflow.rulingReady.
+    let candidate = null;
+    let candidateAt = 0;
+    // Whether this step has already asked the chat to carry on. Once, and only
+    // once: a chat told twice what to produce isn't going to be argued into it.
+    let nudged = false;
 
     // Clicking into the tab is the moment the poll loop stops being throttled
     // and starts running every poll interval again. Everything measured while
@@ -514,6 +522,58 @@
     } catch (e) {
       /* ignore */
     }
+
+    // Is the turn still being written? Either signal is enough, and neither is
+    // trusted on its own: the page's Stop control can linger, and a completion
+    // stream that closed for a tool call reopens.
+    const stillGoing = () => {
+      let generating = false;
+      try {
+        generating = C.isGenerating();
+      } catch (e) {
+        /* the stream below is the fallback */
+      }
+      return generating || (streamStartedAt > streamDoneAt && streamStartedAt > since);
+    };
+
+    // A reply that matches the marker, held until it stops moving. Returns true
+    // when it has been quiet long enough to be the finished thing.
+    const settledOnMarker = (text, now) => {
+      if (text !== candidate) {
+        candidate = text;
+        candidateAt = now;
+      }
+      return W.rulingReady({
+        generating: stillGoing(),
+        unchangedMs: now - candidateAt,
+      });
+    };
+
+    // Ask the chat to carry on. The commonest reason a step's reply isn't the
+    // ruling is the turn ending at the tool-use limit part-way through it, and
+    // the fix for that is a sentence. Once per step: after that the run pauses
+    // and says so, rather than paying for a third turn that will read like the
+    // second.
+    const nudge = async () => {
+      nudged = true;
+      let sent = { ok: false };
+      try {
+        sent = await C.sendMessage({ text: W.continuePrompt(marker), stop: () => halted });
+      } catch (e) {
+        sent = { ok: false, error: String((e && e.message) || e) };
+      }
+      if (!sent || !sent.ok) return false;
+      // A new turn, so everything measured about the last one is history: its
+      // stream signals, its text, and the clock this step is running against.
+      since = Date.now();
+      deadline = Math.max(deadline, since + (timeoutMs || W.STEP_TIMEOUT_MS));
+      candidate = null;
+      candidateAt = 0;
+      lastText = null;
+      lastChangeAt = since;
+      stablePolls = 0;
+      return true;
+    };
 
     try {
       while (Date.now() < deadline) {
@@ -553,16 +613,42 @@
             const apiText = W.stripPlaceholders(W.lastAssistantText(conv));
             const fresh = apiText && apiText !== (before.apiText || "");
             api = { apiChars: apiText.length, apiAnswered: !!conv };
-            if (fresh && W.looksInterrupted(apiText))
+            if (fresh && W.looksInterrupted(apiText)) {
+              // Cut off part-way. Where a ruling is expected this is the exact
+              // case a Continue fixes, so ask before giving up on it.
+              if (marker && !nudged && (await nudge())) {
+                before = Object.assign({}, before, { apiText: apiText });
+                await C.sleep(POLL_MS);
+                continue;
+              }
               return { el: null, canceled: false, interrupted: true };
-            if (fresh && (!marker || W.hasMarker(apiText, marker)))
+            }
+            if (fresh && !marker)
               return { el: el, apiText: apiText, canceled: false, via: "api" };
-            if (fresh && marker && !skipped.has(apiText)) {
-              // A finished reply that isn't the one being waited for; note it
-              // and keep waiting, the same as the on-screen path does.
+            if (fresh && W.hasMarker(apiText, marker)) {
+              // The marker is the ruling's first line, so this may be a ruling
+              // that is still being written. Wait for it to hold still.
+              if (settledOnMarker(apiText, now))
+                return { el: el, apiText: apiText, canceled: false, via: "api" };
+              api = Object.assign({}, api, { holding: "waiting for the ruling to finish" });
+            } else if (fresh && !skipped.has(apiText)) {
+              // A finished reply that isn't the one being waited for. Ask it to
+              // carry on, once; a second one that still isn't the ruling is a
+              // judgement call, and the run pauses for you to make it.
               skipped.add(apiText);
               before = Object.assign({}, before, { apiText: apiText });
               api = Object.assign({}, api, { skipped: skipped.size, marker: marker });
+              if (!nudged) {
+                await nudge();
+              } else {
+                return {
+                  el: null,
+                  canceled: false,
+                  noRuling: true,
+                  skipped: skipped.size,
+                  marker: marker,
+                };
+              }
             }
           }
         }
@@ -586,10 +672,19 @@
           // looking at is THIS step's answer arriving; neither, and it is
           // whatever was on screen when we got here.
           if (!domBlind && list.length > watchedCount) watched = true;
-          // A cut-off reply, whatever cut it off. Stop here rather than settle:
-          // what's on screen is a fragment, and the rest of the run would build
-          // on it without ever saying so.
-          if (interruptedAt(el)) return { el, canceled: false, interrupted: true };
+          // A cut-off reply, whatever cut it off. What's on screen is a
+          // fragment, and the rest of the run would build on it without ever
+          // saying so — but where a ruling is expected, a fragment is usually
+          // a turn that hit the tool-use limit mid-ruling, and a Continue is
+          // all it wants. Ask once, then stop.
+          if (interruptedAt(el)) {
+            if (marker && !nudged && (await nudge())) {
+              before = { count: list.length, text: text };
+              await C.sleep(POLL_MS);
+              continue;
+            }
+            return { el, canceled: false, interrupted: true };
+          }
           if (text !== lastText) {
             if (lastText !== null) watched = true; // it moved while we watched
             lastText = text;
@@ -666,6 +761,25 @@
               lastText = null;
               lastChangeAt = now;
               stablePolls = 0;
+              // Ask it to carry on, once. Twice told and still not the ruling
+              // is not a misunderstanding this can talk its way out of.
+              if (!nudged) await nudge();
+              else
+                return {
+                  el: null,
+                  canceled: false,
+                  noRuling: true,
+                  skipped: skipped.size,
+                  marker: marker,
+                };
+              await C.sleep(POLL_MS);
+              continue;
+            }
+            // Settled AND it says what it was meant to say — but the marker is
+            // the ruling's first line, so give the rest of it room to arrive
+            // before taking this as the finished thing.
+            if (marker && !settledOnMarker(text, now)) {
+              last.holding = "waiting for the ruling to finish";
               await C.sleep(POLL_MS);
               continue;
             }
@@ -880,6 +994,9 @@
       unreadable,
       outOfUsage,
       backAt,
+      noRuling,
+      skipped: skippedCount,
+      marker: wantedMarker,
       via: settledVia,
       state,
     } = await waitForReply(
@@ -917,6 +1034,30 @@
         })
       );
       return { ok: false, paused: true, error: "out of usage while waiting for the reply" };
+    }
+    // It answered, it was asked to carry on, and it answered again — and
+    // neither reply was the ruling. Everything after this step is written on
+    // top of what this one produced, so going on would mean the rest of the run
+    // quietly building on something that isn't there. Pause with the phase
+    // intact: Resume waits for a fresh reply rather than sending again, so
+    // whatever you say to the chat yourself is the reply it takes.
+    if (noRuling) {
+      await updateRun(runId, (r) =>
+        Object.assign({}, W.markPaused(r, Date.now()), {
+          note:
+            "paused at step " + (msg.label || r.stepIndex + 1) + " — " +
+            (skippedCount || 2) + " replies, and none of them contained “" +
+            (wantedMarker || W.DEFAULT_OUTPUT_MARKER) + "”. It was asked once to carry on " +
+            "and still didn't produce it. Read the chat: finish the ruling there, then Resume.",
+        })
+      );
+      return {
+        ok: false,
+        paused: true,
+        error:
+          "no ruling after " + (skippedCount || 2) + " replies — never contained “" +
+          (wantedMarker || W.DEFAULT_OUTPUT_MARKER) + "”",
+      };
     }
     if (interrupted) {
       await updateRun(runId, (r) =>
