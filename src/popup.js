@@ -38,6 +38,9 @@
     statusWarn: document.getElementById("status-warn"),
     statusHold: document.getElementById("status-hold"),
     statusModel: document.getElementById("status-model"),
+    dlProbe: document.getElementById("dl-probe"),
+    dlCopy: document.getElementById("dl-copy"),
+    dlProbeOut: document.getElementById("dl-probe-out"),
   };
 
   function flash(text) {
@@ -235,6 +238,53 @@
     el.dlSeen.hidden = !show;
     if (show) el.dlSeen.textContent = "Last seen " + timeAgo(snap.at) + ": " + snap.line;
   }
+
+  // Ask the claude.ai tab you are looking at what it can actually see. The
+  // popup has to name the tab itself: the content script is per-page, and the
+  // answer is only meaningful for the conversation with the file in it.
+  let probeText = "";
+  function runProbe() {
+    el.dlProbe.disabled = true;
+    el.dlProbe.textContent = "Looking…";
+    const done = (text) => {
+      el.dlProbe.disabled = false;
+      el.dlProbe.textContent = "What can it see?";
+      probeText = text || "";
+      el.dlProbeOut.hidden = !probeText;
+      el.dlProbeOut.textContent = probeText;
+      el.dlCopy.hidden = !probeText;
+    };
+    try {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = (tabs || [])[0];
+        if (!tab || !/^https:\/\/claude\.ai\//.test(tab.url || ""))
+          return done("Open the claude.ai conversation with the file in it, then press this again.");
+        chrome.tabs.sendMessage(tab.id, "cum-dl-probe", (res) => {
+          if (chrome.runtime.lastError)
+            return done(
+              "That tab didn't answer — " + chrome.runtime.lastError.message +
+                "\nReload the conversation and try again."
+            );
+          done((res && res.text) || "The page answered, but said nothing.");
+        });
+      });
+    } catch (e) {
+      done("Couldn't reach the tab: " + String((e && e.message) || e));
+    }
+  }
+
+  if (el.dlProbe) el.dlProbe.addEventListener("click", runProbe);
+  if (el.dlCopy)
+    el.dlCopy.addEventListener("click", () => {
+      try {
+        navigator.clipboard.writeText(probeText).then(
+          () => flash("Report copied"),
+          () => flash("Couldn't copy — select it and copy by hand")
+        );
+      } catch (e) {
+        flash("Couldn't copy — select it and copy by hand");
+      }
+    });
 
   function saveDl(msg) {
     chrome.storage.local.set({ [AUTODOWNLOAD_KEY]: dlCfg }, () => msg && flash(msg));

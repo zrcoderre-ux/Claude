@@ -39,6 +39,7 @@
   const C = window.CUMComposer;
   const CFG_KEY = "cum_autodownload"; // { enabled, max }
   const SELF_POLL_MS = 2000;
+  const MENU_MS = 350; // let a menu the click opened draw before reading it
   const ESCAPE_MS = 700; // let a click land before dismissing any menu it opened
   const SETTLE_MS = 20000; // how long a just-landed reply is still settling
 
@@ -183,66 +184,104 @@
   // control, because the filename is the part that doesn't change when
   // claude.ai's markup does — and because a card's control may be an icon with
   // no caption at all, which no amount of label-matching will ever find.
-  const CARD_SCOPE = "div,span,a,li,article,section,figure";
+  const CARD_SCOPE = "div,span,a,li,article,section,figure,p";
   const CARD_MAX_TEXT = 120; // a card says a filename and a size, not a sentence
+  const CONTROLS = 'button,[role="button"],a[download],a[href^="blob:"]';
+
+  // Climb from the smallest thing that identifies a file to the nearest
+  // ancestor that has a control on it. The label is a SIBLING of the download
+  // button, not its parent, so stopping at the label finds nothing to press.
+  // Bounded by `room`: once the text runs past a card's worth, the climb has
+  // left the card and is into the prose around it, and a "card" that is really
+  // a paragraph would hand back whatever button shared the reply with it.
+  function climbToControl(start, room) {
+    let card = start;
+    for (let i = 0; i < 4; i++) {
+      try {
+        if (card.querySelector(CONTROLS)) return card;
+      } catch (e) {
+        return card;
+      }
+      const p = card.parentElement;
+      if (!p) return card;
+      const t = (p.textContent || "").replace(/\s+/g, " ").trim();
+      if (t.length > room) return card;
+      card = p;
+    }
+    return card;
+  }
+
+  /**
+   * The file cards in a reply, each with how confidently it was identified.
+   *
+   * Two ways in, because claude.ai draws a produced file both ways:
+   *
+   * - **By filename** (`ruling.docx` on the card) — strong. The filename is the
+   *   part that doesn't change when the markup does, and a card carrying one is
+   *   unambiguous enough that pressing the only control on it is safe.
+   * - **By type chip** — a card whose name has no extension (`Tentative Ruling`)
+   *   and a small `DOCX` beside it. Weaker, so it is `strict`: only a control
+   *   that NAMES itself a download will be pressed on one of these. A stray
+   *   `<strong>PDF</strong>` in a sentence must never cost you a click on the
+   *   reply's Copy button.
+   *
+   * Found by what the card SAYS rather than by what it has on it: requiring a
+   * control here is what made a card whose download button only exists under
+   * the pointer invisible — it had no control, so it was not a card, so it was
+   * never hovered, so it never got one. Chicken, meet egg.
+   */
   function cardsIn(root) {
-    const cards = [];
     let nodes;
     try {
       nodes = root.querySelectorAll(CARD_SCOPE);
     } catch (e) {
-      return cards;
+      return [];
     }
     const named = [];
+    const chips = [];
     for (const el of nodes) {
       if (C.isOurs(el)) continue;
       const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (!text) continue;
+      if (A.isTypeChip(text)) {
+        chips.push(el);
+        continue;
+      }
       if (text.length > CARD_MAX_TEXT) continue;
-      // Recognised by its FILENAME, and by nothing else. Requiring a control
-      // here is what made a card whose download button only exists under the
-      // pointer invisible to this: it had no control, so it was not a card, so
-      // it was never hovered, so it never got one. Chicken, meet egg.
-      if (!A.fileNameIn(text)) continue;
-      named.push(el);
+      if (A.fileNameIn(text)) named.push(el);
     }
-    // Start at the innermost thing that names the file — usually the label
-    // inside the card — then climb to the nearest ancestor that has a control
-    // on it. The label is a sibling of the download button, not its parent, so
-    // stopping at the label finds nothing to press; and stopping at the first
-    // ancestor with a filename would stop at the label too.
-    const CONTROLS = 'button,[role="button"],a[download],a[href^="blob:"]';
+
+    const out = [];
+    const push = (el, strict) => {
+      if (!el) return;
+      const at = out.findIndex((c) => c.el === el || c.el.contains(el) || el.contains(c.el));
+      if (at === -1) return out.push({ el: el, strict: strict });
+      // The same card reached both ways is the strong reading of it.
+      if (!strict && out[at].strict) out[at] = { el: el.contains(out[at].el) ? out[at].el : el, strict: false };
+    };
+
     for (const start of named) {
       if (named.some((o) => o !== start && start.contains(o))) continue; // not innermost
-      // How far out the card can be: a card says the filename and little else —
-      // a size, a file type, a bullet between them. Once the text runs past
-      // that, the climb has left the card and is into the prose around it, and
-      // a "card" that is really a paragraph would hand back whatever button
-      // happened to be in the same reply.
       const name = A.fileNameIn(start.textContent) || "";
-      const room = Math.min(CARD_MAX_TEXT, name.length + 40);
-      let card = start;
-      for (let i = 0; i < 3; i++) {
-        try {
-          if (card.querySelector(CONTROLS)) break;
-        } catch (e) {
-          break;
-        }
-        const p = card.parentElement;
-        if (!p) break;
-        const t = (p.textContent || "").replace(/\s+/g, " ").trim();
-        if (t.length > room) break;
-        card = p;
-      }
-      if (!cards.some((c) => c === card || c.contains(card))) cards.push(card);
+      push(climbToControl(start, Math.min(CARD_MAX_TEXT, name.length + 40)), false);
     }
-    return cards.filter((el) => !cards.some((other) => other !== el && el.contains(other)));
+    for (const chip of chips) {
+      // A chip on its own is not a card — the card is the thing that holds the
+      // chip AND a name. Climb to it, and drop the chip if the only thing that
+      // ever turned up was the chip repeated.
+      const card = climbToControl(chip, CARD_MAX_TEXT);
+      const text = (card.textContent || "").replace(/\s+/g, " ").trim();
+      if (A.isTypeChip(text)) continue; // never grew past the chip
+      push(card, true);
+    }
+    return out.filter((c) => !out.some((o) => o !== c && c.el.contains(o.el)));
   }
 
   // The control on a card that saves the file, best first. A card with exactly
   // one control at all is that control: an icon-only download button is the
   // ordinary shape, and refusing to press the only thing on a card that plainly
   // holds a file is refusing to do the job.
-  function controlIn(card) {
+  function controlIn(card, strict) {
     const q = (sel) => {
       try {
         return Array.from(card.querySelectorAll(sel)).filter((el) => !C.isOurs(el));
@@ -259,15 +298,16 @@
     const tagged = q('[data-testid*="download" i],[data-test-id*="download" i]');
     if (tagged.length) return tagged[0];
     const buttons = q('button,[role="button"]');
+    const byName = named(buttons, A.isSaveLabel) || named(buttons, A.mentionsSave);
+    if (byName) return byName;
+    // A card identified only by its type chip stops here: it may not be a card
+    // at all, and "the only button near it" is how you end up pressing Copy.
+    if (strict) return null;
     // The last resort — press the only thing on the card — applies only to a
     // card that is a card: a filename and a size. On anything bigger, "the only
     // button" could be anything at all.
     const small = (card.textContent || "").replace(/\s+/g, " ").trim().length <= CARD_MAX_TEXT;
-    return (
-      named(buttons, A.isSaveLabel) ||
-      named(buttons, A.mentionsSave) ||
-      (small && buttons.length === 1 ? buttons[0] : null)
-    );
+    return small && buttons.length === 1 ? buttons[0] : null;
   }
 
   // Every file this reply is offering. Document order, and everything that
@@ -295,12 +335,12 @@
       // ...and whatever the file cards themselves offer, which is the path that
       // finds an unlabelled icon.
       for (const card of cardsIn(msgEl)) {
-        let ctrl = controlIn(card);
+        let ctrl = controlIn(card.el, card.strict);
         if (!ctrl) {
-          hover(card); // a control drawn only under the pointer
-          ctrl = controlIn(card);
+          hover(card.el); // a control drawn only under the pointer
+          ctrl = controlIn(card.el, card.strict);
         }
-        if (ctrl) add(ctrl, A.fileNameIn(card.textContent));
+        if (ctrl) add(ctrl, A.fileNameIn(card.el.textContent));
       }
     } catch (e) {
       return found;
@@ -331,6 +371,54 @@
     return offers;
   }
 
+  // A menu the click just opened. Plenty of cards hang the download off a "…"
+  // rather than off a button of its own, and the old code pressed that, waited,
+  // then dismissed the menu with Escape — the one shape where this looked
+  // exactly like doing nothing at all. So: look in whatever popped up for the
+  // item that says Download, and only dismiss if there wasn't one.
+  const MENU_SCOPE = '[role="menu"],[role="listbox"],[role="dialog"],[data-radix-popper-content-wrapper]';
+  const MENU_ITEM = '[role="menuitem"],[role="option"],button,a[download],a[href^="blob:"]';
+  function followMenu(seenBefore) {
+    let menus;
+    try {
+      menus = Array.from(document.querySelectorAll(MENU_SCOPE));
+    } catch (e) {
+      return null;
+    }
+    for (const menu of menus) {
+      if (seenBefore.has(menu) || C.isOurs(menu)) continue;
+      let items;
+      try {
+        items = Array.from(menu.querySelectorAll(MENU_ITEM));
+      } catch (e) {
+        continue;
+      }
+      const hit = items.find((el) => {
+        if (C.isOurs(el)) return false;
+        const label = el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent;
+        return A.isSaveLabel(label) || A.mentionsSave(label);
+      });
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  function openMenus() {
+    try {
+      return new Set(Array.from(document.querySelectorAll(MENU_SCOPE)));
+    } catch (e) {
+      return new Set();
+    }
+  }
+
+  function escape() {
+    try {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
   function save(offer) {
     lastAt = Date.now();
     count++;
@@ -339,22 +427,28 @@
     } catch (e) {
       /* the ledger key is the real guard; this is the belt to its braces */
     }
+    const before_ = openMenus();
     try {
       offer.node.click();
     } catch (e) {
       return; // one that won't click is a file not saved, and nothing more
     }
-    // A control that opens a menu instead of saving leaves it open, and a stray
-    // popup would sit over the conversation you're reading.
     setTimeout(() => {
-      try {
-        document.body.dispatchEvent(
-          new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
-        );
-      } catch (e) {
-        /* ignore */
+      const item = followMenu(before_);
+      if (item) {
+        try {
+          item.click();
+        } catch (e) {
+          /* ignore */
+        }
+        // Whatever is left of the menu after taking the item out of it.
+        setTimeout(escape, ESCAPE_MS);
+        return;
       }
-    }, ESCAPE_MS);
+      // Nothing to follow, so the click either saved the file or opened
+      // something we don't want sitting over the conversation you're reading.
+      escape();
+    }, MENU_MS);
     const cap = cfg.max > 0 ? cfg.max : A.MAX_PER_PAGE;
     toast(`Saved ${offer.name || "a file"} (${count} / ${cap})`);
   }
@@ -475,6 +569,147 @@
     }
   }
 
+  // ---- The probe -----------------------------------------------------------
+  // Three rounds of "it isn't working" went on guesses about markup nobody
+  // here can see. This is the end of that: press the button in the popup and
+  // it writes down what it actually found in the newest reply — every control
+  // and its caption, every piece of text that looks like a filename or a file
+  // type, which of them it took for a card, and which gate is holding it. One
+  // paste of that says exactly which of the three faults it is.
+  const PROBE_KEY = "cum_autodownload_probe";
+  const PROBE_MAX = 6000;
+
+  function label(el) {
+    const a = (el.getAttribute("aria-label") || "").trim();
+    const t = (el.getAttribute("title") || "").trim();
+    const txt = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60);
+    const bits = [];
+    if (a) bits.push("aria-label=" + JSON.stringify(a));
+    if (t && t !== a) bits.push("title=" + JSON.stringify(t));
+    bits.push(txt ? JSON.stringify(txt) : "(no text)");
+    const test = el.getAttribute("data-testid") || el.getAttribute("data-test-id");
+    if (test) bits.push("testid=" + JSON.stringify(test));
+    if (el.tagName === "A") {
+      if (el.hasAttribute("download")) bits.push("download");
+      const href = (el.getAttribute("href") || "").slice(0, 40);
+      if (href) bits.push("href=" + JSON.stringify(href));
+    }
+    return bits.join(" ");
+  }
+
+  function probe() {
+    const out = [];
+    const say = (s) => out.push(s);
+    try {
+      say("Auto-download probe · " + location.pathname);
+      if (!A || !C) return finishProbe(["Auto-download probe · the page's modules didn't load."]);
+      let generating = false;
+      try {
+        generating = C.isGenerating();
+      } catch (e) {
+        /* ignore */
+      }
+      const cap = cfg.max > 0 ? cfg.max : A.MAX_PER_PAGE;
+      say(
+        "toggle " + (cfg.enabled ? "ON" : "OFF") +
+          " · saved " + count + "/" + cap +
+          " · census " + (baselined ? "closed" : "open") +
+          " · " + (generating ? "generating" : "idle") +
+          " · armed " + (armed ? "yes" : "no")
+      );
+      const list = assistantMessages();
+      say(list.length + " assistant messages on the page · " + live.length + " watched arrive");
+      if (!list.length) return finishProbe(out.concat(["No assistant message matched. That is the bug."]));
+
+      const msg = list[list.length - 1];
+      const sig = A.turnSignature(msg.textContent);
+      say("newest reply: " + JSON.stringify(sig.slice(0, 70)));
+      say("  watched arrive: " + (live.indexOf(sig) !== -1 ? "YES" : "no — nothing in it can be saved"));
+
+      const scope = widen(msg);
+      say("  scope " + (scope === msg ? "= the message element" : "= " + scope.tagName.toLowerCase() + " above it"));
+
+      const cards = cardsIn(scope);
+      say("cards found: " + cards.length);
+      for (const c of cards) {
+        const text = (c.el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
+        let ctrl = controlIn(c.el, c.strict);
+        if (!ctrl) {
+          hover(c.el);
+          ctrl = controlIn(c.el, c.strict);
+        }
+        say("  " + (c.strict ? "[by type chip] " : "[by filename] ") + JSON.stringify(text));
+        say("    control: " + (ctrl ? label(ctrl) : "NONE FOUND — this is why nothing is clicked"));
+      }
+
+      const offers = offersIn(scope);
+      say("offers: " + offers.length);
+      for (const o of offers)
+        say("  " + JSON.stringify(o.name || "(unnamed)") + (o.ready ? "" : " — not clickable"));
+
+      // And the raw material, so a card this failed to recognise can still be
+      // recognised by a human reading the report.
+      say("--- every control in the newest reply ---");
+      let ctrls = [];
+      try {
+        ctrls = Array.from(scope.querySelectorAll(CONTROLS)).filter((el) => !C.isOurs(el));
+      } catch (e) {
+        /* ignore */
+      }
+      for (const el of ctrls.slice(0, 40)) say("  " + el.tagName.toLowerCase() + " " + label(el));
+      if (!ctrls.length) say("  (none)");
+
+      say("--- text that names a file or a type ---");
+      let hits = 0;
+      try {
+        for (const el of scope.querySelectorAll(CARD_SCOPE)) {
+          if (C.isOurs(el) || el.children.length) continue; // leaves only
+          const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+          if (!t || t.length > CARD_MAX_TEXT) continue;
+          const kind = A.fileNameIn(t) ? "filename" : A.isTypeChip(t) ? "type chip" : null;
+          if (!kind) continue;
+          if (hits++ > 20) break;
+          say("  " + kind + ": " + JSON.stringify(t));
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      if (!hits) {
+        say("  (none — no filename and no file-type chip anywhere in the reply)");
+        // Then the card, whatever it is, is saying something this doesn't
+        // recognise. Print the short pieces of text in the reply so what it
+        // DOES say can be read off the report instead of guessed at.
+        say("--- short pieces of text in the reply, in order ---");
+        let n = 0;
+        try {
+          for (const el of scope.querySelectorAll(CARD_SCOPE)) {
+            if (C.isOurs(el) || el.children.length) continue;
+            const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+            if (!t || t.length > 60) continue;
+            if (n++ > 25) break;
+            say("  " + JSON.stringify(t));
+          }
+        } catch (e) {
+          /* ignore */
+        }
+        if (!n) say("  (none)");
+      }
+    } catch (e) {
+      say("probe threw: " + String((e && e.message) || e));
+    }
+    return finishProbe(out);
+  }
+
+  function finishProbe(lines) {
+    const text = lines.join("\n").slice(0, PROBE_MAX);
+    try {
+      chrome.storage?.local.set({ [PROBE_KEY]: { at: Date.now(), text: text } });
+    } catch (e) {
+      /* ignore */
+    }
+    return text;
+  }
+
   // ---- Toast -------------------------------------------------------------
   let toastEl = null;
   let toastTimer = null;
@@ -532,8 +767,12 @@
   // The worker nudges every claude.ai tab on the same channel the other
   // clickers use, so this keeps working in a tab that isn't in front.
   try {
-    chrome.runtime?.onMessage.addListener((msg) => {
+    chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg === "cum-ac-poll") tick();
+      if (msg === "cum-dl-probe" || (msg && msg.type === "cum-dl-probe")) {
+        sendResponse({ ok: true, text: probe() });
+        return true;
+      }
     });
   } catch (e) {
     /* ignore */
