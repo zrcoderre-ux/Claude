@@ -245,6 +245,13 @@ finding and the clicking work and a gate was what held it; if it doesn't, it
 names the step that failed — no card found, a card with no control on it,
 nothing left to press.
 
+The report also says whether a turn has run in this tab at all — how many
+assistant streams it saw, how many it recognised as a completion, and whether
+the page's Stop control ever appeared. `0 replies watched` on a conversation you
+merely opened is correct and expected; the same line on a tab that has been
+answering all along is a broken turn signal, and until this those two read
+identically.
+
 And when that isn't enough, **What can it see?** in the popup asks the
 conversation you're looking at to write down what it actually found: every
 control in the newest reply with its caption, `aria-label`, `data-testid` and
