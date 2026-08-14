@@ -165,7 +165,17 @@ being invisible no longer does.
 
 Widened, too: the search covers the **turn's own wrapper**, not just the prose
 element, climbing while the ancestor holds this reply and no other — an
-attachment is often drawn beside the answer rather than inside it.
+attachment is drawn beside the answer rather than inside it, and so is the
+reply's own action bar.
+
+**"No other reply" means another *message*, not another matching element.**
+claude.ai nests a `.font-claude-response` inside a `.font-claude-response`, so
+counting raw selector matches read every turn as two replies — which doubled the
+count and made the inner one impossible to widen at all, since the very first
+ancestor it tried already "held another reply": its own outer half. The symptom
+was a reply reporting **no controls whatsoever**, on a page where every reply has
+Copy and Retry sitting directly under it. Only the outermost match is a message
+now.
 
 **A card whose name has no extension.** `ruling.docx` is easy; `Tentative
 Ruling` with a small `DOCX` beside it is the same card saying the same thing in
@@ -223,9 +233,11 @@ says which, under the toggle — `1 offered · saving · 1 reply watched`, or
 `0 offered · nothing new · 0 replies watched · census open`. It's written only
 when the reading changes, so an idle tab writes nothing.
 
-**Save it now**, in the popup, presses the download on the reply you're looking
-at this second, with **every gate off** — no census, no live rule, no waiting
-for a turn to land. Those gates exist so a chat's backlog is never saved
+**Save it now**, in the popup, presses the download on the file in the
+conversation you're looking at, this second, with **every gate off** — no
+census, no live rule, no waiting for a turn to land. It searches the **whole
+conversation**, newest answer first, rather than only the last one or two: the
+file you want is often several replies back, under whatever was said after it. Those gates exist so a chat's backlog is never saved
 unasked; you asking for this file, on this reply, in front of you, is not
 unasked. It runs the *same* finding and clicking the automatic path runs, which
 is what makes it a diagnosis as well as a button: if it saves the file, the

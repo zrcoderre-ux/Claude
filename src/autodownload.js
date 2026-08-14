@@ -120,35 +120,37 @@
         continue;
       }
       const list = Array.from(nodes).filter(isMessage);
-      if (list.length) return list;
+      // Outermost only. claude.ai nests a matching element inside a matching
+      // element, so every turn counted as two messages — which made the count
+      // wrong, and made the inner one impossible to widen at all: the first
+      // ancestor it tried already "held another reply", namely its own outer
+      // half. That is why a reply reported no controls whatever: the climb
+      // never got past the prose to the action bar sitting under it.
+      const outer = list.filter((el) => !list.some((o) => o !== el && o.contains(el)));
+      if (outer.length) return outer;
     }
     return [];
   }
 
   // One step out from the element claude.ai marks as the message, so long as
-  // that step doesn't swallow a second reply. An attachment is often drawn as a
-  // sibling of the prose rather than inside it, and a watcher looking only at
-  // the prose would never see the card at all.
-  function repliesIn(el) {
-    let n = 0;
-    for (const sel of ASSISTANT_SELECTORS) {
-      try {
-        n = Math.max(n, el.querySelectorAll(sel).length);
-      } catch (e) {
-        /* ignore */
-      }
-    }
-    return n;
-  }
+  // that step doesn't swallow a SECOND reply. An attachment is drawn as a
+  // sibling of the prose rather than inside it, and so is the reply's own
+  // action bar, so a watcher looking only at the prose sees neither.
+  //
+  // "A second reply" means another message in the list — not another element
+  // that happens to match one of the selectors. Counting raw matches read a
+  // message that merely NESTS a matching element as two replies and stopped the
+  // climb dead at the prose, which is exactly where the file card isn't. The
+  // symptom was a reply reporting no controls at all, when every reply on
+  // claude.ai has Copy and Retry sitting right under it.
   function widen(msgEl) {
+    const all = assistantMessages();
     let scope = msgEl;
-    // Climb while the ancestor still holds this reply and no other. That is the
-    // turn's own wrapper, whatever claude.ai calls it this month, and the
-    // attachment is inside it even when it is outside the prose.
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       const p = scope.parentElement;
       if (!p || p === document.body || p === document.documentElement) break;
-      if (repliesIn(p) > 1) break;
+      const swallows = all.some((m) => m !== msgEl && !msgEl.contains(m) && p.contains(m));
+      if (swallows) break;
       scope = p;
     }
     return scope;
@@ -271,18 +273,26 @@
     }
 
     const out = [];
-    const push = (el, strict) => {
+    const push = (el, strict, name) => {
       if (!el) return;
       const at = out.findIndex((c) => c.el === el || c.el.contains(el) || el.contains(c.el));
-      if (at === -1) return out.push({ el: el, strict: strict });
+      if (at === -1) return out.push({ el: el, strict: strict, name: name || "" });
       // The same card reached both ways is the strong reading of it.
-      if (!strict && out[at].strict) out[at] = { el: el.contains(out[at].el) ? out[at].el : el, strict: false };
+      if (!strict && out[at].strict)
+        out[at] = {
+          el: el.contains(out[at].el) ? out[at].el : el,
+          strict: false,
+          name: name || out[at].name,
+        };
     };
 
     for (const start of named) {
       if (named.some((o) => o !== start && start.contains(o))) continue; // not innermost
+      // Read at the element that NAMED the file, not off the finished card.
+      // A card's own text runs the name into the type chip beside it —
+      // "ruling.md" + "md" is "ruling.mdmd" — and no filename survives that.
       const name = A.fileNameIn(start.textContent) || "";
-      push(climbToControl(start, Math.min(CARD_MAX_TEXT, name.length + 40)), false);
+      push(climbToControl(start, Math.min(CARD_MAX_TEXT, name.length + 40)), false, name);
     }
     for (const chip of chips) {
       // A chip on its own is not a card — the card is the thing that holds the
@@ -382,7 +392,7 @@
         // it, when a real Download was one event away.
         hover(card.el);
         const ctrl = controlIn(card.el, card.strict);
-        if (ctrl) add(ctrl, A.fileNameIn(card.el.textContent), isOpener(card.el, ctrl));
+        if (ctrl) add(ctrl, card.name || A.fileNameIn(card.el.textContent), isOpener(card.el, ctrl));
       }
     } catch (e) {
       return found;
@@ -675,13 +685,41 @@
       say(list.length + " assistant messages on the page · " + live.length + " watched arrive");
       if (!list.length) return finishProbe(out.concat(["No assistant message matched. That is the bug."]));
 
+      // Every reply on the page, so a report taken while the file is three
+      // answers up still says where it is. The automatic path only ever looks
+      // at the newest one or two; this is a description, not a decision.
+      say("--- file cards, across the whole conversation ---");
+      let anywhere = 0;
+      list.forEach((m, i) => {
+        const found = cardsIn(widen(m));
+        if (!found.length) return;
+        anywhere += found.length;
+        say(
+          "  reply " + (i + 1) + "/" + list.length + " " +
+            JSON.stringify(A.turnSignature(m.textContent).slice(0, 40)) + " — " +
+            found.length + (found.length === 1 ? " card" : " cards")
+        );
+      });
+      if (!anywhere) say("  (none anywhere — not just in the newest reply)");
+
+      // ...then the newest one in detail, which is what the automatic path acts
+      // on and therefore what its silence is about.
       const msg = list[list.length - 1];
       const sig = A.turnSignature(msg.textContent);
       say("newest reply: " + JSON.stringify(sig.slice(0, 70)));
       say("  watched arrive: " + (live.indexOf(sig) !== -1 ? "YES" : "no — nothing in it can be saved"));
 
       const scope = widen(msg);
-      say("  scope " + (scope === msg ? "= the message element" : "= " + scope.tagName.toLowerCase() + " above it"));
+      say(
+        "  scope " + (scope === msg ? "= the message element" : "= " + scope.tagName.toLowerCase() + " above it") +
+          ", holding " + (function () {
+            try {
+              return Array.from(scope.querySelectorAll(CONTROLS)).filter((el) => !C.isOurs(el)).length;
+            } catch (e) {
+              return "?";
+            }
+          })() + " controls"
+      );
 
       const cards = cardsIn(scope);
       say("cards found: " + cards.length);
@@ -774,19 +812,43 @@
       const list = assistantMessages();
       if (!list.length)
         return finishProbe(["No assistant reply found on this page. Nothing to take a file from."]);
-      const msg = list[list.length - 1];
-      const scope = widen(msg);
-      say("Newest reply: " + JSON.stringify(A.turnSignature(msg.textContent).slice(0, 60)));
 
-      const cards = cardsIn(scope);
+      // The WHOLE conversation, newest first — not just the newest reply. The
+      // automatic path is deliberately restricted to the last reply or two,
+      // because a watcher reading the whole transcript would resurrect a chat's
+      // history every time you scrolled. You pressing this is not that: the
+      // file you want is often several answers back, under whatever was said
+      // after it.
+      let msg = null;
+      let scope = null;
+      let cards = [];
+      let offers = [];
+      let back = 0;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const sc = widen(list[i]);
+        const found = offersIn(sc);
+        if (!found.length && i !== list.length - 1) continue;
+        msg = list[i];
+        scope = sc;
+        cards = cardsIn(sc);
+        offers = found;
+        back = list.length - 1 - i;
+        if (found.length) break;
+      }
+      say(
+        (back === 0 ? "Newest reply" : back + " replies back") + ", of " + list.length +
+          " on the page: " + JSON.stringify(A.turnSignature(msg.textContent).slice(0, 60))
+      );
+
       say(cards.length + (cards.length === 1 ? " file card found" : " file cards found"));
-      const offers = offersIn(scope);
       if (!offers.length) {
-        say("Nothing to press. No control on this reply reads as a way to save a file.");
+        say("Nothing to press — no control anywhere in this conversation reads as a way to save a file.");
         for (const c of cards)
           say("  card " + JSON.stringify((c.el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60)) +
             " — " + (c.strict ? "found by its file type, so only a control that says Download counts" : "found by its filename") +
             ", and it has none");
+        say("Scroll the file's own reply into view and press this again — claude.ai unmounts");
+        say("messages that scroll out of sight, so one out of view isn't on the page at all.");
         return finishProbe(out);
       }
 
