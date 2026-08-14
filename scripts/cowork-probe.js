@@ -15,7 +15,7 @@
  *   2. Toggle Chat -> Cowork.
  *   3. Open the Project menu, pick a project, then re-open it.
  *   4. Open the approval menu and hover each of the three choices; pick one.
- *   5. Type a word into the composer (don't send).
+ *   5. Send one short message ("hi" will do) and let the reply start.
  *   6. Run: __cowork.report()
  *
  * It prints — and copies — the URL at every step, every menu that opened with
@@ -256,6 +256,24 @@
     for (const u of seen.urls) say("  [" + u.n + "] " + u.at + "   <- " + u.why);
     if (seen.urls.length < 2) say("  (only one url — did the Cowork toggle change the address at all?)");
 
+    // Two live assumptions ride on the shape of that address, and both are
+    // cheap to answer here and expensive to discover later.
+    say("");
+    say("--- what those urls mean for code that already exists ---");
+    const landed = seen.urls[seen.urls.length - 1].at;
+    say("  last url: " + landed);
+    say(
+      "  contains /chat/ : " +
+        (/\/chat\//.test(landed) ? "yes — confirmSent and settledUrl still recognise a send landing" : "NO — composer.js:334 and workflow-run.js:349 lose their signal here")
+    );
+    const paths = seen.urls.map((u) => u.at.split("?")[0]);
+    const varied = paths.some((p) => p !== paths[0]);
+    const queried = seen.urls.some((u) => /\?/.test(u.at));
+    say(
+      "  mode lives in: " +
+        (varied ? "the path (fine — tab reuse compares pathname)" : queried ? "a QUERY PARAM — jobstore.sameConversationUrl ignores it, so a Cowork job would reuse a Chat tab" : "neither the path nor the query — it is page state, so it must be set after arriving")
+    );
+
     say("");
     say("--- does Cowork keep the composer the extension already drives? ---");
     for (const [name, sel] of KNOWN) {
@@ -343,7 +361,7 @@
       "  1. toggle Chat -> Cowork",
       "  2. open the Project menu, pick a project, re-open it",
       "  3. open the approval menu, then pick one of the three",
-      "  4. type a word into the composer (don't send)",
+      "  4. send one short message and let the reply start",
       "  5. run: __cowork.report()",
     ].join("\n")
   );
