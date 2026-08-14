@@ -43,8 +43,21 @@
   const PANEL_MS = 700; // ...and a preview panel, which is slower than a menu
   const ESCAPE_MS = 700; // let a click land before dismissing any menu it opened
   const SETTLE_MS = 20000; // how long a just-landed reply is still settling
+  // How far back catch-up looks. The live path watches the newest reply or two,
+  // because a watcher reading a whole transcript would resurrect a chat's
+  // history every time you scrolled. Catch-up is allowed further because it has
+  // a real answer to "do I already have this?" — but still not the whole chat,
+  // since claude.ai only has a window of it mounted anyway.
+  const CATCHUP_REPLIES = 12;
+  const HISTORY_EVERY_MS = 60000; // how often to re-read what's in Downloads
 
-  let cfg = { enabled: false, max: A ? A.MAX_PER_PAGE : 20 };
+  let cfg = { enabled: false, max: A ? A.MAX_PER_PAGE : 20, catchUp: false };
+  // Names already in your Downloads folder. null means "not asked yet", which
+  // is deliberately different from "you have none": nothing is caught up on a
+  // question that hasn't been answered.
+  let downloaded = null;
+  let historyAt = 0;
+  let historyError = "";
   let seen = []; // keys handled this page load (saved, or adopted by the census)
   let count = 0; // files actually saved this page load
   let lastAt = 0;
@@ -413,10 +426,37 @@
     return found;
   }
 
+  // What's already in Downloads, asked of the worker — chrome.downloads is not
+  // exposed to content scripts. Refreshed on a slow cadence: it changes when a
+  // file is saved, and it is only ever used to hold one back.
+  function refreshHistory() {
+    if (!cfg.enabled || !cfg.catchUp) return;
+    const now = Date.now();
+    if (now - historyAt < HISTORY_EVERY_MS) return;
+    historyAt = now;
+    try {
+      chrome.runtime?.sendMessage({ type: "cum-dl-history" }, (res) => {
+        void chrome.runtime.lastError;
+        if (res && res.ok) {
+          downloaded = A.downloadIndex(res.names);
+          historyError = "";
+          return;
+        }
+        // Left as null on purpose. An unanswered question is not "you have none
+        // of these", and treating it as one would save every file in the chat.
+        historyError = (res && res.error) || "the worker didn't answer";
+      });
+    } catch (e) {
+      historyError = String((e && e.message) || e);
+    }
+  }
+
   function collect() {
     // The newest reply, plus the one before it so a missed poll can't lose a
     // file — and no further back, or scrolling would resurrect the whole chat.
-    const recent = assistantMessages().slice(-2);
+    // Catch-up may look further, because it can tell an old file it already has
+    // from an old file it doesn't.
+    const recent = assistantMessages().slice(cfg.catchUp ? -CATCHUP_REPLIES : -2);
     const offers = [];
     for (const m of recent) {
       // The card can sit just outside the prose element claude.ai marks as the
@@ -525,6 +565,12 @@
       escape();
     };
     setTimeout(() => chase(1), MENU_MS);
+    // What was just written isn't in the history reading yet, and catch-up
+    // leans on that reading to not save it twice.
+    if (offer.name) {
+      const key = A.downloadKey(offer.name);
+      if (key && downloaded) downloaded[key] = true;
+    }
     const cap = cfg.max > 0 ? cfg.max : A.MAX_PER_PAGE;
     toast(`Saved ${offer.name || "a file"} (${count} / ${cap})`);
   }
@@ -533,6 +579,7 @@
     // Off is the default, and the default must cost nothing: no scanning the
     // page every two seconds on the strength of a toggle nobody turned on.
     if (!A || !C || !cfg.enabled) return;
+    refreshHistory();
     let generating = false;
     try {
       generating = C.isGenerating();
@@ -600,6 +647,8 @@
       max: cfg.max,
       now: Date.now(),
       lastAt,
+      catchUp: !!cfg.catchUp,
+      downloaded: downloaded,
     });
     report(offers, res, generating);
 
@@ -635,7 +684,15 @@
       (live.length === 1 ? " reply watched" : " replies watched") +
       (generating ? " · generating" : "") +
       (baselined ? "" : " · census open") +
-      (followed ? " · chased " + followed + " into a panel" : "");
+      (followed ? " · chased " + followed + " into a panel" : "") +
+      (cfg.catchUp
+        ? " · catch-up on, " +
+          (downloaded
+            ? Object.keys(downloaded).length +
+              (Object.keys(downloaded).length === 1 ? " file" : " files") +
+              " already in Downloads"
+            : "download history unread" + (historyError ? " (" + historyError + ")" : ""))
+        : "");
     if (line === lastReport) return;
     lastReport = line;
     try {
@@ -931,7 +988,11 @@
   // ---- Config ------------------------------------------------------------
   function applyCfg(value) {
     const prev = cfg.enabled;
-    cfg = Object.assign({ enabled: false, max: A ? A.MAX_PER_PAGE : 20 }, value || {});
+    const prevCatch = cfg.catchUp;
+    cfg = Object.assign({ enabled: false, max: A ? A.MAX_PER_PAGE : 20, catchUp: false }, value || {});
+    // Switching catch-up on is a question worth asking straight away rather
+    // than at the next minute boundary.
+    if (cfg.catchUp && !prevCatch) historyAt = 0;
     // Turning it back on clears the cap and re-takes the census: the files on
     // screen while it was off are ones you chose not to have saved. The turn
     // tracking goes with it — only a reply that lands from now on counts, so

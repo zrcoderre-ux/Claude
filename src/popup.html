@@ -112,6 +112,18 @@
       artifact you'd download from its own panel isn't one. It stops after
       <input id="dl-max" type="number" min="1" max="200" class="inline-num" /> files
       per page load.</p>
+    <label class="toggle">
+      <input id="dl-catchup" type="checkbox" />
+      <span>Also catch up on files further back</span>
+    </label>
+    <p class="hint">Off by default, and its own switch because it does the one
+      thing the rule above forbids: saving out of a conversation's
+      <b>backlog</b>. It's safe to because it can check — it reads your
+      <b>Downloads folder</b> and skips anything already there, undoing Chrome's
+      <code>(1)</code> renaming so a second copy isn't mistaken for a new file.
+      A file with no name on its card is never caught up, and neither is
+      anything at all while that check is unavailable: an unanswered question is
+      not the same as “you don't have it”. Looks back about a dozen replies.</p>
     <p class="hint dl-seen" id="dl-seen" hidden></p>
     <div class="btn-row">
       <button id="dl-try" type="button" class="primary">Save it now</button>

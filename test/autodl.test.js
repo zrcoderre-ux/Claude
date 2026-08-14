@@ -331,3 +331,108 @@ test("a chip is only a chip for a type we'd actually save", () => {
   assert.equal(A.isTypeChip("EXE"), false);
   assert.equal(A.isTypeChip("Ruling"), false);
 });
+
+// ---- catching up on files you don't already have ---------------------------
+
+test("downloadKey matches a card against a Downloads folder entry", () => {
+  // The history gives a path; a card gives a name.
+  assert.equal(A.downloadKey("/Users/me/Downloads/ruling.docx"), "ruling.docx");
+  assert.equal(A.downloadKey("C:\\Users\\me\\Downloads\\Ruling.DOCX"), "ruling.docx");
+  // Chrome's own de-duplication, undone — otherwise a second copy looks like a
+  // file you don't have and earns a third.
+  assert.equal(A.downloadKey("ruling (1).docx"), "ruling.docx");
+  assert.equal(A.downloadKey("ruling (12).docx"), "ruling.docx");
+  assert.equal(A.downloadKey("ruling(1).docx"), "ruling.docx");
+  // ...but only the suffix Chrome adds. A number in the name is the name.
+  assert.equal(A.downloadKey("24STCV83325 (Smith).docx"), "24stcv83325 (smith).docx");
+  assert.equal(A.downloadKey("ruling 2026 (draft).md"), "ruling 2026 (draft).md");
+  assert.equal(A.downloadKey(""), "");
+  assert.equal(A.downloadKey(null), "");
+});
+
+test("downloadIndex is a lookup of what you already have", () => {
+  const have = A.downloadIndex(["/d/Ruling.docx", "/d/report (2).pdf", "", null]);
+  assert.equal(have["ruling.docx"], true);
+  assert.equal(have["report.pdf"], true);
+  assert.equal(have["other.docx"], undefined);
+});
+
+function backlogCtx(over) {
+  return Object.assign(
+    {
+      enabled: true,
+      baselined: true,
+      live: [], // nothing was watched arriving — this is a chat you opened
+      seen: [],
+      count: 0,
+      now: 1000,
+      lastAt: 0,
+    },
+    over || {}
+  );
+}
+const OLD = [{ key: "turn|ruling.docx", name: "ruling.docx", ready: true }];
+
+test("without catch-up, an old file is still left exactly where it is", () => {
+  const res = A.plan(OLD, backlogCtx());
+  assert.equal(res.take, null);
+  assert.equal(res.hold, "backlog");
+});
+
+test("with catch-up, a file you don't have is taken; one you have is not", () => {
+  const missing = A.plan(OLD, backlogCtx({ catchUp: true, downloaded: A.downloadIndex([]) }));
+  assert.equal(missing.take && missing.take.name, "ruling.docx");
+
+  const got = A.plan(
+    OLD,
+    backlogCtx({ catchUp: true, downloaded: A.downloadIndex(["/d/ruling (1).docx"]) })
+  );
+  assert.equal(got.take, null);
+  assert.equal(got.hold, "backlog");
+});
+
+test("catch-up never acts on a question that wasn't answered", () => {
+  // No history read yet: null is "don't know", which is not "you don't have
+  // it". Acting on it would save every file in the conversation.
+  const res = A.plan(OLD, backlogCtx({ catchUp: true, downloaded: null }));
+  assert.equal(res.take, null);
+  assert.equal(res.hold, "no download history yet");
+});
+
+test("catch-up never acts on a file it can't name", () => {
+  const unnamed = [{ key: "turn|file 1", name: "", ready: true }];
+  const res = A.plan(unnamed, backlogCtx({ catchUp: true, downloaded: A.downloadIndex([]) }));
+  assert.equal(res.take, null, "nothing to check against, so nothing is taken");
+  assert.equal(res.hold, "backlog");
+});
+
+test("the census doesn't adopt a file catch-up is about to take", () => {
+  // Adopting it would file it as handled and put it beyond reach for the rest
+  // of the page load — the census means "already dealt with", and an old file
+  // you don't have is not dealt with.
+  const open = backlogCtx({ baselined: false, catchUp: true, downloaded: A.downloadIndex([]) });
+  const res = A.plan(OLD, open);
+  assert.equal(res.hold, "baseline");
+  assert.deepEqual(res.adopt, [], "left for the next pass to take");
+
+  // One you DO have is adopted, because it is genuinely dealt with.
+  const had = A.plan(
+    OLD,
+    backlogCtx({ baselined: false, catchUp: true, downloaded: A.downloadIndex(["ruling.docx"]) })
+  );
+  assert.deepEqual(had.adopt, ["turn|ruling.docx"]);
+
+  // And with catch-up off the census behaves exactly as it always did.
+  assert.deepEqual(A.plan(OLD, backlogCtx({ baselined: false })).adopt, ["turn|ruling.docx"]);
+});
+
+test("catch-up doesn't loosen any of the other ceilings", () => {
+  const ctx = { catchUp: true, downloaded: A.downloadIndex([]) };
+  assert.equal(A.plan(OLD, backlogCtx(Object.assign({ generating: true }, ctx))).hold, "generating");
+  assert.equal(A.plan(OLD, backlogCtx(Object.assign({ count: 20, max: 20 }, ctx))).hold, "cap");
+  assert.equal(
+    A.plan(OLD, backlogCtx(Object.assign({ lastAt: 900, now: 1000 }, ctx))).hold,
+    "cooldown"
+  );
+  assert.equal(A.plan(OLD, backlogCtx(Object.assign({ enabled: false }, ctx))).hold, "off");
+});

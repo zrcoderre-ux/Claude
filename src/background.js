@@ -2263,6 +2263,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;
   }
+  // What's already in your Downloads folder, by name.
+  //
+  // Asked for by the auto-downloader's catch-up mode, which saves files from
+  // further up a conversation than the live rule allows and so needs a real
+  // answer to "do I already have this?". Only the content script can see the
+  // cards; only the worker can see the history — chrome.downloads is not
+  // exposed to content scripts at all.
+  //
+  // Names only, and only the recent ones. A path would tell the page where your
+  // files live, which is nothing to do with clicking a download button.
+  if (msg && msg.type === "cum-dl-history") {
+    try {
+      chrome.downloads.search(
+        { limit: 400, orderBy: ["-startTime"] },
+        (items) => {
+          void chrome.runtime.lastError;
+          const names = [];
+          for (const it of items || []) {
+            const full = (it && (it.filename || "")) || "";
+            if (!full) continue;
+            const cut = Math.max(full.lastIndexOf("/"), full.lastIndexOf("\\"));
+            names.push(full.slice(cut + 1));
+          }
+          sendResponse({ ok: true, names: names });
+        }
+      );
+    } catch (e) {
+      // No permission, or a browser without the API: say so rather than send an
+      // empty list, which would read as "you have none of these".
+      sendResponse({ ok: false, error: String((e && e.message) || e) });
+    }
+    return true;
+  }
   // The pill, popup and options page all read cum_status from storage; this is
   // how they ask for a fresh one (on load, or on demand).
   if (msg && msg.type === "cum-status") {

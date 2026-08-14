@@ -135,6 +135,10 @@ What it will and won't do besides:
 - **The card is found by what it says**, not by its button. See
   [finding the button](#finding-the-button) — this is what made the first
   version of the feature do nothing at all.
+- **Catching up on what's further back** — a second switch, off by default, and
+  its own switch because it does the one thing the rule above forbids: saving
+  out of a conversation's **backlog**. See
+  [catching up](#catching-up-on-files-further-back).
 - **Ceilings in both directions** — at most **6 files from any one reply**, and
   **20 per page load** (adjustable in the popup), so a pathological message
   can't fill a folder. They're paced rather than fired in a burst, since each
@@ -224,6 +228,37 @@ button added to the page on hover, a button at zero opacity until hover, a blob
 link, a `data-testid` with no caption, a card outside the message element, an
 extensionless name with a type chip, an overflow menu holding the real control,
 and a reply with no file in it, which must produce no click at all.
+
+### Catching up on files further back
+
+The real-time rule is deliberately absolute, and it costs you the ordinary case:
+a file produced ten minutes ago, in the tab you're in, that never got saved
+because you'd reloaded, or had the toggle off, or the turn signal missed it. So
+there is a second switch — **Also catch up on files further back** — that lifts
+exactly that restriction.
+
+It is safe to lift because catch-up can *check*. It reads your **Downloads
+folder** (the `downloads` permission, names only — never paths) and skips
+anything already there, undoing Chrome's `(1)` renaming first so a second copy
+isn't mistaken for a file you don't have. Two things it refuses on principle:
+
+- **A card with no name on it is never caught up.** There is nothing to check it
+  against, so saving it would be acting on no information at all — and a chat's
+  backlog is exactly where that goes wrong at scale.
+- **Nothing is caught up while the check is unavailable.** An unread download
+  history is `null`, not an empty list: "I don't know" is not "you don't have
+  it", and treating the two the same would save every file in the conversation.
+  The popup line says which — `catch-up on, 214 files already in Downloads`, or
+  `download history unread`.
+
+It looks back about a dozen replies rather than the whole chat, keeps every
+other ceiling (six per reply, twenty per page load, the cooldown, wait for the
+turn to end), and does **not** change the census for anything it wouldn't take:
+a file you already have is still adopted as handled, exactly as before.
+
+It's its own switch rather than folded into the first because the two carry
+different risks, and one of them can write a conversation's backlog to your
+disk.
 
 ### When it says it isn't working
 
@@ -1831,6 +1866,13 @@ Everything runs locally in your browser. No data is sent anywhere; the only
 storage used is `chrome.storage.local` on your machine. The extension requests
 access to `claude.ai` and — for the outage check — `status.claude.com`, which is
 a public, unauthenticated status page: the request carries nothing about you.
+
+It also asks for `downloads`, used for one thing: reading the **names** of your
+recent downloads so [catch-up](#catching-up-on-files-further-back) can skip a
+file you already have. The worker strips the directory before the names ever
+reach the page — where your files live is nothing to do with clicking a download
+button — and nothing is written to the history, only read from it. Turn catch-up
+off and it is never read at all.
 
 ## Regenerating icons
 
