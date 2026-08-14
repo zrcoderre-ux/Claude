@@ -239,8 +239,24 @@ exactly that restriction.
 
 It is safe to lift because catch-up can *check*. It reads your **Downloads
 folder** (the `downloads` permission, names only — never paths) and skips
-anything already there, undoing Chrome's `(1)` renaming first so a second copy
-isn't mistaken for a file you don't have. Two things it refuses on principle:
+anything already there. Two normalisations make that comparison mean anything at
+all, because the name on the card and the name on disk are rarely the same
+string:
+
+- **Chrome's `(1)` renaming, undone.** A second copy of `ruling.docx` is filed
+  as `ruling (1).docx`; without this it reads as a file you don't have and earns
+  a third. A number that's part of the name survives — `24STCV83325 (Smith).docx`
+  stays itself.
+- **The characters a filesystem refuses, folded.** A title like `Verification
+  Report: 24STCV83325 Motion for Attorney Fees 8.13.2026.md` reaches disk as
+  `Verification Report_ …`, because Chrome rewrites the colon. Compared
+  literally the two never match and *every* such file is saved again — so `:`
+  `*` `?` `"` `<` `>` `|` `_` all fold to a space on both sides before
+  comparing. (The filename pattern had the same blind spot from the other
+  direction: it stopped at the colon, so it read the name as beginning after
+  it.)
+
+Two things it refuses on principle:
 
 - **A card with no name on it is never caught up.** There is nothing to check it
   against, so saving it would be acting on no information at all — and a chat's
@@ -259,6 +275,17 @@ a file you already have is still adopted as handled, exactly as before.
 It's its own switch rather than folded into the first because the two carry
 different risks, and one of them can write a conversation's backlog to your
 disk.
+
+**The check is on catch-up only, and that is the point.** A file produced in
+front of you *just now* is saved whatever its name — it is new output, and
+claude.ai reuses a title every time you ask for the same report twice. Ask for a
+verification report, act on it, ask for it again, and the second one is a
+different document wearing the first one's name; skipping it on a name match
+would leave you holding the superseded copy and not the corrected one. What the
+check exists for is the other case: a file already in the conversation that you
+already saved. When a live save does collide with a name you have, the toast
+says so — *"you already had one of that name, so this is a second copy"* — which
+is only knowable while catch-up has the history read.
 
 ### When it says it isn't working
 

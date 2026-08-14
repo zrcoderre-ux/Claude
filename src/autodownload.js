@@ -565,14 +565,21 @@
       escape();
     };
     setTimeout(() => chase(1), MENU_MS);
-    // What was just written isn't in the history reading yet, and catch-up
-    // leans on that reading to not save it twice.
-    if (offer.name) {
-      const key = A.downloadKey(offer.name);
-      if (key && downloaded) downloaded[key] = true;
-    }
+    // A name you already have. Not a reason to hold back — a file produced in
+    // front of you just now is new output, and claude.ai reuses a title every
+    // time you ask for the same report twice — but worth saying, because
+    // Chrome files it as "… (1)" and the two are then indistinguishable in the
+    // folder. Only knowable when catch-up has read the history; with it off,
+    // nothing has been read and nothing is claimed.
+    const key = offer.name ? A.downloadKey(offer.name) : "";
+    const collides = !!(key && downloaded && downloaded[key]);
+    if (key && downloaded) downloaded[key] = true; // not in the reading yet
     const cap = cfg.max > 0 ? cfg.max : A.MAX_PER_PAGE;
-    toast(`Saved ${offer.name || "a file"} (${count} / ${cap})`);
+    toast(
+      collides
+        ? `Saved ${offer.name} (${count} / ${cap}) — you already had one of that name, so this is a second copy`
+        : `Saved ${offer.name || "a file"} (${count} / ${cap})`
+    );
   }
 
   function tick() {

@@ -78,7 +78,15 @@
   // filename is the part that doesn't change when the markup does.
   const FILE_EXT =
     /(?:docx?|pdf|xlsx?|xls|csv|pptx?|md|markdown|txt|rtf|json|xml|ya?ml|zip|png|jpe?g|gif|svg|html?|ics)/;
-  const FILENAME_RE = new RegExp("([\\w][\\w ,'()\\[\\]&.\\u2014\\u2013-]{0,80}\\." + FILE_EXT.source + ")\\b", "i");
+  // The punctuation is deliberately wide. A document title is a document title
+  // — "Verification Report: 24STCV83325 Motion for Attorney Fees 8.13.2026.md"
+  // — and a class that stopped at the colon read the name as beginning after
+  // it, which is a different name from the one that reaches your disk and so
+  // never matches it.
+  const FILENAME_RE = new RegExp(
+    "([\\w][\\w ,;:!#+=@~'\\u2019()\\[\\]&.\\u2014\\u2013-]{0,80}\\." + FILE_EXT.source + ")\\b",
+    "i"
+  );
   function fileNameIn(text) {
     const s = str(text).replace(/\s+/g, " ").trim();
     if (!s || s.length > 200) return "";
@@ -123,12 +131,21 @@
   // first: a second copy of `ruling.docx` is saved as `ruling (1).docx` and a
   // third as `ruling (2).docx`, so a run of those would each look like a
   // different file and each earn another copy.
+  // Characters a filesystem won't take. Chrome rewrites them on the way to disk
+  // — a colon becomes an underscore — so the name written on the card and the
+  // name sitting in Downloads are different strings for the same file, and
+  // comparing them literally never matches. Both sides are folded to the same
+  // thing: the punctuation to a space, then the spaces collapsed.
+  const MANGLED = /[:*?"<>|/\\_]+/g;
   function downloadKey(name) {
     let s = str(name).replace(/\\/g, "/");
-    s = s.slice(s.lastIndexOf("/") + 1).replace(/\s+/g, " ").trim();
-    if (!s) return "";
-    // " (1)" immediately before the extension, or at the end where there is none.
+    s = s.slice(s.lastIndexOf("/") + 1);
+    if (!s.trim()) return "";
+    // " (1)" immediately before the extension, or at the end where there is
+    // none — Chrome's own de-duplication, undone, so a second copy isn't taken
+    // for a file you don't have.
     s = s.replace(/\s*\(\d+\)(?=\.[^.]*$)/, "").replace(/\s*\(\d+\)$/, "");
+    s = s.replace(MANGLED, " ").replace(/\s+/g, " ").trim();
     return s.toLowerCase();
   }
 
