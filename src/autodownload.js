@@ -52,6 +52,11 @@
   let where = ""; // the conversation this ledger belongs to
   let toldCap = false;
   let followed = ""; // the last file whose Download had to be chased into a panel
+  // Evidence about the turn signal itself, for the report. Nothing acts on
+  // these; they exist so "0 replies watched" can say WHY.
+  let streamsSeen = 0; // any event-stream this page opened
+  let completionsSeen = 0; // ...of which were an assistant turn
+  let sawGenerating = false; // and whether the page ever showed its Stop control
 
   // ---- which replies landed in front of us --------------------------------
   // Page-scoped rather than per-conversation, deliberately: a brand-new chat
@@ -77,9 +82,17 @@
       // What the page did while this was switched off is not ours to act on —
       // and a turn remembered from then would be waiting to mark an old reply
       // as live the moment the switch went the other way.
+      // Counted before the URL filter as well as after it, so a report can
+      // tell "no turn happened in this tab" apart from "turns happened and the
+      // hook never recognised one" — which are the same silence and completely
+      // different bugs.
+      if (p.streamStart) streamsSeen++;
       if (!cfg.enabled) return;
       if (!COMPLETION_RE.test(String(p.url || ""))) return;
-      if (p.streamStart) before = newestSignature();
+      if (p.streamStart) {
+        completionsSeen++;
+        before = newestSignature();
+      }
       if (p.streamDone) armed = true;
     });
   } catch (e) {
@@ -554,6 +567,7 @@
     // two-part signal: note what was newest when the turn began, and arm when
     // it ends.
     const newest = newestSignature();
+    if (generating) sawGenerating = true;
     if (generating && !wasGenerating) before = newest;
     if (!generating && wasGenerating) armed = true;
     wasGenerating = generating;
@@ -680,6 +694,18 @@
           " · census " + (baselined ? "closed" : "open") +
           " · " + (generating ? "generating" : "idle") +
           " · armed " + (armed ? "yes" : "no")
+      );
+      say(
+        "turn signal: " + completionsSeen + " assistant turn" + (completionsSeen === 1 ? "" : "s") +
+          " seen streaming since this page loaded" +
+          (streamsSeen > completionsSeen
+            ? " (" + (streamsSeen - completionsSeen) + " other stream" +
+              (streamsSeen - completionsSeen === 1 ? "" : "s") + " ignored)"
+            : "") +
+          " · Stop control " + (sawGenerating ? "seen" : "never seen") +
+          (completionsSeen || sawGenerating
+            ? ""
+            : " — so no turn has run in this tab since it loaded, and nothing here is meant to be saveable")
       );
       const list = assistantMessages();
       say(list.length + " assistant messages on the page · " + live.length + " watched arrive");
