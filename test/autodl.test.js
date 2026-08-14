@@ -436,3 +436,38 @@ test("catch-up doesn't loosen any of the other ceilings", () => {
   );
   assert.equal(A.plan(OLD, backlogCtx(Object.assign({ enabled: false }, ctx))).hold, "off");
 });
+
+test("a filename survives the punctuation a document title actually has", () => {
+  // A colon in the title used to truncate the name to what followed it, which
+  // is a different name from the one that reaches your disk.
+  assert.equal(
+    A.fileNameIn("Verification Report: 24STCV83325 Motion for Attorney Fees 8.13.2026.md"),
+    "Verification Report: 24STCV83325 Motion for Attorney Fees 8.13.2026.md"
+  );
+  assert.equal(A.fileNameIn("Ruling — Smith v. Jones (demurrer).docx"), "Ruling — Smith v. Jones (demurrer).docx");
+  assert.equal(A.fileNameIn("Notes #3 & follow-up.txt"), "Notes #3 & follow-up.txt");
+});
+
+test("the card's name and the name on disk fold to the same key", () => {
+  // Chrome rewrites what a filesystem won't take: the colon becomes an
+  // underscore. Compared literally, the two never match and every file is
+  // saved a second time — which is the bug this closes.
+  const card = A.fileNameIn("Verification Report: 24STCV83325 Motion for Attorney Fees 8.13.2026.md");
+  const key = A.downloadKey(card);
+  for (const disk of [
+    "/Users/me/Downloads/Verification Report_ 24STCV83325 Motion for Attorney Fees 8.13.2026.md",
+    "/Users/me/Downloads/Verification Report_ 24STCV83325 Motion for Attorney Fees 8.13.2026 (1).md",
+    "C:\\Users\\me\\Downloads\\Verification_Report__24STCV83325_Motion_for_Attorney_Fees_8.13.2026.md",
+  ])
+    assert.equal(A.downloadKey(disk), key, disk);
+
+  // Folding punctuation must not fold two genuinely different files together.
+  assert.notEqual(A.downloadKey("Verification Report: 24STCV83326.md"), key);
+  assert.notEqual(A.downloadKey("ruling.docx"), A.downloadKey("ruling.md"));
+});
+
+test("the other characters a filesystem refuses fold the same way", () => {
+  const key = A.downloadKey("Q1 report.md");
+  for (const s of ["Q1*report.md", 'Q1"report.md', "Q1<report.md", "Q1|report.md", "Q1?report.md"])
+    assert.equal(A.downloadKey(s), key, s);
+});
