@@ -32,6 +32,7 @@
     autoDownload: document.getElementById("auto-download"),
     dlMax: document.getElementById("dl-max"),
     dlSeen: document.getElementById("dl-seen"),
+    dlCatchUp: document.getElementById("dl-catchup"),
     openLog: document.getElementById("open-log"),
     svcStatus: document.getElementById("svc-status"),
     svcDetail: document.getElementById("svc-detail"),
@@ -132,7 +133,7 @@
   }
 
   let acCfg = { enabled: false, max: 50, allowOnce: false };
-  let dlCfg = { enabled: false, max: 20 };
+  let dlCfg = { enabled: false, max: 20, catchUp: false };
   let statusCfg = { warn: true, holdSends: true, defaultModel: "" };
 
   chrome.storage.local.get(
@@ -159,6 +160,7 @@
       dlCfg = Object.assign(dlCfg, (res && res[AUTODOWNLOAD_KEY]) || {});
       el.autoDownload.checked = !!dlCfg.enabled;
       el.dlMax.value = dlCfg.max;
+      el.dlCatchUp.checked = !!dlCfg.catchUp;
       renderDlSeen(res && res[AUTODOWNLOAD_SEEN_KEY]);
       // Both status toggles default ON, so only an explicit false turns them off.
       const sc = (res && res[STATUS_CFG_KEY]) || {};
@@ -298,6 +300,15 @@
     dlCfg.enabled = el.autoDownload.checked;
     if (!dlCfg.enabled && el.dlSeen) el.dlSeen.hidden = true;
     saveDl(dlCfg.enabled ? "Saving files Claude produces" : "Auto-download off");
+  });
+
+  el.dlCatchUp.addEventListener("change", () => {
+    dlCfg.catchUp = el.dlCatchUp.checked;
+    saveDl(
+      dlCfg.catchUp
+        ? "Catching up on files you don't already have"
+        : "Only files that arrive while you're watching"
+    );
   });
 
   el.dlMax.addEventListener("change", () => {

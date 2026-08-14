@@ -115,6 +115,33 @@
     return name;
   }
 
+  // How a file is recognised as one you already have.
+  //
+  // Matched on the NAME, because that is the only thing a card on the page and
+  // an entry in your download history have in common — the history knows a path
+  // and a size, the card knows neither. Chrome's own de-duplication is undone
+  // first: a second copy of `ruling.docx` is saved as `ruling (1).docx` and a
+  // third as `ruling (2).docx`, so a run of those would each look like a
+  // different file and each earn another copy.
+  function downloadKey(name) {
+    let s = str(name).replace(/\\/g, "/");
+    s = s.slice(s.lastIndexOf("/") + 1).replace(/\s+/g, " ").trim();
+    if (!s) return "";
+    // " (1)" immediately before the extension, or at the end where there is none.
+    s = s.replace(/\s*\(\d+\)(?=\.[^.]*$)/, "").replace(/\s*\(\d+\)$/, "");
+    return s.toLowerCase();
+  }
+
+  // Every name you already have, as a lookup.
+  function downloadIndex(names) {
+    const out = Object.create(null);
+    for (const n of names || []) {
+      const k = downloadKey(n);
+      if (k) out[k] = true;
+    }
+    return out;
+  }
+
   // What identifies a reply. Its opening is stable once written — where its
   // length, its ending and its position in the list are all still moving while
   // claude.ai streams it, mounts it and unmounts it again. (A reply shorter
@@ -218,6 +245,27 @@
     const live = {};
     for (const s of c.live || []) live[s] = true;
 
+    /**
+     * Take this one even though nobody watched its reply arrive?
+     *
+     * Only with `catchUp` on, and only where a real answer to "do I already
+     * have this?" exists. Two conditions, both load-bearing:
+     *
+     * - It has to have a NAME. An unnamed control cannot be checked against
+     *   anything, so catching it up would be saving a file on the strength of
+     *   nothing at all — and a chat's backlog is exactly where that goes wrong
+     *   at scale.
+     * - Your download history has to have been READ. `downloaded` being absent
+     *   means the question wasn't answered, not that the answer was no; acting
+     *   on a missing answer is how a folder fills up with second copies.
+     */
+    const dl = c.downloaded || null;
+    const catchable = (o) => {
+      if (!c.catchUp || !dl) return false;
+      const key = downloadKey(o && o.name);
+      return !!key && !dl[key];
+    };
+
     if (!c.enabled) return Object.assign({}, none, { hold: "off" });
     if (!c.baselined) {
       // The census does not close over a turn that is still in flight, or one
@@ -230,8 +278,12 @@
       // moment an answer lands is a coin toss between the two rules otherwise,
       // and the census is the one that should give way — it is the weaker
       // statement of the two.
+      // ...nor one it is about to catch up. The census exists to file "what
+      // was already here" as handled; with catch-up on, a named file you don't
+      // have is not handled, and adopting it here would put it beyond reach for
+      // the rest of the page load.
       return {
-        adopt: list.filter((o) => !live[turnOf(o.key)]).map((o) => o.key),
+        adopt: list.filter((o) => !live[turnOf(o.key)] && !catchable(o)).map((o) => o.key),
         take: null,
         hold: "baseline",
       };
@@ -261,8 +313,8 @@
       // Not a reply we watched being written. Every file in a chat you have
       // merely opened lands here, and none of them is adopted: should this turn
       // out to be the reply in flight after all, it is still saved.
-      if (!live[t]) {
-        held = held || "backlog";
+      if (!live[t] && !catchable(o)) {
+        held = held || (c.catchUp && !dl ? "no download history yet" : "backlog");
         continue;
       }
       let n = 0;
@@ -288,6 +340,8 @@
     mentionsSave,
     fileNameIn,
     isTypeChip,
+    downloadKey,
+    downloadIndex,
     fileName,
     turnSignature,
     offerKeys,
