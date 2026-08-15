@@ -41,6 +41,34 @@
   const COOLDOWN_MS = 1200; // never two saves closer together than this
   const TURN_SIG = 120; // chars of a reply that identify it
 
+  // How far back catch-up may reach, by the clock rather than by a count of
+  // replies. Twelve replies is no distance at all in a chat worked on for a
+  // week: opening it hands catch-up a fortnight of files and asks the download
+  // history to sort them out. Ten minutes is the span in which a file can
+  // plausibly be something this session just produced.
+  //
+  // It bounds CATCH-UP only. A reply watched arriving is saved whatever the
+  // clock says about the turn it belongs to — it happened in front of us, and
+  // that is a better fact than any timestamp.
+  const LOOKBACK_MS = 10 * 60 * 1000;
+
+  /**
+   * Is a turn recent enough for catch-up to touch its files?
+   *
+   * An unknown time is NOT recent. Catch-up reaching back through a chat is
+   * exactly the case this bound exists for, so "we couldn't find out when this
+   * happened" has to fail closed — otherwise the one situation the caller can't
+   * measure is the one where the bound stops applying.
+   */
+  function withinLookback(at, now, maxMs) {
+    if (typeof at !== "number" || !isFinite(at)) return false;
+    const t = typeof now === "number" && isFinite(now) ? now : 0;
+    const span = maxMs > 0 ? maxMs : LOOKBACK_MS;
+    // A turn stamped in the future is a clock disagreeing with itself, not a
+    // reason to save something: treat it as now rather than as infinitely old.
+    return at - t <= span && t - at <= span;
+  }
+
   function str(x) {
     return typeof x === "string" ? x : x == null ? "" : String(x);
   }
@@ -97,6 +125,25 @@
     // and does nothing at all to make "Save to Google Drive" a download.
     if (goesElsewhere(s)) return false;
     return SAVE_WORD.test(s);
+  }
+
+  // A control that doesn't save anything itself but opens the thing that does.
+  // Cowork puts a file's Download behind one: an icon-only
+  //   button[aria-label="More ways to open"]
+  // whose menu holds "Google Drive" and "Download". It carries no filename and
+  // no save word, so nothing above can see it, and a card whose only route to
+  // the file is this button looks to this module like a card with no control.
+  //
+  // Narrow, and the words have to LEAD, on the same reasoning as SAVE_RE: this
+  // runs unattended, and pressing an unknown button to see what happens is how
+  // a "download" ends up being Delete. Being merely a disclosure is not licence
+  // to press whatever it reveals — the caller still takes a census first and
+  // presses only what names itself a save afterwards.
+  const DISCLOSURE_RE = /^more\s+(?:ways|options|actions|choices)\b/;
+  function isDisclosureLabel(text) {
+    const s = normLabel(text);
+    if (!s || s.length > 40) return false;
+    return DISCLOSURE_RE.test(s);
   }
 
   // Text that names a file. This is what identifies a card: claude.ai draws
@@ -301,10 +348,18 @@
      * - Your download history has to have been READ. `downloaded` being absent
      *   means the question wasn't answered, not that the answer was no; acting
      *   on a missing answer is how a folder fills up with second copies.
+     * - And the turn has to be RECENT. See LOOKBACK_MS: a count of replies is
+     *   no measure of age in a chat worked on across days, and a file produced
+     *   last Tuesday is not something this session is catching up on.
      */
     const dl = c.downloaded || null;
+    let staleSeen = false;
     const catchable = (o) => {
       if (!c.catchUp || !dl) return false;
+      if (!withinLookback(o && o.at, c.now, c.lookbackMs)) {
+        staleSeen = true;
+        return false;
+      }
       const key = downloadKey(o && o.name);
       return !!key && !dl[key];
     };
@@ -357,7 +412,13 @@
       // merely opened lands here, and none of them is adopted: should this turn
       // out to be the reply in flight after all, it is still saved.
       if (!live[t] && !catchable(o)) {
-        held = held || (c.catchUp && !dl ? "no download history yet" : "backlog");
+        held =
+          held ||
+          (c.catchUp && !dl
+            ? "no download history yet"
+            : c.catchUp && staleSeen
+            ? "older than the catch-up window"
+            : "backlog");
         continue;
       }
       let n = 0;
@@ -382,6 +443,9 @@
     isSaveLabel,
     mentionsSave,
     goesElsewhere,
+    isDisclosureLabel,
+    LOOKBACK_MS,
+    withinLookback,
     fileNameIn,
     isTypeChip,
     downloadKey,

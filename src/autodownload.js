@@ -50,6 +50,7 @@
   // since claude.ai only has a window of it mounted anyway.
   const CATCHUP_REPLIES = 12;
   const HISTORY_EVERY_MS = 60000; // how often to re-read what's in Downloads
+  const STAMPS_EVERY_MS = 30000; // ...and how often to re-read when each turn was
 
   let cfg = { enabled: false, max: A ? A.MAX_PER_PAGE : 20, catchUp: false };
   // Names already in your Downloads folder. null means "not asked yet", which
@@ -355,6 +356,14 @@
     const buttons = q('button,[role="button"]');
     const byName = named(buttons, A.isSaveLabel) || named(buttons, A.mentionsSave);
     if (byName) return byName;
+    // Cowork hides Download behind a "More ways to open" disclosure. Named, so
+    // this is no more of a guess than the tests above it — and what it opens is
+    // still only pressed if the census afterwards finds something calling
+    // itself a save. It sits before the `strict` bail for that reason: the
+    // button says what it is, which is exactly what `strict` is protecting
+    // against the absence of.
+    const disclosure = named(buttons, A.isDisclosureLabel);
+    if (disclosure) return disclosure;
     // A card identified only by its type chip stops here: it may not be a card
     // at all, and "the only button near it" is how you end up pressing Copy.
     if (strict) return null;
@@ -377,12 +386,17 @@
   // to go looking afterwards.
   function isOpener(card, ctrl) {
     if (!ctrl) return false;
+    if (A.isSaveLabel(ctrl.getAttribute("aria-label")) || A.isSaveLabel(ctrl.textContent))
+      return false;
+    // A disclosure is an opener by definition, and — unlike the thumbnail below
+    // — it says so in its own label rather than by echoing the filename. Which
+    // is just as well: Cowork's carries no filename at all.
+    if (A.isDisclosureLabel(ctrl.getAttribute("aria-label")) || A.isDisclosureLabel(ctrl.textContent))
+      return true;
     const name = A.fileNameIn(card.textContent || "");
     if (!name) return false;
     const label =
       (ctrl.getAttribute("aria-label") || "") + " " + (ctrl.textContent || "");
-    if (A.isSaveLabel(ctrl.getAttribute("aria-label")) || A.isSaveLabel(ctrl.textContent))
-      return false;
     return label.replace(/\s+/g, " ").indexOf(name) !== -1;
   }
 
@@ -451,6 +465,70 @@
     }
   }
 
+  // ---- when a reply happened ----------------------------------------------
+  //
+  // Catch-up is bounded by the clock (A.LOOKBACK_MS), and the page itself never
+  // says when a turn was: claude.ai renders "1 hour ago" behind a hover. The
+  // real times are in the conversation payload, which src/conv.js already
+  // fetches once for everything that wants it — the contents list, the
+  // timestamps in the margin, Save. This asks the same cache.
+  //
+  // Kept deliberately passive. Nothing here triggers a fetch on the poll's
+  // account: it reads what has already been fetched and otherwise answers
+  // "don't know", which withinLookback treats as not-recent. So the failure
+  // mode of an unreachable payload is catch-up standing still, never catch-up
+  // reaching further than it should.
+  let stampAt = 0;
+  let stampFor = "";
+  let stamps = []; // [{ sender, key, at }]
+
+  function refreshStamps() {
+    if (!cfg.enabled || !cfg.catchUp) return;
+    const S = window.CUMStamp;
+    const V = window.CUMConv;
+    const W = window.CUMWorkflow;
+    if (!S || !V || !W) return;
+    const id = W.conversationId(location.pathname);
+    if (!id) return;
+    if (id !== stampFor) {
+      stampFor = id;
+      stamps = [];
+      stampAt = 0;
+    }
+    const now = Date.now();
+    if (now - stampAt < STAMPS_EVERY_MS) return;
+    stampAt = now;
+    try {
+      Promise.resolve(V.get(id, V.FRESH_MS))
+        .then((conv) => {
+          if (id !== stampFor) return;
+          const next = S.stampList(conv).filter((s) => s.sender === "assistant" && s.at != null);
+          if (next.length) stamps = next;
+        })
+        .catch(() => {});
+    } catch (e) {
+      /* an unavailable payload is "don't know", which holds catch-up back */
+    }
+  }
+
+  // The time on the reply this element is, matched the way the contents list
+  // and the margin timestamps match: by the opening of its text. Null when the
+  // payload doesn't know it, which is the answer that holds a file back.
+  function turnTime(msgEl) {
+    if (!stamps.length) return null;
+    const S = window.CUMStamp;
+    if (!S) return null;
+    let key;
+    try {
+      key = S.entryKey(msgEl.textContent || "");
+    } catch (e) {
+      return null;
+    }
+    if (!key) return null;
+    for (const s of stamps) if (s.key === key) return s.at;
+    return null;
+  }
+
   function collect() {
     // The newest reply, plus the one before it so a missed poll can't lose a
     // file — and no further back, or scrolling would resurrect the whole chat.
@@ -469,8 +547,16 @@
         A.turnSignature(m.textContent),
         found.map((f) => f.name)
       );
+      const at = turnTime(m);
       found.forEach((f, i) =>
-        offers.push({ key: keys[i], name: f.name, node: f.node, ready: f.ready, opener: f.opener })
+        offers.push({
+          key: keys[i],
+          name: f.name,
+          node: f.node,
+          ready: f.ready,
+          opener: f.opener,
+          at: at,
+        })
       );
     }
     return offers;
@@ -587,6 +673,7 @@
     // page every two seconds on the strength of a toggle nobody turned on.
     if (!A || !C || !cfg.enabled) return;
     refreshHistory();
+    refreshStamps();
     let generating = false;
     try {
       generating = C.isGenerating();
@@ -699,6 +786,14 @@
               (Object.keys(downloaded).length === 1 ? " file" : " files") +
               " already in Downloads"
             : "download history unread" + (historyError ? " (" + historyError + ")" : ""))
+        : "") +
+      // Whether the clock half of catch-up is working. Without turn times
+      // nothing older than this page load can be caught up, and a line that
+      // said only "catch-up on" would be claiming a reach it doesn't have.
+      (cfg.catchUp
+        ? stamps.length
+          ? ", last " + Math.round(A.LOOKBACK_MS / 60000) + " min"
+          : ", turn times unread — nothing older than now can be caught up"
         : "");
     if (line === lastReport) return;
     lastReport = line;
@@ -947,7 +1042,7 @@
       for (const o of offers)
         say("  " + JSON.stringify(o.name || "(unnamed)") + " — " + label(o.node) +
           (o.ready ? "" : " — already pressed this page load") +
-          (o.opener ? " — the card itself, so Download gets chased into whatever it opens" : ""));
+          (o.opener ? " — an opener, so Download gets chased into whatever it opens" : ""));
       if (!take.length) return finishProbe(out.concat(["Nothing left to press — reload the page to start over."]));
 
       // Remembered, so the automatic path doesn't come back and press it again.
