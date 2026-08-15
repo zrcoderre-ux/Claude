@@ -15,7 +15,7 @@
  * MV3 workers are short-lived, so a chrome.alarm keeps things ticking.
  */
 // self.CUMJobs / CUMStatus / CUMWorkflow / CUMWfUsage
-importScripts("jobstore.js", "status.js", "workflow.js", "wfusage.js", "incognito.js");
+importScripts("jobstore.js", "status.js", "workflow.js", "wfusage.js", "incognito.js", "cowork.js");
 
 const CFG_KEY = "cum_autocontinue";
 const DL_CFG_KEY = "cum_autodownload"; // { enabled, max } — the file saver

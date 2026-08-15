@@ -65,6 +65,7 @@
         "src/mdexport.js",
         "src/incognito.js",
         "src/stamp.js",
+        "src/cowork.js",
         "src/autodl.js",
         "src/tentative.js",
         "src/content.js",
