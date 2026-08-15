@@ -742,6 +742,8 @@
   // read back by the panel's button.
   let lastSurfaceWhy = "";
   const surfaceWhy = () => lastSurfaceWhy;
+  let lastProjectWhy = "";
+  const projectWhy = () => lastProjectWhy;
 
   function findSurfaceGroup() {
     const g = document.querySelector('[role="radiogroup"][aria-label="Surface" i]');
@@ -1010,26 +1012,71 @@
    */
   async function selectCoworkProject(name) {
     const k = K();
-    if (!k || !String(name || "").trim()) return "inherit";
+    const why = (text, verdict) => {
+      lastProjectWhy = text;
+      return verdict;
+    };
+    if (!k) return why("CUMCowork not loaded in this world", "unsupported");
+    if (!String(name || "").trim()) return why("no project asked for", "inherit");
 
-    const trigger = Array.from(document.querySelectorAll("button")).find((b) => {
-      if (isOurs(b)) return false;
-      const t = normLower(b.textContent);
-      return t === "project" || t === normLower(name);
-    });
-    if (!trigger) return "unsupported";
-    if (normLower(trigger.textContent) === normLower(name)) return "ok"; // already chosen
+    // The trigger reads "Project" until something is chosen and the project's
+    // own name after — so both are how it might be found, and both are compared
+    // on letters alone. This markup carries characters that no whitespace rule
+    // removes, which is what made the surface toggle unmatchable.
+    const triggers = Array.from(document.querySelectorAll("button")).filter((b) => !isOurs(b));
+    let trigger = triggers.find((b) => k.projectTriggerIs(b.textContent, name));
+    if (trigger) return why("the trigger already reads " + JSON.stringify(name), "ok");
+    trigger = triggers.find((b) => k.isProjectTriggerCaption(b.textContent));
+    if (!trigger)
+      return why(
+        "no project menu — no button captioned Project, and none named " + JSON.stringify(name),
+        "unsupported"
+      );
     robustClick(trigger);
 
+    // The list is labelled "Search projects", which is a promise of a filter —
+    // and a filter is not a nicety here. A long list renders only what fits, so
+    // a project far down it is not in the page to be clicked until the typing
+    // brings it there. Same shape as the repo picker, for the same reason.
+    let box = null;
+    const deadline = Date.now() + 4000;
+    while (Date.now() < deadline) {
+      box =
+        document.querySelector('[role="listbox"][aria-label*="project" i]') ||
+        document.querySelector('[role="listbox"]') ||
+        document.querySelector('[role="menu"]');
+      if (box) break;
+      await sleep(150);
+    }
+    const scope = box || document;
+    const filter = scope.querySelector('input:not([type="hidden"]), [contenteditable="true"]');
+    if (filter) {
+      try {
+        filter.focus();
+        const typed = document.execCommand && document.execCommand("insertText", false, name);
+        if (!typed && "value" in filter) {
+          filter.value = name;
+          filter.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      } catch (e) {
+        /* an unfiltered list is still a list */
+      }
+      await sleep(700);
+    }
+
     const rowOf = () => {
-      for (const el of document.querySelectorAll('[role="option"]')) {
+      const seen = [];
+      for (const el of (box || document).querySelectorAll('[role="option"],[role="menuitem"]')) {
         if (isOurs(el)) continue;
         const t = el.textContent || "";
-        if (!k.isProjectRow(t)) continue;
+        if (!k.isProjectRow(t)) continue; // never "Create new project" — it navigates
+        seen.push(t.replace(/\s+/g, " ").trim().slice(0, 40));
         if (k.projectRowMatches(t, name)) return el;
       }
+      lastSeenRows = seen;
       return null;
     };
+    let lastSeenRows = [];
     let row = rowOf();
     for (let i = 0; i < 12 && !row; i++) {
       await sleep(200);
@@ -1037,12 +1084,28 @@
     }
     if (!row) {
       closeMenu();
-      return "notfound";
+      return why(
+        "no row named " + JSON.stringify(name) + " among " +
+          JSON.stringify(lastSeenRows.join(" | ")) +
+          (filter ? " (filtered)" : " (no filter box found)"),
+        "notfound"
+      );
     }
     robustClick(row);
-    await sleep(500);
+
+    // Believed only when the trigger says so. A menu that closed is not a
+    // project that was chosen, and an unattended send has no other way to tell
+    // the difference.
+    for (let i = 0; i < 10; i++) {
+      await sleep(200);
+      if (triggers.concat([trigger]).some((b) => k.projectTriggerIs(b.textContent, name)))
+        return why("clicked the row and the trigger now reads it", "ok");
+      const live = Array.from(document.querySelectorAll("button")).filter((b) => !isOurs(b));
+      if (live.some((b) => k.projectTriggerIs(b.textContent, name)))
+        return why("clicked the row and the trigger now reads it", "ok");
+    }
     closeMenu();
-    return "ok";
+    return why("clicked the row but no trigger came to read " + JSON.stringify(name), "failed");
   }
 
   // ---- one composed message, end to end ----------------------------------
@@ -1123,8 +1186,11 @@
     if (k && o.coworkProject && k.approvalApplies(o.surface, currentSurface())) {
       try {
         const r = await selectCoworkProject(o.coworkProject);
-        if (r === "unsupported") notes.push("no project menu on this page");
-        else if (r === "notfound") notes.push('project "' + o.coworkProject + '" not in the menu');
+        if (r === "unsupported") notes.push("no project menu on this page (" + projectWhy() + ")");
+        else if (r === "notfound")
+          notes.push('project "' + o.coworkProject + '" not chosen (' + projectWhy() + ")");
+        else if (r === "failed")
+          notes.push('project "' + o.coworkProject + '" not chosen (' + projectWhy() + ")");
       } catch (e) {
         notes.push("project select failed");
       }
@@ -1260,6 +1326,7 @@
     selectCodeRepo,
     findSurfaceGroup,
     surfaceWhy,
+    projectWhy,
     currentSurface,
     selectSurface,
     findApprovalTrigger,

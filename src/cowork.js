@@ -321,12 +321,36 @@
    * pinned marker after the name but never before it.
    */
   function projectRowMatches(rowText, name) {
-    const want = lower(name);
+    // Letters and digits, on both sides, for the reason the surface toggle
+    // taught: this markup carries characters that no whitespace rule removes
+    // and no report shows. A project's own punctuation is not the question —
+    // the row and the stored name come from the same place and differ only in
+    // what claude.ai has sprinkled through them.
+    const want = squash(name);
     if (!want) return false;
-    const t = lower(rowText);
+    const t = squash(rowText);
     if (!t) return false;
     if (t === want) return true;
     return t.indexOf(want) === 0 && t.length - want.length < 25;
+  }
+
+  /** The name a project menu's trigger shows, or "" for the unset caption. */
+  function projectTriggerName(text) {
+    const t = squash(text);
+    if (!t || t === "project" || t === "noproject" || t === "selectaproject") return "";
+    return norm(text);
+  }
+
+  /** Whether a trigger's caption already names this project. */
+  function projectTriggerIs(text, name) {
+    const want = squash(name);
+    return !!want && squash(text) === want;
+  }
+
+  /** Whether a caption is the menu's unset one — "Project" and its variants. */
+  function isProjectTriggerCaption(text) {
+    const t = squash(text);
+    return t === "project" || t === "projects" || t === "noproject" || t === "selectaproject";
   }
 
   // Rows that look like projects but aren't. Clicking either of these navigates
@@ -362,6 +386,9 @@
     conversationApiPath,
     isCoworkUrl,
     projectRowMatches,
+    projectTriggerName,
+    projectTriggerIs,
+    isProjectTriggerCaption,
     isProjectRow,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
