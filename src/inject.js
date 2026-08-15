@@ -354,6 +354,19 @@
     if (/^[0-9a-f-]{36}$/i.test(id)) return `/api/organizations/${orgId}/chat_conversations/${id}`;
     return null;
   }
+
+  // WRITING is a different question from reading, and only one of the two has
+  // ever been watched happening. A rename is
+  //   PUT /api/organizations/<org>/chat_conversations/<uuid>  {"name": "..."}
+  // captured off the live page, and that collection is where a rename goes
+  // whatever kind of conversation this is. The /conversations/<cse_id> shape
+  // above was inferred from a READ — the wiggle/list-files call a session makes
+  // as it opens — and inferring a write from a read is how a rename went to a
+  // URL nobody had ever seen answer anything.
+  function renameApiPath(orgId, id) {
+    if (!orgId || !id) return null;
+    return `/api/organizations/${orgId}/chat_conversations/${id}`;
+  }
   const knownConversationId = (id) =>
     /^cse_[A-Za-z0-9_-]+$/.test(String(id || "")) || /^[0-9a-f-]{36}$/i.test(String(id || ""));
 
@@ -427,7 +440,7 @@
         return (function next(i, method) {
           if (i >= orgs.length)
             return method === "PUT" ? next(0, "PATCH") : reply({ error: "rename refused" });
-          const base = conversationApiPath(orgs[i], uuid);
+          const base = renameApiPath(orgs[i], uuid);
           if (!base) return reply({ error: "unavailable" });
           return origFetch(base, {
             method: method,
