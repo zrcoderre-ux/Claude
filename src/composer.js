@@ -727,6 +727,66 @@
     return "ok";
   }
 
+  // ---- opening a menu, and knowing that it opened -------------------------
+  //
+  // A dispatched click is untrusted, and the toggle taught what that costs on a
+  // form control. Menus are the milder case — most React handlers fire on the
+  // event alone — but "milder" is not "never", and a menu that failed to open
+  // is indistinguishable from a menu with nothing in it: both report no items.
+  // Two rounds were spent reading that ambiguity the wrong way.
+  //
+  // So opening is a step with its own answer. Click, look, click properly,
+  // look again — and say which, because the trigger's aria-expanded and the
+  // presence of items are different facts and only one of them is the question.
+  function menuItems() {
+    try {
+      return Array.from(
+        document.querySelectorAll('[role="menuitem"],[role="menuitemradio"],[role="option"]')
+      ).filter((el) => !isOurs(el));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  const expanded = (el) => !!el && el.getAttribute("aria-expanded") === "true";
+
+  /**
+   * Open the menu `trigger` controls. Returns "" when it opened, or a sentence
+   * saying what happened instead — never a bare boolean, since the caller's
+   * whole job when this fails is to say why.
+   */
+  async function openMenu(trigger, was) {
+    const before = (was || []).length;
+    const grew = () => menuItems().length > before;
+    for (const how of ["dispatched", "native"]) {
+      if (how === "dispatched") robustClick(trigger);
+      else {
+        try {
+          if (typeof trigger.click === "function") trigger.click();
+        } catch (e) {
+          /* the report below is the point */
+        }
+      }
+      for (let i = 0; i < 8; i++) {
+        await sleep(150);
+        if (grew()) return "";
+      }
+      // Expanded but empty is a real state — a menu still rendering — so give
+      // it a little longer before trying the harder click.
+      if (expanded(trigger)) {
+        for (let i = 0; i < 8; i++) {
+          await sleep(200);
+          if (grew()) return "";
+        }
+      }
+    }
+    return expanded(trigger)
+      ? "the menu says it is open but has no items in it"
+      : "the menu never opened (aria-expanded stayed " +
+          JSON.stringify(trigger.getAttribute("aria-expanded") || "unset") +
+          ")";
+  }
+
   // ---- cowork: the surface, and what it's allowed to do on its own -------
   //
   // claude.ai calls the Chat/Cowork toggle a "Surface": a radiogroup of two
@@ -975,7 +1035,10 @@
 
     const trigger = findApprovalTrigger();
     if (!trigger) return "unsupported";
-    robustClick(trigger);
+    if (await openMenu(trigger, menuItems())) {
+      closeMenu();
+      return "failed";
+    }
 
     const rowOf = () => {
       for (const el of document.querySelectorAll('[role="menuitemradio"]')) {
@@ -1048,27 +1111,30 @@
           JSON.stringify(name) + " (" + triggers.length + " menu buttons on the page)",
         "unsupported"
       );
-    robustClick(trigger);
+    const before = menuItems();
+    const trouble = await openMenu(trigger, before);
+    if (trouble) return why(trouble, "notfound");
 
     // The list is labelled "Search projects", which is a promise of a filter —
     // and a filter is not a nicety here. A long list renders only what fits, so
     // a project far down it is not in the page to be clicked until the typing
     // brings it there. Same shape as the repo picker, for the same reason.
-    let box = null;
-    const deadline = Date.now() + 4000;
-    while (Date.now() < deadline) {
-      box =
-        document.querySelector('[role="listbox"][aria-label*="project" i]') ||
-        document.querySelector('[role="listbox"]') ||
-        document.querySelector('[role="menu"]');
-      if (box) break;
-      await sleep(150);
-    }
+    // The menu is open and has rows in it — openMenu said so — which is what
+    // makes it safe to look for the box they live in. An EMPTY container was
+    // being accepted before, and an empty container is exactly what a menu that
+    // never opened looks like.
+    const rowsNow = menuItems();
+    const holder = (el) => el && rowsNow.some((r) => el.contains(r));
+    let box =
+      Array.from(document.querySelectorAll('[role="listbox"][aria-label*="project" i]')).find(holder) ||
+      Array.from(document.querySelectorAll('[role="listbox"]')).find(holder) ||
+      Array.from(document.querySelectorAll('[role="menu"],[role="dialog"]')).find(holder) ||
+      null;
     // Only ever inside the menu. Falling back to the document would find the
     // composer's own editor and type the project's name into the prompt — the
     // message would go out mangled, which is far worse than a project not
     // chosen.
-    if (!box) return why("the project menu never opened", "notfound");
+    if (!box) return why("rows opened but nothing recognisable holds them", "notfound");
     const filter = box.querySelector('input:not([type="hidden"]), [contenteditable="true"]');
     if (filter) {
       try {
@@ -1198,22 +1264,28 @@
 
     let item = null;
     let opened = null;
+    let trouble = "";
     for (const trigger of order.slice(0, 4)) {
-      robustClick(trigger);
-      for (let i = 0; i < 8 && !item; i++) {
+      const t = await openMenu(trigger, menuItems());
+      if (t) {
+        trouble = trouble || t;
+        closeMenu();
         await sleep(150);
-        item = renameItem();
+        continue;
       }
+      item = renameItem();
       if (item) {
         opened = trigger;
         break;
       }
-      closeMenu(); // not this one — put it back before trying the next
+      closeMenu(); // opened, but not the menu we want — put it back
       await sleep(150);
     }
     if (!item)
       return why(
-        "no Rename in any header menu — saw " + JSON.stringify(seenItems()),
+        seenItems()
+          ? "no Rename in any header menu — saw " + JSON.stringify(seenItems())
+          : trouble || "no header menu would open",
         "unsupported"
       );
     void opened;
