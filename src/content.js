@@ -932,17 +932,20 @@
           verdict = "threw: " + String((err && err.message) || err);
         }
         const after = C.currentSurface();
-        saySurface(
+        // Kept, rather than printed and forgotten. The live reading is redrawn
+        // every time the panel opens, and it used to overwrite this the instant
+        // it appeared — the verdict was being deleted by the refresh a line
+        // later, which read from the outside as a button that printed nothing.
+        lastVerdict =
           verdict +
-            " · asked for " + K.describeSurface(want) +
-            " · now reads " + (K.describeSurface(after) || "unreadable") +
-            // Only when something went wrong, and then everything: "unsupported"
-            // says a piece was missing without saying which, and which piece is
-            // the entire question.
-            (verdict === "ok" ? "" : "\n" + (C.surfaceReport ? C.surfaceReport() : "no report"))
-        );
+          " · asked for " + K.describeSurface(want) +
+          " · was " + (K.describeSurface(now) || "unreadable") +
+          " · now " + (K.describeSurface(after) || "unreadable");
         refreshSurfaceBtn();
       });
+
+    // The last click's answer, which outlives the redraw.
+    let lastVerdict = "";
 
     // Two places, because the panel closes the moment you click anywhere else
     // and a line you didn't manage to read is a line that wasn't printed.
@@ -974,11 +977,23 @@
             ? "  (on " + K.describeSurface(now) + ")"
             : "  (toggle found, state unreadable)"
           : "  (no toggle on this page)");
-      // The note is a reading, not a receipt. Toggling by hand and reopening the
-      // panel should show the new answer rather than the last click's.
-      if (els.surfaceNote && !els.surfaceNote.hidden && C && C.surfaceReport)
-        els.surfaceNote.textContent =
-          "now reads " + ((K && K.describeSurface(now)) || "unreadable") + "\n" + C.surfaceReport();
+      // Both things, because they answer different questions and each one on
+      // its own has now cost a round: the verdict says what the last click did,
+      // the reading says where the page stands, and the census says what the
+      // switch had to work with.
+      if (!els.surfaceNote) return;
+      const lines = [];
+      if (lastVerdict) lines.push("last click: " + lastVerdict);
+      lines.push("now reads " + ((K && K.describeSurface(now)) || "unreadable"));
+      if (C && C.surfaceReport) lines.push(C.surfaceReport());
+      const text = lines.join("\n");
+      els.surfaceNote.textContent = text;
+      els.surfaceNote.hidden = false;
+      try {
+        console.log("[claude-usage-meter] surface:\n" + text);
+      } catch (e) {
+        /* ignore */
+      }
     }
     els.surfaceRefresh = refreshSurfaceBtn;
 
