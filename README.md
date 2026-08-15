@@ -1266,6 +1266,13 @@ rather than something you asked for. **Open this run in a window of its own** is
 a workflow setting like every other, so a run inherits it and can change it for
 that matter alone.
 
+**A Cowork session keeps the name claude.ai gives it.** Renaming one by hand
+makes no HTTP request at all — not to `chat_conversations`, not anywhere — so
+there is no call for a run to make, and it says so once rather than reporting a
+failure on every chat it opens. A conversation inside a Cowork *project* is an
+ordinary chat with an ordinary uuid and is named normally; this applies only to
+`/cowork/cse_…` sessions.
+
 In a borrowed window a run gives up everything the isolated one provided for
 free, and gives it up deliberately: nothing is resized (the window is yours), no
 Options tab is pinned into it, **Close window** isn't offered — those tabs were

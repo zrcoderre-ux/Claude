@@ -274,6 +274,25 @@
   async function nameThisChat(msg, notes) {
     if (!msg.title || !msg.firstInChat) return;
     const uuid = conversationUuid();
+    // A Cowork SESSION cannot be renamed from here, and that is a fact about
+    // claude.ai rather than a failure of ours: renaming one by hand makes no
+    // HTTP request at all — not to chat_conversations, not anywhere — so there
+    // is no call to make and never was. Watched for, on a page that renames a
+    // regular chat with a plain PUT a few lines away.
+    //
+    // Said once, plainly, instead of reported as an error on every chat a run
+    // opens. A run whose work is done must not read as half-failed because a
+    // title it was never able to set didn't get set.
+    //
+    // Gated on the ID rather than the address: a conversation inside a Cowork
+    // PROJECT is an ordinary chat with an ordinary uuid and renames perfectly
+    // well, and if a session ever starts offering one, this stops applying by
+    // itself rather than by being remembered.
+    if (uuid && /^cse_/.test(uuid)) {
+      if (notes)
+        notes.push("Cowork sessions can't be renamed, so this one keeps the name claude.ai gave it");
+      return;
+    }
     const named = uuid ? await renameConversation(uuid, msg.title) : null;
     if (!notes) return;
     if (named && named.ok) notes.push('named this chat "' + named.name + '"');
