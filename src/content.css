@@ -296,6 +296,68 @@
   background: rgba(0, 0, 0, 0.05);
 }
 
+/* Rename this chat, by hand — the same call a run makes, on a button, so its
+   failures can be read now rather than in a run's note an hour later. */
+#cum-rename-input {
+  width: 100%;
+  margin-top: 10px;
+  padding: 6px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+#cum-rename-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#cum-rename-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+#cum-rename-note {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(201, 100, 66, 0.1);
+  color: inherit;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  #cum-rename-input {
+    background: #1f1e1c;
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #f0efea;
+  }
+  #cum-rename-btn {
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+  #cum-rename-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  #cum-rename-note {
+    background: rgba(201, 100, 66, 0.2);
+  }
+}
+
 /* Schedule-a-send modal */
 #cum-modal-overlay {
   position: fixed;
