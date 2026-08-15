@@ -55,7 +55,15 @@
   // and stays open, so there is no such moment to have — but frames arriving is
   // a fact about the NETWORK, which is what makes it better than the text
   // holding still: a throttled background tab stops laying out and never stops
-  // receiving. Used where Cowork produces no completion stream at all.
+  // receiving.
+  //
+  // In Cowork it has never fired, and neither has the event-stream hook, on a
+  // surface that plainly sends and receives. The likeliest reading is that its
+  // traffic runs through a worker — which has its own fetch, in its own scope,
+  // and cannot be patched from the page — so the page sees the telemetry it
+  // sends itself and nothing else. Left in place because it costs nothing and
+  // would start working the day that changes; the note says which signal
+  // decided, so nobody has to guess which world we are in.
   let lastFrameAt = 0;
   let anyFrameSeen = false;
   const FRAME_QUIET_MS = 4000; // frames this far apart are a turn that ended
@@ -1156,7 +1164,8 @@
           ? "took the reply after 3 minutes unchanged (the page still claimed it was generating)"
           : anyFrameSeen
           ? "turn end judged from the response socket going quiet (no completion stream in this surface)"
-          : "turn end judged from the text holding still (no completion stream seen)"
+          : "turn end judged from the text holding still — this surface shows the page no " +
+            "network signal at all (no event-stream, no socket frames)"
       );
 
     // The conversation itself answered — no need to go back to the page for a
