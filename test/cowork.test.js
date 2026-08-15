@@ -262,3 +262,50 @@ test("an id of neither shape gets no url at all, rather than a guessed one", () 
   assert.equal(K.conversationApiPath(org, null), null);
   assert.equal(K.conversationApiPath("", "cse_01Hy"), null);
 });
+
+// ---- reading the toggle when it won't say ---------------------------------
+
+test("an explicitly checked radio wins over everything else", () => {
+  const radios = [
+    { label: "Chat", checked: false },
+    { label: "Cowork", checked: true },
+  ];
+  assert.equal(K.surfaceFromEvidence(radios, false, true), "cowork");
+});
+
+test("both halves marked false is the case that broke it, and falls through", () => {
+  // Exactly what the live toggle rendered: neither span claims to be checked,
+  // because the state is on a hidden input beside them. Reading aria-checked
+  // alone concluded "no toggle here" and refused to click one in plain sight.
+  const radios = [
+    { label: "Chat", checked: false },
+    { label: "Cowork", checked: false },
+  ];
+  assert.equal(K.surfaceFromEvidence(radios, true, true), "cowork", "the approval control decides");
+  assert.equal(K.surfaceFromEvidence(radios, false, true), "chat", "a toggle and no approvals is Chat");
+});
+
+test("markup that says nothing at all still resolves from the approval control", () => {
+  const radios = [
+    { label: "Chat", checked: null },
+    { label: "Cowork", checked: null },
+  ];
+  assert.equal(K.surfaceFromEvidence(radios, true, true), "cowork");
+  assert.equal(K.surfaceFromEvidence(radios, false, true), "chat");
+});
+
+test("a settled cowork session has no toggle and is still cowork", () => {
+  assert.equal(K.surfaceFromEvidence([], true, false), "cowork");
+});
+
+test("neither a toggle nor an approval control means we don't know", () => {
+  // An ordinary conversation. "" reads as "unknown" to reconcileSurface, which
+  // is right: there was never a choice to make here.
+  assert.equal(K.surfaceFromEvidence([], false, false), "");
+  assert.equal(K.surfaceFromEvidence(null, false, false), "");
+});
+
+test("a checked radio whose label is unrecognisable doesn't stop the fallback", () => {
+  const radios = [{ label: "Something new", checked: true }];
+  assert.equal(K.surfaceFromEvidence(radios, true, true), "cowork");
+});

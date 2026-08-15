@@ -178,6 +178,32 @@
   }
 
   /**
+   * The surface in force, from whatever the page is willing to say.
+   *
+   * `radios` is [{ label, checked }] in document order, where `checked` is null
+   * when the markup didn't say either way. That case is the normal one rather
+   * than the exception: the live toggle was seen rendering BOTH of its halves
+   * as aria-checked="false", with the real state on a hidden input beside them.
+   * A reader that trusted aria-checked alone concluded "no toggle here" and
+   * refused to click a control sitting in plain sight.
+   *
+   * So the last resort is the thing that was actually proved: an approval
+   * control exists in Cowork and nowhere else. If the toggle is present and
+   * there is no approval control, this is Chat.
+   */
+  function surfaceFromEvidence(radios, hasApproval, hasGroup) {
+    for (const r of radios || []) {
+      if (r && r.checked === true) {
+        const s = surfaceFromLabel(r.label);
+        if (s) return s;
+      }
+    }
+    if (hasApproval) return "cowork";
+    if (hasGroup) return "chat";
+    return INHERIT;
+  }
+
+  /**
    * The same four answers as `reconcile`, about the Chat/Cowork toggle.
    *
    * "unknown" means the toggle isn't on this page at all, which is the ordinary
@@ -314,6 +340,7 @@
     describeSurface,
     surfaceOptions,
     reconcileSurface,
+    surfaceFromEvidence,
     approvalApplies,
     surfaceLeftNote,
     modeFromLabel,
