@@ -143,6 +143,50 @@
     }
   }
 
+  // ---- Patch WebSocket ---------------------------------------------------
+  //
+  // A turn ending is read off a text/event-stream's body finishing — a real
+  // moment, and the reason that signal is trusted over anything the page draws.
+  // Cowork produces no such stream, and no POST that a console probe pasted
+  // into a loaded page can see, which leaves one candidate: a socket opened
+  // BEFORE any of that could be watching.
+  //
+  // This runs at document_start, ahead of claude.ai's own scripts, so it is the
+  // one place that can see such a socket at all.
+  //
+  // Observation only. A socket has no "response closed" to report — it opens
+  // once and stays open — so what is posted is when frames arrive, and the
+  // judging of what that means is left to the caller, which already knows what
+  // it is waiting for.
+  if (typeof window.WebSocket === "function") {
+    const OrigWS = window.WebSocket;
+    let lastPost = 0;
+    function Patched(url, protocols) {
+      const ws = protocols === undefined ? new OrigWS(url) : new OrigWS(url, protocols);
+      try {
+        post({ socketOpen: String(url || ""), at: Date.now() });
+        ws.addEventListener("message", () => {
+          // Throttled hard: a stream of tokens is a stream of frames, and the
+          // content script needs to know they are STILL ARRIVING, not how many.
+          const now = Date.now();
+          if (now - lastPost < 400) return;
+          lastPost = now;
+          post({ socketFrame: true, url: String(url || ""), at: now });
+        });
+      } catch (e) {
+        /* an unobservable socket is still a working one */
+      }
+      return ws;
+    }
+    try {
+      Patched.prototype = OrigWS.prototype;
+      for (const k of ["CONNECTING", "OPEN", "CLOSING", "CLOSED"]) Patched[k] = OrigWS[k];
+      window.WebSocket = Patched;
+    } catch (e) {
+      window.WebSocket = OrigWS;
+    }
+  }
+
   // ---- Patch fetch -------------------------------------------------------
   if (origFetch) {
     window.fetch = function (input, init) {
