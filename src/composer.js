@@ -1163,20 +1163,30 @@
     // The name's own dropdown first — it is the one that carries the title and
     // the one you reach for. Then the session's actions menu, which is where a
     // Rename lives when the title isn't itself a menu.
+    const k = K();
     const candidates = Array.from(document.querySelectorAll("button")).filter(
       (b) => !isOurs(b) && inHeader(b) && opensAMenu(b)
     );
+    // The one that says what it is: "More options for <the session's current
+    // name>". It is both the door to Rename and a live reading of what the
+    // session is called — which is what lets the rename be CONFIRMED rather
+    // than assumed, since that label changes when the name does.
+    const theOne = k
+      ? candidates.find((b) => k.isMoreOptionsLabel(b.getAttribute("aria-label")))
+      : null;
     const named = candidates.filter((b) => normLower(b.textContent));
     const actions = candidates.filter((b) =>
       /session|conversation|chat|more|actions|options/i.test(b.getAttribute("aria-label") || "")
     );
-    const order = named.concat(actions.filter((b) => named.indexOf(b) === -1));
+    const rest = named.concat(actions.filter((b) => named.indexOf(b) === -1));
+    const order = (theOne ? [theOne] : []).concat(rest.filter((b) => b !== theOne));
     if (!order.length) return why("no menu in the header to open", "unsupported");
 
     const renameItem = () => {
       for (const el of document.querySelectorAll('[role="menuitem"],[role="option"]')) {
         if (isOurs(el)) continue;
-        if (/^rename\b/.test(normLower(el.textContent))) return el;
+        if (k ? k.isRenameRow(el.textContent) : /^rename\b/.test(normLower(el.textContent)))
+          return el;
       }
       return null;
     };
@@ -1254,10 +1264,19 @@
         /* the button below is the fallback */
       }
     }
+    // Took, as distinct from went in. The trigger's own label carries the
+    // session's name, so it says outright whether the rename landed — a dialog
+    // closing only says the dialog closed, which is as true of Cancel.
+    const renamed = () => {
+      if (!k || !theOne || !theOne.isConnected) return null;
+      return k.moreOptionsNames(theOne.getAttribute("aria-label"), want);
+    };
     const settled = async (tries) => {
       for (let i = 0; i < (tries || 8); i++) {
         await sleep(250);
-        if (!field.isConnected) return true;
+        const took = renamed();
+        if (took === true) return true;
+        if (took === null && !field.isConnected) return true; // nothing better to go on
       }
       return false;
     };

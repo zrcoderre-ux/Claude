@@ -1269,9 +1269,12 @@ that matter alone.
 **A Cowork session is renamed through its own menu.** There is no API for it —
 renaming one by hand makes no HTTP request at all, on a page that renames a
 regular chat with a plain `PUT` — so a run does what you do: opens the menu on
-the session's name, chooses **Rename**, types into the box and confirms. Nothing
-unnamed is ever clicked; a menu with no Rename in it is closed again and the run
-says which items it saw. A conversation inside a Cowork *project* is an ordinary
+the session's name — `More options for <its current name>` — chooses **Rename**,
+types into the box and confirms. That label is also how the rename is *checked*:
+it carries the session's name, so when it comes round to reading the new one the
+rename demonstrably took. A dialog closing would only have said the dialog
+closed, which is as true of Cancel. Nothing unnamed is ever clicked; a menu with
+no Rename in it is closed again and the run says which items it saw. A conversation inside a Cowork *project* is an ordinary
 chat with an ordinary uuid and still uses the API, which is better where it
 works — no menus, nothing to mis-click.
 
