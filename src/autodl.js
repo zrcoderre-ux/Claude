@@ -57,9 +57,31 @@
   // a control's caption is a few words, and a paragraph that starts with
   // "Download" is prose.
   const SAVE_RE = /^(?:download|save as|save file)\b/;
+
+  // ...but not a control that saves it SOMEWHERE ELSE. Cowork draws a file's
+  // controls as a menu whose top row is Google Drive, and "Save to Google
+  // Drive" reads as a save to every test above — so an auto-download that
+  // trusted the word would upload the file to a third party instead of writing
+  // it to disk. That is not a near miss of the feature; it is a different act,
+  // outward-facing and not the extension's to perform unasked.
+  //
+  // Named destinations rather than a general suspicion of "to": a caption like
+  // "Download to your computer" is exactly what we want, and must still pass.
+  //
+  // "copy" is deliberately only "copy link". Bare copy is how a local save
+  // describes itself — "Save a copy" is the looser card wording this module has
+  // always accepted — so excluding the word outright would turn this guard into
+  // a second bug in the other direction.
+  const ELSEWHERE_RE =
+    /\b(?:google\s*drive|gdrive|drive|dropbox|onedrive|one\s*drive|sharepoint|icloud|box|notion|slack|gmail|e-?mail|share|link|copy\s+link|upload|send|export\s+to|connect|add\s+to)\b/;
+  function goesElsewhere(text) {
+    return ELSEWHERE_RE.test(normLabel(text));
+  }
+
   function isSaveLabel(text) {
     const s = normLabel(text);
     if (!s || s.length > 80) return false;
+    if (goesElsewhere(s)) return false;
     return SAVE_RE.test(s);
   }
 
@@ -70,6 +92,10 @@
   function mentionsSave(text) {
     const s = normLabel(text);
     if (!s || s.length > 80) return false;
+    // The looser reading is looser about the WORD, never about the
+    // destination — being inside a file card makes "Save a copy" unambiguous,
+    // and does nothing at all to make "Save to Google Drive" a download.
+    if (goesElsewhere(s)) return false;
     return SAVE_WORD.test(s);
   }
 
@@ -355,6 +381,7 @@
     normLabel,
     isSaveLabel,
     mentionsSave,
+    goesElsewhere,
     fileNameIn,
     isTypeChip,
     downloadKey,
