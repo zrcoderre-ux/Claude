@@ -620,3 +620,39 @@ test("the census still adopts a file that is now beyond catch-up's reach", () =>
   );
   assert.deepEqual(res.adopt, ["turn|ruling.docx"]);
 });
+
+test("the window is a setting, clamped so a stored number can't disable the bound", () => {
+  assert.equal(A.lookbackMinutes(30), 30);
+  assert.equal(A.lookbackMinutes("45"), 45);
+  assert.equal(A.lookbackMinutes(2.6), 3, "rounded, since minutes come from a number input");
+  // Zero would be a catch-up that can never catch anything — which is what
+  // turning the switch off is for.
+  assert.equal(A.lookbackMinutes(0), A.LOOKBACK_MIN_MIN);
+  assert.equal(A.lookbackMinutes(-99), A.LOOKBACK_MIN_MIN);
+  assert.equal(A.lookbackMinutes(99999), A.LOOKBACK_MAX_MIN);
+});
+
+test("a setting that was never set, or is nonsense, falls back to the default", () => {
+  assert.equal(A.lookbackMinutes(undefined), A.LOOKBACK_DEFAULT_MIN);
+  assert.equal(A.lookbackMinutes(null), A.LOOKBACK_DEFAULT_MIN);
+  assert.equal(A.lookbackMinutes(""), A.LOOKBACK_DEFAULT_MIN);
+  assert.equal(A.lookbackMinutes("soon"), A.LOOKBACK_DEFAULT_MIN);
+  assert.equal(A.lookbackMinutes(NaN), A.LOOKBACK_DEFAULT_MIN);
+});
+
+test("the config object converts straight to the milliseconds plan wants", () => {
+  assert.equal(A.lookbackMsFor({ lookbackMin: 25 }), 25 * 60 * 1000);
+  assert.equal(A.lookbackMsFor({}), A.LOOKBACK_MS);
+  assert.equal(A.lookbackMsFor(null), A.LOOKBACK_MS);
+});
+
+test("a longer window really does reach further back", () => {
+  const at = 1000 - 40 * 60 * 1000; // forty minutes before backlogCtx's `now`
+  const offers = [{ key: "turn|ruling.docx", name: "ruling.docx", ready: true, at: at }];
+  const base = { catchUp: true, downloaded: A.downloadIndex([]) };
+  assert.equal(A.plan(offers, backlogCtx(base)).take, null, "outside the ten-minute default");
+  assert.ok(
+    A.plan(offers, backlogCtx(Object.assign({ lookbackMs: A.lookbackMsFor({ lookbackMin: 60 }) }, base))).take,
+    "inside an hour"
+  );
+});
