@@ -471,3 +471,38 @@ test("the other characters a filesystem refuses fold the same way", () => {
   for (const s of ["Q1*report.md", 'Q1"report.md', "Q1<report.md", "Q1|report.md", "Q1?report.md"])
     assert.equal(A.downloadKey(s), key, s);
 });
+
+// ---- a save that isn't a download -----------------------------------------
+
+test("a control that saves the file somewhere else is not a save control", () => {
+  // Cowork draws a file's controls as a menu whose top row is Google Drive.
+  // Every one of these reads as a save to the plain word test, and clicking any
+  // of them uploads the file to a third party instead of writing it to disk.
+  for (const label of [
+    "Save to Google Drive",
+    "Save a copy to Google Drive",
+    "Add to Drive",
+    "Save to Dropbox",
+    "Save to OneDrive",
+    "Upload to Box",
+    "Export to Notion",
+    "Share",
+    "Copy link",
+    "Send in email",
+  ]) {
+    assert.equal(A.goesElsewhere(label), true, label + " goes elsewhere");
+    assert.equal(A.mentionsSave(label), false, label + " is not a save control in a card");
+    assert.equal(A.isSaveLabel(label), false, label + " is not a save control in the open");
+  }
+});
+
+test("an ordinary download still passes, including one that names a destination", () => {
+  assert.equal(A.isSaveLabel("Download"), true);
+  assert.equal(A.isSaveLabel("Download ruling.docx"), true);
+  assert.equal(A.isSaveLabel("Save as PDF"), true);
+  // "to your computer" is the case a blanket suspicion of "to" would have
+  // broken — it is exactly what we want to click.
+  assert.equal(A.isSaveLabel("Download to your computer"), true);
+  assert.equal(A.mentionsSave("Download file"), true);
+  assert.equal(A.mentionsSave("Save a copy"), true);
+});
