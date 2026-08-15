@@ -1266,6 +1266,16 @@ rather than something you asked for. **Open this run in a window of its own** is
 a workflow setting like every other, so a run inherits it and can change it for
 that matter alone.
 
+**A Cowork step is more patient, because it has to be.** A step normally settles
+on a reply once the text has held still for six seconds — safe in Chat, where an
+open response stream *proves* that a pause is a tool call rather than a finished
+answer. Cowork shows the page no stream at all, so that proof is gone on exactly
+the surface that runs tools between sentences and, on **Manually approve**, sits
+still on purpose while it waits for you. Where nothing about the network is
+knowable, the text has to hold still for **thirty seconds across twelve looks**
+instead. The cost is seconds on a step that takes minutes; the cost of being
+wrong is half an answer handed to the next chat as though it were whole.
+
 **A Cowork session is renamed through its own menu.** There is no API for it —
 renaming one by hand makes no HTTP request at all, on a page that renames a
 regular chat with a plain `PUT` — so a run does what you do: opens the menu on

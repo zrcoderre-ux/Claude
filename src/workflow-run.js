@@ -767,6 +767,11 @@
             minSettleMs: SETTLE_MS,
             minStableMs: STABLE_MS,
             minStablePolls: STABLE_POLLS,
+            // Nothing about the network is knowable on this surface, so
+            // stillness is the whole of the argument and has to be a much
+            // longer one — see settleReason. Cowork runs tools between
+            // sentences, and on Manually approve it sits still on purpose.
+            noNetworkSignal: !anyStreamSeen && !anyFrameSeen,
             stalledMs: STALLED_MS,
             // Stillness only counts as a finished answer if we watched it
             // become still — EXCEPT where the caller has already decided that

@@ -2864,11 +2864,30 @@
     // is what happens when there is no stream to consult.
     if (s.watched === false) return null;
 
-    return unchanged >= (typeof s.minStableMs === "number" ? s.minStableMs : 6000) &&
-      (s.stablePolls || 0) >= (typeof s.minStablePolls === "number" ? s.minStablePolls : 3)
+    // Stillness is ALL there is on a surface that shows the page no network
+    // signal, and six seconds of it is not much of an argument there.
+    //
+    // In Chat the open stream carries this: text standing still during a tool
+    // call is provably not a finished answer, because the stream says the turn
+    // is still running. Cowork opens no stream, so that proof is gone — and
+    // Cowork is the surface that runs tools constantly and, on Manually
+    // approve, is SUPPOSED to sit still indefinitely waiting to be let on.
+    //
+    // So where nothing about the network is knowable, the text has to hold
+    // still for a good deal longer before it counts as an answer. The cost is
+    // seconds on a step that takes minutes. The cost of being wrong is half an
+    // answer handed to the next chat as though it were whole.
+    const stableMs =
+      typeof s.minStableMs === "number" ? s.minStableMs : 6000;
+    const stablePolls =
+      typeof s.minStablePolls === "number" ? s.minStablePolls : 3;
+    const blind = !!s.noNetworkSignal;
+    return unchanged >= (blind ? Math.max(stableMs, 30000) : stableMs) &&
+      (s.stablePolls || 0) >= (blind ? Math.max(stablePolls, 12) : stablePolls)
       ? "stable"
       : null;
   }
+
 
   function turnSettled(sample) {
     return !!settleReason(sample);
