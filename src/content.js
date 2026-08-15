@@ -810,9 +810,6 @@
         </div>
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
         <div class="cum-panel-hint" id="cum-p-hint" hidden>Reading your usage — this updates automatically.</div>
-        <input id="cum-rename-input" type="text" placeholder="New name for this chat" autocomplete="off" spellcheck="false" />
-        <button id="cum-rename-btn" type="button">Rename this chat</button>
-        <div id="cum-rename-note" hidden></div>
         <button id="cum-schedule-btn" type="button">＋ Schedule a send</button>
         <button id="cum-options-btn" type="button">Open options →</button>
       </div>
@@ -849,9 +846,6 @@
       pOverageStatus: root.querySelector("#cum-p-overage-status"),
       pUpdated: root.querySelector("#cum-p-updated"),
       pHint: root.querySelector("#cum-p-hint"),
-      renameInput: root.querySelector("#cum-rename-input"),
-      renameBtn: root.querySelector("#cum-rename-btn"),
-      renameNote: root.querySelector("#cum-rename-note"),
       scheduleBtn: root.querySelector("#cum-schedule-btn"),
       optionsBtn: root.querySelector("#cum-options-btn"),
       statusGroup: root.querySelector("#cum-status-group"),
@@ -894,43 +888,6 @@
       els.panel.hidden = !els.panel.hidden;
       if (!els.panel.hidden) placePanel();
     });
-
-    // Rename this chat, by hand. The same call a run makes —
-    // CUMComposer.renameCoworkSession — driven from a button, because a run
-    // reports its failures an hour later and in one line, and this reports them
-    // now with the header's own census under them. It is what ended the
-    // Chat/Cowork toggle, which had defeated four rounds of reading code.
-    if (els.renameBtn)
-      els.renameBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const C = window.CUMComposer;
-        if (!C || !C.renameCoworkSession) return sayRename("the composer module isn't loaded");
-        const want = ((els.renameInput && els.renameInput.value) || "").trim();
-        if (!want) return sayRename("type a name first");
-        sayRename("renaming…");
-        let verdict;
-        try {
-          verdict = await C.renameCoworkSession(want);
-        } catch (err) {
-          verdict = "threw: " + String((err && err.message) || err);
-        }
-        sayRename(
-          verdict +
-            (C.renameWhy && C.renameWhy() ? "\n  why: " + C.renameWhy() : "") +
-            (verdict === "ok" ? "" : "\n" + (C.renameReport ? C.renameReport() : ""))
-        );
-      });
-
-    function sayRename(text) {
-      try {
-        console.log("[claude-usage-meter] rename:\n" + text);
-      } catch (err) {
-        /* ignore */
-      }
-      if (!els.renameNote) return;
-      els.renameNote.textContent = text;
-      els.renameNote.hidden = false;
-    }
 
     els.scheduleBtn.addEventListener("click", (e) => {
       e.stopPropagation();
