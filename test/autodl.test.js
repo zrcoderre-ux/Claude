@@ -371,7 +371,9 @@ function backlogCtx(over) {
     over || {}
   );
 }
-const OLD = [{ key: "turn|ruling.docx", name: "ruling.docx", ready: true }];
+// `at` is when the TURN happened. backlogCtx pins now at 1000, so this is a
+// file from a moment ago — old enough to be a backlog, new enough for catch-up.
+const OLD = [{ key: "turn|ruling.docx", name: "ruling.docx", ready: true, at: 1000 }];
 
 test("without catch-up, an old file is still left exactly where it is", () => {
   const res = A.plan(OLD, backlogCtx());
@@ -400,7 +402,7 @@ test("catch-up never acts on a question that wasn't answered", () => {
 });
 
 test("catch-up never acts on a file it can't name", () => {
-  const unnamed = [{ key: "turn|file 1", name: "", ready: true }];
+  const unnamed = [{ key: "turn|file 1", name: "", ready: true, at: 1000 }];
   const res = A.plan(unnamed, backlogCtx({ catchUp: true, downloaded: A.downloadIndex([]) }));
   assert.equal(res.take, null, "nothing to check against, so nothing is taken");
   assert.equal(res.hold, "backlog");
@@ -538,4 +540,83 @@ test("the row inside that menu is judged strictly, and Drive loses", () => {
   assert.equal(A.isSaveLabel("Download"), true);
   assert.equal(A.isSaveLabel("Google Drive"), false);
   assert.equal(A.mentionsSave("Google Drive"), false);
+});
+
+// ---- how far back catch-up may reach --------------------------------------
+
+test("the window is ten minutes, measured from the turn", () => {
+  const now = 10_000_000;
+  assert.equal(A.LOOKBACK_MS, 10 * 60 * 1000);
+  assert.equal(A.withinLookback(now, now), true);
+  assert.equal(A.withinLookback(now - 9 * 60 * 1000, now), true);
+  assert.equal(A.withinLookback(now - A.LOOKBACK_MS, now), true, "the edge is inside");
+  assert.equal(A.withinLookback(now - A.LOOKBACK_MS - 1, now), false);
+  assert.equal(A.withinLookback(now - 24 * 3600 * 1000, now), false);
+});
+
+test("a time we don't have is not recent", () => {
+  // This is the case the bound exists for: catch-up reaching back through a
+  // chat. If "we couldn't find out when" counted as recent, the one situation
+  // that can't be measured would be the one the bound stops applying to.
+  const now = 10_000_000;
+  assert.equal(A.withinLookback(null, now), false);
+  assert.equal(A.withinLookback(undefined, now), false);
+  assert.equal(A.withinLookback("just now", now), false);
+  assert.equal(A.withinLookback(NaN, now), false);
+});
+
+test("a turn stamped in the future is a bad clock, not an ancient file", () => {
+  const now = 10_000_000;
+  assert.equal(A.withinLookback(now + 30_000, now), true, "a little ahead is still now");
+  assert.equal(A.withinLookback(now + 24 * 3600 * 1000, now), false, "a day ahead is nonsense");
+});
+
+test("catch-up leaves a file older than the window exactly where it is", () => {
+  const stale = [
+    { key: "turn|ruling.docx", name: "ruling.docx", ready: true, at: 1000 - 20 * 60 * 1000 },
+  ];
+  const res = A.plan(stale, backlogCtx({ catchUp: true, downloaded: A.downloadIndex([]) }));
+  assert.equal(res.take, null, "opening an old chat saves none of it");
+  assert.equal(res.hold, "older than the catch-up window");
+});
+
+test("a file with no time at all is left too, and says why", () => {
+  const undated = [{ key: "turn|ruling.docx", name: "ruling.docx", ready: true }];
+  const res = A.plan(undated, backlogCtx({ catchUp: true, downloaded: A.downloadIndex([]) }));
+  assert.equal(res.take, null);
+  assert.equal(res.hold, "older than the catch-up window");
+});
+
+test("the window bounds catch-up only — a reply watched arriving is still saved", () => {
+  // It happened in front of us, which is a better fact than any timestamp.
+  const old = [
+    { key: "turn|ruling.docx", name: "ruling.docx", ready: true, at: 1000 - 48 * 3600 * 1000 },
+  ];
+  const res = A.plan(old, backlogCtx({ live: ["turn"] }));
+  assert.equal(res.take && res.take.name, "ruling.docx");
+});
+
+test("the window is settable, so a caller can be stricter than the default", () => {
+  const at = 1000 - 5 * 60 * 1000;
+  const offers = [{ key: "turn|ruling.docx", name: "ruling.docx", ready: true, at: at }];
+  const base = { catchUp: true, downloaded: A.downloadIndex([]) };
+  assert.ok(A.plan(offers, backlogCtx(base)).take, "inside the ten-minute default");
+  assert.equal(
+    A.plan(offers, backlogCtx(Object.assign({ lookbackMs: 60 * 1000 }, base))).take,
+    null,
+    "outside a one-minute window"
+  );
+});
+
+test("the census still adopts a file that is now beyond catch-up's reach", () => {
+  // It is genuinely dealt with: nothing is ever going to save it, so leaving it
+  // unadopted would mean re-examining it on every pass for the rest of the page.
+  const stale = [
+    { key: "turn|ruling.docx", name: "ruling.docx", ready: true, at: 1000 - 20 * 60 * 1000 },
+  ];
+  const res = A.plan(
+    stale,
+    backlogCtx({ baselined: false, catchUp: true, downloaded: A.downloadIndex([]) })
+  );
+  assert.deepEqual(res.adopt, ["turn|ruling.docx"]);
 });

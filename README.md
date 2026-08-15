@@ -244,6 +244,23 @@ because you'd reloaded, or had the toggle off, or the turn signal missed it. So
 there is a second switch — **Also catch up on files further back** — that lifts
 exactly that restriction.
 
+**"Further back" means ten minutes, not the whole chat.** Catch-up is bounded by
+the clock, and the clock is the turn's own — the time in the conversation
+payload, not when you happened to open the page. So opening a chat you worked on
+last week saves nothing from it: those turns are hours or days old, and no
+amount of scrolling makes them recent. A count of replies was the old bound and
+was no measure of age at all; twelve replies is an afternoon in one chat and a
+fortnight in another.
+
+A turn whose time can't be read is treated as **old**, not as new. If the
+conversation payload is unavailable the popup line says so — *"turn times
+unread — nothing older than now can be caught up"* — and catch-up simply stands
+still. The failure worth avoiding is the other one.
+
+None of this bounds the live path. A reply watched arriving is saved whatever
+the clock says about it: it happened in front of you, which is a better fact
+than any timestamp.
+
 It is safe to lift because catch-up can *check*. It reads your **Downloads
 folder** (the `downloads` permission, names only — never paths) and skips
 anything already there. Two normalisations make that comparison mean anything at
