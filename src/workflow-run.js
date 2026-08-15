@@ -274,23 +274,28 @@
   async function nameThisChat(msg, notes) {
     if (!msg.title || !msg.firstInChat) return;
     const uuid = conversationUuid();
-    // A Cowork SESSION cannot be renamed from here, and that is a fact about
-    // claude.ai rather than a failure of ours: renaming one by hand makes no
-    // HTTP request at all — not to chat_conversations, not anywhere — so there
-    // is no call to make and never was. Watched for, on a page that renames a
-    // regular chat with a plain PUT a few lines away.
+    // A Cowork SESSION has no rename API — renaming one by hand makes no HTTP
+    // request at all, watched for on a page that renames a regular chat with a
+    // plain PUT a few lines away. So it is done the way you do it: open the
+    // menu on the session's name, choose Rename, type into the box.
     //
-    // Said once, plainly, instead of reported as an error on every chat a run
-    // opens. A run whose work is done must not read as half-failed because a
-    // title it was never able to set didn't get set.
+    // The earlier reading of that silence — "no request, therefore it cannot be
+    // renamed" — was wrong. What it established was that one route was closed,
+    // not that all of them were.
     //
     // Gated on the ID rather than the address: a conversation inside a Cowork
-    // PROJECT is an ordinary chat with an ordinary uuid and renames perfectly
-    // well, and if a session ever starts offering one, this stops applying by
-    // itself rather than by being remembered.
+    // PROJECT is an ordinary chat with an ordinary uuid, and the API is both
+    // available and better there — no menus, nothing to mis-click.
     if (uuid && /^cse_/.test(uuid)) {
-      if (notes)
-        notes.push("Cowork sessions can't be renamed, so this one keeps the name claude.ai gave it");
+      let r;
+      try {
+        r = await C.renameCoworkSession(msg.title);
+      } catch (e) {
+        r = "failed";
+      }
+      if (!notes) return;
+      if (r === "ok") notes.push('named this chat "' + msg.title + '"');
+      else notes.push("could not name this Cowork chat (" + (C.renameWhy() || r) + ")");
       return;
     }
     const named = uuid ? await renameConversation(uuid, msg.title) : null;
