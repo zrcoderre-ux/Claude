@@ -331,3 +331,36 @@ test("reducing to letters still refuses everything that isn't a surface", () => 
   assert.equal(K.surfaceFromLabel("​"), "");
   assert.equal(K.surfaceFromLabel("—"), "");
 });
+
+test("a project row matches through characters that don't print", () => {
+  // The same lesson as the surface toggle: this markup carries characters no
+  // whitespace rule removes, and the row and the stored name come from the same
+  // place — they differ only in what claude.ai sprinkled through them.
+  assert.equal(K.projectRowMatches("Draft​ Tentative Rulings", "Draft Tentative Rulings"), true);
+  assert.equal(K.projectRowMatches("Cutlist", "Cutlist​"), true);
+  assert.equal(K.projectRowMatches("Card Game Player", "card game player"), true);
+});
+
+test("the trigger's caption says whether a project is chosen yet", () => {
+  assert.equal(K.isProjectTriggerCaption("Project"), true);
+  assert.equal(K.isProjectTriggerCaption("  project  "), true);
+  assert.equal(K.isProjectTriggerCaption("No project"), true);
+  assert.equal(K.isProjectTriggerCaption("Cutlist"), false);
+  assert.equal(K.isProjectTriggerCaption(""), false);
+});
+
+test("a trigger already reading the project is not clicked again", () => {
+  assert.equal(K.projectTriggerIs("Cutlist", "Cutlist"), true);
+  assert.equal(K.projectTriggerIs("cutlist", "Cutlist"), true);
+  assert.equal(K.projectTriggerIs("Cut​list", "Cutlist"), true);
+  assert.equal(K.projectTriggerIs("Cutlist Two", "Cutlist"), false);
+  assert.equal(K.projectTriggerIs("Project", "Cutlist"), false);
+  assert.equal(K.projectTriggerIs("Cutlist", ""), false);
+});
+
+test("the unset caption is not mistaken for a project named Project", () => {
+  // A real project could be called that. The trigger's caption is only read as
+  // "unset" — choosing one is confirmed by the trigger changing, never by this.
+  assert.equal(K.projectTriggerName("Project"), "");
+  assert.equal(K.projectTriggerName("Cutlist"), "Cutlist");
+});
