@@ -727,6 +727,184 @@
     return "ok";
   }
 
+  // ---- cowork: the surface, and what it's allowed to do on its own -------
+  //
+  // claude.ai calls the Chat/Cowork toggle a "Surface": a radiogroup of two
+  // radios, sitting on the composer home and nowhere else. Choosing one is a
+  // preference for the whole account rather than for this tab, which is why
+  // every function here reports what it did instead of assuming.
+
+  const K = () => root.CUMCowork || (typeof CUMCowork !== "undefined" ? CUMCowork : null);
+
+  function findSurfaceGroup() {
+    const g = document.querySelector('[role="radiogroup"][aria-label="Surface" i]');
+    if (g && !isOurs(g)) return g;
+    // The label is the only word in that markup that is neither choice, so it
+    // is the one worth trusting; but if it changes, a radiogroup holding
+    // exactly the two choices is still unmistakable.
+    for (const el of document.querySelectorAll('[role="radiogroup"]')) {
+      if (isOurs(el)) continue;
+      const radios = Array.from(el.querySelectorAll('[role="radio"]'));
+      if (radios.length !== 2) continue;
+      const names = radios.map((r) => normLower(r.textContent));
+      if (names.indexOf("chat") !== -1 && names.indexOf("cowork") !== -1) return el;
+    }
+    return null;
+  }
+
+  function surfaceRadios() {
+    const g = findSurfaceGroup();
+    return g ? Array.from(g.querySelectorAll('[role="radio"]')).filter((el) => !isOurs(el)) : [];
+  }
+
+  /** The surface in force: "chat", "cowork", or "" when there's no toggle here. */
+  function currentSurface() {
+    const k = K();
+    if (!k) return "";
+    for (const r of surfaceRadios()) {
+      if (r.getAttribute("aria-checked") === "true") return k.surfaceFromLabel(r.textContent);
+    }
+    return "";
+  }
+
+  /**
+   * Put the toggle on `want`. Returns "inherit" (nothing asked), "ok" (already
+   * there, or moved successfully), "unsupported" (no toggle on this page) or
+   * "failed" (clicked and it didn't take).
+   */
+  async function selectSurface(want) {
+    const k = K();
+    if (!k) return "unsupported";
+    const wanted = k.surfaceFromLabel(want);
+    if (!wanted) return "inherit";
+    const verdict = k.reconcileSurface(wanted, currentSurface());
+    if (verdict === "inherit") return "inherit";
+    if (verdict === "unknown") return "unsupported";
+    if (verdict === "ok") return "ok";
+
+    const label = k.labelForSurface(wanted).toLowerCase();
+    const target = surfaceRadios().find((r) => normLower(r.textContent) === label);
+    if (!target) return "unsupported";
+    robustClick(target);
+    // The radio flips its own aria-checked, and the composer around it
+    // re-renders; give it a beat before believing either.
+    for (let i = 0; i < 12; i++) {
+      await sleep(200);
+      if (currentSurface() === wanted) return "ok";
+    }
+    return "failed";
+  }
+
+  // The approval control. Its own aria-label is the mode in force, which makes
+  // it both the trigger to click and the answer to "which mode is this?".
+  function findApprovalTrigger() {
+    const k = K();
+    if (!k) return null;
+    for (const m of k.MODES) {
+      const b = document.querySelector('button[aria-label="' + m.label + '" i]');
+      if (b && !isOurs(b)) return b;
+    }
+    return null;
+  }
+
+  /** The approval mode in force, or "" where there is no such control. */
+  function currentApproval() {
+    const k = K();
+    const t = findApprovalTrigger();
+    return k && t ? k.modeFromLabel(t.getAttribute("aria-label")) : "";
+  }
+
+  /**
+   * Put the approval control on `want`. Same verdicts as selectSurface, with
+   * "unsupported" meaning this page has no approval control — which is what
+   * being in Chat looks like from here.
+   */
+  async function selectApproval(want) {
+    const k = K();
+    if (!k) return "unsupported";
+    const wanted = k.modeFromLabel(want);
+    if (!wanted) return "inherit";
+    const verdict = k.reconcile(wanted, currentApproval());
+    if (verdict === "inherit") return "inherit";
+    if (verdict === "unknown") return "unsupported";
+    if (verdict === "ok") return "ok";
+
+    const trigger = findApprovalTrigger();
+    if (!trigger) return "unsupported";
+    robustClick(trigger);
+
+    const rowOf = () => {
+      for (const el of document.querySelectorAll('[role="menuitemradio"]')) {
+        if (isOurs(el)) continue;
+        if (k.rowIsMode(el.textContent, wanted)) return el;
+      }
+      return null;
+    };
+    let row = rowOf();
+    for (let i = 0; i < 12 && !row; i++) {
+      await sleep(200);
+      row = rowOf();
+    }
+    if (!row) {
+      closeMenu();
+      return "failed";
+    }
+    robustClick(row);
+    for (let i = 0; i < 10; i++) {
+      await sleep(200);
+      if (currentApproval() === wanted) return "ok";
+    }
+    closeMenu();
+    return "failed";
+  }
+
+  /**
+   * Choose a project from Cowork's own menu. Unlike a scheduled send's project,
+   * which is an address to navigate to, this one is a control on the composer —
+   * so it is the only way to put a Cowork session in a project.
+   *
+   * The rows carry names and no uuids, so the name is all there is to match on,
+   * and the two rows that navigate away ("Create new project", "View all
+   * projects") are excluded by name for the same reason: clicking either during
+   * an unattended send is worse than not finding the project.
+   */
+  async function selectCoworkProject(name) {
+    const k = K();
+    if (!k || !String(name || "").trim()) return "inherit";
+
+    const trigger = Array.from(document.querySelectorAll("button")).find((b) => {
+      if (isOurs(b)) return false;
+      const t = normLower(b.textContent);
+      return t === "project" || t === normLower(name);
+    });
+    if (!trigger) return "unsupported";
+    if (normLower(trigger.textContent) === normLower(name)) return "ok"; // already chosen
+    robustClick(trigger);
+
+    const rowOf = () => {
+      for (const el of document.querySelectorAll('[role="option"]')) {
+        if (isOurs(el)) continue;
+        const t = el.textContent || "";
+        if (!k.isProjectRow(t)) continue;
+        if (k.projectRowMatches(t, name)) return el;
+      }
+      return null;
+    };
+    let row = rowOf();
+    for (let i = 0; i < 12 && !row; i++) {
+      await sleep(200);
+      row = rowOf();
+    }
+    if (!row) {
+      closeMenu();
+      return "notfound";
+    }
+    robustClick(row);
+    await sleep(500);
+    closeMenu();
+    return "ok";
+  }
+
   // ---- one composed message, end to end ----------------------------------
   // Attach files, pick model/repo, type `text`, click Send, confirm it left.
   // Returns { ok, error?, notes: [] } — notes are best-effort problems (model
@@ -750,8 +928,60 @@
     if (why) return standDown(why);
 
     if (files.length) await waitFor(findFileInput, 15000); // may legitimately not exist
-    const editor = await waitFor(findEditor);
+    let editor = await waitFor(findEditor);
     if (!editor) return { ok: false, error: "prompt editor not found", notes };
+
+    // The surface comes first, and before anything is typed: switching it
+    // re-renders the composer, so a prompt inserted beforehand would be thrown
+    // away with the old one, and the editor handle we hold would go stale.
+    const k = K();
+    let surfaceWas = "";
+    if (k && o.surface) {
+      try {
+        surfaceWas = currentSurface();
+        const r = await selectSurface(o.surface);
+        if (r === "unsupported") notes.push("no Chat/Cowork toggle on this page — sent on whichever it was");
+        else if (r === "failed") notes.push("couldn't switch to " + k.describeSurface(o.surface));
+        else if (r === "ok" && surfaceWas && surfaceWas !== k.surfaceFromLabel(o.surface)) {
+          editor = (await waitFor(findEditor)) || editor;
+        } else {
+          surfaceWas = "";
+        }
+      } catch (e) {
+        notes.push("Chat/Cowork switch failed");
+        surfaceWas = "";
+      }
+    }
+
+    // Approval belongs to Cowork. Asking for one anywhere else isn't an error
+    // worth stopping for, but it is worth saying: the mode is remembered for
+    // the whole account, so "it must have worked" is exactly the assumption
+    // that gets a job sent under a mode nobody chose.
+    if (k && o.approval) {
+      if (!k.approvalApplies(o.surface, currentSurface())) {
+        notes.push("asked for " + k.describeMode(o.approval) + " but this isn't Cowork — sent as-is");
+      } else {
+        try {
+          const r = await selectApproval(o.approval);
+          if (r === "unsupported")
+            notes.push("asked for " + k.describeMode(o.approval) + " but found no approval control");
+          else if (r === "failed") notes.push("couldn't set approval to " + k.describeMode(o.approval));
+        } catch (e) {
+          notes.push("approval switch failed");
+        }
+      }
+    }
+
+    // A Cowork project is a control, not an address — the only way in.
+    if (k && o.coworkProject && k.approvalApplies(o.surface, currentSurface())) {
+      try {
+        const r = await selectCoworkProject(o.coworkProject);
+        if (r === "unsupported") notes.push("no project menu on this page");
+        else if (r === "notfound") notes.push('project "' + o.coworkProject + '" not in the menu');
+      } catch (e) {
+        notes.push("project select failed");
+      }
+    }
 
     if (o.codeRepo) {
       try {
@@ -804,11 +1034,31 @@
     why = halted();
     if (why) return standDown(why);
 
+    // Put the toggle back if we moved it. It is a preference for the whole
+    // account rather than for this tab, so a 3am job that switches to Cowork
+    // and walks away changes which surface the next window opens on. Once the
+    // message has gone the composer home is gone with it and there is nothing
+    // left to click — so this tries, and says so plainly when it can't.
+    const restore = async () => {
+      if (!k || !surfaceWas) return;
+      let ok = false;
+      try {
+        ok = (await selectSurface(surfaceWas)) === "ok";
+      } catch (e) {
+        ok = false;
+      }
+      const note = k.surfaceLeftNote(surfaceWas, ok);
+      if (note) notes.push(note);
+    };
+
     const before = ((editor && editor.textContent) || "").trim();
     const send = await waitSendEnabled(15000);
     if (send && !sendDisabled(send)) {
       robustClick(send);
-      if (await confirmSent(before)) return { ok: true, notes };
+      if (await confirmSent(before)) {
+        await restore();
+        return { ok: true, notes };
+      }
     }
     // Fallback: press Enter in the editor (claude sends on Enter).
     if (editor) {
@@ -822,7 +1072,10 @@
           /* ignore */
         }
       }
-      if (await confirmSent(before)) return { ok: true, notes };
+      if (await confirmSent(before)) {
+        await restore();
+        return { ok: true, notes };
+      }
     }
     if (!send) return { ok: false, error: "send button not found", notes };
     if (sendDisabled(send)) return { ok: false, error: "send button stayed disabled", notes };
@@ -858,6 +1111,13 @@
     waitUploads,
     selectModel,
     selectCodeRepo,
+    findSurfaceGroup,
+    currentSurface,
+    selectSurface,
+    findApprovalTrigger,
+    currentApproval,
+    selectApproval,
+    selectCoworkProject,
     harvestModels,
     harvestRepos,
     scrapeRepos,

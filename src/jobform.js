@@ -48,6 +48,7 @@
     .cumjf-chip-x { border:none; background:none; color:#9a9a9a; cursor:pointer; font-size:11px; }
     .cumjf-chip-x:hover { color:#d23f31; }
     .cumjf-summary { font-size:12px; color:#6b6b6b; padding:2px 2px 0; }
+    .cumjf-hint { font-size:12px; color:#8a8a8a; margin:4px 0 0; }
     .cumjf-when { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
     .cumjf-radio { font-size:13px; display:inline-flex; align-items:center; gap:5px; }
     .cumjf-when input[type=datetime-local] { width:auto; flex:1; min-width:170px; }
@@ -145,6 +146,14 @@
       `<datalist id="cumjf-repo-list"></datalist></div>` +
       `<label class="cumjf-label">Model</label>` +
       `<select class="cumjf-model"></select>` +
+      `<label class="cumjf-label">Chat or Cowork</label>` +
+      `<select class="cumjf-surface"></select>` +
+      `<div class="cumjf-approval-row" hidden>` +
+      `<label class="cumjf-label">Approvals</label>` +
+      `<select class="cumjf-approval"></select>` +
+      `<p class="cumjf-hint">Cowork remembers this choice for the whole account, ` +
+      `so a send that changes it changes what your next new tab opens on. ` +
+      `This puts it back afterwards where it can.</p></div>` +
       `<label class="cumjf-label">When to send</label>` +
       `<div class="cumjf-when">` +
       `<label class="cumjf-radio"><input type="radio" name="cumjf-trig" value="reset" checked /> When usage resets</label>` +
@@ -172,6 +181,9 @@
       repo: q(".cumjf-repo"),
       repoList: q("#cumjf-repo-list"),
       model: q(".cumjf-model"),
+      surface: q(".cumjf-surface"),
+      approvalRow: q(".cumjf-approval-row"),
+      approval: q(".cumjf-approval"),
       time: q(".cumjf-time"),
       add: q(".cumjf-add"),
       cancel: q(".cumjf-cancel"),
@@ -292,6 +304,31 @@
       if (ui.repoRow) ui.repoRow.hidden = ui.target.value !== "code";
     }
     ui.target.addEventListener("change", syncRepoRow);
+
+    // ---- surface (Chat / Cowork) ----
+    const K = typeof CUMCowork !== "undefined" ? CUMCowork : null;
+    function fillSelect(sel, options, value) {
+      if (!sel) return;
+      sel.innerHTML = "";
+      for (const o of options) {
+        const opt = doc.createElement("option");
+        opt.value = o.value;
+        opt.textContent = o.label;
+        sel.appendChild(opt);
+      }
+      sel.value = value || "";
+    }
+    // Approvals are Cowork's alone: in Chat there is no such control, so a
+    // field offering one would be promising something the send can't keep.
+    function syncApprovalRow() {
+      if (ui.approvalRow) ui.approvalRow.hidden = !ui.surface || ui.surface.value !== "cowork";
+    }
+    if (K) {
+      fillSelect(ui.surface, K.surfaceOptions(), "");
+      fillSelect(ui.approval, K.modeOptions(), "");
+    }
+    if (ui.surface) ui.surface.addEventListener("change", syncApprovalRow);
+    syncApprovalRow();
 
     // ---- repos (for the Claude Code repo picker) ----
     function fillRepos(repos) {
@@ -446,7 +483,19 @@
         if (editingJob && editingJob.files) {
           for (const f of editingJob.files) if (!keptIds.has(f.id)) removes.push(J.fileKey(f.id));
         }
-        const fields = { name: ui.name.value, prompt, files: metas, trigger, model: ui.model.value };
+        const fields = {
+          name: ui.name.value,
+          prompt,
+          files: metas,
+          trigger,
+          model: ui.model.value,
+          surface: (ui.surface && ui.surface.value) || "",
+          // Only when it can be honoured. A mode saved against a Chat job would
+          // sit in storage looking like a promise and be quietly ignored on
+          // every send.
+          approval:
+            ui.surface && ui.surface.value === "cowork" ? (ui.approval && ui.approval.value) || "" : "",
+        };
         const tv = ui.target.value;
         if (tv === "chat") {
           const o = ui.target.selectedOptions[0];
@@ -496,6 +545,9 @@
       ui.name.value = "";
       ui.prompt.value = "";
       ui.model.value = "";
+      if (ui.surface) ui.surface.value = "";
+      if (ui.approval) ui.approval.value = "";
+      syncApprovalRow();
       files = [];
       renderFiles();
       // Back to "reset" trigger.
@@ -532,6 +584,9 @@
         ui.model.appendChild(o);
       }
       ui.model.value = job.model || "";
+      if (ui.surface) ui.surface.value = job.surface || "";
+      if (ui.approval) ui.approval.value = job.approval || "";
+      syncApprovalRow();
       // Trigger.
       const isTime = job.trigger && job.trigger.type === "time";
       const radio = el.querySelector(`input[name="cumjf-trig"][value="${isTime ? "time" : "reset"}"]`);

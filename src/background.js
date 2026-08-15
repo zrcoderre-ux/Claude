@@ -1031,6 +1031,10 @@ async function stepTab(run, savedUrl, chat) {
       projectHref: (chat.target && chat.target.projectHref) || null,
       projectUuid: (chat.target && chat.target.projectUuid) || null,
       codeRepo: (chat.target && chat.target.codeRepo) || null,
+      // targetUrl sends a Cowork chat to the composer home rather than to its
+      // project, because the toggle, the approval control and the project menu
+      // are all there and nowhere else.
+      surface: (chat.target && chat.target.surface) || null,
     });
   const { tab, windowId, created } = await runTab(run, url);
   if (!tab) return { tab: null, windowId: null };
@@ -1286,6 +1290,14 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
         ? W.chatTitle(run, m.chatName)
         : null,
     codeRepo: m.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
+    // Only on the way in. Once a conversation exists the toggle isn't on the
+    // page any more, and the project menu is the composer home's.
+    surface: !saved.url ? m.surface || null : null,
+    approval: m.approval || null,
+    coworkProject:
+      m.surface === "cowork" && m.firstInChat && !saved.url
+        ? (chat.target && chat.target.projectName) || null
+        : null,
   };
 
   let res;
@@ -1571,6 +1583,13 @@ async function driveRun(runId, opts) {
             ? W.chatTitle(run, step.chatName)
             : null,
         codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
+        // Only on the way in — see the wave payload for why.
+        surface: !saved.url ? step.surface || null : null,
+        approval: step.approval || null,
+        coworkProject:
+          step.surface === "cowork" && step.firstInChat && !saved.url
+            ? (chat.target && chat.target.projectName) || null
+            : null,
       };
       let res = await sendStep(tab.id, payload);
 

@@ -182,3 +182,49 @@ test("sameConversationUrl matches the same chat across query/hash/slash and PWA"
   assert.equal(J.sameConversationUrl(base, "not a url"), false);
   assert.equal(J.sameConversationUrl(cc, "https://claude.ai/new"), false);
 });
+
+// ---- cowork ---------------------------------------------------------------
+
+test("a job says nothing about the surface unless it was asked to", () => {
+  const j = J.newJob({ name: "x" }, "id", NOW);
+  assert.equal(j.surface, null);
+  assert.equal(j.approval, null);
+  assert.equal(J.surfaceLabel(j), "");
+});
+
+test("a cowork job goes to the composer home even when it has a project", () => {
+  // The toggle, the approval control and the project menu all live there and
+  // nowhere else — arriving at the project page means arriving with no way to
+  // set any of the three.
+  const j = J.newJob(
+    { surface: "cowork", projectHref: "/cowork/project/abc", projectName: "Cutlist" },
+    "id",
+    NOW
+  );
+  assert.equal(J.targetUrl(j), "https://claude.ai/new");
+});
+
+test("a chat job with a project still goes to the project, as it always did", () => {
+  const j = J.newJob({ projectHref: "/cowork/project/abc" }, "id", NOW);
+  assert.equal(J.targetUrl(j), "https://claude.ai/cowork/project/abc");
+});
+
+test("an existing conversation still wins over the surface", () => {
+  const j = J.newJob({ surface: "cowork", chatUrl: "/chat/abc" }, "id", NOW);
+  assert.equal(J.targetUrl(j), "https://claude.ai/chat/abc");
+});
+
+test("a cowork job with no destination reads as a Cowork session", () => {
+  assert.equal(J.targetLabel(J.newJob({ surface: "cowork" }, "id", NOW)), "New Cowork session");
+  assert.equal(J.targetLabel(J.newJob({ surface: "chat" }, "id", NOW)), "New chat");
+});
+
+test("the surface chip names the approval mode only where there is one", () => {
+  require("../src/cowork.js");
+  assert.equal(J.surfaceLabel(J.newJob({ surface: "chat", approval: "skip" }, "i", NOW)), "Chat");
+  assert.equal(
+    J.surfaceLabel(J.newJob({ surface: "cowork", approval: "skip" }, "i", NOW)),
+    "Cowork · Skip all approvals"
+  );
+  assert.equal(J.surfaceLabel(J.newJob({ surface: "cowork" }, "i", NOW)), "Cowork");
+});

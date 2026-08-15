@@ -92,8 +92,17 @@
         projectName: f.projectName || (f.target && f.target.projectName) || null,
         projectHref: f.projectHref || (f.target && f.target.projectHref) || null,
         codeRepo: trimmed(f.codeRepo || (f.target && f.target.codeRepo)) || null,
+        // Which surface this chat opens on. It sits in `target` beside the
+        // project because it is a fact about where the chat lives, and because
+        // CUMJobs.targetUrl() reads these same names — a chat that says
+        // "cowork" has to resolve to the composer home the way a job does.
+        surface: trimmed(f.surface || (f.target && f.target.surface)) || null,
       },
       model: trimmed(f.model) || null,
+      // How much Claude may do unattended, in Cowork. On the chat rather than
+      // in `target`, because it is not part of the address: it is the same kind
+      // of per-turn setting as the model, and a step can override it.
+      approval: trimmed(f.approval) || null,
       // Start this chat in a conversation that already exists, rather than
       // opening a fresh one. Matter-specific like the papers are, so Start
       // hands it to the run and clears it from the template.
@@ -209,6 +218,12 @@
       // drafted by one model and criticised by another, which is the whole
       // point of being able to try combinations.
       model: trimmed(f.model) || null,
+      // How much Claude may do unattended on THIS step, in Cowork. Null means
+      // the chat's own choice, for the same reason the model works that way: a
+      // conversation that researches with the brakes off and then edits a
+      // filing wants a different answer at each end, and asked once of the
+      // chat, one answer had to cover both.
+      approval: trimmed(f.approval) || null,
       // Steps sharing a group id, and sitting next to each other, run at the
       // same time — see stepWaves.
       group: trimmed(f.group) || null,
@@ -994,6 +1009,10 @@
     // leaves the chat on that model for the steps after it, exactly as it would
     // if you had picked it yourself.
     const on = new Map();
+    // The same bookkeeping for the approval mode, and for the same reason: a
+    // step that turns the brakes on leaves them on for the steps after it,
+    // exactly as it would if you had set it yourself.
+    const approvalOn = new Map();
     return steps.map((s, i) => {
       if (isPauseStep(s))
         return {
@@ -1016,6 +1035,9 @@
           model: null,
           modelOn: null,
           modelOverride: false,
+          surface: null,
+          approval: null,
+          approvalOn: null,
           docIds: [],
           handsOn: false,
           marker: null,
@@ -1026,6 +1048,10 @@
       const model = trimmed(s.model) || (firstInChat ? trimmed(chat.model) : null) || null;
       const was = on.get(s.chatId) || null;
       if (model) on.set(s.chatId, model);
+      const surface = trimmed((chat.target && chat.target.surface) || "") || null;
+      const approval = trimmed(s.approval) || (firstInChat ? trimmed(chat.approval) : null) || null;
+      const approvalWas = approvalOn.get(s.chatId) || null;
+      if (approval) approvalOn.set(s.chatId, approval);
       // Does this step's reply get pasted into another chat? Only then is it
       // worth insisting on what the reply must be — a step whose answer stays
       // where it is can say anything it likes. In a wave, the step that reads
@@ -1077,6 +1103,16 @@
         model: model && model !== was ? model : null,
         // What it will answer on either way, for the surfaces that report it.
         modelOn: model || was || null,
+        // The surface is the chat's, never a step's: a conversation cannot be
+        // half in Cowork, and a step that changed it mid-run would be asking
+        // for a different chat. Sent on every step so a resumed run lands the
+        // right way up, which costs one already-there check.
+        surface: surface,
+        // Approval switches like the model does — only when it actually
+        // changes, since setting the mode you're on is a menu opened for
+        // nothing and one more thing to go wrong.
+        approval: approval && approval !== approvalWas ? approval : null,
+        approvalOn: approval || approvalWas || null,
         // A step that deliberately differs from its chat's own setting.
         modelOverride: !!trimmed(s.model),
         docIds: opening.concat(added),
@@ -2133,6 +2169,11 @@
     }
     const chat = path.match(/\/chat\/([0-9a-f-]{36})/i);
     if (chat) return chat[1];
+    // A Cowork session's id is not a uuid (cse_011f5HCzaWWJ2hm19v6NuQmN), so
+    // the uuid sweep below would walk straight past it and report no
+    // conversation at all — which reads to a run as "the send never landed".
+    const cowork = path.match(/\/cowork\/(cse_[A-Za-z0-9_-]+)/);
+    if (cowork) return cowork[1];
     const all = path.match(new RegExp(UUID_RE.source, "gi"));
     return all && all.length ? all[all.length - 1] : null;
   }

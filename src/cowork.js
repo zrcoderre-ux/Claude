@@ -33,6 +33,15 @@
   // opt-in, so an unset field must never move a control.
   const INHERIT = "";
 
+  // The two halves of the Chat/Cowork control, which claude.ai calls "Surface"
+  // — a [role="radiogroup"][aria-label="Surface"] of two [role="radio"] spans.
+  // The name is worth keeping: it is the one word in the markup that isn't
+  // either of the choices, so it survives a rename of either.
+  const SURFACES = [
+    { key: "chat", label: "Chat" },
+    { key: "cowork", label: "Cowork" },
+  ];
+
   const str = (v) => (v == null ? "" : String(v));
   const norm = (v) => str(v).replace(/\s+/g, " ").trim();
   const lower = (v) => norm(v).toLowerCase();
@@ -128,6 +137,91 @@
     }
   }
 
+  // ---- the surface itself ------------------------------------------------
+
+  function surfaceByKey(key) {
+    const k = lower(key);
+    for (const s of SURFACES) if (s.key === k) return s;
+    return null;
+  }
+
+  /**
+   * Which half of the toggle a piece of text names. The radio's label is its
+   * whole text ("Chat", "Cowork"), so this one is an equality test — unlike the
+   * approval rows, nothing is appended.
+   */
+  function surfaceFromLabel(label) {
+    const t = lower(label);
+    if (!t) return INHERIT;
+    const s = surfaceByKey(t);
+    if (s) return s.key;
+    // "co-work" and "co work" are how a person writes it, and one day may be
+    // how claude.ai does.
+    if (/^co[\s-]?work$/.test(t)) return "cowork";
+    return INHERIT;
+  }
+
+  function labelForSurface(key) {
+    const s = surfaceByKey(key);
+    return s ? s.label : "";
+  }
+
+  function describeSurface(key) {
+    const s = surfaceByKey(key);
+    return s ? s.label : "Leave as-is";
+  }
+
+  function surfaceOptions() {
+    return [{ value: INHERIT, label: "Leave as-is" }].concat(
+      SURFACES.map((s) => ({ value: s.key, label: s.label }))
+    );
+  }
+
+  /**
+   * The same four answers as `reconcile`, about the Chat/Cowork toggle.
+   *
+   * "unknown" means the toggle isn't on this page at all, which is the ordinary
+   * case rather than a failure: the control only exists on the composer home,
+   * so a job resuming an existing conversation has no surface to choose and
+   * never had one.
+   */
+  function reconcileSurface(wanted, current) {
+    const want = surfaceFromLabel(wanted);
+    if (!want) return "inherit";
+    const have = surfaceFromLabel(current);
+    if (!have) return "unknown";
+    return want === have ? "ok" : "set";
+  }
+
+  /**
+   * Whether a job asking for `wanted` should be touching the approval control
+   * at all. Approval modes belong to Cowork; in Chat there is no such control,
+   * and a job that carries one from an earlier edit shouldn't go hunting for it.
+   */
+  function approvalApplies(surfaceWanted, surfaceCurrent) {
+    const want = surfaceFromLabel(surfaceWanted);
+    if (want) return want === "cowork";
+    return surfaceFromLabel(surfaceCurrent) === "cowork";
+  }
+
+  /**
+   * What to say about a surface we changed and could not change back.
+   *
+   * The toggle is a single last-used preference for the whole account, not a
+   * property of the tab: switch it in a background tab at 3am and the next tab
+   * opened by hand comes up that way. So a job that moves it owes the user
+   * either a restoration or a sentence, and the restoration is only possible
+   * while the control is still on screen — which, after a send, it is not.
+   */
+  function surfaceLeftNote(changedFrom, restored) {
+    const from = surfaceFromLabel(changedFrom);
+    if (!from || restored) return "";
+    return (
+      "claude.ai was on " + labelForSurface(from) + " and this left it on the other one — " +
+      "the Chat/Cowork choice is remembered for the whole account, so your next new tab will open there"
+    );
+  }
+
   // ---- addresses ---------------------------------------------------------
 
   // A Cowork session: /cowork/cse_<id>, where the id is emphatically not a uuid
@@ -187,7 +281,15 @@
 
   const api = {
     MODES,
+    SURFACES,
     INHERIT,
+    surfaceFromLabel,
+    labelForSurface,
+    describeSurface,
+    surfaceOptions,
+    reconcileSurface,
+    approvalApplies,
+    surfaceLeftNote,
     modeFromLabel,
     labelForMode,
     describeMode,

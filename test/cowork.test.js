@@ -113,6 +113,71 @@ test("the note is empty when nothing happened and loud when it didn't", () => {
   assert.match(K.reconcileNote("manual", ""), /isn't in Cowork/);
 });
 
+// ---- the surface ----------------------------------------------------------
+
+test("the toggle's two radios are read by their whole label", () => {
+  assert.equal(K.surfaceFromLabel("Chat"), "chat");
+  assert.equal(K.surfaceFromLabel("Cowork"), "cowork");
+  assert.equal(K.surfaceFromLabel("cowork"), "cowork");
+  assert.equal(K.surfaceFromLabel("  Cowork  "), "cowork");
+});
+
+test("the ways a person writes co-work all land on the same surface", () => {
+  assert.equal(K.surfaceFromLabel("co-work"), "cowork");
+  assert.equal(K.surfaceFromLabel("Co Work"), "cowork");
+});
+
+test("a surface is not guessed from a longer string", () => {
+  // Unlike the approval rows, nothing is appended to a radio's label, so a
+  // prefix test here would match the whole toggle ("ChatCowork").
+  assert.equal(K.surfaceFromLabel("ChatCowork"), "");
+  assert.equal(K.surfaceFromLabel("Chat with Claude"), "");
+  assert.equal(K.surfaceFromLabel(""), "");
+  assert.equal(K.surfaceFromLabel(null), "");
+});
+
+test("a surface round-trips and describes itself", () => {
+  for (const s of K.SURFACES) assert.equal(K.surfaceFromLabel(K.labelForSurface(s.key)), s.key);
+  assert.equal(K.describeSurface(""), "Leave as-is");
+  assert.equal(K.describeSurface("cowork"), "Cowork");
+  assert.equal(K.labelForSurface("nonsense"), "");
+});
+
+test("the surface picker offers 'leave as-is' first too", () => {
+  const opts = K.surfaceOptions();
+  assert.deepEqual(
+    opts.map((o) => o.value),
+    ["", "chat", "cowork"]
+  );
+});
+
+test("reconcileSurface answers the same four ways", () => {
+  assert.equal(K.reconcileSurface("", "Chat"), "inherit");
+  assert.equal(K.reconcileSurface("chat", "Chat"), "ok");
+  assert.equal(K.reconcileSurface("cowork", "Chat"), "set");
+  // No toggle on the page: ordinary, not a failure — it only exists on the
+  // composer home, so a job resuming a conversation never had a choice.
+  assert.equal(K.reconcileSurface("cowork", ""), "unknown");
+});
+
+test("approval only applies where an approval control exists", () => {
+  assert.equal(K.approvalApplies("cowork", "Chat"), true);
+  assert.equal(K.approvalApplies("chat", "Cowork"), false);
+  // Unset surface: go by what the page is actually on.
+  assert.equal(K.approvalApplies("", "Cowork"), true);
+  assert.equal(K.approvalApplies("", "Chat"), false);
+  assert.equal(K.approvalApplies("", ""), false);
+});
+
+test("moving the toggle and failing to move it back is said out loud", () => {
+  // The choice is remembered for the account, not the tab, so a silent change
+  // reaches the next window the user opens by hand.
+  assert.match(K.surfaceLeftNote("chat", false), /next new tab/);
+  assert.match(K.surfaceLeftNote("chat", false), /Chat/);
+  assert.equal(K.surfaceLeftNote("chat", true), "");
+  assert.equal(K.surfaceLeftNote("", false), "");
+});
+
 // ---- addresses ------------------------------------------------------------
 
 test("a cowork session id is not a uuid and is read anyway", () => {
