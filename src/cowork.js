@@ -347,6 +347,37 @@
     return !!want && squash(text) === want;
   }
 
+  // ---- a session's own menu ----------------------------------------------
+  //
+  // The control that opens it is labelled "More options for <the session's
+  // current name>", which makes it two useful things at once: the door to the
+  // Rename item, and a live reading of what the session is currently called.
+  // The second is what lets a rename be CONFIRMED — the label changes — rather
+  // than merely assumed because a dialog closed, which is as true of Cancel.
+  const MORE_OPTIONS_RE = /^more\s+options\s+for\s+(.+)$/i;
+
+  /** The session name inside "More options for X", or "" if that isn't one. */
+  function nameFromMoreOptions(label) {
+    const m = MORE_OPTIONS_RE.exec(norm(label));
+    return m ? norm(m[1]) : "";
+  }
+
+  /** Whether a label is that control at all, whatever it currently names. */
+  function isMoreOptionsLabel(label) {
+    return MORE_OPTIONS_RE.test(norm(label));
+  }
+
+  /** Whether that control is now naming `name` — the proof a rename took. */
+  function moreOptionsNames(label, name) {
+    const want = squash(name);
+    return !!want && squash(nameFromMoreOptions(label)) === want;
+  }
+
+  /** Whether a menu row is the Rename one. Leading word only, as ever. */
+  function isRenameRow(text) {
+    return /^rename\b/.test(lower(text));
+  }
+
   /**
    * Whether a caption is the menu's unset one — "Project" and its variants.
    *
@@ -396,6 +427,10 @@
     projectTriggerName,
     projectTriggerIs,
     isProjectTriggerCaption,
+    nameFromMoreOptions,
+    isMoreOptionsLabel,
+    moreOptionsNames,
+    isRenameRow,
     isProjectRow,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

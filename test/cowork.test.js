@@ -374,3 +374,36 @@ test("the navigation's plural Projects is not the composer's project menu", () =
   assert.equal(K.isProjectTriggerCaption("View all projects"), false);
   assert.equal(K.isProjectTriggerCaption("Project"), true);
 });
+
+// ---- a session's own menu -------------------------------------------------
+
+test("the menu trigger names the session, which is how a rename is confirmed", () => {
+  assert.equal(K.nameFromMoreOptions("More options for Untitled"), "Untitled");
+  assert.equal(
+    K.nameFromMoreOptions("More options for 8.15.26 Motion to Compel: Drafting (A)"),
+    "8.15.26 Motion to Compel: Drafting (A)"
+  );
+  assert.equal(K.isMoreOptionsLabel("More options for anything at all"), true);
+  assert.equal(K.isMoreOptionsLabel("Session actions"), false);
+  assert.equal(K.isMoreOptionsLabel(""), false);
+  assert.equal(K.nameFromMoreOptions("Share"), "");
+});
+
+test("a rename took when the trigger comes round to saying so", () => {
+  // A dialog closing only says the dialog closed — as true of Cancel as of
+  // Rename. The label changing is the thing that means it worked.
+  assert.equal(K.moreOptionsNames("More options for Drafting (A)", "Drafting (A)"), true);
+  assert.equal(K.moreOptionsNames("More options for Untitled", "Drafting (A)"), false);
+  assert.equal(K.moreOptionsNames("More options for Drafting​ (A)", "Drafting (A)"), true);
+  assert.equal(K.moreOptionsNames("Session actions", "Drafting (A)"), false);
+  assert.equal(K.moreOptionsNames("More options for x", ""), false);
+});
+
+test("only a row that leads with Rename is ever clicked", () => {
+  assert.equal(K.isRenameRow("Rename"), true);
+  assert.equal(K.isRenameRow("Rename chat"), true);
+  assert.equal(K.isRenameRow("  rename  "), true);
+  assert.equal(K.isRenameRow("Delete"), false);
+  assert.equal(K.isRenameRow("Renamed yesterday"), false);
+  assert.equal(K.isRenameRow(""), false);
+});
