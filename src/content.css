@@ -316,8 +316,17 @@
   background: rgba(0, 0, 0, 0.05);
 }
 
+/* Its own colours rather than the panel's muted sub-row: this is a reading you
+   are meant to be able to take, not furniture to skim past. */
 #cum-surface-note {
   margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(201, 100, 66, 0.1);
+  color: inherit;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: normal;
   word-break: break-word;
 }
 
@@ -327,6 +336,9 @@
   }
   #cum-surface-btn:hover {
     background: rgba(255, 255, 255, 0.08);
+  }
+  #cum-surface-note {
+    background: rgba(201, 100, 66, 0.2);
   }
 }
 

@@ -810,8 +810,8 @@
         </div>
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
         <div class="cum-panel-hint" id="cum-p-hint" hidden>Reading your usage — this updates automatically.</div>
-        <button id="cum-surface-btn" type="button" hidden>Chat ⇄ Cowork</button>
-        <div class="cum-panel-row cum-panel-sub" id="cum-surface-note" hidden></div>
+        <button id="cum-surface-btn" type="button">Chat ⇄ Cowork</button>
+        <div id="cum-surface-note" hidden></div>
         <button id="cum-schedule-btn" type="button">＋ Schedule a send</button>
         <button id="cum-options-btn" type="button">Open options →</button>
       </div>
@@ -908,7 +908,20 @@
         e.stopPropagation();
         const C = window.CUMComposer;
         const K = window.CUMCowork;
-        if (!C || !K || !C.selectSurface) return saySurface("the composer module isn't loaded");
+        if (!C || !K || !C.selectSurface)
+          return saySurface(
+            "modules missing — composer:" + (C ? "yes" : "NO") +
+              " cowork:" + (K ? "yes" : "NO") +
+              " selectSurface:" + (C && C.selectSurface ? "yes" : "NO")
+          );
+        // Said out loud rather than by disappearing. A button that hides itself
+        // when the page can't support it looks identical to a button that was
+        // never built, which is exactly the confusion this exists to end.
+        if (!C.findSurfaceGroup())
+          return saySurface(
+            "no Chat/Cowork toggle on this page — open a new chat (/new) and try again" +
+              (C.findApprovalTrigger() ? " · but an approval control IS here, so this is Cowork" : "")
+          );
         const now = C.currentSurface();
         const want = now === "cowork" ? "chat" : "cowork";
         saySurface("on " + (K.describeSurface(now) || "something unreadable") + " — switching…");
@@ -928,26 +941,36 @@
         refreshSurfaceBtn();
       });
 
+    // Two places, because the panel closes the moment you click anywhere else
+    // and a line you didn't manage to read is a line that wasn't printed.
     function saySurface(text) {
+      try {
+        console.log("[claude-usage-meter] surface: " + text);
+      } catch (e) {
+        /* ignore */
+      }
       if (!els.surfaceNote) return;
       els.surfaceNote.textContent = text;
       els.surfaceNote.hidden = false;
     }
 
-    // Only shown where there is something to switch. On a settled conversation
-    // the toggle doesn't exist, and a button that can't work is worse than no
-    // button — it looks like the feature is broken rather than absent.
+    // Always shown, and captioned with what it can currently see. Hiding it
+    // where the toggle is absent made "no toggle here" and "no button was ever
+    // built" look the same from the outside — which is the confusion this whole
+    // button exists to end.
     function refreshSurfaceBtn() {
       const C = window.CUMComposer;
       const K = window.CUMCowork;
       if (!els.surfaceBtn) return;
-      const here = C && C.findSurfaceGroup ? C.findSurfaceGroup() : null;
-      const approval = C && C.findApprovalTrigger ? C.findApprovalTrigger() : null;
-      els.surfaceBtn.hidden = !here && !approval;
-      if (els.surfaceBtn.hidden) return;
-      const now = C ? C.currentSurface() : "";
+      const group = C && C.findSurfaceGroup ? C.findSurfaceGroup() : null;
+      const now = C && C.currentSurface ? C.currentSurface() : "";
       els.surfaceBtn.textContent =
-        "Chat ⇄ Cowork" + (now && K ? "  (on " + K.describeSurface(now) + ")" : "");
+        "Chat ⇄ Cowork" +
+        (group
+          ? now && K
+            ? "  (on " + K.describeSurface(now) + ")"
+            : "  (toggle found, state unreadable)"
+          : "  (no toggle on this page)");
     }
     els.surfaceRefresh = refreshSurfaceBtn;
 
