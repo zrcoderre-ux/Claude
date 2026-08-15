@@ -51,6 +51,14 @@
   let streamDoneAt = 0;
   let anyStreamSeen = false;
   let streamConvId = null; // named by the completion URL — see the listener
+  // Frames on the page's own socket. Not a stream closing — a socket opens once
+  // and stays open, so there is no such moment to have — but frames arriving is
+  // a fact about the NETWORK, which is what makes it better than the text
+  // holding still: a throttled background tab stops laying out and never stops
+  // receiving. Used where Cowork produces no completion stream at all.
+  let lastFrameAt = 0;
+  let anyFrameSeen = false;
+  const FRAME_QUIET_MS = 4000; // frames this far apart are a turn that ended
   // claude.ai streams more than the assistant's answer over SSE, so only the
   // completion endpoint counts — some other stream closing must not release a
   // step whose reply is still being written.
@@ -59,6 +67,11 @@
       if (event.source !== window) return;
       const m = event.data;
       const p = m && m.__channel === C.CHANNEL ? m.payload : null;
+      if (p && p.socketFrame) {
+        anyFrameSeen = true;
+        lastFrameAt = p.at || Date.now();
+        return;
+      }
       if (!p || (!p.streamStart && !p.streamDone)) return;
       anyStreamSeen = true;
       if (!W.looksLikeCompletionUrl(p.url, location.pathname)) return;
@@ -145,6 +158,9 @@
       /* fall through to the transcript */
     }
     if (streamStartedAt > streamDoneAt) return true;
+    // ...or frames still arriving on the socket, where that is the only
+    // network signal there is.
+    if (lastFrameAt && Date.now() - lastFrameAt < FRAME_QUIET_MS) return true;
 
     // Otherwise ask whose turn it is. This leans on a selector for the human's
     // messages, which is why it isn't the primary test — if claude.ai renames
@@ -1138,6 +1154,8 @@
       notes.push(
         settledVia === "stalled"
           ? "took the reply after 3 minutes unchanged (the page still claimed it was generating)"
+          : anyFrameSeen
+          ? "turn end judged from the response socket going quiet (no completion stream in this surface)"
           : "turn end judged from the text holding still (no completion stream seen)"
       );
 
