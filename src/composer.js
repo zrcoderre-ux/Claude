@@ -743,16 +743,6 @@
   let lastSurfaceWhy = "";
   const surfaceWhy = () => lastSurfaceWhy;
 
-  // A string with its invisible characters shown. Quoting alone is not enough:
-  // a zero-width space prints as nothing, so two strings that differ by one
-  // look identical in the report — which is exactly how "cowork" not matching
-  // "cowork" survived being looked at.
-  function visible(s) {
-    return JSON.stringify(String(s == null ? "" : s)).replace(/[^\x20-\x7e]/g, (c) =>
-      "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")
-    );
-  }
-
   function findSurfaceGroup() {
     const g = document.querySelector('[role="radiogroup"][aria-label="Surface" i]');
     if (g && !isOurs(g)) return g;
@@ -806,40 +796,6 @@
     }
     const wrap = el.closest ? el.closest("label") : null;
     return wrap ? normLower(wrap.textContent) : "";
-  }
-
-  /**
-   * A census of what the toggle looks like right now, for the panel's button to
-   * print when a switch didn't happen. Nothing acts on it — it exists because
-   * "unsupported" on its own says only that something was missing, and which
-   * thing was missing is the whole question.
-   */
-  function surfaceReport() {
-    let groups = [];
-    try {
-      groups = Array.from(document.querySelectorAll('[role="radiogroup"]'));
-    } catch (e) {
-      return "couldn't query the page";
-    }
-    const bits = ["radiogroups: " + groups.length];
-    groups.slice(0, 3).forEach((g, i) => {
-      const tagged = Array.from(g.querySelectorAll('[role="radio"]'));
-      const inputs = Array.from(g.querySelectorAll('input[type="radio"]'));
-      bits.push(
-        "[" + i + "] aria-label=" + JSON.stringify(g.getAttribute("aria-label") || "") +
-          " role-radios=" + tagged.length +
-          " inputs=" + inputs.length +
-          " labels=" + JSON.stringify(tagged.map(surfaceRadioLabel).join("|")) +
-          " text=" + JSON.stringify(normLower(g.textContent).slice(0, 40))
-      );
-    });
-    const chosen = findSurfaceGroup();
-    bits.push(
-      "chosen=" + (chosen ? "yes" : "NO") +
-        " halves=" + surfaceRadios().length +
-        " halfLabels=" + JSON.stringify(surfaceRadios().map(surfaceRadioLabel).join("|"))
-    );
-    return bits.join(" · ");
   }
 
   /**
@@ -912,8 +868,8 @@
     if (at === -1) at = radios.findIndex((r) => surfaceRadioLabel(r).indexOf(label) === 0);
     if (at === -1)
       return why(
-        "no half named " + visible(label) + " among " +
-          visible(radios.map(surfaceRadioLabel).join("|")) +
+        "no half named " + JSON.stringify(label) + " among " +
+          JSON.stringify(radios.map(surfaceRadioLabel).join("|")) +
           " (" + radios.length + " halves)",
         "unsupported"
       );
@@ -1124,8 +1080,15 @@
       try {
         surfaceWas = currentSurface();
         const r = await selectSurface(o.surface);
-        if (r === "unsupported") notes.push("no Chat/Cowork toggle on this page — sent on whichever it was");
-        else if (r === "failed") notes.push("couldn't switch to " + k.describeSurface(o.surface));
+        // With the reason. A run is unattended by definition, so the note is
+        // the only place it can say WHICH part failed — and "unsupported" on
+        // its own, without that, cost several rounds to diagnose by hand.
+        if (r === "unsupported")
+          notes.push(
+            "no Chat/Cowork toggle on this page — sent on whichever it was (" + surfaceWhy() + ")"
+          );
+        else if (r === "failed")
+          notes.push("couldn't switch to " + k.describeSurface(o.surface) + " (" + surfaceWhy() + ")");
         else if (r === "ok" && surfaceWas && surfaceWas !== k.surfaceFromLabel(o.surface)) {
           editor = (await waitFor(findEditor)) || editor;
         } else {
@@ -1296,9 +1259,6 @@
     selectModel,
     selectCodeRepo,
     findSurfaceGroup,
-    surfaceRadios,
-    surfaceRadioLabel,
-    surfaceReport,
     surfaceWhy,
     currentSurface,
     selectSurface,

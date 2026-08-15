@@ -810,8 +810,6 @@
         </div>
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
         <div class="cum-panel-hint" id="cum-p-hint" hidden>Reading your usage — this updates automatically.</div>
-        <button id="cum-surface-btn" type="button">Chat ⇄ Cowork</button>
-        <div id="cum-surface-note" hidden></div>
         <button id="cum-schedule-btn" type="button">＋ Schedule a send</button>
         <button id="cum-options-btn" type="button">Open options →</button>
       </div>
@@ -848,8 +846,6 @@
       pOverageStatus: root.querySelector("#cum-p-overage-status"),
       pUpdated: root.querySelector("#cum-p-updated"),
       pHint: root.querySelector("#cum-p-hint"),
-      surfaceBtn: root.querySelector("#cum-surface-btn"),
-      surfaceNote: root.querySelector("#cum-surface-note"),
       scheduleBtn: root.querySelector("#cum-schedule-btn"),
       optionsBtn: root.querySelector("#cum-options-btn"),
       statusGroup: root.querySelector("#cum-status-group"),
@@ -890,116 +886,8 @@
         return;
       }
       els.panel.hidden = !els.panel.hidden;
-      if (!els.panel.hidden) {
-        placePanel();
-        // Read the toggle each time the panel opens rather than once at build:
-        // the composer home mounts and unmounts as you move around the app.
-        if (els.surfaceRefresh) els.surfaceRefresh();
-      }
+      if (!els.panel.hidden) placePanel();
     });
-
-    // Chat ⇄ Cowork, by hand. The same two functions a scheduled send and a
-    // workflow step call — CUMComposer.currentSurface and .selectSurface —
-    // driven from a button, so "did the toggle move?" can be answered without a
-    // run in the way. A run that fails to switch and a button that fails to
-    // switch are different bugs, and there was no way to tell them apart.
-    if (els.surfaceBtn)
-      els.surfaceBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const C = window.CUMComposer;
-        const K = window.CUMCowork;
-        if (!C || !K || !C.selectSurface)
-          return saySurface(
-            "modules missing — composer:" + (C ? "yes" : "NO") +
-              " cowork:" + (K ? "yes" : "NO") +
-              " selectSurface:" + (C && C.selectSurface ? "yes" : "NO")
-          );
-        // Said out loud rather than by disappearing. A button that hides itself
-        // when the page can't support it looks identical to a button that was
-        // never built, which is exactly the confusion this exists to end.
-        if (!C.findSurfaceGroup())
-          return saySurface(
-            "no Chat/Cowork toggle on this page — open a new chat (/new) and try again" +
-              (C.findApprovalTrigger() ? " · but an approval control IS here, so this is Cowork" : "")
-          );
-        const now = C.currentSurface();
-        const want = now === "cowork" ? "chat" : "cowork";
-        saySurface("on " + (K.describeSurface(now) || "something unreadable") + " — switching…");
-        let verdict;
-        try {
-          verdict = await C.selectSurface(want);
-        } catch (err) {
-          verdict = "threw: " + String((err && err.message) || err);
-        }
-        const after = C.currentSurface();
-        // Kept, rather than printed and forgotten. The live reading is redrawn
-        // every time the panel opens, and it used to overwrite this the instant
-        // it appeared — the verdict was being deleted by the refresh a line
-        // later, which read from the outside as a button that printed nothing.
-        lastVerdict =
-          verdict +
-          " · asked for " + K.describeSurface(want) +
-          " · was " + (K.describeSurface(now) || "unreadable") +
-          " · now " + (K.describeSurface(after) || "unreadable") +
-          // Where it stopped, in words. A verdict names the kind of failure;
-          // this names the line, which is the part that has actually been
-          // costing rounds.
-          (C.surfaceWhy && C.surfaceWhy() ? "\n  why: " + C.surfaceWhy() : "");
-        refreshSurfaceBtn();
-      });
-
-    // The last click's answer, which outlives the redraw.
-    let lastVerdict = "";
-
-    // Two places, because the panel closes the moment you click anywhere else
-    // and a line you didn't manage to read is a line that wasn't printed.
-    function saySurface(text) {
-      try {
-        console.log("[claude-usage-meter] surface: " + text);
-      } catch (e) {
-        /* ignore */
-      }
-      if (!els.surfaceNote) return;
-      els.surfaceNote.textContent = text;
-      els.surfaceNote.hidden = false;
-    }
-
-    // Always shown, and captioned with what it can currently see. Hiding it
-    // where the toggle is absent made "no toggle here" and "no button was ever
-    // built" look the same from the outside — which is the confusion this whole
-    // button exists to end.
-    function refreshSurfaceBtn() {
-      const C = window.CUMComposer;
-      const K = window.CUMCowork;
-      if (!els.surfaceBtn) return;
-      const group = C && C.findSurfaceGroup ? C.findSurfaceGroup() : null;
-      const now = C && C.currentSurface ? C.currentSurface() : "";
-      els.surfaceBtn.textContent =
-        "Chat ⇄ Cowork" +
-        (group
-          ? now && K
-            ? "  (on " + K.describeSurface(now) + ")"
-            : "  (toggle found, state unreadable)"
-          : "  (no toggle on this page)");
-      // Both things, because they answer different questions and each one on
-      // its own has now cost a round: the verdict says what the last click did,
-      // the reading says where the page stands, and the census says what the
-      // switch had to work with.
-      if (!els.surfaceNote) return;
-      const lines = [];
-      if (lastVerdict) lines.push("last click: " + lastVerdict);
-      lines.push("now reads " + ((K && K.describeSurface(now)) || "unreadable"));
-      if (C && C.surfaceReport) lines.push(C.surfaceReport());
-      const text = lines.join("\n");
-      els.surfaceNote.textContent = text;
-      els.surfaceNote.hidden = false;
-      try {
-        console.log("[claude-usage-meter] surface:\n" + text);
-      } catch (e) {
-        /* ignore */
-      }
-    }
-    els.surfaceRefresh = refreshSurfaceBtn;
 
     els.scheduleBtn.addEventListener("click", (e) => {
       e.stopPropagation();
