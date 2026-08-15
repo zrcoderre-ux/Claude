@@ -33,6 +33,12 @@
       chatTitle: f.chatTitle || null,
       codeRepo: (f.codeRepo || "").trim() || null, // "owner/name" → new Claude Code chat on that repo
       model: (f.model || "").trim() || null, // "" / null → leave the picker as-is
+      // Which surface to send on, and — in Cowork — how much Claude may do
+      // unattended. Both carry the same contract as `model`: "" / null means
+      // leave the control alone, because the Chat/Cowork choice is remembered
+      // for the whole account and a job that never asked must not move it.
+      surface: (f.surface || "").trim() || null, // "" / null | "chat" | "cowork"
+      approval: (f.approval || "").trim() || null, // "" / null | "manual" | "auto" | "skip"
       trigger:
         f.trigger && f.trigger.type === "time"
           ? { type: "time", at: f.trigger.at }
@@ -77,6 +83,11 @@
       return /^https?:\/\//i.test(job.chatUrl) ? job.chatUrl : ORIGIN + job.chatUrl;
     }
     if (job && job.codeRepo) return ORIGIN + "/code"; // fresh Claude Code session
+    // A Cowork job goes to the composer home even when it has a project. The
+    // toggle, the approval control and the project menu all live there and
+    // nowhere else, so arriving anywhere else means arriving with no way to
+    // set any of the three. The project is chosen on the page instead.
+    if (job && job.surface === "cowork") return ORIGIN + "/new";
     if (job && job.projectHref) return ORIGIN + job.projectHref;
     if (job && job.projectUuid) return ORIGIN + "/cowork/project/" + job.projectUuid;
     return ORIGIN + "/new";
@@ -89,7 +100,18 @@
     if (job.codeRepo) return "→ Claude Code: " + job.codeRepo;
     if (job.projectName) return "→ " + job.projectName;
     if (job.projectUuid) return "→ project";
-    return "New chat";
+    return job && job.surface === "cowork" ? "New Cowork session" : "New chat";
+  }
+
+  // What a job says about the surface, for the row that lists it. Empty when it
+  // says nothing — a job that leaves the toggle alone has nothing to report,
+  // and a chip saying "Chat" would be a claim it never made.
+  function surfaceLabel(job) {
+    if (!job || !job.surface) return "";
+    const K = typeof CUMCowork !== "undefined" ? CUMCowork : null;
+    const surface = K ? K.describeSurface(job.surface) : job.surface;
+    if (job.surface !== "cowork" || !job.approval) return surface;
+    return surface + " · " + (K ? K.describeMode(job.approval) : job.approval);
   }
 
   // A job still on its way out: queued, or held back by an outage.
@@ -208,6 +230,7 @@
     getJob,
     targetUrl,
     targetLabel,
+    surfaceLabel,
     isQueued,
     heldJobs,
     hasHeldJobs,

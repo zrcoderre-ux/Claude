@@ -31,6 +31,11 @@
       text: job.prompt || "",
       model: job.model || null,
       codeRepo: job.codeRepo || null,
+      surface: job.surface || null,
+      approval: job.approval || null,
+      // A Cowork session's project is a menu on the composer, not an address,
+      // so the name travels with the send rather than with the URL.
+      coworkProject: job.surface === "cowork" ? job.projectName || null : null,
     });
     const note = res.notes && res.notes.length ? res.notes.join("; ") : null;
     if (!res.ok) return { ok: false, error: res.error, note };

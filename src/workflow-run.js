@@ -347,6 +347,10 @@
     const deadline = Date.now() + (timeoutMs || 15000);
     while (Date.now() < deadline) {
       if (/\/chat\/[0-9a-f-]{36}/i.test(location.pathname)) return location.href;
+      // Cowork settles somewhere else entirely — /cowork/cse_<id>, no /chat/ in
+      // it and no uuid either. Without this arm the wait always runs its full
+      // timeout and every Cowork step pays fifteen seconds for nothing.
+      if (/\/cowork\/cse_[A-Za-z0-9_-]+/.test(location.pathname)) return location.href;
       await C.sleep(500);
     }
     return location.href;
@@ -921,6 +925,9 @@
         text: msg.text || "",
         model: msg.model || null,
         codeRepo: msg.codeRepo || null,
+        surface: msg.surface || null,
+        approval: msg.approval || null,
+        coworkProject: msg.coworkProject || null,
         stop: () => halted,
       });
       if (sent.notes && sent.notes.length) notes.push.apply(notes, sent.notes);

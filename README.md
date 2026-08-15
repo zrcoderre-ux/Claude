@@ -365,7 +365,8 @@ detail panel (which opens the same form as a modal — a shared module,
 drop zone**, or via the Choose files / Choose folder buttons; selections show as
 removable chips and are snapshotted at queue time. Pick a **target**: a new
 chat, a Project, or — when opened from the pill while viewing a conversation —
-**this chat**. Each job stores your files inside the extension
+**this chat**. Pick a **surface** — Chat or Cowork — and, in Cowork, how much
+Claude may do unattended; see [Cowork](#cowork). Each job stores your files inside the extension
 (`chrome.storage`, `unlimitedStorage`) plus an optional prompt. Triggers:
 
 - **When usage resets** — fires just after your 5-hour window rolls over (uses
@@ -387,6 +388,47 @@ claude.ai**. There's no headless/while-closed execution (that would require a
 hosted backend). "When usage resets" is the common case and your browser is
 usually open then; a specific time with the browser closed will fire the next
 time it's open.
+
+## Cowork
+
+Cowork is the other half of claude.ai's composer — the **Chat / Cowork** toggle
+on the home screen, which swaps in a Project menu and a control saying how much
+Claude may do without asking: **Manually approve**, **Automatically approve**,
+**Skip all approvals**. A scheduled send and a workflow chat can each name a
+surface, and a Cowork one can name an approval mode.
+
+Three things about it shape how this works, and none of them is obvious:
+
+- **Nothing in the address says which surface you're on.** Toggling to Cowork
+  leaves `/new` as `/new`. A send only lands somewhere distinctive *after* it
+  goes — `/cowork/cse_…`, whose id isn't a uuid, so `conversationId` has its own
+  arm for it and `settledUrl` its own test. Reading the surface off the DOM is
+  the only honest answer, and the page gives one: the approval control's own
+  `aria-label` **is** the mode in force.
+- **The choice is remembered for the whole account, not the tab.** Set Cowork in
+  one window and the next window you open comes up in Cowork, whatever else is
+  already open. So a 3am job that switches surfaces changes what you find in the
+  morning. A send that moves the toggle **puts it back** once the message has
+  gone — and where it can't (the toggle lives on the composer home, which the
+  send navigates away from), it says so in the job's note rather than leaving
+  you to notice.
+- **A Cowork job goes to `/new`, even when it has a Project.** The toggle, the
+  approval control and the project menu all live on the composer home. Arriving
+  at `/cowork/project/{uuid}` instead would mean arriving with no way to set any
+  of the three, so `targetUrl` sends a Cowork job to `/new` and the project is
+  chosen from the menu there, by name.
+
+Both fields default to **leave as-is**, the same contract the model picker has:
+a job that never mentions the surface never touches it, so nothing that predates
+this behaves differently. And a mode asked for on a page with no approval
+control is **not** quietly treated as satisfied — the send reports that it was
+ignored, because "it must have worked" is exactly the assumption that gets a
+message sent under a mode nobody chose.
+
+In a workflow the surface belongs to the **chat** (a conversation can't be half
+in Cowork) and the approval mode works like the model: set on the chat, and
+overridable **per step**, leaving the conversation on it for the steps after —
+so one chat can research with the brakes off and then edit a filing with them on.
 
 ## Workflows
 
@@ -1846,6 +1888,7 @@ src/estimate.js        Pure tenths-place calibrator (shared by ext + tests)
 src/status.js          Pure status.claude.com model + the scheduled-send gate
 src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
+src/cowork.js          Chat/Cowork surface + approval modes (pure)
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown
 src/content.css        Floating-button styles (light + dark)

@@ -241,6 +241,10 @@
         const dest = J.targetLabel(job);
         if (dest && dest !== "New chat") bits.push(dest);
         if (job.model) bits.push(job.model);
+        // Only when the job asked. A row reading "Chat" against a job that
+        // never touched the toggle would be a claim it never made.
+        const surface = J.surfaceLabel(job);
+        if (surface) bits.push(surface);
         row.innerHTML =
           `<div class="job-head">` +
           `<div class="job-title">${escapeHtml(job.name || "(untitled)")}` +
