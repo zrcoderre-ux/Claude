@@ -743,6 +743,16 @@
   let lastSurfaceWhy = "";
   const surfaceWhy = () => lastSurfaceWhy;
 
+  // A string with its invisible characters shown. Quoting alone is not enough:
+  // a zero-width space prints as nothing, so two strings that differ by one
+  // look identical in the report — which is exactly how "cowork" not matching
+  // "cowork" survived being looked at.
+  function visible(s) {
+    return JSON.stringify(String(s == null ? "" : s)).replace(/[^\x20-\x7e]/g, (c) =>
+      "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")
+    );
+  }
+
   function findSurfaceGroup() {
     const g = document.querySelector('[role="radiogroup"][aria-label="Surface" i]');
     if (g && !isOurs(g)) return g;
@@ -893,14 +903,17 @@
 
     const label = k.labelForSurface(wanted).toLowerCase();
     const radios = surfaceRadios();
-    // Exact first, then a leading match: a half can carry a badge or an icon's
-    // alt text after its name, never before it.
-    let at = radios.findIndex((r) => surfaceRadioLabel(r) === label);
+    // Asked of the pure module rather than compared as strings. It reduces a
+    // label to its letters, which is what makes an invisible character in
+    // claude.ai's markup — a zero-width space, which `\s` does not match —
+    // stop being the difference between "cowork" and "cowork".
+    let at = radios.findIndex((r) => k.surfaceFromLabel(surfaceRadioLabel(r)) === wanted);
+    // And a half that carries a badge after its name still leads with it.
     if (at === -1) at = radios.findIndex((r) => surfaceRadioLabel(r).indexOf(label) === 0);
     if (at === -1)
       return why(
-        "no half named " + JSON.stringify(label) + " among " +
-          JSON.stringify(radios.map(surfaceRadioLabel).join("|")) +
+        "no half named " + visible(label) + " among " +
+          visible(radios.map(surfaceRadioLabel).join("|")) +
           " (" + radios.length + " halves)",
         "unsupported"
       );

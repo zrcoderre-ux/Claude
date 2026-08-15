@@ -309,3 +309,25 @@ test("a checked radio whose label is unrecognisable doesn't stop the fallback", 
   const radios = [{ label: "Something new", checked: true }];
   assert.equal(K.surfaceFromEvidence(radios, true, true), "cowork");
 });
+
+test("an invisible character in the markup is not a different surface", () => {
+  // This is what cost the rounds: `\s` does not match a zero-width space, so
+  // one sitting in claude.ai's label survived every normalisation and made
+  // "cowork" fail to equal "cowork" — invisibly, since it prints as nothing.
+  assert.equal(K.surfaceFromLabel("​Cowork"), "cowork");
+  assert.equal(K.surfaceFromLabel("Cowork​"), "cowork");
+  assert.equal(K.surfaceFromLabel("Co​work"), "cowork");
+  assert.equal(K.surfaceFromLabel("﻿Chat"), "chat");
+  assert.equal(K.surfaceFromLabel("Chat "), "chat", "a non-breaking space too");
+  assert.equal(K.surfaceFromLabel("⁠Cowork‍"), "cowork");
+});
+
+test("reducing to letters still refuses everything that isn't a surface", () => {
+  // The looser comparison must not become a looser answer.
+  assert.equal(K.surfaceFromLabel("ChatCowork"), "");
+  assert.equal(K.surfaceFromLabel("Chat with Claude"), "");
+  assert.equal(K.surfaceFromLabel("Coworkers"), "");
+  assert.equal(K.surfaceFromLabel("chatty"), "");
+  assert.equal(K.surfaceFromLabel("​"), "");
+  assert.equal(K.surfaceFromLabel("—"), "");
+});

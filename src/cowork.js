@@ -150,14 +150,22 @@
    * whole text ("Chat", "Cowork"), so this one is an equality test — unlike the
    * approval rows, nothing is appended.
    */
+  /**
+   * A surface name reduced to its letters. `\s` does not match a zero-width
+   * space, so one sitting in a label survives every normalisation above and
+   * makes "cowork" fail to equal "cowork" — invisibly, since JSON.stringify
+   * prints it as nothing at all. That cost several rounds of reading code that
+   * was, on its own terms, correct.
+   *
+   * Letters and digits only, which also folds in the hyphen and the space:
+   * "Co-work", "Co Work" and "cowork" have never been different answers.
+   */
+  const squash = (v) => lower(v).replace(/[^a-z0-9]+/g, "");
+
   function surfaceFromLabel(label) {
-    const t = lower(label);
+    const t = squash(label);
     if (!t) return INHERIT;
-    const s = surfaceByKey(t);
-    if (s) return s.key;
-    // "co-work" and "co work" are how a person writes it, and one day may be
-    // how claude.ai does.
-    if (/^co[\s-]?work$/.test(t)) return "cowork";
+    for (const s of SURFACES) if (t === squash(s.label)) return s.key;
     return INHERIT;
   }
 
