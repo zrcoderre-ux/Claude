@@ -2851,8 +2851,16 @@
       // control claims. Long, because research pauses are long — a skill that
       // verifies authority by live retrieval can sit silent for many minutes —
       // and being early here means handing on half an answer.
+      //
+      // Longer still where the network says nothing. This ceiling exists to
+      // stop a run hanging on a Stop control that never goes away, and it is
+      // the LAST thing holding a Cowork turn: everything above it is either
+      // absent there or already spent. A tool call that takes twenty minutes is
+      // a slow tool call, not a stuck page, and the surface that runs tools
+      // between sentences is exactly the one where that happens.
       const stalled = typeof s.stalledMs === "number" ? s.stalledMs : 900000;
-      return unchanged >= stalled ? "stalled" : null;
+      const ceiling = s.noNetworkSignal ? Math.max(stalled, 1800000) : stalled;
+      return unchanged >= ceiling ? "stalled" : null;
     }
 
     // Nothing has been watched to arrive. Text that was ALREADY THERE when the
