@@ -80,6 +80,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
   conversation and keeps the real one behind a hover. Every turn, yours and
   Claude's, gets a line under it: the clock time it was sent, and how long after
   the turn before it landed. See [Timestamps](#timestamps).
+- **Chat ⇄ Cowork** — in the pill's panel, on a page that has the toggle: it
+  switches surface the same way a scheduled send or a workflow step does, and
+  prints what happened — which surface it read before, the verdict, and which
+  it reads after. A run that fails to switch and a button that fails to switch
+  are different bugs; this is how to tell them apart.
 - **Workflows** — run one piece of work through **several chats that hand it
   back and forth**: A drafts, B attacks the draft, A revises, round and round,
   then a final pass. Editable, copyable, deletable, with one pre-built. Each run
