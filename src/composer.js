@@ -757,14 +757,37 @@
     return g ? Array.from(g.querySelectorAll('[role="radio"]')).filter((el) => !isOurs(el)) : [];
   }
 
-  /** The surface in force: "chat", "cowork", or "" when there's no toggle here. */
+  /**
+   * The surface in force: "chat", "cowork", or "" when this page has neither a
+   * toggle nor an approval control to judge by.
+   *
+   * Every way the markup might mark the live half, because the one it was first
+   * seen using was none of them: both radios rendered aria-checked="false" and
+   * the state lived on a hidden input sitting beside them, which is why the
+   * approval control's presence is the answer of last resort.
+   */
   function currentSurface() {
     const k = K();
     if (!k) return "";
-    for (const r of surfaceRadios()) {
-      if (r.getAttribute("aria-checked") === "true") return k.surfaceFromLabel(r.textContent);
-    }
-    return "";
+    const group = findSurfaceGroup();
+    const radios = surfaceRadios();
+    const inputs = group ? Array.from(group.querySelectorAll('input[type="radio"]')) : [];
+    const state = radios.map((r, i) => {
+      const aria = r.getAttribute("aria-checked");
+      const sel = r.getAttribute("aria-selected");
+      const ds = normLower(r.getAttribute("data-state"));
+      let checked = null;
+      if (aria === "true" || sel === "true" || ds === "checked" || ds === "on" || ds === "active")
+        checked = true;
+      else if (aria === "false" || sel === "false") checked = false;
+      // The visible half may say nothing while the input it stands for does.
+      // Paired by position: the inputs are siblings of the radios, not children,
+      // so there is no containment to follow.
+      const input = r.querySelector('input[type="radio"]') || inputs[i] || null;
+      if (input && input.checked) checked = true;
+      return { label: r.textContent, checked: checked };
+    });
+    return k.surfaceFromEvidence(state, !!findApprovalTrigger(), !!group);
   }
 
   /**
@@ -777,20 +800,43 @@
     if (!k) return "unsupported";
     const wanted = k.surfaceFromLabel(want);
     if (!wanted) return "inherit";
+    // No toggle at all — an existing conversation rather than the composer
+    // home. That is the only thing that makes this unsupported.
+    const group = findSurfaceGroup();
+    if (!group) return "unsupported";
+
     const verdict = k.reconcileSurface(wanted, currentSurface());
     if (verdict === "inherit") return "inherit";
-    if (verdict === "unknown") return "unsupported";
     if (verdict === "ok") return "ok";
+    // "unknown" falls through with "set". A page that won't say where its
+    // toggle stands is not a page without one, and refusing to click a control
+    // sitting in front of us was the whole bug.
 
     const label = k.labelForSurface(wanted).toLowerCase();
-    const target = surfaceRadios().find((r) => normLower(r.textContent) === label);
-    if (!target) return "unsupported";
-    robustClick(target);
-    // The radio flips its own aria-checked, and the composer around it
-    // re-renders; give it a beat before believing either.
-    for (let i = 0; i < 12; i++) {
-      await sleep(200);
-      if (currentSurface() === wanted) return "ok";
+    const radios = surfaceRadios();
+    const at = radios.findIndex((r) => normLower(r.textContent) === label);
+    if (at === -1) return "unsupported";
+
+    // The composer re-renders around the toggle, so give it a beat before
+    // believing anything.
+    const settled = async () => {
+      for (let i = 0; i < 10; i++) {
+        await sleep(200);
+        if (currentSurface() === wanted) return true;
+      }
+      return false;
+    };
+
+    robustClick(radios[at]);
+    if (await settled()) return "ok";
+
+    // The visible half of a segmented control is usually a label for a hidden
+    // input, and a synthetic click on a span that isn't a <label> doesn't
+    // forward the way a real one does. Press the input itself before giving up.
+    const inputs = Array.from(group.querySelectorAll('input[type="radio"]'));
+    if (inputs[at]) {
+      robustClick(inputs[at]);
+      if (await settled()) return "ok";
     }
     return "failed";
   }
