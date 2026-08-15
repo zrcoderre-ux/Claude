@@ -1257,10 +1257,26 @@ seconds. A step whose message has already gone out is **re-attached to, never
 re-sent**, so nothing is ever posted twice. A run that can't finish fails loudly
 (a notification, and the error on the row) rather than going quiet.
 
-### A run gets its own window
+### A run's window
 
-Each run opens **its own Chrome window**, **maximized** but **unfocused**,
-containing only that run's chats. The size is not cosmetic: claude.ai is
+**Off by default: a run opens its chats as background tabs in the window you
+already have.** That is the plain reading of what a run is — work put behind
+whatever you're doing — and a second window is something to find, move and close
+rather than something you asked for. **Open this run in a window of its own** is
+a workflow setting like every other, so a run inherits it and can change it for
+that matter alone.
+
+In a borrowed window a run gives up everything the isolated one provided for
+free, and gives it up deliberately: nothing is resized (the window is yours), no
+Options tab is pinned into it, **Close window** isn't offered — those tabs were
+never the run's to tidy away — and Pause presses Stop only in the conversations
+the run actually owns rather than in every tab, since most of them are yours. A
+step also never reuses a tab unless it holds a conversation this run already
+owns: a first step's address is `/new`, and matching *that* would hand the step
+whatever new chat you happened to have open.
+
+With the switch on, each run opens **its own Chrome window**, **maximized** but
+**unfocused**, containing only that run's chats. The size is not cosmetic: claude.ai is
 responsive, and below its breakpoint it serves a compact client that can't render
 every block type, substituting *"This block is not supported on your current
 device"* where the content should be. The copy box then copies that notice, and
@@ -1308,7 +1324,7 @@ a window a run reopens later only puts its **chats** back.
 Two runs going together stay out of each other's way, deliberately and at every
 level:
 
-- **Windows and tabs.** Each run has its own window, and a step looks for its
+- **Windows and tabs.** A run with its own window keeps its chats there, and a step looks for its
   conversation **only inside that window**. A chat you happen to have open
   elsewhere is yours; driving a message into a tab you're reading would be a
   nasty surprise.

@@ -903,9 +903,24 @@ async function ensureWindowSize(windowId) {
 // nothing. An answer nobody is going to read is still an answer being paid for.
 function stopGeneratingIn(run) {
   if (!run || typeof run.windowId !== "number") return;
+  // In a window of its own, every tab is the run's. In a window it is only
+  // borrowing, most of them are yours — and pressing Stop in a chat you are
+  // in the middle of is exactly the kind of surprise a background run must
+  // never spring. So there, only the conversations this run actually owns.
+  const mine = new Set();
+  if (!run.newWindow) {
+    for (const id in run.chats || {}) {
+      const u = run.chats[id] && run.chats[id].url;
+      if (u) mine.add(u);
+    }
+  }
   tabsInWindow(run.windowId).then((tabs) => {
     for (const t of tabs) {
       if (t.id == null) continue;
+      if (!run.newWindow) {
+        const known = t.url && Array.from(mine).some((u) => J.sameConversationUrl(t.url, u));
+        if (!known) continue;
+      }
       try {
         chrome.tabs.sendMessage(t.id, { type: "cum-wf-stop-generating" }, () => {
           void chrome.runtime.lastError;
@@ -954,9 +969,32 @@ async function ensureOptionsTab(windowId) {
 // A tab showing `url` inside this run's own window. Deliberately scoped to that
 // window: a conversation the operator happens to have open elsewhere is theirs,
 // and driving a message into the tab they're reading would be a nasty surprise.
-async function runTab(run, url) {
+async function runTab(run, url, canReuse) {
   let windowId = typeof run.windowId === "number" ? run.windowId : null;
   if (windowId != null && !(await windowExists(windowId))) windowId = null;
+
+  // Sharing a window rather than opening one. Everything the isolated window
+  // gave for free has to be given up deliberately here: nothing is resized (the
+  // window is yours), no Options tab is pinned into it (it would be clutter in
+  // a window you are using), and a tab is only ever reused when it holds a
+  // conversation this run already owns — see the `canReuse` guard below, which
+  // is what stops a first step typing into whatever /new tab you had open.
+  if (!run.newWindow) {
+    if (windowId == null) windowId = await hostWindow();
+    if (windowId == null) return { tab: null, windowId: null };
+    if (canReuse) {
+      for (const t of await tabsInWindow(windowId)) {
+        if (t && t.url && J.sameConversationUrl(t.url, url))
+          return { tab: t, windowId, created: false };
+      }
+    }
+    try {
+      const tab = await chrome.tabs.create({ url, windowId, active: false });
+      return tab ? { tab, windowId, created: true } : { tab: null, windowId };
+    } catch (e) {
+      return { tab: null, windowId };
+    }
+  }
 
   if (windowId == null) {
     try {
@@ -1024,6 +1062,37 @@ async function runTab(run, url) {
 // (that's the whole point — chat A comes back to its own thread), otherwise a
 // fresh composer at the chat's configured destination. Always inside the run's
 // own window.
+// An ordinary window to put a run's tabs in, when it isn't getting one of its
+// own. The last focused normal window, or any normal window, or — if the
+// browser somehow has none — nothing, which the caller reports rather than
+// papering over.
+async function hostWindow() {
+  const pick = (opts) =>
+    new Promise((resolve) => {
+      try {
+        chrome.windows.getLastFocused(opts, (w) => {
+          void chrome.runtime.lastError;
+          resolve(w && w.type === "normal" ? w.id : null);
+        });
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  const focused = await pick({});
+  if (focused != null) return focused;
+  return new Promise((resolve) => {
+    try {
+      chrome.windows.getAll({ windowTypes: ["normal"] }, (ws) => {
+        void chrome.runtime.lastError;
+        const w = (ws || [])[0];
+        resolve(w && w.id != null ? w.id : null);
+      });
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
 async function stepTab(run, savedUrl, chat) {
   const url =
     savedUrl ||
@@ -1036,7 +1105,10 @@ async function stepTab(run, savedUrl, chat) {
       // are all there and nowhere else.
       surface: (chat.target && chat.target.surface) || null,
     });
-  const { tab, windowId, created } = await runTab(run, url);
+  // Reuse only where the address is a conversation this run already has. A
+  // fresh composer is /new, and matching THAT against a shared window's tabs
+  // would hand the step whatever new chat you happened to have open.
+  const { tab, windowId, created } = await runTab(run, url, !!savedUrl);
   if (!tab) return { tab: null, windowId: null };
   if (created) {
     await waitTabComplete(tab.id, 30000);
@@ -2069,7 +2141,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // ordinary browsing, so it opens beside whatever you're reading it
         // from.
         if (W.isRunActive(run)) {
-          const opened = await runTab(run, step.url);
+          const opened = await runTab(run, step.url, true);
           tab = opened.tab;
         } else {
           try {
@@ -2270,6 +2342,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const run = await readRun(msg.runId);
       if (!run) return { ok: false, error: "run not found" };
       if (typeof run.windowId !== "number") return { ok: false, error: "no window to close" };
+      // Only a window the run OPENED. Borrowing one and then closing it would
+      // take everything else in it with it — the tabs you were working in are
+      // not this run's to tidy away.
+      if (!run.newWindow)
+        return { ok: false, error: "this run used your own window, so there is nothing of its own to close" };
       try {
         await chrome.windows.remove(run.windowId);
       } catch (e) {
