@@ -151,32 +151,32 @@
   // LEFT, which keeps our buttons out of the sidebar's way whether it is open
   // or shut — the toggle stays put either way, so anchoring to it is the one
   // choice that doesn't move when the sidebar does.
+  // ON THE RIGHT, and that is not a detail. claude.ai's own navigation sidebar
+  // lives on the LEFT, its toggle is in this same band, and it is labelled
+  // "sidebar" too — so a name match that didn't also ask WHERE found that one
+  // first and put our buttons beside it, which is the opposite corner from the
+  // one they belong in. Both arms below check the side.
   const SIDEBAR_RE = /\b(sidebar|side panel|right panel|panel|drawer|inspector)\b/i;
+  function onTheRight(el) {
+    const r = el.getBoundingClientRect();
+    return r.left >= window.innerWidth * RIGHT_FRACTION;
+  }
   function sidebarToggle() {
     const root = appRoot();
-    let tagged = null;
-    try {
-      tagged = root.querySelector(
-        'button[data-testid*="sidebar" i], button[data-testid*="side-panel" i], ' +
-          'button[aria-label*="sidebar" i], button[aria-label*="side panel" i]'
-      );
-    } catch (e) {
-      /* ignore */
-    }
-    if (tagged && !ours(tagged) && inBand(tagged)) return tagged;
-
-    // Failing a name we know, any control in the band whose label reads like a
-    // panel toggle — and the rightmost of them, since that is where the
-    // sidebar's own handle sits.
     let best = null;
     try {
       for (const b of root.querySelectorAll('button, a[role="button"]')) {
-        if (ours(b) || !inBand(b)) continue;
+        if (ours(b) || !inBand(b) || !onTheRight(b)) continue;
         const label =
-          (b.getAttribute("aria-label") || "") + " " + (b.getAttribute("title") || "");
+          (b.getAttribute("aria-label") || "") +
+          " " +
+          (b.getAttribute("title") || "") +
+          " " +
+          (b.getAttribute("data-testid") || "");
         if (!SIDEBAR_RE.test(label)) continue;
+        // The rightmost of them, since that is where the sidebar's own handle
+        // sits when there is more than one panel control up there.
         const r = b.getBoundingClientRect();
-        if (r.left < window.innerWidth * RIGHT_FRACTION) continue;
         if (!best || r.left > best.left) best = { el: b, left: r.left };
       }
     } catch (e) {
