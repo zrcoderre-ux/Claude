@@ -1368,6 +1368,43 @@
     return why("typed it but the box never closed", "failed");
   }
 
+  /**
+   * What the header offers a rename, right now. Printed by the pill's button
+   * when a rename didn't happen — the same trick that ended the surface
+   * toggle, where a verdict said a piece was missing and only a census said
+   * WHICH piece.
+   */
+  function renameReport() {
+    const bits = [];
+    let all = [];
+    try {
+      all = Array.from(document.querySelectorAll("button")).filter((b) => !isOurs(b));
+    } catch (e) {
+      return "couldn't query the page";
+    }
+    const header = all.filter((b) => {
+      const r = b.getBoundingClientRect();
+      return r.width >= 8 && r.height >= 8 && r.top >= 0 && r.top <= 120;
+    });
+    bits.push("header buttons: " + header.length + " of " + all.length);
+    for (const b of header.slice(0, 12)) {
+      bits.push(
+        "  aria-label=" + JSON.stringify(b.getAttribute("aria-label") || "") +
+          " text=" + JSON.stringify(normLower(b.textContent).slice(0, 30)) +
+          " haspopup=" + JSON.stringify(b.getAttribute("aria-haspopup") || "") +
+          " expanded=" + JSON.stringify(b.getAttribute("aria-expanded") || "")
+      );
+    }
+    const items = menuItems();
+    bits.push(
+      "menu items open now: " + items.length +
+        (items.length
+          ? " — " + JSON.stringify(items.map((el) => normLower(el.textContent).slice(0, 24)).join(" | "))
+          : "")
+    );
+    return bits.join("\n");
+  }
+
   // ---- one composed message, end to end ----------------------------------
   // Attach files, pick model/repo, type `text`, click Send, confirm it left.
   // Returns { ok, error?, notes: [] } — notes are best-effort problems (model
@@ -1589,6 +1626,7 @@
     projectWhy,
     renameCoworkSession,
     renameWhy,
+    renameReport,
     currentSurface,
     selectSurface,
     findApprovalTrigger,
