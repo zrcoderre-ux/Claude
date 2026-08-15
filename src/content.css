@@ -326,8 +326,10 @@
   color: inherit;
   font-size: 11.5px;
   line-height: 1.45;
-  white-space: normal;
+  white-space: pre-wrap;
   word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 @media (prefers-color-scheme: dark) {
