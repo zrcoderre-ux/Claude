@@ -407,3 +407,33 @@ test("only a row that leads with Rename is ever clicked", () => {
   assert.equal(K.isRenameRow("Renamed yesterday"), false);
   assert.equal(K.isRenameRow(""), false);
 });
+
+test("the title is its own rename control, and its label says so", () => {
+  // Straight off the live header: aria-label="Riddle puzzle, rename session".
+  // No menu to open and no row to match — the two steps that had been failing,
+  // neither of which ever needed to happen.
+  assert.equal(K.isRenameSessionLabel("Riddle puzzle, rename session"), true);
+  assert.equal(K.nameFromRenameSession("Riddle puzzle, rename session"), "Riddle puzzle");
+  assert.equal(
+    K.nameFromRenameSession("8.15.26 Motion to Compel, rename session"),
+    "8.15.26 Motion to Compel"
+  );
+  assert.equal(K.isRenameSessionLabel("More options for Riddle puzzle"), false);
+  assert.equal(K.isRenameSessionLabel("Share"), false);
+  assert.equal(K.nameFromRenameSession("Share"), "");
+});
+
+test("a name with a comma in it survives, since only the last clause is the verb", () => {
+  assert.equal(
+    K.nameFromRenameSession("Smith v Jones, MSJ, rename session"),
+    "Smith v Jones, MSJ"
+  );
+});
+
+test("either header control answering is proof the rename took", () => {
+  assert.equal(K.titleNames("More options for Drafting (A)", "Drafting (A)"), true);
+  assert.equal(K.titleNames("Drafting (A), rename session", "Drafting (A)"), true);
+  assert.equal(K.titleNames("More options for Untitled", "Drafting (A)"), false);
+  assert.equal(K.titleNames("Share", "Drafting (A)"), false);
+  assert.equal(K.titleNames("More options for x", ""), false);
+});

@@ -1218,102 +1218,73 @@
     };
     const want = String(title || "").trim();
     if (!want) return why("no title asked for", "inherit");
-
-    const inHeader = (el) => {
-      const r = el.getBoundingClientRect();
-      return r.width >= 8 && r.height >= 8 && r.top >= 0 && r.top <= 120;
-    };
-    const opensAMenu = (b) =>
-      b.hasAttribute("aria-haspopup") || b.hasAttribute("aria-expanded") || b.hasAttribute("aria-controls");
-
-    // The name's own dropdown first — it is the one that carries the title and
-    // the one you reach for. Then the session's actions menu, which is where a
-    // Rename lives when the title isn't itself a menu.
     const k = K();
-    const candidates = Array.from(document.querySelectorAll("button")).filter(
-      (b) => !isOurs(b) && inHeader(b) && opensAMenu(b)
-    );
-    // The one that says what it is: "More options for <the session's current
-    // name>". It is both the door to Rename and a live reading of what the
-    // session is called — which is what lets the rename be CONFIRMED rather
-    // than assumed, since that label changes when the name does.
-    const theOne = k
-      ? candidates.find((b) => k.isMoreOptionsLabel(b.getAttribute("aria-label")))
-      : null;
-    const named = candidates.filter((b) => normLower(b.textContent));
-    const actions = candidates.filter((b) =>
-      /session|conversation|chat|more|actions|options/i.test(b.getAttribute("aria-label") || "")
-    );
-    const rest = named.concat(actions.filter((b) => named.indexOf(b) === -1));
-    const order = (theOne ? [theOne] : []).concat(rest.filter((b) => b !== theOne));
-    if (!order.length) return why("no menu in the header to open", "unsupported");
+    if (!k) return why("CUMCowork not loaded in this world", "unsupported");
 
-    const renameItem = () => {
-      for (const el of document.querySelectorAll('[role="menuitem"],[role="option"]')) {
-        if (isOurs(el)) continue;
-        if (k ? k.isRenameRow(el.textContent) : /^rename\b/.test(normLower(el.textContent)))
-          return el;
+    const buttons = () =>
+      Array.from(document.querySelectorAll("button")).filter((b) => !isOurs(b) && isVisible(b));
+    const labelled = (test) =>
+      buttons().find((b) => test(b.getAttribute("aria-label")));
+
+    // Already called that.
+    if (buttons().some((b) => k.titleNames(b.getAttribute("aria-label"), want)))
+      return why("it was already called that", "ok");
+
+    // The title is its own rename control, and its label says so:
+    //   aria-label="Riddle puzzle, rename session"
+    // No menu to open, no item to match — the two steps that had been failing,
+    // and neither of them ever needed to happen.
+    let opened = false;
+    const direct = labelled((l) => k.isRenameSessionLabel(l));
+    if (direct) {
+      robustClick(direct);
+      opened = !!(await waitForBox(700));
+      if (!opened) {
+        try {
+          direct.click();
+        } catch (e) {
+          /* the menu below is the fallback */
+        }
+        opened = !!(await waitForBox(1500));
       }
-      return null;
-    };
-    const seenItems = () =>
-      Array.from(document.querySelectorAll('[role="menuitem"],[role="option"]'))
-        .filter((el) => !isOurs(el))
-        .map((el) => normLower(el.textContent).slice(0, 30))
+    }
+
+    // Failing that, the menu beside it — "More options for <name>" — and a row
+    // that leads with Rename.
+    let viaMenu = "";
+    if (!opened) {
+      const trigger = labelled((l) => k.isMoreOptionsLabel(l));
+      if (!trigger)
+        return why(
+          direct
+            ? "the title's rename control opened nothing to type into"
+            : "no rename control and no options menu in the header",
+          "unsupported"
+        );
+      const trouble = await openMenu(trigger, menuItems());
+      // Read the menu BEFORE closing it. Reporting what it held after it had
+      // been shut is how "saw nothing" became guaranteed rather than observed.
+      const saw = menuItems()
+        .map((el) => normLower(el.textContent).slice(0, 24))
         .join(" | ");
-
-    let item = null;
-    let opened = null;
-    let trouble = "";
-    for (const trigger of order.slice(0, 4)) {
-      const t = await openMenu(trigger, menuItems());
-      if (t) {
-        trouble = trouble || t;
+      if (trouble) return why(trouble + (saw ? " — saw " + JSON.stringify(saw) : ""), "unsupported");
+      const item = menuItems().find((el) => k.isRenameRow(el.textContent));
+      if (!item) {
         closeMenu();
-        await sleep(150);
-        continue;
+        return why("no Rename in the options menu — saw " + JSON.stringify(saw), "unsupported");
       }
-      item = renameItem();
-      if (item) {
-        opened = trigger;
-        break;
-      }
-      closeMenu(); // opened, but not the menu we want — put it back
-      await sleep(150);
+      robustClick(item);
+      opened = !!(await waitForBox(2500));
+      viaMenu = " via the options menu";
+      if (!opened) return why("Rename opened nothing that could be typed into", "failed");
     }
-    if (!item)
-      return why(
-        seenItems()
-          ? "no Rename in any header menu — saw " + JSON.stringify(seenItems())
-          : trouble || "no header menu would open",
-        "unsupported"
-      );
-    void opened;
-    robustClick(item);
 
-    // The box it opens. A dialog where there is one, so the search for the
-    // field can't wander off into the composer and type the title into the
-    // prompt — which is the accident the project picker had waiting in it.
-    let field = null;
-    const deadline = Date.now() + 5000;
-    while (Date.now() < deadline && !field) {
-      const dlg = document.querySelector('[role="dialog"],[role="alertdialog"]');
-      const scope = dlg || document;
-      for (const el of scope.querySelectorAll(
-        'input[type="text"],input:not([type]),textarea,[contenteditable="true"]'
-      )) {
-        if (isOurs(el) || !isVisible(el)) continue;
-        if (el === findEditor()) continue; // never the composer
-        field = el;
-        break;
-      }
-      if (!field) await sleep(150);
-    }
-    if (!field) return why("Rename opened nothing that could be typed into", "failed");
+    const field = await waitForBox(0);
+    if (!field) return why("nothing to type into", "failed");
 
     try {
       field.focus();
-      if ("value" in field) field.select && field.select();
+      if ("value" in field && field.select) field.select();
       else if (document.execCommand) document.execCommand("selectAll", false, null);
       const typed = document.execCommand && document.execCommand("insertText", false, want);
       if (!typed && "value" in field) {
@@ -1325,8 +1296,6 @@
     }
     await sleep(250);
 
-    // Confirm the way the box expects. Enter first, since a one-field dialog
-    // submits on it; then a button that says what it does.
     for (const t of ["keydown", "keypress", "keyup"]) {
       try {
         field.dispatchEvent(
@@ -1336,23 +1305,19 @@
         /* the button below is the fallback */
       }
     }
-    // Took, as distinct from went in. The trigger's own label carries the
-    // session's name, so it says outright whether the rename landed — a dialog
-    // closing only says the dialog closed, which is as true of Cancel.
-    const renamed = () => {
-      if (!k || !theOne || !theOne.isConnected) return null;
-      return k.moreOptionsNames(theOne.getAttribute("aria-label"), want);
-    };
+
+    // Took, as distinct from went in. Both header controls carry the session's
+    // name, so either coming round to the new one is proof — where a dialog
+    // closing would have been just as true of Cancel.
+    const took = () => buttons().some((b) => k.titleNames(b.getAttribute("aria-label"), want));
     const settled = async (tries) => {
       for (let i = 0; i < (tries || 8); i++) {
         await sleep(250);
-        const took = renamed();
-        if (took === true) return true;
-        if (took === null && !field.isConnected) return true; // nothing better to go on
+        if (took()) return true;
       }
       return false;
     };
-    if (await settled(6)) return why("typed it and pressed Enter", "ok");
+    if (await settled(8)) return why("typed it and pressed Enter" + viaMenu, "ok");
 
     const dlg = document.querySelector('[role="dialog"],[role="alertdialog"]');
     if (dlg) {
@@ -1360,12 +1325,37 @@
         if (isOurs(b)) continue;
         if (!/^(rename|save|done|confirm|ok)\b/.test(normLower(b.textContent))) continue;
         robustClick(b);
-        if (await settled(6)) return why("typed it and pressed " + normLower(b.textContent), "ok");
+        if (await settled(8)) return why("typed it and pressed " + normLower(b.textContent), "ok");
         break;
       }
     }
     closeMenu();
-    return why("typed it but the box never closed", "failed");
+    return why("typed it, but no control came round to reading " + JSON.stringify(want), "failed");
+  }
+
+  // The box a rename opens: inside a dialog where there is one, and never the
+  // composer — a loose search finds the prompt editor, and the title would go
+  // out as the message.
+  async function waitForBox(timeoutMs) {
+    const deadline = Date.now() + (timeoutMs || 0);
+    for (;;) {
+      const dlg = document.querySelector('[role="dialog"],[role="alertdialog"]');
+      const scope = dlg || document;
+      let found = null;
+      try {
+        for (const el of scope.querySelectorAll(
+          'input[type="text"],input:not([type]),textarea,[contenteditable="true"]'
+        )) {
+          if (isOurs(el) || !isVisible(el) || el === findEditor()) continue;
+          found = el;
+          break;
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      if (found || Date.now() >= deadline) return found;
+      await sleep(150);
+    }
   }
 
   /**

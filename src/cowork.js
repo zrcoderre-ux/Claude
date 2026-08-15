@@ -373,6 +373,35 @@
     return !!want && squash(nameFromMoreOptions(label)) === want;
   }
 
+  // The title itself is a rename control, and says so:
+  //   aria-label="Riddle puzzle, rename session"
+  // which is a door that needs no menu opened and no item matched — the two
+  // steps that had been failing. The name is in there too, so this reads the
+  // current title as well as offering to change it.
+  const RENAME_SESSION_RE = /^(.*),\s*rename\s+session\s*$/i;
+
+  /** Whether a label is the title's own rename control. */
+  function isRenameSessionLabel(label) {
+    return RENAME_SESSION_RE.test(norm(label));
+  }
+
+  /** The session name inside "<name>, rename session", or "". */
+  function nameFromRenameSession(label) {
+    const m = RENAME_SESSION_RE.exec(norm(label));
+    return m ? norm(m[1]) : "";
+  }
+
+  /**
+   * Whether either control now names `name` — the proof a rename took.
+   * Both labels carry the title, so either one answering is enough.
+   */
+  function titleNames(label, name) {
+    const want = squash(name);
+    if (!want) return false;
+    const from = nameFromMoreOptions(label) || nameFromRenameSession(label);
+    return !!from && squash(from) === want;
+  }
+
   /** Whether a menu row is the Rename one. Leading word only, as ever. */
   function isRenameRow(text) {
     return /^rename\b/.test(lower(text));
@@ -431,6 +460,9 @@
     isMoreOptionsLabel,
     moreOptionsNames,
     isRenameRow,
+    isRenameSessionLabel,
+    nameFromRenameSession,
+    titleNames,
     isProjectRow,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
