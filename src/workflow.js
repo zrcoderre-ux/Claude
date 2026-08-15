@@ -701,6 +701,17 @@
       // fall back on — but a minor outage often doesn't touch what a run does,
       // and this is how you say so in advance.
       ignoreOutage: !!f.ignoreOutage,
+      // Open this run's chats in a window of their own. Off by default, and
+      // off is the plain reading: a run puts tabs behind whatever you are
+      // doing, and a second window is a thing you have to find, move and close
+      // rather than a thing you asked for.
+      //
+      // On, it is the arrangement the run machinery was built around — the
+      // run's chats sit together, its Options tab is pinned beside them, and
+      // the window is maximized so claude.ai stays clear of the narrow layout
+      // that renders "not supported on your current device" in place of some
+      // blocks. Worth having; not worth being the default.
+      newWindow: !!f.newWindow,
       rerun: rerunDefaults(f.rerun),
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
       docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
@@ -1234,6 +1245,7 @@
       nameChats: !(wf && wf.nameChats === false),
       allowRerun: !(wf && wf.allowRerun === false),
       ignoreOutage: !!(wf && wf.ignoreOutage),
+      newWindow: !!(wf && wf.newWindow),
       // The workflow's answers, copied so this matter can differ from the next.
       rerun: rerunDefaults(wf && wf.rerun),
       // And its own copy of the chats and steps. A run executes THIS, not the

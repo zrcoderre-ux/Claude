@@ -1265,7 +1265,10 @@
               }</button>`
             : "") +
           `<button class="job-edit wf-run-save" data-id="${run.id}" title="Keep this run's steps as a new workflow">Save as workflow</button>` +
-          (!WF.isRunActive(run) && typeof run.windowId === "number"
+          // Only for a run that opened a window of its OWN. One that borrowed
+          // yours has nothing here it may close — the offer alone would be a
+          // promise to tidy away tabs that were never its business.
+          (!WF.isRunActive(run) && typeof run.windowId === "number" && run.newWindow
             ? `<button class="job-edit wf-run-closewin" data-id="${run.id}" title="Close this run's Chrome window and its chats">Close window</button>`
             : "") +
           `<button class="job-del wf-run-del" data-id="${run.id}" title="Remove from the list">✕</button>`;

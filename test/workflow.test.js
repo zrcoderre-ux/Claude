@@ -2969,3 +2969,35 @@ test("a cowork session id is a conversation id even though it isn't a uuid", () 
 test("a cowork address still counts as a claude.ai conversation link", () => {
   assert.equal(W.looksLikeChatUrl("https://claude.ai/cowork/cse_011f5HCzaWWJ2hm19v6NuQmN"), true);
 });
+
+// ---- a window of its own --------------------------------------------------
+
+test("a run opens in the window you already have, unless asked otherwise", () => {
+  // Off is the plain reading: a run puts tabs behind what you are doing, and a
+  // second window is something to find, move and close rather than something
+  // you asked for.
+  assert.equal(W.newWorkflow({ name: "x" }, idgen("w"), NOW).newWindow, false);
+  assert.equal(W.newWorkflow({ name: "x", newWindow: true }, idgen("w"), NOW).newWindow, true);
+});
+
+test("the window switch travels to the run, like every other switch", () => {
+  const wf = W.newWorkflow({ name: "x", newWindow: true }, idgen("w"), NOW);
+  assert.equal(W.newRun(wf, "r1", NOW, { type: "now" }, []).newWindow, true);
+  const plain = W.newWorkflow({ name: "y" }, idgen("w"), NOW);
+  assert.equal(W.newRun(plain, "r2", NOW, { type: "now" }, []).newWindow, false);
+});
+
+test("a run's copy is its own, so changing it doesn't reach the template", () => {
+  const wf = W.newWorkflow({ name: "x", newWindow: true }, idgen("w"), NOW);
+  const run = W.newRun(wf, "r1", NOW, { type: "now" }, []);
+  run.newWindow = false;
+  assert.equal(wf.newWindow, true);
+});
+
+test("a workflow saved before this switch existed reads as off", () => {
+  // Nothing to migrate: the field is falsy by default, and falsy is the
+  // behaviour asked for.
+  const old = W.newWorkflow({ name: "x" }, idgen("w"), NOW);
+  delete old.newWindow;
+  assert.equal(W.newRun(old, "r1", NOW, { type: "now" }, []).newWindow, false);
+});

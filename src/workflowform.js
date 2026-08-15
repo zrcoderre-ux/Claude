@@ -272,6 +272,16 @@
       `for nothing. Tick this and it presses on regardless. An outage that names models is already handled ` +
       `— a run on a model nobody has reported never waits.</p>` +
 
+      `<label class="cumwf-check"><input class="cumwf-new-window" type="checkbox" /> Open this run in a ` +
+      `window of its own</label>` +
+      `<p class="cumwf-hint">Off by default: the run's chats open as background tabs in the window you ` +
+      `already have, behind whatever you're doing. Tick this and it gets a window to itself, maximized, ` +
+      `with the Options page pinned beside its chats as a control panel — worth it for a long run you ` +
+      `want to watch, and a window to find and close when you don't. The size is not only cosmetic: ` +
+      `claude.ai serves a narrower layout below a certain width, which renders some blocks as ` +
+      `\u201cnot supported on your current device\u201d, so a small window can cost a step its material. ` +
+      `Like every switch here it is the workflow's default and a run's to change.</p>` +
+
       `<label class="cumwf-label">Steps</label>` +
       `<div class="cumwf-steps cumwf-list"></div>` +
       `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-add-step" type="button">+ Add step</button>` +
@@ -315,6 +325,7 @@
       rerun: q(".cumwf-rerun"),
       rerunRow: q(".cumwf-rerun-row"),
       ignoreOutage: q(".cumwf-ignore-outage"),
+      newWindow: q(".cumwf-new-window"),
       rrStep: q(".cumwf-rr-step"),
       rrFresh: q(".cumwf-rr-fresh"),
       rrCarry: q(".cumwf-rr-carry"),
@@ -1243,6 +1254,7 @@
       ui.nameChats.checked = wf.nameChats !== false;
       ui.rerun.checked = !!wf.allowRerun;
       ui.ignoreOutage.checked = !!wf.ignoreOutage;
+      if (ui.newWindow) ui.newWindow.checked = !!wf.newWindow;
       const rr = W.rerunDefaults(wf.rerun);
       ui.rrFresh.checked = rr.freshChats;
       ui.rrCarry.checked = rr.carryFinal;
@@ -1344,6 +1356,7 @@
       wf.nameChats = ui.nameChats.checked;
       wf.allowRerun = ui.rerun.checked;
       wf.ignoreOutage = ui.ignoreOutage.checked;
+      if (ui.newWindow) wf.newWindow = ui.newWindow.checked;
       wf.rerun = {
         stepIndex: parseInt(ui.rrStep.value, 10) || 0,
         freshChats: ui.rrFresh.checked,
