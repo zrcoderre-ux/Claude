@@ -241,6 +241,32 @@
     return m ? m[1] : null;
   }
 
+  /**
+   * Where claude.ai's API keeps a conversation, given its id.
+   *
+   * The two shapes live in different places, which is not something the id
+   * itself announces: an ordinary conversation is under `chat_conversations`,
+   * while a Cowork session is under plain `conversations` — visible on the
+   * `wiggle/list-files` call a session makes as it opens:
+   *
+   *   /api/organizations/<org>/conversations/cse_<id>/wiggle/list-files
+   *
+   * Returns null for an id of neither shape, so a caller can say "unavailable"
+   * rather than send a request built around a guess.
+   *
+   * src/inject.js carries its own copy of this — it runs in the MAIN world and
+   * can't see this module — and the two have to agree exactly.
+   */
+  function conversationApiPath(orgId, id) {
+    const org = str(orgId);
+    const conv = str(id);
+    if (!org || !conv) return null;
+    if (/^cse_[A-Za-z0-9_-]+$/.test(conv)) return "/api/organizations/" + org + "/conversations/" + conv;
+    if (/^[0-9a-f-]{36}$/i.test(conv))
+      return "/api/organizations/" + org + "/chat_conversations/" + conv;
+    return null;
+  }
+
   /** Whether an address is a Cowork one at all — session or project. */
   function isCoworkUrl(href) {
     let path = str(href);
@@ -298,6 +324,7 @@
     reconcile,
     reconcileNote,
     sessionId,
+    conversationApiPath,
     isCoworkUrl,
     projectRowMatches,
     isProjectRow,

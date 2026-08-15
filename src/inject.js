@@ -339,13 +339,31 @@
     }
   });
 
+  // Where a conversation lives, which its id doesn't announce: an ordinary one
+  // is under chat_conversations, a Cowork session under plain conversations —
+  // as seen on the wiggle/list-files call a session makes as it opens,
+  //   /api/organizations/<org>/conversations/cse_<id>/wiggle/list-files
+  // Null for an id of neither shape, so the caller says "unavailable" rather
+  // than sending a request built around a guess.
+  //
+  // This runs in the MAIN world and can't see src/cowork.js, which holds the
+  // same decision under test as conversationApiPath(). The two must agree.
+  function conversationApiPath(orgId, id) {
+    if (!orgId || !id) return null;
+    if (/^cse_[A-Za-z0-9_-]+$/.test(id)) return `/api/organizations/${orgId}/conversations/${id}`;
+    if (/^[0-9a-f-]{36}$/i.test(id)) return `/api/organizations/${orgId}/chat_conversations/${id}`;
+    return null;
+  }
+  const knownConversationId = (id) =>
+    /^cse_[A-Za-z0-9_-]+$/.test(String(id || "")) || /^[0-9a-f-]{36}$/i.test(String(id || ""));
+
   // ---- Reading one conversation ------------------------------------------
   // The workflow runner needs the text of Claude's last reply to hand it to the
   // next chat. Its first choice is the page's own copy control (hooked below);
   // this is the fallback, and it's the same payload the context meter reads.
   function fetchConversation(uuid, reqId) {
     const reply = (obj) => post({ conversation: Object.assign({ reqId }, obj) });
-    if (!origFetch || !/^[0-9a-f-]{36}$/i.test(uuid)) return reply({ error: "unavailable" });
+    if (!origFetch || !knownConversationId(uuid)) return reply({ error: "unavailable" });
     const ids = new Set();
     origFetch("/api/organizations", { credentials: "include" })
       .then((r) => (r.ok ? r.clone().text() : ""))
@@ -357,9 +375,14 @@
         // only the owning org answers for this conversation.
         return (function next(i) {
           if (i >= orgs.length) return reply({ error: "conversation not found" });
-          const url =
-            `/api/organizations/${orgs[i]}/chat_conversations/${uuid}` +
-            "?tree=True&rendering_mode=messages";
+          const base = conversationApiPath(orgs[i], uuid);
+          if (!base) return reply({ error: "unavailable" });
+          // The tree/rendering params are chat_conversations' own; a Cowork
+          // session is asked for plainly rather than with parameters invented
+          // for it.
+          const url = /\/chat_conversations\//.test(base)
+            ? base + "?tree=True&rendering_mode=messages"
+            : base;
           return origFetch(url, { credentials: "include", headers: { accept: "*/*" } })
             .then((res) => (res.ok ? res.clone().text() : ""))
             .then((text) => {
@@ -389,7 +412,7 @@
   // happened instead of waiting.
   function renameConversation(uuid, name, reqId) {
     const reply = (obj) => post({ renamed: Object.assign({ reqId }, obj) });
-    if (!origFetch || !/^[0-9a-f-]{36}$/i.test(uuid)) return reply({ error: "unavailable" });
+    if (!origFetch || !knownConversationId(uuid)) return reply({ error: "unavailable" });
     const title = String(name || "").slice(0, 200);
     if (!title) return reply({ error: "no name" });
     const ids = new Set();
@@ -404,7 +427,9 @@
         return (function next(i, method) {
           if (i >= orgs.length)
             return method === "PUT" ? next(0, "PATCH") : reply({ error: "rename refused" });
-          return origFetch(`/api/organizations/${orgs[i]}/chat_conversations/${uuid}`, {
+          const base = conversationApiPath(orgs[i], uuid);
+          if (!base) return reply({ error: "unavailable" });
+          return origFetch(base, {
             method: method,
             credentials: "include",
             headers: { "content-type": "application/json", accept: "*/*" },

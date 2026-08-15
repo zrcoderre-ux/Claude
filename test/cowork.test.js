@@ -242,3 +242,23 @@ test("the two rows that navigate away are not projects", () => {
   assert.equal(K.isProjectRow("Draft Tentative Rulings"), true);
   assert.equal(K.isProjectRow(""), false);
 });
+
+test("a cowork session and an ordinary conversation live at different endpoints", () => {
+  const org = "00000000-0000-4000-8000-000000000001";
+  assert.equal(
+    K.conversationApiPath(org, "cse_01AaBbCcDdEeFfGgHhIiJjKk"),
+    "/api/organizations/" + org + "/conversations/cse_01AaBbCcDdEeFfGgHhIiJjKk"
+  );
+  assert.equal(
+    K.conversationApiPath(org, "019f3fcd-9b35-7715-b2cc-b227512b5459"),
+    "/api/organizations/" + org + "/chat_conversations/019f3fcd-9b35-7715-b2cc-b227512b5459"
+  );
+});
+
+test("an id of neither shape gets no url at all, rather than a guessed one", () => {
+  const org = "00000000-0000-4000-8000-000000000001";
+  assert.equal(K.conversationApiPath(org, "not-an-id"), null);
+  assert.equal(K.conversationApiPath(org, ""), null);
+  assert.equal(K.conversationApiPath(org, null), null);
+  assert.equal(K.conversationApiPath("", "cse_01Hy"), null);
+});
