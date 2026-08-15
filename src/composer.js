@@ -890,24 +890,56 @@
 
     // The composer re-renders around the toggle, so give it a beat before
     // believing anything.
-    const settled = async () => {
-      for (let i = 0; i < 10; i++) {
+    const settled = async (tries) => {
+      for (let i = 0; i < (tries || 8); i++) {
         await sleep(200);
         if (currentSurface() === wanted) return true;
       }
       return false;
     };
 
-    robustClick(radios[at]);
-    if (await settled()) return "ok";
+    // A dispatched click is UNTRUSTED, and an untrusted event does not run
+    // activation behaviour on a form control: a native <input type="radio">
+    // cannot be checked by one, however faithfully the pointer sequence is
+    // reproduced. That is why robustClick — right for the send button, whose
+    // React handler only needs the event — could never move this toggle, whose
+    // two halves are real radio inputs with spans drawn over them.
+    //
+    // el.click() is the method rather than the event, and it DOES run
+    // activation behaviour. robustClick avoids it on purpose (a button that
+    // takes both would submit twice); here it is the only thing that works.
+    const nativeClick = (el) => {
+      try {
+        if (el && typeof el.click === "function") el.click();
+      } catch (e) {
+        /* ignore */
+      }
+    };
 
-    // The visible half of a segmented control is usually a label for a hidden
-    // input, and a synthetic click on a span that isn't a <label> doesn't
-    // forward the way a real one does. Press the input itself before giving up.
     const inputs = Array.from(group.querySelectorAll('input[type="radio"]'));
+
+    // The visible half first, since that is what a person presses.
+    robustClick(radios[at]);
+    if (await settled(4)) return "ok";
+    nativeClick(radios[at]);
+    if (await settled(4)) return "ok";
+
+    // Then the input it stands for.
     if (inputs[at]) {
-      robustClick(inputs[at]);
-      if (await settled()) return "ok";
+      nativeClick(inputs[at]);
+      if (await settled(4)) return "ok";
+      // ...and failing that, set it and say so. A React-controlled radio reads
+      // its own `checked` back from state, so the property alone changes
+      // nothing — but the change event is what the handler is listening for,
+      // and the two together are what a real click amounts to.
+      try {
+        inputs[at].checked = true;
+        for (const type of ["input", "change"])
+          inputs[at].dispatchEvent(new Event(type, { bubbles: true }));
+      } catch (e) {
+        /* ignore */
+      }
+      if (await settled(6)) return "ok";
     }
     return "failed";
   }
