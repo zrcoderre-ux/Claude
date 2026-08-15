@@ -296,6 +296,40 @@
   background: rgba(0, 0, 0, 0.05);
 }
 
+/* Chat ⇄ Cowork, by hand — the same switch a run makes, on a button, so the
+   two can be told apart when one of them fails. Secondary, like Open options:
+   it is a test, not the panel's purpose. */
+#cum-surface-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 7px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#cum-surface-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+#cum-surface-note {
+  margin-top: 6px;
+  word-break: break-word;
+}
+
+@media (prefers-color-scheme: dark) {
+  #cum-surface-btn {
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+  #cum-surface-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
 /* Schedule-a-send modal */
 #cum-modal-overlay {
   position: fixed;

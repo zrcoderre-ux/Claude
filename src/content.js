@@ -810,6 +810,8 @@
         </div>
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
         <div class="cum-panel-hint" id="cum-p-hint" hidden>Reading your usage — this updates automatically.</div>
+        <button id="cum-surface-btn" type="button" hidden>Chat ⇄ Cowork</button>
+        <div class="cum-panel-row cum-panel-sub" id="cum-surface-note" hidden></div>
         <button id="cum-schedule-btn" type="button">＋ Schedule a send</button>
         <button id="cum-options-btn" type="button">Open options →</button>
       </div>
@@ -846,6 +848,8 @@
       pOverageStatus: root.querySelector("#cum-p-overage-status"),
       pUpdated: root.querySelector("#cum-p-updated"),
       pHint: root.querySelector("#cum-p-hint"),
+      surfaceBtn: root.querySelector("#cum-surface-btn"),
+      surfaceNote: root.querySelector("#cum-surface-note"),
       scheduleBtn: root.querySelector("#cum-schedule-btn"),
       optionsBtn: root.querySelector("#cum-options-btn"),
       statusGroup: root.querySelector("#cum-status-group"),
@@ -886,8 +890,66 @@
         return;
       }
       els.panel.hidden = !els.panel.hidden;
-      if (!els.panel.hidden) placePanel();
+      if (!els.panel.hidden) {
+        placePanel();
+        // Read the toggle each time the panel opens rather than once at build:
+        // the composer home mounts and unmounts as you move around the app.
+        if (els.surfaceRefresh) els.surfaceRefresh();
+      }
     });
+
+    // Chat ⇄ Cowork, by hand. The same two functions a scheduled send and a
+    // workflow step call — CUMComposer.currentSurface and .selectSurface —
+    // driven from a button, so "did the toggle move?" can be answered without a
+    // run in the way. A run that fails to switch and a button that fails to
+    // switch are different bugs, and there was no way to tell them apart.
+    if (els.surfaceBtn)
+      els.surfaceBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const C = window.CUMComposer;
+        const K = window.CUMCowork;
+        if (!C || !K || !C.selectSurface) return saySurface("the composer module isn't loaded");
+        const now = C.currentSurface();
+        const want = now === "cowork" ? "chat" : "cowork";
+        saySurface("on " + (K.describeSurface(now) || "something unreadable") + " — switching…");
+        let verdict;
+        try {
+          verdict = await C.selectSurface(want);
+        } catch (err) {
+          verdict = "threw: " + String((err && err.message) || err);
+        }
+        const after = C.currentSurface();
+        saySurface(
+          verdict +
+            " · now reads " +
+            (K.describeSurface(after) || "unreadable") +
+            (C.findSurfaceGroup() ? "" : " · no toggle found on this page")
+        );
+        refreshSurfaceBtn();
+      });
+
+    function saySurface(text) {
+      if (!els.surfaceNote) return;
+      els.surfaceNote.textContent = text;
+      els.surfaceNote.hidden = false;
+    }
+
+    // Only shown where there is something to switch. On a settled conversation
+    // the toggle doesn't exist, and a button that can't work is worse than no
+    // button — it looks like the feature is broken rather than absent.
+    function refreshSurfaceBtn() {
+      const C = window.CUMComposer;
+      const K = window.CUMCowork;
+      if (!els.surfaceBtn) return;
+      const here = C && C.findSurfaceGroup ? C.findSurfaceGroup() : null;
+      const approval = C && C.findApprovalTrigger ? C.findApprovalTrigger() : null;
+      els.surfaceBtn.hidden = !here && !approval;
+      if (els.surfaceBtn.hidden) return;
+      const now = C ? C.currentSurface() : "";
+      els.surfaceBtn.textContent =
+        "Chat ⇄ Cowork" + (now && K ? "  (on " + K.describeSurface(now) + ")" : "");
+    }
+    els.surfaceRefresh = refreshSurfaceBtn;
 
     els.scheduleBtn.addEventListener("click", (e) => {
       e.stopPropagation();
