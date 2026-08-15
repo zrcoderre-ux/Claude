@@ -50,7 +50,28 @@
   // It bounds CATCH-UP only. A reply watched arriving is saved whatever the
   // clock says about the turn it belongs to — it happened in front of us, and
   // that is a better fact than any timestamp.
-  const LOOKBACK_MS = 10 * 60 * 1000;
+  const LOOKBACK_DEFAULT_MIN = 10;
+  const LOOKBACK_MS = LOOKBACK_DEFAULT_MIN * 60 * 1000;
+
+  // Settable, within bounds. One minute is the floor because zero would be a
+  // catch-up that can never catch anything, which is what the switch itself is
+  // for; a day is the ceiling because past that the clock has stopped saying
+  // anything useful and you are back to trusting the download history alone —
+  // which is the arrangement this replaced.
+  const LOOKBACK_MIN_MIN = 1;
+  const LOOKBACK_MAX_MIN = 1440;
+
+  /** A stored setting read back as minutes: clamped, rounded, never NaN. */
+  function lookbackMinutes(value) {
+    const n = typeof value === "number" ? value : parseInt(str(value).trim(), 10);
+    if (!isFinite(n)) return LOOKBACK_DEFAULT_MIN;
+    return Math.min(LOOKBACK_MAX_MIN, Math.max(LOOKBACK_MIN_MIN, Math.round(n)));
+  }
+
+  /** The same, in milliseconds, straight from the config object. */
+  function lookbackMsFor(cfg) {
+    return lookbackMinutes(cfg && cfg.lookbackMin) * 60 * 1000;
+  }
 
   /**
    * Is a turn recent enough for catch-up to touch its files?
@@ -445,6 +466,11 @@
     goesElsewhere,
     isDisclosureLabel,
     LOOKBACK_MS,
+    LOOKBACK_DEFAULT_MIN,
+    LOOKBACK_MIN_MIN,
+    LOOKBACK_MAX_MIN,
+    lookbackMinutes,
+    lookbackMsFor,
     withinLookback,
     fileNameIn,
     isTypeChip,

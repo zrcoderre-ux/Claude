@@ -244,8 +244,9 @@ because you'd reloaded, or had the toggle off, or the turn signal missed it. So
 there is a second switch — **Also catch up on files further back** — that lifts
 exactly that restriction.
 
-**"Further back" means ten minutes, not the whole chat.** Catch-up is bounded by
-the clock, and the clock is the turn's own — the time in the conversation
+**"Further back" means ten minutes by default, not the whole chat** — and the
+number is a setting in the popup, anywhere from 1 minute to a full day. Catch-up
+is bounded by the clock, and the clock is the turn's own — the time in the conversation
 payload, not when you happened to open the page. So opening a chat you worked on
 last week saves nothing from it: those turns are hours or days old, and no
 amount of scrolling makes them recent. A count of replies was the old bound and

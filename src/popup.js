@@ -31,6 +31,7 @@
     acMax: document.getElementById("ac-max"),
     autoDownload: document.getElementById("auto-download"),
     dlMax: document.getElementById("dl-max"),
+    dlLookback: document.getElementById("dl-lookback"),
     dlSeen: document.getElementById("dl-seen"),
     dlCatchUp: document.getElementById("dl-catchup"),
     openLog: document.getElementById("open-log"),
@@ -133,7 +134,7 @@
   }
 
   let acCfg = { enabled: false, max: 50, allowOnce: false };
-  let dlCfg = { enabled: false, max: 20, catchUp: false };
+  let dlCfg = { enabled: false, max: 20, catchUp: false, lookbackMin: 10 };
   let statusCfg = { warn: true, holdSends: true, defaultModel: "" };
 
   chrome.storage.local.get(
@@ -160,6 +161,7 @@
       dlCfg = Object.assign(dlCfg, (res && res[AUTODOWNLOAD_KEY]) || {});
       el.autoDownload.checked = !!dlCfg.enabled;
       el.dlMax.value = dlCfg.max;
+      if (el.dlLookback) el.dlLookback.value = lookbackOf(dlCfg.lookbackMin);
       el.dlCatchUp.checked = !!dlCfg.catchUp;
       renderDlSeen(res && res[AUTODOWNLOAD_SEEN_KEY]);
       // Both status toggles default ON, so only an explicit false turns them off.
@@ -319,6 +321,27 @@
     dlCfg.max = n;
     saveDl("Saved");
   });
+
+  // One clamp, in CUMAutoDl, so this page and the clicker that reads the
+  // setting can never disagree about what a stored number means. The fallback
+  // is only for a popup whose script didn't load, and repeats the same bounds.
+  function lookbackOf(value) {
+    const A = window.CUMAutoDl;
+    if (A) return A.lookbackMinutes(value);
+    const n = parseInt(String(value == null ? "" : value).trim(), 10);
+    if (!Number.isFinite(n)) return 10;
+    return Math.min(1440, Math.max(1, Math.round(n)));
+  }
+
+  if (el.dlLookback)
+    el.dlLookback.addEventListener("change", () => {
+      const n = lookbackOf(el.dlLookback.value);
+      el.dlLookback.value = n;
+      dlCfg.lookbackMin = n;
+      saveDl(
+        n === 1 ? "Catching up on the last minute" : "Catching up on the last " + n + " minutes"
+      );
+    });
 
   el.showOverage.addEventListener("change", () => {
     chrome.storage.local.set({ [OVERAGE_KEY]: el.showOverage.checked }, () =>

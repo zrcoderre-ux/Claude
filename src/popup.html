@@ -123,7 +123,11 @@
       <code>(1)</code> renaming so a second copy isn't mistaken for a new file.
       A file with no name on its card is never caught up, and neither is
       anything at all while that check is unavailable: an unanswered question is
-      not the same as “you don't have it”. Looks back about a dozen replies.</p>
+      not the same as “you don't have it”. It reaches back
+      <input id="dl-lookback" type="number" min="1" max="1440" class="inline-num" />
+      minutes, measured from when each turn happened rather than from when you
+      opened the page — so an old conversation stays untouched however far you
+      scroll it. A turn whose time can't be read counts as old.</p>
     <p class="hint dl-seen" id="dl-seen" hidden></p>
     <div class="btn-row">
       <button id="dl-try" type="button" class="primary">Save it now</button>
@@ -162,6 +166,7 @@
     </button>
 
     <script src="status.js"></script>
+    <script src="autodl.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

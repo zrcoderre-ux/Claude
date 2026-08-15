@@ -52,7 +52,12 @@
   const HISTORY_EVERY_MS = 60000; // how often to re-read what's in Downloads
   const STAMPS_EVERY_MS = 30000; // ...and how often to re-read when each turn was
 
-  let cfg = { enabled: false, max: A ? A.MAX_PER_PAGE : 20, catchUp: false };
+  let cfg = {
+    enabled: false,
+    max: A ? A.MAX_PER_PAGE : 20,
+    catchUp: false,
+    lookbackMin: A ? A.LOOKBACK_DEFAULT_MIN : 10,
+  };
   // Names already in your Downloads folder. null means "not asked yet", which
   // is deliberately different from "you have none": nothing is caught up on a
   // question that hasn't been answered.
@@ -742,6 +747,7 @@
       now: Date.now(),
       lastAt,
       catchUp: !!cfg.catchUp,
+      lookbackMs: A.lookbackMsFor(cfg),
       downloaded: downloaded,
     });
     report(offers, res, generating);
@@ -792,7 +798,7 @@
       // said only "catch-up on" would be claiming a reach it doesn't have.
       (cfg.catchUp
         ? stamps.length
-          ? ", last " + Math.round(A.LOOKBACK_MS / 60000) + " min"
+          ? ", last " + A.lookbackMinutes(cfg.lookbackMin) + " min"
           : ", turn times unread — nothing older than now can be caught up"
         : "");
     if (line === lastReport) return;
@@ -1091,7 +1097,15 @@
   function applyCfg(value) {
     const prev = cfg.enabled;
     const prevCatch = cfg.catchUp;
-    cfg = Object.assign({ enabled: false, max: A ? A.MAX_PER_PAGE : 20, catchUp: false }, value || {});
+    cfg = Object.assign(
+      {
+        enabled: false,
+        max: A ? A.MAX_PER_PAGE : 20,
+        catchUp: false,
+        lookbackMin: A ? A.LOOKBACK_DEFAULT_MIN : 10,
+      },
+      value || {}
+    );
     // Switching catch-up on is a question worth asking straight away rather
     // than at the next minute boundary.
     if (cfg.catchUp && !prevCatch) historyAt = 0;
