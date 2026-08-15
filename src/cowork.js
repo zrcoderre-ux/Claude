@@ -347,10 +347,17 @@
     return !!want && squash(text) === want;
   }
 
-  /** Whether a caption is the menu's unset one — "Project" and its variants. */
+  /**
+   * Whether a caption is the menu's unset one — "Project" and its variants.
+   *
+   * SINGULAR only. "Projects" is the navigation entry in claude.ai's own left
+   * sidebar, and accepting it sent a run to the projects page instead of into
+   * its chat — a click that navigates is not a near miss of choosing a project,
+   * it is the end of the run.
+   */
   function isProjectTriggerCaption(text) {
     const t = squash(text);
-    return t === "project" || t === "projects" || t === "noproject" || t === "selectaproject";
+    return t === "project" || t === "noproject" || t === "selectaproject";
   }
 
   // Rows that look like projects but aren't. Clicking either of these navigates

@@ -1023,13 +1023,27 @@
     // own name after — so both are how it might be found, and both are compared
     // on letters alone. This markup carries characters that no whitespace rule
     // removes, which is what made the surface toggle unmatchable.
-    const triggers = Array.from(document.querySelectorAll("button")).filter((b) => !isOurs(b));
+    // A MENU trigger, not merely a button with the right word on it. Cowork's
+    // opens a menu and says so — aria-haspopup, or an aria-expanded it flips —
+    // while claude.ai's left navigation has a "Projects" entry that only
+    // navigates. Clicking that one took the run to the projects page and left
+    // it there, which is not a near miss of choosing a project: it is the end
+    // of the run, and it is why this asks what a control DOES and not just what
+    // it says.
+    const opensAMenu = (b) =>
+      b.hasAttribute("aria-haspopup") ||
+      b.hasAttribute("aria-expanded") ||
+      b.hasAttribute("aria-controls");
+    const triggers = Array.from(document.querySelectorAll("button")).filter(
+      (b) => !isOurs(b) && opensAMenu(b)
+    );
     let trigger = triggers.find((b) => k.projectTriggerIs(b.textContent, name));
     if (trigger) return why("the trigger already reads " + JSON.stringify(name), "ok");
     trigger = triggers.find((b) => k.isProjectTriggerCaption(b.textContent));
     if (!trigger)
       return why(
-        "no project menu — no button captioned Project, and none named " + JSON.stringify(name),
+        "no project menu — nothing that opens a menu is captioned Project or named " +
+          JSON.stringify(name) + " (" + triggers.length + " menu buttons on the page)",
         "unsupported"
       );
     robustClick(trigger);
@@ -1048,8 +1062,12 @@
       if (box) break;
       await sleep(150);
     }
-    const scope = box || document;
-    const filter = scope.querySelector('input:not([type="hidden"]), [contenteditable="true"]');
+    // Only ever inside the menu. Falling back to the document would find the
+    // composer's own editor and type the project's name into the prompt — the
+    // message would go out mangled, which is far worse than a project not
+    // chosen.
+    if (!box) return why("the project menu never opened", "notfound");
+    const filter = box.querySelector('input:not([type="hidden"]), [contenteditable="true"]');
     if (filter) {
       try {
         filter.focus();
@@ -1066,7 +1084,7 @@
 
     const rowOf = () => {
       const seen = [];
-      for (const el of (box || document).querySelectorAll('[role="option"],[role="menuitem"]')) {
+      for (const el of box.querySelectorAll('[role="option"],[role="menuitem"]')) {
         if (isOurs(el)) continue;
         const t = el.textContent || "";
         if (!k.isProjectRow(t)) continue; // never "Create new project" — it navigates

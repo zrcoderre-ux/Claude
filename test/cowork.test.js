@@ -364,3 +364,13 @@ test("the unset caption is not mistaken for a project named Project", () => {
   assert.equal(K.projectTriggerName("Project"), "");
   assert.equal(K.projectTriggerName("Cutlist"), "Cutlist");
 });
+
+test("the navigation's plural Projects is not the composer's project menu", () => {
+  // claude.ai's left sidebar has a Projects entry that navigates. Accepting it
+  // sent a run to the projects page and left it there — which is not a near
+  // miss of choosing a project, it is the end of the run.
+  assert.equal(K.isProjectTriggerCaption("Projects"), false);
+  assert.equal(K.isProjectTriggerCaption("All projects"), false);
+  assert.equal(K.isProjectTriggerCaption("View all projects"), false);
+  assert.equal(K.isProjectTriggerCaption("Project"), true);
+});
