@@ -934,9 +934,12 @@
         const after = C.currentSurface();
         saySurface(
           verdict +
-            " · now reads " +
-            (K.describeSurface(after) || "unreadable") +
-            (C.findSurfaceGroup() ? "" : " · no toggle found on this page")
+            " · asked for " + K.describeSurface(want) +
+            " · now reads " + (K.describeSurface(after) || "unreadable") +
+            // Only when something went wrong, and then everything: "unsupported"
+            // says a piece was missing without saying which, and which piece is
+            // the entire question.
+            (verdict === "ok" ? "" : "\n" + (C.surfaceReport ? C.surfaceReport() : "no report"))
         );
         refreshSurfaceBtn();
       });
@@ -971,6 +974,11 @@
             ? "  (on " + K.describeSurface(now) + ")"
             : "  (toggle found, state unreadable)"
           : "  (no toggle on this page)");
+      // The note is a reading, not a receipt. Toggling by hand and reopening the
+      // panel should show the new answer rather than the last click's.
+      if (els.surfaceNote && !els.surfaceNote.hidden && C && C.surfaceReport)
+        els.surfaceNote.textContent =
+          "now reads " + ((K && K.describeSurface(now)) || "unreadable") + "\n" + C.surfaceReport();
     }
     els.surfaceRefresh = refreshSurfaceBtn;
 

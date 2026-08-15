@@ -752,9 +752,77 @@
     return null;
   }
 
+  // The halves of the toggle. `[role="radio"]` is what the markup was first seen
+  // using, but a native <input type="radio"> carries that role implicitly and
+  // matches no attribute selector — so a group built the plain way would come
+  // back empty, which reads as "this group has no halves" and stops the switch
+  // before it clicks anything.
   function surfaceRadios() {
     const g = findSurfaceGroup();
-    return g ? Array.from(g.querySelectorAll('[role="radio"]')).filter((el) => !isOurs(el)) : [];
+    if (!g) return [];
+    const tagged = Array.from(g.querySelectorAll('[role="radio"]')).filter((el) => !isOurs(el));
+    if (tagged.length) return tagged;
+    return Array.from(g.querySelectorAll('input[type="radio"],label,button')).filter(
+      (el) => !isOurs(el)
+    );
+  }
+
+  // What a half is called. Its own text where it has any; failing that the
+  // label pointing at it, or its value — an <input> has no text of its own, and
+  // the word sits in a <label> beside it.
+  function surfaceRadioLabel(el) {
+    if (!el) return "";
+    const own = normLower(el.textContent);
+    if (own) return own;
+    for (const a of ["aria-label", "title", "value", "data-value"]) {
+      const v = normLower(el.getAttribute && el.getAttribute(a));
+      if (v) return v;
+    }
+    const id = el.getAttribute && el.getAttribute("id");
+    if (id) {
+      try {
+        const lab = document.querySelector('label[for="' + id + '"]');
+        if (lab) return normLower(lab.textContent);
+      } catch (e) {
+        /* an id with quotes in it is not worth a crash */
+      }
+    }
+    const wrap = el.closest ? el.closest("label") : null;
+    return wrap ? normLower(wrap.textContent) : "";
+  }
+
+  /**
+   * A census of what the toggle looks like right now, for the panel's button to
+   * print when a switch didn't happen. Nothing acts on it — it exists because
+   * "unsupported" on its own says only that something was missing, and which
+   * thing was missing is the whole question.
+   */
+  function surfaceReport() {
+    let groups = [];
+    try {
+      groups = Array.from(document.querySelectorAll('[role="radiogroup"]'));
+    } catch (e) {
+      return "couldn't query the page";
+    }
+    const bits = ["radiogroups: " + groups.length];
+    groups.slice(0, 3).forEach((g, i) => {
+      const tagged = Array.from(g.querySelectorAll('[role="radio"]'));
+      const inputs = Array.from(g.querySelectorAll('input[type="radio"]'));
+      bits.push(
+        "[" + i + "] aria-label=" + JSON.stringify(g.getAttribute("aria-label") || "") +
+          " role-radios=" + tagged.length +
+          " inputs=" + inputs.length +
+          " labels=" + JSON.stringify(tagged.map(surfaceRadioLabel).join("|")) +
+          " text=" + JSON.stringify(normLower(g.textContent).slice(0, 40))
+      );
+    });
+    const chosen = findSurfaceGroup();
+    bits.push(
+      "chosen=" + (chosen ? "yes" : "NO") +
+        " halves=" + surfaceRadios().length +
+        " halfLabels=" + JSON.stringify(surfaceRadios().map(surfaceRadioLabel).join("|"))
+    );
+    return bits.join(" · ");
   }
 
   /**
@@ -785,7 +853,7 @@
       // so there is no containment to follow.
       const input = r.querySelector('input[type="radio"]') || inputs[i] || null;
       if (input && input.checked) checked = true;
-      return { label: r.textContent, checked: checked };
+      return { label: surfaceRadioLabel(r), checked: checked };
     });
     return k.surfaceFromEvidence(state, !!findApprovalTrigger(), !!group);
   }
@@ -814,7 +882,10 @@
 
     const label = k.labelForSurface(wanted).toLowerCase();
     const radios = surfaceRadios();
-    const at = radios.findIndex((r) => normLower(r.textContent) === label);
+    // Exact first, then a leading match: a half can carry a badge or an icon's
+    // alt text after its name, never before it.
+    let at = radios.findIndex((r) => surfaceRadioLabel(r) === label);
+    if (at === -1) at = radios.findIndex((r) => surfaceRadioLabel(r).indexOf(label) === 0);
     if (at === -1) return "unsupported";
 
     // The composer re-renders around the toggle, so give it a beat before
@@ -1158,6 +1229,9 @@
     selectModel,
     selectCodeRepo,
     findSurfaceGroup,
+    surfaceRadios,
+    surfaceRadioLabel,
+    surfaceReport,
     currentSurface,
     selectSurface,
     findApprovalTrigger,
