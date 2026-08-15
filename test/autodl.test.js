@@ -506,3 +506,36 @@ test("an ordinary download still passes, including one that names a destination"
   assert.equal(A.mentionsSave("Download file"), true);
   assert.equal(A.mentionsSave("Save a copy"), true);
 });
+
+// ---- a download behind a disclosure ---------------------------------------
+
+test("Cowork's disclosure is recognised, so the card stops looking controlless", () => {
+  // The live button, exactly: icon-only, no filename, no save word. Nothing
+  // else in this module can see it, which is why a Cowork file card read as a
+  // card with nothing on it to press.
+  assert.equal(A.isDisclosureLabel("More ways to open"), true);
+  assert.equal(A.isDisclosureLabel("More options"), true);
+  assert.equal(A.isDisclosureLabel("More actions"), true);
+});
+
+test("a disclosure is not itself a save control", () => {
+  assert.equal(A.isSaveLabel("More ways to open"), false);
+  assert.equal(A.mentionsSave("More ways to open"), false);
+});
+
+test("the words have to lead, so prose and other buttons stay out", () => {
+  assert.equal(A.isDisclosureLabel("Download"), false);
+  assert.equal(A.isDisclosureLabel("Delete"), false);
+  assert.equal(A.isDisclosureLabel("Show more"), false);
+  assert.equal(A.isDisclosureLabel("There are more ways to open this file"), false);
+  assert.equal(A.isDisclosureLabel(""), false);
+  assert.equal(A.isDisclosureLabel(null), false);
+});
+
+test("the row inside that menu is judged strictly, and Drive loses", () => {
+  // Both rows are [role="menuitem"], both new after the click, and only one of
+  // them is the file arriving on your disk.
+  assert.equal(A.isSaveLabel("Download"), true);
+  assert.equal(A.isSaveLabel("Google Drive"), false);
+  assert.equal(A.mentionsSave("Google Drive"), false);
+});

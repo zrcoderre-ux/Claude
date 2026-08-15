@@ -355,6 +355,14 @@
     const buttons = q('button,[role="button"]');
     const byName = named(buttons, A.isSaveLabel) || named(buttons, A.mentionsSave);
     if (byName) return byName;
+    // Cowork hides Download behind a "More ways to open" disclosure. Named, so
+    // this is no more of a guess than the tests above it — and what it opens is
+    // still only pressed if the census afterwards finds something calling
+    // itself a save. It sits before the `strict` bail for that reason: the
+    // button says what it is, which is exactly what `strict` is protecting
+    // against the absence of.
+    const disclosure = named(buttons, A.isDisclosureLabel);
+    if (disclosure) return disclosure;
     // A card identified only by its type chip stops here: it may not be a card
     // at all, and "the only button near it" is how you end up pressing Copy.
     if (strict) return null;
@@ -377,12 +385,17 @@
   // to go looking afterwards.
   function isOpener(card, ctrl) {
     if (!ctrl) return false;
+    if (A.isSaveLabel(ctrl.getAttribute("aria-label")) || A.isSaveLabel(ctrl.textContent))
+      return false;
+    // A disclosure is an opener by definition, and — unlike the thumbnail below
+    // — it says so in its own label rather than by echoing the filename. Which
+    // is just as well: Cowork's carries no filename at all.
+    if (A.isDisclosureLabel(ctrl.getAttribute("aria-label")) || A.isDisclosureLabel(ctrl.textContent))
+      return true;
     const name = A.fileNameIn(card.textContent || "");
     if (!name) return false;
     const label =
       (ctrl.getAttribute("aria-label") || "") + " " + (ctrl.textContent || "");
-    if (A.isSaveLabel(ctrl.getAttribute("aria-label")) || A.isSaveLabel(ctrl.textContent))
-      return false;
     return label.replace(/\s+/g, " ").indexOf(name) !== -1;
   }
 
@@ -947,7 +960,7 @@
       for (const o of offers)
         say("  " + JSON.stringify(o.name || "(unnamed)") + " — " + label(o.node) +
           (o.ready ? "" : " — already pressed this page load") +
-          (o.opener ? " — the card itself, so Download gets chased into whatever it opens" : ""));
+          (o.opener ? " — an opener, so Download gets chased into whatever it opens" : ""));
       if (!take.length) return finishProbe(out.concat(["Nothing left to press — reload the page to start over."]));
 
       // Remembered, so the automatic path doesn't come back and press it again.

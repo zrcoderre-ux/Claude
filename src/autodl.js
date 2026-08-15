@@ -99,6 +99,25 @@
     return SAVE_WORD.test(s);
   }
 
+  // A control that doesn't save anything itself but opens the thing that does.
+  // Cowork puts a file's Download behind one: an icon-only
+  //   button[aria-label="More ways to open"]
+  // whose menu holds "Google Drive" and "Download". It carries no filename and
+  // no save word, so nothing above can see it, and a card whose only route to
+  // the file is this button looks to this module like a card with no control.
+  //
+  // Narrow, and the words have to LEAD, on the same reasoning as SAVE_RE: this
+  // runs unattended, and pressing an unknown button to see what happens is how
+  // a "download" ends up being Delete. Being merely a disclosure is not licence
+  // to press whatever it reveals — the caller still takes a census first and
+  // presses only what names itself a save afterwards.
+  const DISCLOSURE_RE = /^more\s+(?:ways|options|actions|choices)\b/;
+  function isDisclosureLabel(text) {
+    const s = normLabel(text);
+    if (!s || s.length > 40) return false;
+    return DISCLOSURE_RE.test(s);
+  }
+
   // Text that names a file. This is what identifies a card: claude.ai draws
   // what Claude produced as a small panel with the filename on it, and the
   // filename is the part that doesn't change when the markup does.
@@ -382,6 +401,7 @@
     isSaveLabel,
     mentionsSave,
     goesElsewhere,
+    isDisclosureLabel,
     fileNameIn,
     isTypeChip,
     downloadKey,

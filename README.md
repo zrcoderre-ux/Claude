@@ -121,6 +121,13 @@ What it will and won't do besides:
   panel is not one of these: that control lives outside the message, behind a
   menu, and reaching into it is a different feature with different ways to go
   wrong.
+- **Never anywhere but your disk.** Cowork draws a file's controls as a
+  pull-down — `More ways to open` — listing **Google Drive** first and
+  **Download** second. A control naming a destination is not a save control by
+  any of the readings here, however plainly it says "save", so the Drive row is
+  never the one pressed. The disclosure itself is recognised and opened, and
+  then the ordinary rule applies: take a census first, and press only what has
+  appeared since and names itself a download.
 - **Only once the turn has finished.** A file card can appear while Claude is
   still writing, and a save dialog landing mid-answer is exactly the
   interruption this exists to spare you.
