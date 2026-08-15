@@ -37,6 +37,7 @@
 
   const A = window.CUMAutoDl;
   const C = window.CUMComposer;
+  const W = window.CUMWorkflow;
   const CFG_KEY = "cum_autodownload"; // { enabled, max }
   const SELF_POLL_MS = 2000;
   const MENU_MS = 350; // let a menu the click opened draw before reading it
@@ -91,7 +92,6 @@
   // The assistant's response stream, as reported by src/inject.js. Only the
   // completion endpoint counts — claude.ai streams plenty else over SSE, and an
   // unrelated one closing must not mark a reply as freshly landed.
-  const COMPLETION_RE = /completion|\/retry|\/messages(\?|$)/i;
   try {
     window.addEventListener("message", (event) => {
       if (event.source !== window) return;
@@ -107,7 +107,7 @@
       // different bugs.
       if (p.streamStart) streamsSeen++;
       if (!cfg.enabled) return;
-      if (!COMPLETION_RE.test(String(p.url || ""))) return;
+      if (!W || !W.looksLikeCompletionUrl(p.url, location.pathname)) return;
       if (p.streamStart) {
         completionsSeen++;
         before = newestSignature();
@@ -491,7 +491,6 @@
     if (!cfg.enabled || !cfg.catchUp) return;
     const S = window.CUMStamp;
     const V = window.CUMConv;
-    const W = window.CUMWorkflow;
     if (!S || !V || !W) return;
     const id = W.conversationId(location.pathname);
     if (!id) return;

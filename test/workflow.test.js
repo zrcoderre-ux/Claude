@@ -3001,3 +3001,36 @@ test("a workflow saved before this switch existed reads as off", () => {
   delete old.newWindow;
   assert.equal(W.newRun(old, "r1", NOW, { type: "now" }, []).newWindow, false);
 });
+
+// ---- which stream is this conversation's ----------------------------------
+
+test("chat and code completion urls are recognised as they always were", () => {
+  const at = "/chat/019f3fcd-9b35-7715-b2cc-b227512b5459";
+  assert.equal(W.looksLikeCompletionUrl("/api/.../completion", at), true);
+  assert.equal(W.looksLikeCompletionUrl("/api/organizations/x/retry", at), true);
+  assert.equal(W.looksLikeCompletionUrl("/api/messages?beta=true", at), true);
+});
+
+test("a cowork stream is recognised by naming this very session", () => {
+  // Cowork's completion address carries none of those words, so a run fell back
+  // to watching the text hold still — slower, and a weaker claim than the
+  // network's. The session id is the narrower test, not the looser one.
+  const at = "/cowork/cse_011f5HCzaWWJ2hm19v6NuQmN";
+  assert.equal(
+    W.looksLikeCompletionUrl("/api/organizations/x/conversations/cse_011f5HCzaWWJ2hm19v6NuQmN/x", at),
+    true
+  );
+});
+
+test("another session's stream is not this one's", () => {
+  const at = "/cowork/cse_011f5HCzaWWJ2hm19v6NuQmN";
+  assert.equal(W.looksLikeCompletionUrl("/api/organizations/x/conversations/cse_OTHER/x", at), false);
+  assert.equal(W.looksLikeCompletionUrl("/api/event_logging/v2/batch", at), false);
+  assert.equal(W.looksLikeCompletionUrl("/api/telemetry", at), false);
+});
+
+test("off a cowork page the session arm never fires, and nothing is guessed", () => {
+  assert.equal(W.looksLikeCompletionUrl("/api/organizations/x/anything", "/new"), false);
+  assert.equal(W.looksLikeCompletionUrl("", "/cowork/cse_01Ab"), false);
+  assert.equal(W.looksLikeCompletionUrl(null, null), false);
+});

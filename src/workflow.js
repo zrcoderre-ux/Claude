@@ -2172,6 +2172,32 @@
     return m ? m[1] : null;
   }
 
+  // ---- which stream is this conversation's ---------------------------------
+  //
+  // A turn ending is reported by inject.js when a text/event-stream closes, and
+  // claude.ai streams plenty besides the assistant's answer — so the URL is
+  // filtered, or an unrelated stream closing releases a step whose reply is
+  // still being written.
+  //
+  // The words below are Chat's and Claude Code's. Cowork's completion address
+  // carries none of them, so a Cowork run fell back to watching the text hold
+  // still: slower, and a weaker claim than the network's.
+  //
+  // What a Cowork stream does carry is the session's own id, which is in the
+  // page's address too. A stream naming THIS conversation is this
+  // conversation's, whatever verb it is spelled with — which is a narrower test
+  // than any list of words, not a looser one.
+  const COMPLETION_RE = /completion|\/retry|\/messages(\?|$)/i;
+  const SESSION_IN_PATH = /\/cowork\/(cse_[A-Za-z0-9_-]+)/;
+
+  function looksLikeCompletionUrl(url, pathname) {
+    const u = str(url);
+    if (!u) return false;
+    if (COMPLETION_RE.test(u)) return true;
+    const m = SESSION_IN_PATH.exec(str(pathname));
+    return !!m && u.indexOf(m[1]) !== -1;
+  }
+
   function conversationId(href) {
     let path = str(href);
     try {
@@ -3025,6 +3051,7 @@
     usageCost,
     conversationKey,
     conversationId,
+    looksLikeCompletionUrl,
     conversationIdFromApiUrl,
     chatTitle,
     soleActor,

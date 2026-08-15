@@ -54,7 +54,6 @@
   // claude.ai streams more than the assistant's answer over SSE, so only the
   // completion endpoint counts — some other stream closing must not release a
   // step whose reply is still being written.
-  const COMPLETION_RE = /completion|\/retry|\/messages(\?|$)/i;
   try {
     window.addEventListener("message", (event) => {
       if (event.source !== window) return;
@@ -62,7 +61,7 @@
       const p = m && m.__channel === C.CHANNEL ? m.payload : null;
       if (!p || (!p.streamStart && !p.streamDone)) return;
       anyStreamSeen = true;
-      if (!COMPLETION_RE.test(String(p.url || ""))) return;
+      if (!W.looksLikeCompletionUrl(p.url, location.pathname)) return;
       if (p.streamStart) streamStartedAt = p.at || Date.now();
       if (p.streamDone) streamDoneAt = p.at || Date.now();
       // The completion request names the conversation it is for. In a Project
