@@ -137,6 +137,54 @@
     return r.width >= 8 && r.height >= 8 && r.top >= 0 && r.top <= BAND_PX;
   }
 
+  // Cowork's own right-hand sidebar, and the control that opens and shuts it.
+  //
+  // It matters because in Cowork that control is often the ONLY thing in the
+  // header band — there is no Share — and the cluster rule insists on two
+  // before it will trust what it has found. So nothing was found, and `place`
+  // did what it does when there is nowhere to go: docked the buttons into the
+  // meter's own pill stack, which is the bottom-right corner and not a header
+  // at all.
+  //
+  // Named, so rule 2 holds and a lone control is enough: this is not a guess
+  // about shape, it is a control that says what it is. The slot goes to its
+  // LEFT, which keeps our buttons out of the sidebar's way whether it is open
+  // or shut — the toggle stays put either way, so anchoring to it is the one
+  // choice that doesn't move when the sidebar does.
+  const SIDEBAR_RE = /\b(sidebar|side panel|right panel|panel|drawer|inspector)\b/i;
+  function sidebarToggle() {
+    const root = appRoot();
+    let tagged = null;
+    try {
+      tagged = root.querySelector(
+        'button[data-testid*="sidebar" i], button[data-testid*="side-panel" i], ' +
+          'button[aria-label*="sidebar" i], button[aria-label*="side panel" i]'
+      );
+    } catch (e) {
+      /* ignore */
+    }
+    if (tagged && !ours(tagged) && inBand(tagged)) return tagged;
+
+    // Failing a name we know, any control in the band whose label reads like a
+    // panel toggle — and the rightmost of them, since that is where the
+    // sidebar's own handle sits.
+    let best = null;
+    try {
+      for (const b of root.querySelectorAll('button, a[role="button"]')) {
+        if (ours(b) || !inBand(b)) continue;
+        const label =
+          (b.getAttribute("aria-label") || "") + " " + (b.getAttribute("title") || "");
+        if (!SIDEBAR_RE.test(label)) continue;
+        const r = b.getBoundingClientRect();
+        if (r.left < window.innerWidth * RIGHT_FRACTION) continue;
+        if (!best || r.left > best.left) best = { el: b, left: r.left };
+      }
+    } catch (e) {
+      /* ignore */
+    }
+    return best ? best.el : null;
+  }
+
   // The rightmost run of controls that touch each other. Walking left stops at
   // the first real gap, so the file/share pair is found without the dropdown
   // that sits well clear of it.
@@ -194,7 +242,14 @@
     // half-rendered page offers a lone button somewhere, and because a placed
     // slot then STAYS placed, a bad guess made in the first second would be
     // lived with for the rest of the page's life.
-    if (!share && useful.length < 2) return null;
+    //
+    // ...unless the lone control is the sidebar toggle, which is not a guess:
+    // it is named, and in Cowork it is routinely the only thing up there.
+    // Without this arm the buttons went to the pill stack instead of a header.
+    if (!share && useful.length < 2) {
+      const side = sidebarToggle();
+      return side && side.parentElement ? { parent: side.parentElement, before: side } : null;
+    }
     if (!useful.length) {
       // No cluster at all, but Share is there: sit immediately before it.
       if (share && share.parentElement) return { parent: share.parentElement, before: share };
@@ -291,6 +346,7 @@
     detach: detach,
     visible: visible,
     cluster: cluster,
+    sidebarToggle: sidebarToggle,
     appRoot: appRoot,
   };
 })();
