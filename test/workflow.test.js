@@ -3034,3 +3034,54 @@ test("off a cowork page the session arm never fires, and nothing is guessed", ()
   assert.equal(W.looksLikeCompletionUrl("", "/cowork/cse_01Ab"), false);
   assert.equal(W.looksLikeCompletionUrl(null, null), false);
 });
+
+// ---- settling where the network says nothing -------------------------------
+
+test("six seconds of stillness settles a turn where a stream was seen", () => {
+  const s = {
+    text: "an answer",
+    watched: true,
+    unchangedMs: 6000,
+    stablePolls: 3,
+  };
+  assert.equal(W.settleReason(s), "stable");
+});
+
+test("...and does not, where the surface shows no network signal at all", () => {
+  // Cowork. The open stream is what proves a tool-call pause isn't a finished
+  // answer, and there is no stream — so stillness is the whole argument and
+  // six seconds is not much of one.
+  const s = {
+    text: "an answer",
+    watched: true,
+    unchangedMs: 6000,
+    stablePolls: 3,
+    noNetworkSignal: true,
+  };
+  assert.equal(W.settleReason(s), null);
+});
+
+test("a blind surface settles once the stillness is a real argument", () => {
+  const s = {
+    text: "an answer",
+    watched: true,
+    unchangedMs: 30000,
+    stablePolls: 12,
+    noNetworkSignal: true,
+  };
+  assert.equal(W.settleReason(s), "stable");
+  // Long enough, but not enough looks: a tab that woke up and measured one
+  // wide gap has not watched anything hold still.
+  assert.equal(W.settleReason(Object.assign({}, s, { stablePolls: 4 })), null);
+});
+
+test("being blind never overrides the signals that are certain", () => {
+  const base = { text: "an answer", watched: true, unchangedMs: 2000, noNetworkSignal: true };
+  // A stream that closed for this message is authoritative, blind or not.
+  assert.equal(W.settleReason(Object.assign({}, base, { streamDone: true })), "stream");
+  // ...and a page still generating is still not finished.
+  assert.equal(
+    W.settleReason(Object.assign({}, base, { generating: true, unchangedMs: 60000 })),
+    null
+  );
+});
