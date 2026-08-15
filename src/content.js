@@ -940,7 +940,11 @@
           verdict +
           " · asked for " + K.describeSurface(want) +
           " · was " + (K.describeSurface(now) || "unreadable") +
-          " · now " + (K.describeSurface(after) || "unreadable");
+          " · now " + (K.describeSurface(after) || "unreadable") +
+          // Where it stopped, in words. A verdict names the kind of failure;
+          // this names the line, which is the part that has actually been
+          // costing rounds.
+          (C.surfaceWhy && C.surfaceWhy() ? "\n  why: " + C.surfaceWhy() : "");
         refreshSurfaceBtn();
       });
 

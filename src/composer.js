@@ -736,6 +736,13 @@
 
   const K = () => root.CUMCowork || (typeof CUMCowork !== "undefined" ? CUMCowork : null);
 
+  // Where the last selectSurface() gave up, in words. The verdict alone says a
+  // piece was missing; three rounds of this have shown that which piece it was
+  // is the only part anybody needs. Not acted on anywhere — it exists to be
+  // read back by the panel's button.
+  let lastSurfaceWhy = "";
+  const surfaceWhy = () => lastSurfaceWhy;
+
   function findSurfaceGroup() {
     const g = document.querySelector('[role="radiogroup"][aria-label="Surface" i]');
     if (g && !isOurs(g)) return g;
@@ -864,18 +871,22 @@
    * "failed" (clicked and it didn't take).
    */
   async function selectSurface(want) {
+    const why = (text, verdict) => {
+      lastSurfaceWhy = text;
+      return verdict;
+    };
     const k = K();
-    if (!k) return "unsupported";
+    if (!k) return why("CUMCowork not loaded in this world", "unsupported");
     const wanted = k.surfaceFromLabel(want);
-    if (!wanted) return "inherit";
+    if (!wanted) return why("asked for " + JSON.stringify(String(want)) + ", which is neither surface", "inherit");
     // No toggle at all — an existing conversation rather than the composer
     // home. That is the only thing that makes this unsupported.
     const group = findSurfaceGroup();
-    if (!group) return "unsupported";
+    if (!group) return why("no radiogroup on this page", "unsupported");
 
     const verdict = k.reconcileSurface(wanted, currentSurface());
-    if (verdict === "inherit") return "inherit";
-    if (verdict === "ok") return "ok";
+    if (verdict === "inherit") return why("nothing asked for", "inherit");
+    if (verdict === "ok") return why("already on " + wanted, "ok");
     // "unknown" falls through with "set". A page that won't say where its
     // toggle stands is not a page without one, and refusing to click a control
     // sitting in front of us was the whole bug.
@@ -886,7 +897,13 @@
     // alt text after its name, never before it.
     let at = radios.findIndex((r) => surfaceRadioLabel(r) === label);
     if (at === -1) at = radios.findIndex((r) => surfaceRadioLabel(r).indexOf(label) === 0);
-    if (at === -1) return "unsupported";
+    if (at === -1)
+      return why(
+        "no half named " + JSON.stringify(label) + " among " +
+          JSON.stringify(radios.map(surfaceRadioLabel).join("|")) +
+          " (" + radios.length + " halves)",
+        "unsupported"
+      );
 
     // The composer re-renders around the toggle, so give it a beat before
     // believing anything.
@@ -920,14 +937,14 @@
 
     // The visible half first, since that is what a person presses.
     robustClick(radios[at]);
-    if (await settled(4)) return "ok";
+    if (await settled(4)) return why("dispatched click on the half", "ok");
     nativeClick(radios[at]);
-    if (await settled(4)) return "ok";
+    if (await settled(4)) return why("el.click() on the half", "ok");
 
     // Then the input it stands for.
     if (inputs[at]) {
       nativeClick(inputs[at]);
-      if (await settled(4)) return "ok";
+      if (await settled(4)) return why("el.click() on the input", "ok");
       // ...and failing that, set it and say so. A React-controlled radio reads
       // its own `checked` back from state, so the property alone changes
       // nothing — but the change event is what the handler is listening for,
@@ -939,9 +956,14 @@
       } catch (e) {
         /* ignore */
       }
-      if (await settled(6)) return "ok";
+      if (await settled(6)) return why("checked + change on the input", "ok");
     }
-    return "failed";
+    return why(
+      "clicked the half " + (inputs[at] ? "and its input " : "(it has no input) ") +
+        "every way there is and the surface still reads " +
+        JSON.stringify(currentSurface() || "unreadable"),
+      "failed"
+    );
   }
 
   // The approval control. Its own aria-label is the mode in force, which makes
@@ -1264,6 +1286,7 @@
     surfaceRadios,
     surfaceRadioLabel,
     surfaceReport,
+    surfaceWhy,
     currentSurface,
     selectSurface,
     findApprovalTrigger,
