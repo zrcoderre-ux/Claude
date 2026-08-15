@@ -3085,3 +3085,29 @@ test("being blind never overrides the signals that are certain", () => {
     null
   );
 });
+
+test("a page still generating is given twice as long where the network says nothing", () => {
+  // The stalled ceiling exists to stop a run hanging on a Stop control that
+  // never goes away. In Cowork it is the LAST thing holding the turn, and a
+  // twenty-minute tool call is a slow tool call rather than a stuck page.
+  const base = { text: "an answer", watched: true, generating: true };
+  const at = (ms, blind) =>
+    W.settleReason(Object.assign({}, base, { unchangedMs: ms, noNetworkSignal: !!blind }));
+
+  assert.equal(at(15 * 60 * 1000, false), "stalled", "fifteen minutes, where a stream exists");
+  assert.equal(at(15 * 60 * 1000, true), null, "...but not on a surface that shows us nothing");
+  assert.equal(at(29 * 60 * 1000, true), null);
+  assert.equal(at(30 * 60 * 1000, true), "stalled");
+});
+
+test("a caller asking for longer than the floor still gets what it asked for", () => {
+  const s = {
+    text: "an answer",
+    watched: true,
+    generating: true,
+    noNetworkSignal: true,
+    stalledMs: 60 * 60 * 1000,
+    unchangedMs: 45 * 60 * 1000,
+  };
+  assert.equal(W.settleReason(s), null, "the floor raises a ceiling, it never lowers one");
+});

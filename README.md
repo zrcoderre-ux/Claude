@@ -1276,6 +1276,12 @@ knowable, the text has to hold still for **thirty seconds across twelve looks**
 instead. The cost is seconds on a step that takes minutes; the cost of being
 wrong is half an answer handed to the next chat as though it were whole.
 
+The other end moves too. While the page still shows its **Stop** control, a step
+waits out a silence for fifteen minutes before deciding the control is simply
+stuck — **thirty in Cowork**, because there it is the last thing holding the
+turn, everything stronger being absent, and a twenty-minute tool call is a slow
+tool call rather than a stuck page.
+
 **A Cowork session is renamed through its own menu.** There is no API for it —
 renaming one by hand makes no HTTP request at all, on a page that renames a
 regular chat with a plain `PUT` — so a run does what you do: opens the menu on
