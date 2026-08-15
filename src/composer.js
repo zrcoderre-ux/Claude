@@ -744,6 +744,8 @@
   const surfaceWhy = () => lastSurfaceWhy;
   let lastProjectWhy = "";
   const projectWhy = () => lastProjectWhy;
+  let lastRenameWhy = "";
+  const renameWhy = () => lastRenameWhy;
 
   function findSurfaceGroup() {
     const g = document.querySelector('[role="radiogroup"][aria-label="Surface" i]');
@@ -1126,6 +1128,155 @@
     return why("clicked the row but no trigger came to read " + JSON.stringify(name), "failed");
   }
 
+  /**
+   * Rename a Cowork session, the way a person does it.
+   *
+   * There is no API for this. Renaming one by hand makes no HTTP request at
+   * all — watched for, on a page that renames a regular chat with a plain PUT —
+   * so the title must be going over a socket, and the only door left is the one
+   * you use: open the menu on the session's name, choose Rename, type into the
+   * box that appears, confirm.
+   *
+   * That "no request, therefore impossible" reasoning was wrong twice over. It
+   * ruled out the API and reported the feature as unavailable, when what it had
+   * actually established was only that ONE route was closed.
+   *
+   * Everything here is named rather than positional, and nothing unknown is
+   * ever pressed: an unattended run that clicks a menu item it can't read is
+   * how a rename becomes a delete.
+   */
+  async function renameCoworkSession(title) {
+    const why = (text, verdict) => {
+      lastRenameWhy = text;
+      return verdict;
+    };
+    const want = String(title || "").trim();
+    if (!want) return why("no title asked for", "inherit");
+
+    const inHeader = (el) => {
+      const r = el.getBoundingClientRect();
+      return r.width >= 8 && r.height >= 8 && r.top >= 0 && r.top <= 120;
+    };
+    const opensAMenu = (b) =>
+      b.hasAttribute("aria-haspopup") || b.hasAttribute("aria-expanded") || b.hasAttribute("aria-controls");
+
+    // The name's own dropdown first — it is the one that carries the title and
+    // the one you reach for. Then the session's actions menu, which is where a
+    // Rename lives when the title isn't itself a menu.
+    const candidates = Array.from(document.querySelectorAll("button")).filter(
+      (b) => !isOurs(b) && inHeader(b) && opensAMenu(b)
+    );
+    const named = candidates.filter((b) => normLower(b.textContent));
+    const actions = candidates.filter((b) =>
+      /session|conversation|chat|more|actions|options/i.test(b.getAttribute("aria-label") || "")
+    );
+    const order = named.concat(actions.filter((b) => named.indexOf(b) === -1));
+    if (!order.length) return why("no menu in the header to open", "unsupported");
+
+    const renameItem = () => {
+      for (const el of document.querySelectorAll('[role="menuitem"],[role="option"]')) {
+        if (isOurs(el)) continue;
+        if (/^rename\b/.test(normLower(el.textContent))) return el;
+      }
+      return null;
+    };
+    const seenItems = () =>
+      Array.from(document.querySelectorAll('[role="menuitem"],[role="option"]'))
+        .filter((el) => !isOurs(el))
+        .map((el) => normLower(el.textContent).slice(0, 30))
+        .join(" | ");
+
+    let item = null;
+    let opened = null;
+    for (const trigger of order.slice(0, 4)) {
+      robustClick(trigger);
+      for (let i = 0; i < 8 && !item; i++) {
+        await sleep(150);
+        item = renameItem();
+      }
+      if (item) {
+        opened = trigger;
+        break;
+      }
+      closeMenu(); // not this one — put it back before trying the next
+      await sleep(150);
+    }
+    if (!item)
+      return why(
+        "no Rename in any header menu — saw " + JSON.stringify(seenItems()),
+        "unsupported"
+      );
+    void opened;
+    robustClick(item);
+
+    // The box it opens. A dialog where there is one, so the search for the
+    // field can't wander off into the composer and type the title into the
+    // prompt — which is the accident the project picker had waiting in it.
+    let field = null;
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && !field) {
+      const dlg = document.querySelector('[role="dialog"],[role="alertdialog"]');
+      const scope = dlg || document;
+      for (const el of scope.querySelectorAll(
+        'input[type="text"],input:not([type]),textarea,[contenteditable="true"]'
+      )) {
+        if (isOurs(el) || !isVisible(el)) continue;
+        if (el === findEditor()) continue; // never the composer
+        field = el;
+        break;
+      }
+      if (!field) await sleep(150);
+    }
+    if (!field) return why("Rename opened nothing that could be typed into", "failed");
+
+    try {
+      field.focus();
+      if ("value" in field) field.select && field.select();
+      else if (document.execCommand) document.execCommand("selectAll", false, null);
+      const typed = document.execCommand && document.execCommand("insertText", false, want);
+      if (!typed && "value" in field) {
+        field.value = want;
+        for (const t of ["input", "change"]) field.dispatchEvent(new Event(t, { bubbles: true }));
+      }
+    } catch (e) {
+      return why("couldn't type into the rename box", "failed");
+    }
+    await sleep(250);
+
+    // Confirm the way the box expects. Enter first, since a one-field dialog
+    // submits on it; then a button that says what it does.
+    for (const t of ["keydown", "keypress", "keyup"]) {
+      try {
+        field.dispatchEvent(
+          new KeyboardEvent(t, { bubbles: true, cancelable: true, key: "Enter", code: "Enter", keyCode: 13, which: 13 })
+        );
+      } catch (e) {
+        /* the button below is the fallback */
+      }
+    }
+    const settled = async (tries) => {
+      for (let i = 0; i < (tries || 8); i++) {
+        await sleep(250);
+        if (!field.isConnected) return true;
+      }
+      return false;
+    };
+    if (await settled(6)) return why("typed it and pressed Enter", "ok");
+
+    const dlg = document.querySelector('[role="dialog"],[role="alertdialog"]');
+    if (dlg) {
+      for (const b of dlg.querySelectorAll("button")) {
+        if (isOurs(b)) continue;
+        if (!/^(rename|save|done|confirm|ok)\b/.test(normLower(b.textContent))) continue;
+        robustClick(b);
+        if (await settled(6)) return why("typed it and pressed " + normLower(b.textContent), "ok");
+        break;
+      }
+    }
+    closeMenu();
+    return why("typed it but the box never closed", "failed");
+  }
+
   // ---- one composed message, end to end ----------------------------------
   // Attach files, pick model/repo, type `text`, click Send, confirm it left.
   // Returns { ok, error?, notes: [] } — notes are best-effort problems (model
@@ -1345,6 +1496,8 @@
     findSurfaceGroup,
     surfaceWhy,
     projectWhy,
+    renameCoworkSession,
+    renameWhy,
     currentSurface,
     selectSurface,
     findApprovalTrigger,

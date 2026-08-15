@@ -1266,12 +1266,14 @@ rather than something you asked for. **Open this run in a window of its own** is
 a workflow setting like every other, so a run inherits it and can change it for
 that matter alone.
 
-**A Cowork session keeps the name claude.ai gives it.** Renaming one by hand
-makes no HTTP request at all — not to `chat_conversations`, not anywhere — so
-there is no call for a run to make, and it says so once rather than reporting a
-failure on every chat it opens. A conversation inside a Cowork *project* is an
-ordinary chat with an ordinary uuid and is named normally; this applies only to
-`/cowork/cse_…` sessions.
+**A Cowork session is renamed through its own menu.** There is no API for it —
+renaming one by hand makes no HTTP request at all, on a page that renames a
+regular chat with a plain `PUT` — so a run does what you do: opens the menu on
+the session's name, chooses **Rename**, types into the box and confirms. Nothing
+unnamed is ever clicked; a menu with no Rename in it is closed again and the run
+says which items it saw. A conversation inside a Cowork *project* is an ordinary
+chat with an ordinary uuid and still uses the API, which is better where it
+works — no menus, nothing to mis-click.
 
 In a borrowed window a run gives up everything the isolated one provided for
 free, and gives it up deliberately: nothing is resized (the window is yours), no
