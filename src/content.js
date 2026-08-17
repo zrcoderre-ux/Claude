@@ -810,6 +810,8 @@
         </div>
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
         <div class="cum-panel-hint" id="cum-p-hint" hidden>Reading your usage — this updates automatically.</div>
+        <button id="cum-dl-now-btn" type="button">Download the newest file</button>
+        <div id="cum-dl-now-note" hidden></div>
         <button id="cum-schedule-btn" type="button">＋ Schedule a send</button>
         <button id="cum-options-btn" type="button">Open options →</button>
       </div>
@@ -846,6 +848,8 @@
       pOverageStatus: root.querySelector("#cum-p-overage-status"),
       pUpdated: root.querySelector("#cum-p-updated"),
       pHint: root.querySelector("#cum-p-hint"),
+      dlNowBtn: root.querySelector("#cum-dl-now-btn"),
+      dlNowNote: root.querySelector("#cum-dl-now-note"),
       scheduleBtn: root.querySelector("#cum-schedule-btn"),
       optionsBtn: root.querySelector("#cum-options-btn"),
       statusGroup: root.querySelector("#cum-status-group"),
@@ -888,6 +892,36 @@
       els.panel.hidden = !els.panel.hidden;
       if (!els.panel.hidden) placePanel();
     });
+
+    // Download the newest file, by hand. The same walk the automatic path
+    // makes — CUMAutoDownload.tryNow — with every gate off, because you
+    // pressing this is not the backlog those gates exist to refuse. It reports
+    // which reply it looked at, what it found on it, and what it pressed, which
+    // is how the Chat/Cowork toggle and the rename were both settled.
+    if (els.dlNowBtn)
+      els.dlNowBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const D = window.CUMAutoDownload;
+        if (!D || !D.tryNow) return sayDlNow("the auto-download module isn't loaded");
+        let text;
+        try {
+          text = D.tryNow();
+        } catch (err) {
+          text = "threw: " + String((err && err.message) || err);
+        }
+        sayDlNow(text || "(it said nothing)");
+      });
+
+    function sayDlNow(text) {
+      try {
+        console.log("[claude-usage-meter] download:\n" + text);
+      } catch (err) {
+        /* ignore */
+      }
+      if (!els.dlNowNote) return;
+      els.dlNowNote.textContent = text;
+      els.dlNowNote.hidden = false;
+    }
 
     els.scheduleBtn.addEventListener("click", (e) => {
       e.stopPropagation();
