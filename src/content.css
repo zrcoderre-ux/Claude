@@ -296,6 +296,51 @@
   background: rgba(0, 0, 0, 0.05);
 }
 
+/* Download the newest file, by hand — the same walk the automatic path makes,
+   with every gate off, and its report where it can be read. */
+#cum-dl-now-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 7px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#cum-dl-now-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+#cum-dl-now-note {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(201, 100, 66, 0.1);
+  color: inherit;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  #cum-dl-now-btn {
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+  #cum-dl-now-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  #cum-dl-now-note {
+    background: rgba(201, 100, 66, 0.2);
+  }
+}
+
 /* Schedule-a-send modal */
 #cum-modal-overlay {
   position: fixed;

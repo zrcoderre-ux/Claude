@@ -369,6 +369,27 @@
     // against the absence of.
     const disclosure = named(buttons, A.isDisclosureLabel);
     if (disclosure) return disclosure;
+    // The card may BE the control. Cowork draws a file the assistant produced
+    // as a single button captioned "Created ruling revised.md" — nothing
+    // inside it at all — so a search that only ever looks inward finds nothing
+    // and the file is never pressed. That is not a missing selector; it is
+    // this function never having considered that the thing it was handed might
+    // be the thing it was looking for.
+    //
+    // Pressing it opens the file rather than saving it, which is already a
+    // shape this understands: isOpener says so, and save() then takes a census
+    // and presses whatever names itself a Download in what opened. Which is
+    // where Cowork keeps it — behind "More ways to open".
+    let self = null;
+    try {
+      self = card.matches && card.matches('button,[role="button"]') ? card : null;
+    } catch (e) {
+      /* ignore */
+    }
+    // Not under `strict`: that guards cards identified only by a type chip,
+    // where "the nearest button" could be anything. A card that IS a button and
+    // names a file has already said what it is.
+    if (self && !strict) return self;
     // A card identified only by its type chip stops here: it may not be a card
     // at all, and "the only button near it" is how you end up pressing Copy.
     if (strict) return null;
@@ -1156,6 +1177,11 @@
   } catch (e) {
     /* ignore */
   }
+
+  // Reachable from the pill, which lives in this same world. The popup drives
+  // these through a runtime message; a content script cannot send one to
+  // itself, so the pill calls them directly.
+  window.CUMAutoDownload = { tryNow: tryNow, probe: probe };
 
   loadCfg();
   setInterval(tick, SELF_POLL_MS);
