@@ -73,6 +73,10 @@
   let where = ""; // the conversation this ledger belongs to
   let toldCap = false;
   let followed = ""; // the last file whose Download had to be chased into a panel
+  // What the last press actually came to. The toast says it once and is gone;
+  // this is here so the probe can say it again, which is the difference
+  // between diagnosing from a report and diagnosing from memory.
+  let lastOutcome = "";
   // Evidence about the turn signal itself, for the report. Nothing acts on
   // these; they exist so "0 replies watched" can say WHY.
   let streamsSeen = 0; // any event-stream this page opened
@@ -612,15 +616,23 @@
     }
   }
 
-  function newSaveControl(before_) {
+  // Everything that appeared since the census. Kept as its own step so a chase
+  // that finds no Download can say what it DID find — "nothing turned up" and
+  // "three things turned up and none of them said Download" are different
+  // failures, and they have been reading identically.
+  function newControls(before_) {
     let all;
     try {
       all = Array.from(document.querySelectorAll(ANY_CONTROL));
     } catch (e) {
-      return null;
+      return [];
     }
+    return all.filter((el) => !before_.has(el) && !C.isOurs(el));
+  }
+
+  function newSaveControl(before_) {
+    const all = newControls(before_);
     for (const el of all) {
-      if (before_.has(el) || C.isOurs(el)) continue;
       if (el.tagName === "A" && el.hasAttribute("download")) return el;
       // The strict reading only. Inside a card that already names a file,
       // "Save a copy" is unambiguous; a sweep of the whole document is not the
@@ -669,6 +681,7 @@
     // is kept as one: it becomes "couldn't tell", never "saved".
     const was = await newestDownload();
     const before_ = controlCensus();
+    let sawInPanel = "";
     try {
       offer.node.click();
     } catch (e) {
@@ -697,6 +710,28 @@
         // Nothing turned up. Either the click saved the file outright — the
         // happy case — or it opened something that must not be left sitting
         // over the conversation you're reading.
+        // What DID open, for the report. A Download that was never found and a
+        // Download that was found and refused are different failures.
+        sawInPanel = newControls(before_)
+          .slice(0, 8)
+          .map(
+            (el) =>
+              (el.tagName || "?").toLowerCase() +
+              (el.getAttribute("role") ? "[" + el.getAttribute("role") + "]" : "") +
+              " " +
+              JSON.stringify(
+                (
+                  el.getAttribute("aria-label") ||
+                  el.getAttribute("title") ||
+                  el.textContent ||
+                  ""
+                )
+                  .replace(/\s+/g, " ")
+                  .trim()
+                  .slice(0, 28)
+              )
+          )
+          .join(" | ");
         escape();
         resolve(false);
       });
@@ -730,6 +765,16 @@
     if (arrived && key && downloaded) downloaded[key] = true; // not in the reading yet
     const cap = cfg.max > 0 ? cfg.max : A.MAX_PER_PAGE;
     const named = landedName || offer.name || "a file";
+    lastOutcome =
+      (arrived === true
+        ? "saved"
+        : arrived === null
+        ? "couldn't check your downloads"
+        : chased
+        ? "pressed Download in what opened, nothing arrived"
+        : "found no Download in what opened — saw " + JSON.stringify(sawInPanel || "nothing new at all")) +
+      " · " + JSON.stringify(offer.name || "(unnamed)") +
+      " · pressed " + label(offer.node);
     if (arrived === true) {
       toast(
         collides
@@ -742,6 +787,14 @@
     // that was never found is a different problem from one that was pressed and
     // produced nothing.
     count--; // it didn't happen, so it doesn't count against the ceiling
+    // ...and it is not handled, either. Marking a file done because we pressed
+    // at it is how a file that never saved becomes unreachable for the rest of
+    // the page's life — including to you, pressing the button by hand.
+    try {
+      offer.node.removeAttribute("data-cum-dl");
+    } catch (e) {
+      /* ignore */
+    }
     if (arrived === null) {
       toast(`Pressed ${offer.name || "that file"} — couldn't check your downloads to confirm it saved`);
       return;
@@ -993,6 +1046,7 @@
       );
 
       const cards = cardsIn(scope);
+      if (lastOutcome) say("last press: " + lastOutcome);
       say("cards found: " + cards.length);
       for (const c of cards) {
         const text = (c.el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
