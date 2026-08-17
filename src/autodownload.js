@@ -42,6 +42,7 @@
   const SELF_POLL_MS = 2000;
   const MENU_MS = 350; // let a menu the click opened draw before reading it
   const PANEL_MS = 700; // ...and a preview panel, which is slower than a menu
+  const CHASE_TRIES = 6; // how many times to look for a Download in what opened
   const ESCAPE_MS = 700; // let a click land before dismissing any menu it opened
   const SETTLE_MS = 20000; // how long a just-landed reply is still settling
   // How far back catch-up looks. The live path watches the newest reply or two,
@@ -639,7 +640,22 @@
     }
   }
 
-  function save(offer) {
+  // The newest download the browser knows about, by start time. Asked of the
+  // worker, since chrome.downloads is not exposed to a content script.
+  function newestDownload() {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime?.sendMessage({ type: "cum-dl-newest" }, (res) => {
+          void chrome.runtime.lastError;
+          resolve(res && res.ok ? res : null);
+        });
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  async function save(offer) {
     lastAt = Date.now();
     count++;
     followed = ""; // this save's own story, not the last one's
@@ -648,48 +664,92 @@
     } catch (e) {
       /* the ledger key is the real guard; this is the belt to its braces */
     }
+    // What the folder looked like before we pressed anything, so afterwards
+    // there is something to compare against. Unknown is a real answer here and
+    // is kept as one: it becomes "couldn't tell", never "saved".
+    const was = await newestDownload();
     const before_ = controlCensus();
     try {
       offer.node.click();
     } catch (e) {
-      return; // one that won't click is a file not saved, and nothing more
+      toast("Couldn't press " + (offer.name || "that file") + " — nothing was saved");
+      return;
     }
-    // Twice, because a menu draws in a frame and a preview panel takes rather
-    // longer — and an opener that saved nothing is worth a second look before
-    // its panel gets shut again.
-    const chase = (attempt) => {
-      const item = newSaveControl(before_);
-      if (item) {
-        try {
-          item.click();
-        } catch (e) {
-          /* ignore */
+    // Repeatedly, and for several seconds. A menu draws in a frame, a preview
+    // panel takes rather longer, and Cowork's opener draws a whole file view —
+    // the old two attempts gave up about a second in, which on a slow one is
+    // giving up before the Download exists to be found. Cheap to wait: nothing
+    // else is happening, and the alternative is a file not saved.
+    const chase = (attempt) =>
+      new Promise((resolve) => {
+        const item = newSaveControl(before_);
+        if (item) {
+          try {
+            item.click();
+          } catch (e) {
+            /* ignore */
+          }
+          followed = offer.name || "a file";
+          setTimeout(escape, ESCAPE_MS); // shut whatever is left of what opened
+          return resolve(true);
         }
-        followed = offer.name || "a file";
-        setTimeout(escape, ESCAPE_MS); // shut whatever is left of what opened
-        return;
+        if (attempt < CHASE_TRIES) return setTimeout(() => resolve(chase(attempt + 1)), PANEL_MS);
+        // Nothing turned up. Either the click saved the file outright — the
+        // happy case — or it opened something that must not be left sitting
+        // over the conversation you're reading.
+        escape();
+        resolve(false);
+      });
+    await new Promise((r) => setTimeout(r, MENU_MS));
+    const chased = await chase(1);
+
+    // Did a file actually arrive? This used to be announced the instant
+    // something was pressed, which is a claim the code was in no position to
+    // make: the control may have opened a menu it then failed to find a
+    // Download in, and the toast said "Saved" all the same. A save that didn't
+    // happen must not read like one that did.
+    let arrived = null; // true, false, or null for "couldn't tell"
+    let landedName = "";
+    for (let i = 0; i < 8; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const now = await newestDownload();
+      if (!now) {
+        arrived = null;
+        break;
       }
-      if (attempt < 2) return setTimeout(() => chase(attempt + 1), PANEL_MS);
-      // Nothing turned up. Either the click saved the file outright — the happy
-      // case — or it opened something that must not be left sitting over the
-      // conversation you're reading.
-      escape();
-    };
-    setTimeout(() => chase(1), MENU_MS);
-    // A name you already have. Not a reason to hold back — a file produced in
-    // front of you just now is new output, and claude.ai reuses a title every
-    // time you ask for the same report twice — but worth saying, because
-    // Chrome files it as "… (1)" and the two are then indistinguishable in the
-    // folder. Only knowable when catch-up has read the history; with it off,
-    // nothing has been read and nothing is claimed.
+      if (!was || (now.at || 0) > (was.at || 0)) {
+        arrived = true;
+        landedName = now.name || "";
+        break;
+      }
+      arrived = false;
+    }
+
     const key = offer.name ? A.downloadKey(offer.name) : "";
     const collides = !!(key && downloaded && downloaded[key]);
-    if (key && downloaded) downloaded[key] = true; // not in the reading yet
+    if (arrived && key && downloaded) downloaded[key] = true; // not in the reading yet
     const cap = cfg.max > 0 ? cfg.max : A.MAX_PER_PAGE;
+    const named = landedName || offer.name || "a file";
+    if (arrived === true) {
+      toast(
+        collides
+          ? `Saved ${named} (${count} / ${cap}) — you already had one of that name, so this is a second copy`
+          : `Saved ${named} (${count} / ${cap})`
+      );
+      return;
+    }
+    // Not saved, and said so. Which half failed is the useful part: a Download
+    // that was never found is a different problem from one that was pressed and
+    // produced nothing.
+    count--; // it didn't happen, so it doesn't count against the ceiling
+    if (arrived === null) {
+      toast(`Pressed ${offer.name || "that file"} — couldn't check your downloads to confirm it saved`);
+      return;
+    }
     toast(
-      collides
-        ? `Saved ${offer.name} (${count} / ${cap}) — you already had one of that name, so this is a second copy`
-        : `Saved ${offer.name || "a file"} (${count} / ${cap})`
+      chased
+        ? `Pressed Download for ${offer.name || "that file"} but nothing reached your downloads`
+        : `Pressed ${offer.name || "that file"} but found no Download in what opened — nothing saved`
     );
   }
 
