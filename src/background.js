@@ -2369,6 +2369,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   //
   // Names only, and only the recent ones. A path would tell the page where your
   // files live, which is nothing to do with clicking a download button.
+  // The newest download, by start time. Not for the ledger — for telling a save
+  // that HAPPENED from a click that merely went out. The saver used to announce
+  // a file the instant it pressed something, which is a claim it was in no
+  // position to make: the control it pressed may have opened a menu it then
+  // failed to find a Download in, and the toast said "Saved" all the same.
+  if (msg && msg.type === "cum-dl-newest") {
+    try {
+      chrome.downloads.search({ limit: 1, orderBy: ["-startTime"] }, (items) => {
+        void chrome.runtime.lastError;
+        const it = (items || [])[0];
+        const at = it && it.startTime ? Date.parse(it.startTime) : 0;
+        const full = (it && it.filename) || "";
+        const cut = Math.max(full.lastIndexOf("/"), full.lastIndexOf("\\"));
+        sendResponse({ ok: true, at: isFinite(at) ? at : 0, name: full.slice(cut + 1) });
+      });
+    } catch (e) {
+      // Unknown is not "nothing arrived": the saver treats an unanswered
+      // question as unverifiable and says so, rather than as a failure.
+      sendResponse({ ok: false, error: String((e && e.message) || e) });
+    }
+    return true;
+  }
   if (msg && msg.type === "cum-dl-history") {
     try {
       chrome.downloads.search(

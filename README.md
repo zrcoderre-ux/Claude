@@ -121,6 +121,15 @@ What it will and won't do besides:
   panel is not one of these: that control lives outside the message, behind a
   menu, and reaching into it is a different feature with different ways to go
   wrong.
+- **A save is announced only once a file has arrived.** The toast used to fire
+  the instant something was pressed, which is a claim the code was in no
+  position to make — the control may have opened a menu it then failed to find a
+  Download in, and it said *"Saved"* regardless. It now asks the worker what the
+  newest download was before pressing and again afterwards, and says which of
+  three things happened: it saved, it pressed a Download and nothing arrived, or
+  it found no Download in what opened. A save that didn't happen doesn't count
+  against the per-page ceiling either. Where your downloads can't be read at all
+  the answer is *"couldn't check"* — never *"saved"*.
 - **Never anywhere but your disk.** Cowork draws a file's controls as a
   pull-down — `More ways to open` — listing **Google Drive** first and
   **Download** second. A control naming a destination is not a save control by
