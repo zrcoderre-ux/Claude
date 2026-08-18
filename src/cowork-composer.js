@@ -301,18 +301,50 @@
       )) {
         if (C.isOurs(el)) continue;
         const t = el.textContent || "";
-        if (!K.isProjectRow(t)) continue; // never "Create new project" — it navigates
+        // Everything is RECORDED, excluded rows included — a report that
+        // dropped them before writing them down once claimed an empty menu
+        // ("among \"\"") while rows were sitting in it.
         seen.push(norm(t).slice(0, 40));
+        if (!K.isProjectRow(t)) continue; // never "Create new project" — it navigates
         if (K.projectRowMatches(t, name)) return el;
       }
       lastSeen = seen;
       return null;
+    };
+    // The rows may carry no menu role at all — a live menu answered every
+    // role-based scan with nothing while visibly listing projects. This match
+    // is by the project's OWN NAME, innermost element first, and presses the
+    // clickable thing that name sits on; the navigating rows stay excluded,
+    // and nothing that doesn't say the name is ever pressed.
+    const wideRowOf = () => {
+      let best = null;
+      let list;
+      try {
+        list = box.querySelectorAll('button,[role="button"],a,li,div,span');
+      } catch (e) {
+        return null;
+      }
+      for (const el of list) {
+        if (C.isOurs(el)) continue;
+        const t = el.textContent || "";
+        if (!K.isProjectRow(t)) continue;
+        if (!K.projectRowMatches(t, name)) continue;
+        if (!best || best.contains(el)) best = el;
+      }
+      if (!best || best === box) return null;
+      const clickable =
+        best.closest &&
+        best.closest('button,[role="button"],a,li,[role="option"],[role="menuitem"]');
+      // Never climb OUT of the menu: a wrapper found above the box is not a
+      // row, and pressing it is pressing the unknown.
+      return clickable && box.contains(clickable) && clickable !== box ? clickable : best;
     };
     let row = rowOf();
     for (let i = 0; i < 12 && !row; i++) {
       await sleep(200);
       row = rowOf();
     }
+    if (!row) row = wideRowOf();
     // A filter that left NOTHING is evidence against the typed text, not
     // against the list — a polluted name filters every real project away.
     // Clear it and read the list plain before giving up.
@@ -335,15 +367,26 @@
         await sleep(200);
         row = rowOf();
       }
+      if (!row) row = wideRowOf();
     }
     if (!row) {
+      // What the menu actually displayed, read straight off it — the report
+      // that can't be fooled by rows wearing no role. If this still fails,
+      // the note carries the menu's own words instead of a guess.
+      let menuText = "";
+      try {
+        menuText = norm(box.textContent).slice(0, 160);
+      } catch (e) {
+        /* the rest of the report stands */
+      }
       C.closeMenu();
       return {
         ok: false,
         why:
           "no row named " + JSON.stringify(name) + " among " +
           JSON.stringify(lastSeen.join(" | ")) +
-          (filter ? " (filtered, then unfiltered)" : " (no filter box found)"),
+          (filter ? " (filtered, then unfiltered)" : " (no filter box found)") +
+          " — the menu's own text: " + JSON.stringify(menuText),
       };
     }
     C.robustClick(row);
