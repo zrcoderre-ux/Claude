@@ -676,10 +676,16 @@
     } catch (e) {
       /* the ledger key is the real guard; this is the belt to its braces */
     }
-    // What the folder looked like before we pressed anything, so afterwards
-    // there is something to compare against. Unknown is a real answer here and
-    // is kept as one: it becomes "couldn't tell", never "saved".
-    const was = await newestDownload();
+    // When we pressed. Compared against the newest download's own start time,
+    // which is the same clock — so a file that arrives after this moment is
+    // ours, and one that was already there is not.
+    //
+    // This used to read the folder BEFORE pressing and compare the two
+    // readings, and got it exactly backwards when the first read failed: an
+    // unknown baseline was treated as success, so a worker slow to wake
+    // reported "Saved" for a file that never moved. An unknown must never be
+    // the answer that means yes.
+    const pressedAt = Date.now();
     const before_ = controlCensus();
     let sawInPanel = "";
     try {
@@ -745,14 +751,18 @@
     // happen must not read like one that did.
     let arrived = null; // true, false, or null for "couldn't tell"
     let landedName = "";
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 10; i++) {
       await new Promise((r) => setTimeout(r, 500));
       const now = await newestDownload();
+      // Unanswered is UNKNOWN, and stays unknown. It is not evidence of a
+      // save, and it is not evidence against one either.
       if (!now) {
         arrived = null;
-        break;
+        continue;
       }
-      if (!was || (now.at || 0) > (was.at || 0)) {
+      // A second of slack, because the download's start time and this clock are
+      // the same clock but not the same instant.
+      if ((now.at || 0) >= pressedAt - 1000) {
         arrived = true;
         landedName = now.name || "";
         break;
