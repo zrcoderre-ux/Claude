@@ -144,6 +144,27 @@
     return null;
   }
 
+  // Which element is claiming the page is generating. On this surface that
+  // claim held a step for half an hour past its reply, so a report that says
+  // "generating" without saying WHAT said so is a report that can't be checked.
+  function stopDescription() {
+    let stop = null;
+    try {
+      stop = C.findStop();
+    } catch (e) {
+      /* fall through */
+    }
+    if (!stop) return "stop control gone by the time this was written";
+    const bits = ["stop control:"];
+    for (const a of ["aria-label", "data-testid", "title"]) {
+      const v = stop.getAttribute && stop.getAttribute(a);
+      if (v) bits.push(a + "=" + JSON.stringify(v));
+    }
+    const t = (stop.textContent || "").replace(/\s+/g, " ").trim().slice(0, 30);
+    if (t) bits.push("text=" + JSON.stringify(t));
+    return bits.join(" ");
+  }
+
   // claude.ai puts "Claude's response was interrupted" beside the fragment it
   // managed to write, so look at the message and the block around it — not the
   // whole page, where an older interrupted turn would keep tripping this.
@@ -189,6 +210,24 @@
   // look frozen, exactly the wrong answer for a stability check.
   function renderedText(el) {
     return el ? (el.textContent || "").trim() : "";
+  }
+  // The reply's text with its CONTROLS' text removed, for judging stillness.
+  // A Cowork reply carries tool-status pills — buttons reading "Ran a command,
+  // used a tool…" — that keep re-captioning themselves while the agent works,
+  // and on a surface with no network signal, stillness is the whole of the
+  // evidence: every pill tick reset the clock, the clock had thirty minutes to
+  // run, and a reply that had plainly arrived was never taken. The prose is
+  // what is being waited for, so the prose is what has to hold still.
+  function stabilityText(el) {
+    if (!el) return "";
+    let copy;
+    try {
+      copy = el.cloneNode(true);
+      for (const b of copy.querySelectorAll('button,[role="button"]')) b.remove();
+    } catch (e) {
+      return renderedText(el);
+    }
+    return (copy.textContent || "").trim();
   }
   // Streaming is advertised on the message itself; the Stop control is the
   // page-wide signal. Either one means "not finished".
@@ -659,6 +698,12 @@
             // between "the API said nothing new" and "the API was never
             // consulted", and only one of those is a claude.ai problem.
             api = { noConvId: true, path: location.pathname };
+          } else if (/^cse_/.test(uuid)) {
+            // The API path for a Cowork session was inferred from a read and
+            // has never been seen to answer with messages. Its empty reply was
+            // being reported as "the conversation never answered" — an
+            // authority verdict from a source that is not an authority here.
+            api = { apiUnreadable: true };
           } else {
             const conv = await fetchConversation(uuid, 20000);
             const apiText = W.stripPlaceholders(W.lastAssistantText(conv));
@@ -717,7 +762,7 @@
         }
 
         if (el) {
-          const text = renderedText(el);
+          const text = stabilityText(el);
           // Has anything happened since we started watching? A new turn
           // mounting, or the text moving. Either is evidence that what we are
           // looking at is THIS step's answer arriving; neither, and it is
@@ -1138,11 +1183,13 @@
         ? "no assistant message ever appeared"
         : (s.chars || 0) + " chars, " +
           (s.fresh ? "recognised as new" : "NOT recognised as new (same as before the send)") + ", " +
-          (s.generating ? "page still says generating" : "page says idle") + ", " +
+          (s.generating ? "page still says generating (" + stopDescription() + ")" : "page says idle") + ", " +
           (s.streamDone ? "response stream closed" : anyStreamSeen ? "no completion stream seen for this turn" : "no stream events at all") +
           (typeof s.apiChars === "number"
             ? ", the conversation itself last showed " + s.apiChars + " chars" +
               (s.apiAnswered ? "" : " (it never answered)")
+            : s.apiUnreadable
+            ? ", the conversation API can't be read on this surface"
             : s.noConvId
             ? ", and this tab's URL (" + s.path + ") holds no conversation id, so the " +
               "conversation itself was never asked"
@@ -1166,7 +1213,8 @@
     if (settledVia && settledVia !== "stream" && settledVia !== "api")
       notes.push(
         settledVia === "stalled"
-          ? "took the reply after 3 minutes unchanged (the page still claimed it was generating)"
+          ? "took the reply after a long stretch unchanged (the page still claimed it was generating — " +
+            stopDescription() + ")"
           : anyFrameSeen
           ? "turn end judged from the response socket going quiet (no completion stream in this surface)"
           : "turn end judged from the text holding still — this surface shows the page no " +

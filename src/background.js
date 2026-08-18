@@ -443,7 +443,9 @@ async function executeJob(job, opts) {
     try {
       await chrome.tabs.reload(tab.id);
       await waitTabComplete(tab.id, 30000);
-      await sleep(3000);
+      // `complete` is the document, not the app: a Cowork page keeps booting
+      // its sandbox well past it, too busy to answer a message.
+      await sleep(8000);
       res = await sendRun(tab.id, job.id);
     } catch (e) {
       /* keep the original failure */
@@ -1121,14 +1123,31 @@ async function stepTab(run, savedUrl, chat) {
 // retries — once it has the message, it owns the step (which can take the better
 // part of an hour), and this waits.
 async function sendStep(tabId, payload) {
-  for (let attempt = 0; attempt < 4; attempt++) {
+  // A tab Chrome discarded to save memory has no content script at all until
+  // it reloads, and a Cowork page is exactly the heavy, long-idle background
+  // tab that gets discarded. Messaging it retries into a void; reloading it
+  // first is the only thing that can work.
+  try {
+    const t = await chrome.tabs.get(tabId);
+    if (t && t.discarded) {
+      await chrome.tabs.reload(tabId);
+      await waitTabComplete(tabId, 30000);
+      await sleep(8000);
+    }
+  } catch (e) {
+    /* the retries below still get their chance */
+  }
+  // Patience grows per attempt. Six seconds total was calibrated for a chat
+  // page; a Cowork tab pegs the CPU well past `complete` while its sandbox
+  // boots, and a page too busy to answer is not a page with no script in it.
+  for (let attempt = 0; attempt < 6; attempt++) {
     try {
       const res = await chrome.tabs.sendMessage(tabId, payload);
       if (res) return res;
     } catch (e) {
       /* content script maybe not ready yet */
     }
-    await sleep(1500);
+    await sleep(1500 + attempt * 1500);
   }
   return { ok: false, error: "no response from page (content script not ready?)" };
 }
@@ -1153,7 +1172,9 @@ async function harvestChat(run, source, chatId, chatName) {
     try {
       await chrome.tabs.reload(tab.id);
       await waitTabComplete(tab.id, 30000);
-      await sleep(3000);
+      // `complete` is the document, not the app: a Cowork page keeps booting
+      // its sandbox well past it, too busy to answer a message.
+      await sleep(8000);
       res = await sendStep(tab.id, { type: "cum-wf-harvest", runId: run.id });
     } catch (e) {
       /* keep the original failure */
@@ -1386,7 +1407,9 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
     try {
       await chrome.tabs.reload(tab.id);
       await waitTabComplete(tab.id, 30000);
-      await sleep(3000);
+      // `complete` is the document, not the app: a Cowork page keeps booting
+      // its sandbox well past it, too busy to answer a message.
+      await sleep(8000);
       res = await sendStep(
         tab.id,
         mid && mid.sent ? Object.assign({}, payload, { awaitOnly: true, files: [] }) : payload
