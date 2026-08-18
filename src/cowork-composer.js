@@ -12,7 +12,10 @@
  * surface-agnostic mechanics (sleep, robustClick, menu open/close, visibility)
  * or has been confirmed working on Cowork itself:
  *   - the Chat/Cowork toggle (selectSurface — built for and proved on Cowork),
- *   - the approval menu (selectApproval — the control only exists on Cowork),
+ *   - the approval control's FINDERS (findApprovalTrigger/currentApproval —
+ *     the label read is also part of surface evidence); the SWITCHING lives
+ *     here, with a why on every exit, after a live run failed it with a bare
+ *     "(failed)" that said nothing about which step died,
  *   - the model menu (selectModel — seen switching models on a live Cowork run).
  * Everything else — choosing the project, attaching files, confirming the
  * attachments, typing the prompt, pressing send, and proving the message left —
@@ -53,33 +56,80 @@
 
   // ---- Cowork's composer ---------------------------------------------------
 
-  // The box the editor lives in — the scope chips, filenames and the send
-  // control are looked for in, so a project's knowledge files elsewhere on the
-  // page can't stand in for an attachment.
+  // The box the editor lives in. The editor's near ancestors are PROVED too
+  // narrow on this UI — a live dump showed ed.parentElement.parentElement
+  // holding zero buttons, with no <form> and no class*="composer" anywhere
+  // above it — so walk up until the box actually contains composer furniture
+  // (a button, or the file input), and fall back to the whole body rather
+  // than to a box that holds nothing.
   function scopeOf() {
     const ed = C.findEditor();
-    if (!ed) return document;
-    return (
-      ed.closest("form") ||
-      ed.closest('[class*="composer" i]') ||
-      (ed.parentElement && ed.parentElement.parentElement) ||
-      document
-    );
+    if (!ed) return document.body || document;
+    let el = ed.parentElement;
+    for (let i = 0; el && i < 8; i++) {
+      try {
+        if (el.querySelector('button,input[type="file"]')) return el;
+      } catch (e) {
+        break;
+      }
+      el = el.parentElement;
+    }
+    return document.body || document;
   }
 
-  // How many of these files' names the composer is visibly carrying. Cowork's
-  // chip markup is unconfirmed, so the filenames themselves are the evidence
-  // of last resort — a name like "combined-documents.txt" does not appear in a
-  // composer by coincidence. Truncation-tolerant: see CUMCowork.nameSeen.
-  function namesVisible(scope, files) {
-    let n = 0;
-    let text = "";
+  // Chip-ish markup, counted page-wide minus our own UI. Chat's counter looks
+  // inside a composer scope this UI does not have; the baseline delta taken in
+  // attachFiles is what keeps page-wide counting honest — only chips that
+  // APPEAR during the attach vouch for it.
+  function pageChips() {
+    const counts = [0];
+    for (const sel of [
+      '[data-testid="file-thumbnail"]',
+      '[data-testid*="attachment" i]',
+      '[data-testid*="file-chip" i]',
+      "button h3",
+    ]) {
+      let n = 0;
+      try {
+        for (const el of document.querySelectorAll(sel)) if (!C.isOurs(el)) n++;
+      } catch (e) {
+        continue;
+      }
+      counts.push(n);
+    }
+    return Math.max.apply(null, counts);
+  }
+
+  // How many of these files' names the page is visibly carrying, counted on
+  // leaf nodes anywhere except our own UI. Page-wide, deliberately: the live
+  // run that forced this reported "0 filename(s)" on a composer the operator
+  // could SEE holding the file — Cowork renders its chips outside every
+  // container the editor anchors, so a scan scoped to the editor's box misses
+  // them. The baseline delta (taken before the attach) keeps anything already
+  // on the page — a project knowledge file, a note in our own pill — from
+  // vouching for a new attachment. Truncation-tolerant: see CUMCowork.nameSeen.
+  function namedCount(files) {
+    let els;
     try {
-      text = (scope || document).textContent || "";
+      els = document.querySelectorAll("button,h3,span,div,[title]");
     } catch (e) {
       return 0;
     }
-    for (const f of files) if (f && K.nameSeen(text, f.name)) n++;
+    let n = 0;
+    for (const f of files) {
+      if (!f || !f.name) continue;
+      let hit = false;
+      for (const el of els) {
+        if (el.children && el.children.length) continue; // leaves carry the caption
+        if (C.isOurs(el)) continue;
+        const title = (el.getAttribute && el.getAttribute("title")) || "";
+        if (K.nameSeen(el.textContent || "", f.name) || K.nameSeen(title, f.name)) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) n++;
+    }
     return n;
   }
 
@@ -244,6 +294,108 @@
     return { ok: false, why: "clicked the row but no control came to read " + JSON.stringify(name) };
   }
 
+  // ---- the approval mode ---------------------------------------------------
+
+  /**
+   * Put Cowork's approval control on `mode`, saying WHY on every exit. The
+   * old switcher answered a live failure with a bare "(failed)" — three
+   * different failures wearing one face: the menu not opening, the row not
+   * matching, and the click not verifiably taking are different problems with
+   * different fixes, and the report is the only witness an unattended run has.
+   *
+   * Two other lessons applied here: a dispatched click is untrusted and does
+   * not run activation behaviour everywhere (the toggle taught that — #170),
+   * so the method click is the fallback; and a hidden Cowork tab renders LATE,
+   * so the old two-second verification window could time out on a switch that
+   * had actually taken — the windows here are longer, the row marking itself
+   * checked counts as the page's word too, and there is one last look after
+   * the menu closes. Returns { ok, why }.
+   */
+  async function selectApproval(mode) {
+    const wanted = K.modeFromLabel(mode);
+    if (!wanted) return { ok: true, why: "nothing asked for" };
+    if (C.currentApproval() === wanted) return { ok: true, why: "already on it" };
+    const trigger = C.findApprovalTrigger();
+    if (!trigger) return { ok: false, why: "no approval control on this page" };
+
+    const trouble = await C.openMenu(trigger, C.menuItems());
+    if (trouble) {
+      C.closeMenu();
+      return { ok: false, why: "the menu: " + trouble };
+    }
+
+    const rowFor = () =>
+      C.menuItems().find((el) => !C.isOurs(el) && K.rowIsMode(el.textContent, wanted)) || null;
+    let row = rowFor();
+    for (let i = 0; i < 12 && !row; i++) {
+      await sleep(200);
+      row = rowFor();
+    }
+    if (!row) {
+      const saw = C.menuItems()
+        .map((el) => norm(el.textContent).slice(0, 32))
+        .filter(Boolean)
+        .join(" | ");
+      C.closeMenu();
+      return {
+        ok: false,
+        why: "no row for " + K.labelForMode(wanted) + " — saw " + JSON.stringify(saw),
+      };
+    }
+
+    const took = async (tries) => {
+      for (let i = 0; i < tries; i++) {
+        await sleep(400);
+        const t = C.findApprovalTrigger();
+        let checked = false;
+        try {
+          checked =
+            row.getAttribute("aria-checked") === "true" ||
+            row.getAttribute("data-state") === "checked";
+        } catch (e) {
+          /* a detached row answers nothing; the trigger still can */
+        }
+        if (
+          K.approvalTook(
+            { triggerLabel: t && t.getAttribute("aria-label"), rowChecked: checked },
+            wanted
+          )
+        )
+          return true;
+      }
+      return false;
+    };
+
+    C.robustClick(row);
+    if (await took(8)) {
+      C.closeMenu();
+      return { ok: true, why: "clicked the row" };
+    }
+    try {
+      if (typeof row.click === "function") row.click();
+    } catch (e) {
+      /* the final report says what the trigger reads */
+    }
+    if (await took(8)) {
+      C.closeMenu();
+      return { ok: true, why: "clicked the row (el.click())" };
+    }
+    C.closeMenu();
+    // One last look. A switch that took after the window closed is still a
+    // switch that took, and failing the send over a slow re-render would stop
+    // a run whose page is in exactly the state it asked for.
+    await sleep(600);
+    const t = C.findApprovalTrigger();
+    if (K.approvalTook({ triggerLabel: t && t.getAttribute("aria-label") }, wanted))
+      return { ok: true, why: "took after the menu closed" };
+    return {
+      ok: false,
+      why:
+        "clicked the row both ways and the trigger still reads " +
+        JSON.stringify((t && t.getAttribute("aria-label")) || "nothing"),
+    };
+  }
+
   // ---- attaching, with Cowork's evidence -----------------------------------
 
   /**
@@ -255,9 +407,8 @@
    * CUMCowork.attachOutcome for the decision.
    */
   async function attachFiles(files, timeoutMs) {
-    const scope = scopeOf();
-    const baseChips = C.countChips();
-    const baseNamed = namesVisible(scope, files);
+    const baseChips = pageChips();
+    const baseNamed = namedCount(files);
     let uploads = 0;
     const onMsg = (event) => {
       if (event.source !== window) return;
@@ -271,31 +422,49 @@
       /* uploads stays 0; the visible evidence still counts */
     }
     try {
-      const input = C.findFileInput();
-      let how;
-      if (input) {
-        C.setFiles(input, files);
-        how = "file input";
-      } else {
-        C.dropFiles(scope === document ? document.body : scope, files);
-        how = "drop";
-      }
-      // Scaled like Chat's: twenty papers need more than two minutes.
-      const deadline = Date.now() + Math.max(timeoutMs || 120000, files.length * 15000);
-      // The first look is polite, not instant — chips render behind the
-      // attach, and markup that already happens to match must not wave the
-      // files through in the first moment.
-      await sleep(2000);
-      let verdict = K.attachOutcome({ expected: files.length, uploads: uploads, chips: 0, named: 0 });
-      while (Date.now() < deadline) {
-        verdict = K.attachOutcome({
+      const evidence = () =>
+        K.attachOutcome({
           expected: files.length,
           uploads: uploads,
-          chips: C.countChips() - baseChips,
-          named: namesVisible(scopeOf(), files) - baseNamed,
+          chips: pageChips() - baseChips,
+          named: namedCount(files) - baseNamed,
         });
-        if (verdict.ok) break;
-        await sleep(500);
+      const watch = async (ms) => {
+        // The first look is polite, not instant — chips render behind the
+        // attach, and markup that already happens to match must not wave the
+        // files through in the first moment.
+        const until = Date.now() + ms;
+        await sleep(2000);
+        let v = evidence();
+        while (!v.ok && Date.now() < until) {
+          await sleep(700);
+          v = evidence();
+        }
+        return v;
+      };
+
+      // The input first, then a drop ON TOP of it — never one or the other.
+      // Cowork has been seen taking files from the input and has also been
+      // seen ignoring it; a present-but-dead input must not use up the whole
+      // deadline, so it gets a short watch and the drop gets the rest.
+      const input = C.findFileInput();
+      let how = "";
+      let verdict = { ok: false, why: "no way in was tried" };
+      if (input) {
+        try {
+          C.setFiles(input, files);
+          how = "file input";
+          verdict = await watch(20000);
+        } catch (e) {
+          how = "file input (threw)";
+        }
+      }
+      if (!verdict.ok) {
+        const scope = scopeOf();
+        C.dropFiles(scope === document ? document.body : scope, files);
+        how = how ? how + ", then drop" : "drop";
+        // Scaled like Chat's: twenty papers need more than two minutes.
+        verdict = await watch(Math.max(timeoutMs || 120000, files.length * 15000));
       }
       // A moment more, so the send can't beat the last chip onto the composer.
       if (verdict.ok) await sleep(1500);
@@ -401,16 +570,16 @@
       } else if (phase === "approval") {
         let r;
         try {
-          r = await C.selectApproval(j.approval);
+          r = await selectApproval(j.approval);
         } catch (e) {
-          r = "failed";
+          r = { ok: false, why: String((e && e.message) || e) };
         }
-        if (r !== "ok" && r !== "inherit")
+        if (!r.ok)
           return fail(
-            "could not set approval to " + K.describeMode(j.approval) + " (" + r +
-              ") — not sent: the mode is remembered account-wide, and sending under one nobody chose is worse than waiting"
+            "could not set approval to " + K.describeMode(j.approval) + " — " + r.why +
+              " — not sent: the mode is remembered account-wide, and sending under one nobody chose is worse than waiting"
           );
-        say("approval", K.describeMode(j.approval));
+        say("approval", K.describeMode(j.approval) + " (" + r.why + ")");
       } else if (phase === "project") {
         const r = await selectProject(j.coworkProject);
         if (!r.ok)

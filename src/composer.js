@@ -1017,53 +1017,6 @@
   }
 
   /**
-   * Put the approval control on `want`. Same verdicts as selectSurface, with
-   * "unsupported" meaning this page has no approval control — which is what
-   * being in Chat looks like from here.
-   */
-  async function selectApproval(want) {
-    const k = K();
-    if (!k) return "unsupported";
-    const wanted = k.modeFromLabel(want);
-    if (!wanted) return "inherit";
-    const verdict = k.reconcile(wanted, currentApproval());
-    if (verdict === "inherit") return "inherit";
-    if (verdict === "unknown") return "unsupported";
-    if (verdict === "ok") return "ok";
-
-    const trigger = findApprovalTrigger();
-    if (!trigger) return "unsupported";
-    if (await openMenu(trigger, menuItems())) {
-      closeMenu();
-      return "failed";
-    }
-
-    const rowOf = () => {
-      for (const el of document.querySelectorAll('[role="menuitemradio"]')) {
-        if (isOurs(el)) continue;
-        if (k.rowIsMode(el.textContent, wanted)) return el;
-      }
-      return null;
-    };
-    let row = rowOf();
-    for (let i = 0; i < 12 && !row; i++) {
-      await sleep(200);
-      row = rowOf();
-    }
-    if (!row) {
-      closeMenu();
-      return "failed";
-    }
-    robustClick(row);
-    for (let i = 0; i < 10; i++) {
-      await sleep(200);
-      if (currentApproval() === wanted) return "ok";
-    }
-    closeMenu();
-    return "failed";
-  }
-
-  /**
    * Rename a Cowork session, the way a person does it.
    *
    * There is no API for this. Renaming one by hand makes no HTTP request at
@@ -1443,7 +1396,6 @@
     selectSurface,
     findApprovalTrigger,
     currentApproval,
-    selectApproval,
     menuItems,
     openMenu,
     closeMenu,

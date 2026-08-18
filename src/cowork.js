@@ -533,6 +533,20 @@
     return "";
   }
 
+  /**
+   * Whether the approval switch demonstrably took. The trigger's own
+   * aria-label IS the mode in force, so it coming round to the wanted mode is
+   * the page's word; the menu row marking itself checked is the same word said
+   * earlier. A menu merely closing is neither — that is as true of Escape.
+   */
+  function approvalTook(ev, wanted) {
+    const want = modeByKey(lower(wanted));
+    if (!want) return false;
+    const e = ev || {};
+    if (modeFromLabel(e.triggerLabel) === want.key) return true;
+    return !!e.rowChecked;
+  }
+
   /** Whether two titles are the same name, letters and digits only — the
    * comparison that survives the invisible characters this markup carries. */
   function sameTitle(a, b) {
@@ -583,6 +597,7 @@
     coworkPhases,
     attachOutcome,
     nameSeen,
+    approvalTook,
     sentEvidence,
     sameTitle,
     conversationName,
