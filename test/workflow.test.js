@@ -3197,3 +3197,29 @@ test("the flag survives the step landing and the wave folding", () => {
   assert.equal(waved.chats.b.opened, true, "a wave member's chat is run-opened too");
   assert.equal(waved.chats.a.opened, true, "and the earlier chat keeps its flag");
 });
+
+// ---- a copy that is not the reply ------------------------------------------
+
+test("a copy is believed only when it carries the reply's own ending", () => {
+  const report = "Devil's Advocate: the ruling weighs and finds the showing short. " +
+    "Consequence: the holding needs different reasoning to stand.";
+  // A faithful copy — markdown punctuation differs, letters agree.
+  assert.equal(
+    W.copyCarriesEnd("## Devil's Advocate\n*the ruling weighs* and finds the showing short. " +
+      "**Consequence:** the holding needs different reasoning to stand.", report),
+    true
+  );
+  // Cowork's failure, live: the copy control handed back the turn's TOOL
+  // PROMPTS — long, plausible by length, and the answer nowhere inside.
+  const toolPrompts = "Retrieve and read the FULL TEXT of Banner Entertainment, Inc. " +
+    "v. Superior Court. Use WebSearch and WebFetch. Return raw findings, no preamble. " +
+    "Retrieve and read the FULL TEXT of two California opinions. Report in detail.";
+  assert.equal(W.copyCarriesEnd(toolPrompts, report), false);
+  assert.equal(W.plausibleCopy(toolPrompts, report), true, "length alone waves it through — the bug");
+});
+
+test("too little rendered text to judge by is not a conviction", () => {
+  assert.equal(W.copyCarriesEnd("anything at all", "Done."), true);
+  assert.equal(W.copyCarriesEnd("anything", ""), true);
+  assert.equal(W.copyCarriesEnd("", "a long enough rendered reply to actually judge against"), false);
+});

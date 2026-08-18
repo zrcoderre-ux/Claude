@@ -2859,6 +2859,32 @@
     return c.length >= r.length * 0.3;
   }
 
+  // Letters and digits alone — the comparison that survives markdown syntax,
+  // punctuation, and the invisible characters claude.ai's markup carries.
+  const lettersOf = (v) => str(v).toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+  /**
+   * Whether a copy actually carries the END of the reply it claims to be.
+   *
+   * plausibleCopy guards against a copy that is too SHORT — a code block's own
+   * copy button. Cowork's copy control failed the other way: it handed back
+   * the turn's TOOL PROMPTS — the agent's scratch work, pages of it, with the
+   * actual answer nowhere inside — and a length test waves a long wrong copy
+   * straight through. The end is the part that proves it: a faithful copy of a
+   * finished reply ends where the reply ends, however its markdown differs
+   * from the rendered text. Letters and digits only, so formatting differences
+   * can't fail an honest copy; `renderedProse` should come with the reply's
+   * controls stripped, since their captions are never in a copy.
+   */
+  function copyCarriesEnd(copied, renderedProse) {
+    const c = lettersOf(copied);
+    const r = lettersOf(renderedProse);
+    if (!c) return false;
+    const tail = r.slice(-80);
+    if (tail.length < 20) return true; // too little rendered to judge by
+    return c.indexOf(tail) !== -1;
+  }
+
   // Is what's on screen now a NEW reply, rather than the one that was already
   // there when we sent? Counting rendered assistant turns is not enough on its
   // own: claude.ai's transcript can have only the newest turn in the DOM, so the
@@ -3206,6 +3232,7 @@
     COPY_LABELS,
     isDownloadLabel,
     plausibleCopy,
+    copyCarriesEnd,
     isNewReply,
     settleReason,
     turnSettled,
