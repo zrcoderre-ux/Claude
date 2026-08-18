@@ -255,7 +255,7 @@
   // ---- the panel ----------------------------------------------------------
   function build() {
     if (el) return el;
-    // The toggle lives in the upper-left corner of the window, always — see
+    // The toggle lives in the upper-right corner of the window, always — see
     // placeButton for why it stopped riding claude.ai's header. The panel it
     // opens still floats.
     btn = document.createElement("button");
@@ -284,8 +284,10 @@
     return el;
   }
 
-  // Pinned to the UPPER LEFT, always (standing instruction from the repo
-  // owner). It used to ride claude.ai's header through src/headerslot.js, and
+  // Pinned to the UPPER RIGHT, high, always (the owner's corrected
+  // instruction — the first fix read "upper left" and sat too low; the spot
+  // wanted is just under the top of the page, under Chrome's bookmarks bar).
+  // It used to ride claude.ai's header through src/headerslot.js, and
   // whenever the header offered no anchor — Cowork routinely offers none — it
   // fell back to docking in the meter's own pill stack, which is the opposite
   // corner from the wanted one. A fixed corner needs no anchor, so there is

@@ -947,14 +947,13 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 .cum-toc-icon { font-size: 13px; line-height: 1; }
 .cum-toc-count { font-variant-numeric: tabular-nums; color: #6b6b6b; }
 
-/* Pinned to the upper left, always (standing instruction from the repo
-   owner) — it kept ending up docked to the meter's pill whenever claude.ai's
-   header offered no anchor. Below the header band, clear of claude.ai's own
-   sidebar toggle in the top-left corner. */
+/* Pinned to the upper RIGHT, high — the owner's corrected instruction: the
+   first fix read "upper left" and sat too low. Just under the top of the
+   page, which on their screen is just under Chrome's bookmarks bar. */
 #cum-toc-btn.cum-toc-corner {
   position: fixed;
-  left: 12px;
-  top: 64px;
+  right: 12px;
+  top: 8px;
   z-index: 2147483643;
   pointer-events: auto;
   background: #ffffff;
