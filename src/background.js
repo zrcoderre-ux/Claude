@@ -2272,7 +2272,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await saveRun(revised); // so the harvest can heartbeat against it
         const got = await refetchCarry(revised, wf);
         if (!got.ok) {
-          await saveRun(W.markError(revised, got.error, Date.now()));
+          // A harvest the operator canceled mid-way is a decision, not a
+          // failure: the cancel has already written the run's own status, and
+          // stamping "error: canceled" over it is how a stopped run reads as
+          // a broken one.
+          if (!/^canceled$/i.test(got.error || ""))
+            await saveRun(W.markError(revised, got.error, Date.now()));
           return { ok: false, error: got.error };
         }
         if (!got.skipped) {
