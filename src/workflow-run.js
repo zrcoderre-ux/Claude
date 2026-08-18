@@ -1415,6 +1415,13 @@
   // which spares the operator copying it across by hand.
   async function harvestLatest(msg) {
     const stop = msg.runId ? startHeartbeat(msg.runId) : () => {};
+    // The halt flag is TAB-global, and a Pause or Cancel that reached this tab
+    // hours ago — for a step, or for another run entirely — was still standing
+    // when Fix & continue asked this tab to re-read its own chat: the harvest
+    // answered "canceled" without looking at anything, and the resume recorded
+    // that as the run's error. Watching the run resets the flag to what THIS
+    // run's record actually says, exactly as a step does on its way in.
+    const unwatch = msg.runId ? watchForHalt(msg.runId) : () => {};
     try {
       // The chat may still be mid-answer (that's often WHY the run stopped), so
       // wait it out first — `before` is open-ended because anything on screen
@@ -1441,6 +1448,7 @@
         };
       return { ok: true, text, chars: text.length, via };
     } finally {
+      unwatch();
       stop();
     }
   }
