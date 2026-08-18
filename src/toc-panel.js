@@ -28,7 +28,6 @@
 
   const T = window.CUMToc;
   const W = window.CUMWorkflow;
-  const H = window.CUMHeaderSlot;
   const C = window.CUMComposer;
   const M = window.CUMMdExport;
   const St = window.CUMStamp;
@@ -256,9 +255,9 @@
   // ---- the panel ----------------------------------------------------------
   function build() {
     if (el) return el;
-    // The toggle is a header button, not part of the panel: it belongs with
-    // Save and claude.ai's own controls, which is where you look for something
-    // that acts on this chat. The panel it opens still floats.
+    // The toggle lives in the upper-left corner of the window, always — see
+    // placeButton for why it stopped riding claude.ai's header. The panel it
+    // opens still floats.
     btn = document.createElement("button");
     btn.id = BTN_ID;
     btn.type = "button";
@@ -285,19 +284,18 @@
     return el;
   }
 
-  // Beside Save, in claude.ai's header — same slot, so the two arrive together
-  // rather than each finding its own anchor. See src/headerslot.js.
+  // Pinned to the UPPER LEFT, always (standing instruction from the repo
+  // owner). It used to ride claude.ai's header through src/headerslot.js, and
+  // whenever the header offered no anchor — Cowork routinely offers none — it
+  // fell back to docking in the meter's own pill stack, which is the opposite
+  // corner from the wanted one. A fixed corner needs no anchor, so there is
+  // nothing left to fall back from and nowhere else it can end up.
   function placeButton() {
     if (!btn) return;
-    const where = H ? H.place(btn) : "loose";
-    btn.classList.toggle("cum-toc-loose", where === "loose");
-    btn.classList.toggle("cum-toc-docked", where === "docked");
-    if (!H && btn.parentNode !== document.body) document.body.appendChild(btn);
-    try {
-      if (window.CUMPills) window.CUMPills.measure();
-    } catch (e) {
-      /* ignore */
-    }
+    btn.classList.add("cum-toc-corner");
+    btn.classList.remove("cum-toc-loose", "cum-toc-docked");
+    const home = document.body || document.documentElement;
+    if (btn.parentNode !== home) home.appendChild(btn);
   }
 
   function setOpen(next) {

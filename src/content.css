@@ -947,21 +947,16 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 .cum-toc-icon { font-size: 13px; line-height: 1; }
 .cum-toc-count { font-variant-numeric: tabular-nums; color: #6b6b6b; }
 
-/* No header to sit in: dock into the meter's stack, or — failing even that —
-   the bottom left, which nothing else here uses. */
-#cum-toc-btn.cum-toc-docked {
-  pointer-events: auto;
-  background: #ffffff;
-  color: #1f1f1f;
-  border-color: rgba(0, 0, 0, 0.18);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-}
-
-#cum-toc-btn.cum-toc-loose {
+/* Pinned to the upper left, always (standing instruction from the repo
+   owner) — it kept ending up docked to the meter's pill whenever claude.ai's
+   header offered no anchor. Below the header band, clear of claude.ai's own
+   sidebar toggle in the top-left corner. */
+#cum-toc-btn.cum-toc-corner {
   position: fixed;
-  left: 16px;
-  bottom: 104px; /* above Save, which takes the space below it */
+  left: 12px;
+  top: 64px;
   z-index: 2147483643;
+  pointer-events: auto;
   background: #ffffff;
   color: #1f1f1f;
   border-color: rgba(0, 0, 0, 0.18);
@@ -1100,8 +1095,7 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   #cum-toc-btn { border-color: rgba(255, 255, 255, 0.22); }
   #cum-toc-btn:hover { background: rgba(255, 255, 255, 0.08); }
   #cum-toc-btn.cum-toc-on { background: rgba(224, 135, 101, 0.2); }
-  #cum-toc-btn.cum-toc-loose,
-  #cum-toc-btn.cum-toc-docked { background: #2a2a28; color: #f0efea; }
+  #cum-toc-btn.cum-toc-corner { background: #2a2a28; color: #f0efea; }
   .cum-toc-count, .cum-toc-title { color: #a5a29a; }
   .cum-toc-head { border-bottom-color: rgba(255, 255, 255, 0.1); }
   .cum-toc-close { color: #a5a29a; }
