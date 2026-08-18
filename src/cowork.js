@@ -506,14 +506,26 @@
    * anywhere in the composer would vouch for it.
    */
   function nameSeen(text, name) {
-    const t = str(text);
-    const n = str(name).trim();
+    // Letters and digits only, on both sides — the surface toggle's lesson.
+    // A live page held a chip whose name matched no raw substring test at
+    // all: the characters claude.ai renders between the words are not the
+    // characters the file was named with, and no report shows the difference.
+    const t = squash(text);
+    const n = squash(name);
     if (!t || !n) return false;
     if (t.indexOf(n) !== -1) return true;
-    const stem = n.replace(/\.[A-Za-z0-9]{1,8}$/, "").trim();
+    const stem = squash(str(name).replace(/\.[A-Za-z0-9]{1,8}$/, ""));
     if (stem.length >= 8 && t.indexOf(stem) !== -1) return true;
-    const prefix = n.slice(0, 12).trim();
-    return prefix.length >= 8 && t.indexOf(prefix) !== -1;
+    // A truncated chip keeps the name's BEGINNING, so leading slices match in
+    // either direction: the text carrying the name's first letters, or the
+    // text itself being a first-slice of the name (an ellipsized caption
+    // squashes to exactly that). Eight characters at least, and at least one
+    // letter — a bare date or number is never distinctive enough to vouch for
+    // a file, however long it is.
+    const distinctive = (m) => m.length >= 8 && /[a-z]/.test(m);
+    const prefix = n.slice(0, 12);
+    if (distinctive(prefix) && t.indexOf(prefix) !== -1) return true;
+    return distinctive(t) && t.length < n.length && n.indexOf(t) === 0;
   }
 
   /**

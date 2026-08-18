@@ -601,3 +601,14 @@ test("the operator's own test file is seen, and its near-namesake chat is not", 
   assert.equal(K.nameSeen("Text file creation", name), false, "the sidebar chat");
   assert.equal(K.nameSeen("2026-08-17", name), false, "a bare date on the page");
 });
+
+test("the characters between the words are not trusted — letters alone carry the name", () => {
+  const name = "2026-08-17 Text file creation.txt";
+  // NBSP instead of a space, and a zero-width space inside a word — both seen
+  // in claude.ai's markup, both invisible in any report.
+  assert.equal(K.nameSeen("2026-08-17 Text file creation.txt", name), true);
+  assert.equal(K.nameSeen("2026-08-17 Text​ file creation", name), true);
+  // The safety cases hold under squashing too.
+  assert.equal(K.nameSeen("Text file creation", name), false, "the near-namesake chat");
+  assert.equal(K.nameSeen("2026-08-17", name), false, "a bare date");
+});
