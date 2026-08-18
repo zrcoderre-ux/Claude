@@ -70,5 +70,8 @@ than inline in the wiring.
   model menu, and generic mechanics (clicks, menu open/close, hidden-tab
   sleeps). Confirmed broken on Cowork: upload confirmations (its traffic runs
   in a worker no page hook sees), the event-stream and socket hooks, Chat's
-  chip selectors, and the `/chat/` URL tests. Cowork sends go through
+  chip selectors, the `/chat/` URL tests, and the reply's copy control —
+  seen returning the turn's TOOL PROMPTS instead of the answer, so a copy
+  is only believed when it carries the reply's own ending
+  (`copyCarriesEnd`). Cowork sends go through
   `src/cowork-composer.js`; its decisions live in `src/cowork.js`.

@@ -420,20 +420,30 @@
     // not travel to the next chat as material to work from.
     const rendered = W.stripPlaceholders(renderedText(msgEl));
     const copied = W.stripPlaceholders(await copyViaButton(msgEl));
+    // The reply's prose with its controls' captions removed — what a faithful
+    // copy must END with. On Cowork the copy control was seen handing back the
+    // turn's TOOL PROMPTS instead of the answer: pages of the agent's scratch
+    // work, with the report nowhere in it. That copy is long, so the length
+    // test waves it through; only the reply's own ending can convict it.
+    const prose = W.stripPlaceholders(stabilityText(msgEl));
+    const faithful =
+      !!copied && W.plausibleCopy(copied, rendered) && W.copyCarriesEnd(copied, prose);
 
     // The copy box stays first choice — Claude's own markdown, minus the
     // thinking. Both sides of the length comparison are stripped, so a reply
     // that was largely unrenderable doesn't make an honest copy look suspect.
-    if (copied && W.plausibleCopy(copied, rendered)) return { text: copied, via: "copy" };
+    if (faithful) return { text: copied, via: "copy" };
 
     let api = "";
     const uuid = conversationUuid();
     if (uuid) api = W.stripPlaceholders(W.lastAssistantText(await fetchConversation(uuid)));
     if (api) return { text: api, via: "api" };
 
-    // Whichever survivor says the most.
+    // Whichever survivor says the most. A copy that failed the ending test is
+    // not a survivor: it is KNOWN to be something other than the reply, and
+    // being long — which is what got it here — must not win it the fallback.
     const best = [
-      { text: copied, via: "copy" },
+      { text: copied && W.copyCarriesEnd(copied, prose) ? copied : "", via: "copy" },
       { text: rendered, via: "dom" },
     ]
       .filter((c) => c.text)
