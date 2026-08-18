@@ -529,6 +529,23 @@
   }
 
   /**
+   * The send control's own words. Cowork's composer starts a TASK — its
+   * button reads "Start Task" where Chat's reads "Send message" (from the
+   * operator, off the live page) — and both shapes are matched on their
+   * letters alone so the markup's invisible characters can't hide them.
+   * Prefix, not substring: "Restart task" must never press as sending.
+   */
+  function isSendCaption(text) {
+    const t = squash(text);
+    if (!t) return false;
+    return (
+      t.indexOf("starttask") === 0 ||
+      t.indexOf("sendmessage") === 0 ||
+      t === "send"
+    );
+  }
+
+  /**
    * The proof a Cowork message actually left. /chat/ never appears in a Cowork
    * address, so the Chat driver's confirmation could never fire here; the
    * evidence that exists is the address becoming a session, a new human turn
@@ -610,6 +627,7 @@
     attachOutcome,
     nameSeen,
     approvalTook,
+    isSendCaption,
     sentEvidence,
     sameTitle,
     conversationName,
