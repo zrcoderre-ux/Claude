@@ -115,6 +115,18 @@
     } catch (e) {
       return 0;
     }
+    // Chip containers, read WHOLE. A chip can spread its caption across
+    // sibling spans (a truncation component renders the start and the end as
+    // separate leaves), and then no single leaf carries enough of the name to
+    // vouch for it.
+    let chips;
+    try {
+      chips = document.querySelectorAll(
+        '[data-testid="file-thumbnail"],[data-testid*="attachment" i],[data-testid*="file-chip" i],button'
+      );
+    } catch (e) {
+      chips = [];
+    }
     let n = 0;
     for (const f of files) {
       if (!f || !f.name) continue;
@@ -124,6 +136,13 @@
         if (C.isOurs(el)) continue;
         const title = (el.getAttribute && el.getAttribute("title")) || "";
         if (K.nameSeen(el.textContent || "", f.name) || K.nameSeen(title, f.name)) {
+          hit = true;
+          break;
+        }
+      }
+      for (const el of hit ? [] : chips) {
+        if (C.isOurs(el)) continue;
+        if (K.nameSeen(el.textContent || "", f.name)) {
           hit = true;
           break;
         }
