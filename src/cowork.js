@@ -315,6 +315,27 @@
   // ---- projects ----------------------------------------------------------
 
   /**
+   * What a stored project name MEANT. Project names reach the extension by
+   * scraping claude.ai's sidebar links, whose textContent concatenates the
+   * visible title with whatever control labels the row carries — today a chat
+   * expander reading "Toggle chats for <name>" — so a name stored before the
+   * scrape learned a new label arrives here corrupted:
+   * "Draft Tentative RulingsToggle chats for Draft Tentative Rulings". Typed
+   * into the picker's filter, that string filters the list down to nothing and
+   * the send fails on a project that is right there. Refusing to send for a
+   * job whose stored name carries an old scrape's debris would hold it hostage
+   * to history, so the label is stripped again at matching time. (No word
+   * boundary before "Toggle": the concatenation is seamless. The visible title
+   * always comes first, so cutting there loses nothing.)
+   */
+  function wantedProjectName(name) {
+    return str(name)
+      .replace(/\s+/g, " ")
+      .replace(/\s*Toggle chats for\s[\s\S]*$/i, "")
+      .trim();
+  }
+
+  /**
    * Whether a project row is the one named. Cowork's picker lists projects by
    * name only — there is no uuid on the row — so the name is all we have to go
    * on. Exact first, then a prefix, because a row can carry a badge or a
@@ -326,7 +347,7 @@
     // and no report shows. A project's own punctuation is not the question —
     // the row and the stored name come from the same place and differ only in
     // what claude.ai has sprinkled through them.
-    const want = squash(name);
+    const want = squash(wantedProjectName(name));
     if (!want) return false;
     const t = squash(rowText);
     if (!t) return false;
@@ -343,7 +364,7 @@
 
   /** Whether a trigger's caption already names this project. */
   function projectTriggerIs(text, name) {
-    const want = squash(name);
+    const want = squash(wantedProjectName(name));
     return !!want && squash(text) === want;
   }
 
@@ -611,6 +632,7 @@
     sessionId,
     conversationApiPath,
     isCoworkUrl,
+    wantedProjectName,
     projectRowMatches,
     projectTriggerName,
     projectTriggerIs,

@@ -550,8 +550,16 @@
   // out of view, so a long turn can finish with its reply nowhere in the DOM —
   // which is what "23 chars, NOT recognised as new" means when the stream has
   // already closed. A person watching would have scrolled down.
+  //
+  // ONLY while the tab is hidden. The pin stands in for the person a hidden
+  // tab doesn't have; in a tab someone is actually looking at, the scroll bar
+  // is theirs, and re-pinning it every poll yanks them away from whatever they
+  // scrolled up to read. A visible tab losing the pin costs nothing the run
+  // depends on — the conversation API, not the DOM, is the record of whether a
+  // reply arrived.
   function keepAtBottom(el) {
     try {
+      if (document.visibilityState !== "hidden") return;
       if (el && el.scrollIntoView) el.scrollIntoView({ block: "end" });
       const sc = document.scrollingElement || document.documentElement;
       if (sc) sc.scrollTop = sc.scrollHeight;

@@ -236,6 +236,21 @@ test("nothing matches an empty name — an unset project must not pick a row", (
   assert.equal(K.projectRowMatches("", "Cutlist"), false);
 });
 
+test("a stored name carrying the sidebar expander's label still finds its project", () => {
+  // The sidebar scrape concatenates the row's "Toggle chats for <name>"
+  // control label straight onto the title — seamlessly, no word boundary —
+  // and names stored before the scrape learned that label carry it forever.
+  // Matching (and the filter, via wantedProjectName) must see through it.
+  const corrupted = "Draft Tentative RulingsToggle chats for Draft Tentative Rulings";
+  assert.equal(K.wantedProjectName(corrupted), "Draft Tentative Rulings");
+  assert.equal(K.wantedProjectName("Plain Name"), "Plain Name");
+  assert.equal(K.wantedProjectName(null), "");
+  assert.equal(K.projectRowMatches("Draft Tentative Rulings", corrupted), true);
+  assert.equal(K.projectTriggerIs("Draft Tentative Rulings", corrupted), true);
+  // A different project is still not this one, cleaned or not.
+  assert.equal(K.projectRowMatches("Cutlist", corrupted), false);
+});
+
 test("the two rows that navigate away are not projects", () => {
   assert.equal(K.isProjectRow("Create new project"), false);
   assert.equal(K.isProjectRow("View all projects"), false);

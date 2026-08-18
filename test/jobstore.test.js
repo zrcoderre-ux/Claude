@@ -155,6 +155,17 @@ test("cleanProjectName strips trailing relative-time / date suffix", () => {
   assert.equal(J.cleanProjectName("Plain Name"), "Plain Name");
 });
 
+test("cleanProjectName strips the sidebar row's chat-expander label", () => {
+  // The expander's text concatenates seamlessly onto the title — no space, no
+  // word boundary — and repeats the name after it.
+  assert.equal(
+    J.cleanProjectName("Draft Tentative RulingsToggle chats for Draft Tentative Rulings"),
+    "Draft Tentative Rulings"
+  );
+  // With the date metadata after it, as a raw scrape carries it.
+  assert.equal(J.cleanProjectName("CutlistToggle chats for Cutlist2 hours ago"), "Cutlist");
+});
+
 test("projectUuidFromHref extracts the uuid", () => {
   assert.equal(
     J.projectUuidFromHref("/cowork/project/019f3fcd-9b35-7715-b2cc-b227512b5459"),

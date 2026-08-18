@@ -176,9 +176,16 @@
   }
 
   // Tidy a scraped project link's text (which concatenates title + metadata)
-  // down to a readable label: drop a trailing relative-time / "Mon DD" suffix.
+  // down to a readable label: drop an embedded control label and a trailing
+  // relative-time / "Mon DD" suffix.
   function cleanProjectName(raw) {
     let s = String(raw || "").replace(/\s+/g, " ").trim();
+    // The sidebar row's chat expander carries the text "Toggle chats for
+    // <name>", and textContent concatenates it straight onto the title —
+    // "Draft Tentative RulingsToggle chats for Draft Tentative Rulings".
+    // No word boundary before "Toggle": the concatenation is seamless. The
+    // visible title always comes first, so cutting there loses nothing.
+    s = s.replace(/\s*Toggle chats for\s[\s\S]*$/i, "").trim();
     s = s.replace(
       /(\d+\s+(?:second|minute|hour|day|week|month|year)s?\s+ago|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:,\s*\d{4})?|Yesterday|Today)\s*$/i,
       ""

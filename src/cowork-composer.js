@@ -227,6 +227,11 @@
    * not a near miss, it is the end of the run. Returns { ok, why }.
    */
   async function selectProject(name) {
+    // A stored name can carry an old scrape's debris ("…Toggle chats for …");
+    // matching forgives that, but the FILTER doesn't — typing the corrupted
+    // string filters the list down to nothing. So the cleaned name is what
+    // gets typed, matched, and reported. See K.wantedProjectName.
+    name = K.wantedProjectName(name);
     const caption = (b) =>
       norm(b.textContent) || norm(b.getAttribute && b.getAttribute("aria-label"));
     const opensAMenu = (b) =>

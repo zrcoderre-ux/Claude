@@ -1960,13 +1960,49 @@ test("a run's conversations are named for the matter and their job in it", () =>
     "8.11.26 Motion to Compel Arbitration: Drafting (A)"
   );
 
-  // An unnamed run still has something to say — the workflow it's a run of.
+  // An unnamed run's matter is WHEN it was made, then the workflow it's a run
+  // of — the template's name alone is the same for every matter the workflow
+  // ever runs, so it can't tell an untitled run's chats from the last one's.
   const bare = W.newRun(wf, "r2", NOW, { type: "draft" });
-  assert.equal(W.chatTitle(bare, "Drafting (A)"), "Tentative ruling: Drafting (A)");
+  assert.equal(
+    W.chatTitle(bare, "Drafting (A)"),
+    W.runStamp(bare) + " Tentative ruling: Drafting (A)"
+  );
 
   // Missing halves don't produce dangling punctuation.
   assert.equal(W.chatTitle(run, ""), "8.11.26 Motion to Compel Arbitration");
   assert.equal(W.chatTitle({ name: "", templateName: "" }, "Drafting (A)"), "Drafting (A)");
+});
+
+test("an untitled run's chats are titled by its creation date and time", () => {
+  // Local-time constructions, so the expected strings hold in any timezone.
+  const afternoon = new Date(2026, 7, 18, 15, 42).getTime(); // Aug 18 2026, 3:42 PM
+  assert.equal(W.runStamp({ createdAt: afternoon }), "8.18.26 3:42 PM");
+  const morning = new Date(2026, 0, 5, 0, 7).getTime(); // Jan 5 2026, 12:07 AM
+  assert.equal(W.runStamp({ createdAt: morning }), "1.5.26 12:07 AM");
+  const noon = new Date(2026, 11, 31, 12, 0).getTime();
+  assert.equal(W.runStamp({ createdAt: noon }), "12.31.26 12:00 PM");
+  // No creation time recorded (a hand-built or ancient run): no stamp, and
+  // chatTitle falls back to the template's name as it always did.
+  assert.equal(W.runStamp({}), "");
+  assert.equal(W.runStamp({ createdAt: "soon" }), "");
+
+  const untitled = { name: "", templateName: "Tentative ruling", createdAt: afternoon };
+  assert.equal(
+    W.chatTitle(untitled, "Drafting (A)"),
+    "8.18.26 3:42 PM Tentative ruling: Drafting (A)"
+  );
+  // No template either: the stamp does the whole job rather than leaving the
+  // conversation untitled.
+  assert.equal(
+    W.chatTitle({ name: "", templateName: "", createdAt: afternoon }, "Drafting (A)"),
+    "8.18.26 3:42 PM: Drafting (A)"
+  );
+  // A named run never carries the stamp — its name is the matter.
+  assert.equal(
+    W.chatTitle({ name: "8.11.26 MSJ", templateName: "T", createdAt: afternoon }, "Drafting (A)"),
+    "8.11.26 MSJ: Drafting (A)"
+  );
 });
 
 test("a long matter is shortened, never the chat's own name", () => {

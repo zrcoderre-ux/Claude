@@ -2125,17 +2125,48 @@
   // months later, when "Motion to Compel Arbitration" three times over says
   // nothing about which one holds the ruling.
   const MAX_CHAT_TITLE = 100;
+
+  // When an UNNAMED run was created, in the spelling the run names themselves
+  // use ("8.11.26 MSJ" leads with its date) — "8.18.26 3:42 PM". A run nobody
+  // named still needs its conversations telling apart months later, and the
+  // template's name can't do it: it is the same for every matter the workflow
+  // ever runs. The one fact every run carries that its siblings don't is when
+  // it was made.
+  function runStamp(run) {
+    const t = run && run.createdAt;
+    if (typeof t !== "number" || !isFinite(t) || t <= 0) return "";
+    const d = new Date(t);
+    const h24 = d.getHours();
+    const h = h24 % 12 || 12;
+    const mm = ("0" + d.getMinutes()).slice(-2);
+    const yy = ("0" + (d.getFullYear() % 100)).slice(-2);
+    return (
+      d.getMonth() + 1 + "." + d.getDate() + "." + yy +
+      " " + h + ":" + mm + " " + (h24 >= 12 ? "PM" : "AM")
+    );
+  }
+
   function chatTitle(run, name) {
     // The run's own names, not runLabel's — "Untitled run" is a placeholder for
     // a row on the Options page, and writing it into your sidebar would be
     // taking a gap in the UI for a fact about the matter.
+    //
+    // An untitled run's matter is its creation stamp, with the template's name
+    // riding along where there is one — "8.18.26 3:42 PM Tentative ruling:
+    // Drafting (A)". The stamp says which matter, the template says what kind
+    // of work; the template alone said only the second, so every unnamed
+    // matter's chats read identically in the sidebar.
     //
     // The matter WITHOUT its run number, and the number put back at the end:
     // a re-run's conversations should sort and read beside the originals they
     // repeat — "MSJ: Drafting (A)" then "MSJ: Drafting (A) (Run 2)" — rather
     // than the number splitting the matter from the chat it names.
     const r = run || {};
-    const matter = baseRunName(r.name) || baseRunName(r.templateName);
+    const named = baseRunName(r.name);
+    const stamp = named ? "" : runStamp(r);
+    const template = baseRunName(r.templateName);
+    const matter =
+      named || (stamp && template ? stamp + " " + template : stamp || template);
     const chat = trimmed(name);
     const n = runNumber(r);
     const tail = (chat ? chat : "") + (n > 1 ? " (Run " + n + ")" : "");
@@ -3121,6 +3152,7 @@
     looksLikeCompletionUrl,
     conversationIdFromApiUrl,
     chatTitle,
+    runStamp,
     soleActor,
     runUsage,
     noteRunUsage,

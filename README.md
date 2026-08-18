@@ -606,7 +606,11 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   and untitled they are three sidebar rows saying the same thing. Ticked (the
   default), each conversation the run **opens** is titled
   `8.11.26 Motion to Compel Arbitration: Drafting (A)` — the matter, then that
-  chat's job within it, then `(Run 2)` on a re-run's. Only conversations the run opens itself: a chat you
+  chat's job within it, then `(Run 2)` on a re-run's. A run nobody named uses
+  **when it was created** as the matter — `8.18.26 3:42 PM Tentative ruling:
+  Drafting (A)` — because the workflow's name alone is the same for every matter
+  it ever runs, and would leave an untitled run's chats indistinguishable from
+  the last one's. Only conversations the run opens itself: a chat you
   pointed it at keeps the name it has, because retitling work you started is not
   the extension's business. A title that won't take is a note on the run, never a
   failed step. It is applied **twice** — once the conversation exists, so it has a
@@ -915,8 +919,12 @@ once the response stream has closed (or the page has been unhelpful for ninety
 seconds) the run **asks claude.ai's API directly**, comparing what the
 conversation says is the latest reply against what it said before the message
 went out. That comparison works whether or not the page is showing anything. The
-transcript is also kept scrolled to the bottom, which is what a person watching
-would do and keeps the DOM path working for longer.
+transcript is also kept scrolled to the bottom — but **only while the tab is
+hidden**. The pin stands in for the person a hidden tab doesn't have, keeping
+the newest reply mounted; in a tab you are actually looking at, the scroll bar
+is yours, and re-pinning it every few seconds would yank you away from whatever
+you scrolled up to read. A visible tab losing the pin costs the run nothing —
+the conversation API, not the DOM, is the record of whether a reply arrived.
 
 **Knowing the turn is over.** The signal that counts is the assistant's response
 stream closing, reported from the network layer (`inject.js` finishes reading the
