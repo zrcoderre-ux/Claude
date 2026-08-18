@@ -279,18 +279,54 @@
     // project far down it is not in the page to be clicked until typing brings
     // it there.
     const filter = box.querySelector('input:not([type="hidden"]), [contenteditable="true"]');
-    if (filter) {
+    // What the search box actually holds — read back, never assumed. A live
+    // run showed the menu at "No matches" straight through the clear-and-retry
+    // pass: a React-controlled input takes execCommand's edits into the DOM
+    // and reads its own state back over them, so the box LOOKED handled and
+    // held whatever it held. The read-back is what makes the report honest.
+    const readBox = () => {
+      if (!filter) return "";
+      if ("value" in filter) return String(filter.value || "");
+      return String(filter.textContent || "");
+    };
+    // Write the box through the element's OWN value setter — the one React
+    // hooks — then say the input event happened. This is the only write that
+    // both changes a controlled input and makes its owner believe it.
+    const setBox = (text) => {
+      if (!filter) return;
       try {
         filter.focus();
-        const typed = document.execCommand && document.execCommand("insertText", false, name);
-        if (!typed && "value" in filter) {
-          filter.value = name;
+        if ("value" in filter) {
+          let set = null;
+          try {
+            const proto = Object.getPrototypeOf(filter);
+            const desc = proto && Object.getOwnPropertyDescriptor(proto, "value");
+            if (desc && desc.set) set = desc.set;
+          } catch (e) {
+            /* fall through to the plain assignment */
+          }
+          if (set) set.call(filter, text);
+          else filter.value = text;
           filter.dispatchEvent(new Event("input", { bubbles: true }));
+        } else {
+          if (document.execCommand) {
+            document.execCommand("selectAll", false, null);
+            document.execCommand("insertText", false, text);
+          }
         }
       } catch (e) {
-        /* an unfiltered list is still a list */
+        /* the read-back below reports what actually landed */
       }
+    };
+    if (filter) {
+      setBox(name);
       await sleep(700);
+      // Not what was asked for — one more attempt, then the report says what
+      // the box held rather than what was typed at it.
+      if (readBox() !== name) {
+        setBox(name);
+        await sleep(700);
+      }
     }
 
     let lastSeen = [];
@@ -345,26 +381,21 @@
       row = rowOf();
     }
     if (!row) row = wideRowOf();
-    // A filter that left NOTHING is evidence against the typed text, not
-    // against the list — a polluted name filters every real project away.
-    // Clear it and read the list plain before giving up.
-    if (!row && filter && !lastSeen.length) {
-      try {
-        filter.focus();
-        if ("value" in filter && filter.select) filter.select();
-        else if (document.execCommand) document.execCommand("selectAll", false, null);
-        const cleared = document.execCommand && document.execCommand("delete", false, null);
-        if (!cleared && "value" in filter) {
-          filter.value = "";
-          filter.dispatchEvent(new Event("input", { bubbles: true }));
-        }
-      } catch (e) {
-        /* the filtered verdict below still reports honestly */
+    // A filter that left NOTHING is evidence against the box's contents, not
+    // against the list. Clear it — through the controlled-input write, and
+    // VERIFIED, because an unverified clear once left "No matches" standing
+    // through this whole pass — and read the list plain before giving up. A
+    // server-backed list re-renders slowly, so the cleared list gets real time.
+    if (!row && filter) {
+      setBox("");
+      await sleep(1200);
+      if (readBox() !== "") {
+        setBox("");
+        await sleep(1200);
       }
-      await sleep(700);
       row = rowOf();
-      for (let i = 0; i < 6 && !row; i++) {
-        await sleep(200);
+      for (let i = 0; i < 8 && !row; i++) {
+        await sleep(250);
         row = rowOf();
       }
       if (!row) row = wideRowOf();
@@ -379,13 +410,17 @@
       } catch (e) {
         /* the rest of the report stands */
       }
+      // ...and what the search box was left holding, read off the element.
+      // "" after a verified clear plus a menu still saying nothing means the
+      // LIST is the problem; the name still sitting there means the clear is.
+      const held = readBox();
       C.closeMenu();
       return {
         ok: false,
         why:
           "no row named " + JSON.stringify(name) + " among " +
           JSON.stringify(lastSeen.join(" | ")) +
-          (filter ? " (filtered, then unfiltered)" : " (no filter box found)") +
+          (filter ? " (filtered, then cleared — the box was left holding " + JSON.stringify(held) + ")" : " (no filter box found)") +
           " — the menu's own text: " + JSON.stringify(menuText),
       };
     }
