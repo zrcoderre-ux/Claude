@@ -328,11 +328,12 @@
   // only a conversation this run opened: a chat you pointed the run at is yours,
   // and renaming it would be the extension retitling your work.
   //
-  // Called twice — once the conversation exists, and again once the reply is in.
-  // claude.ai titles a new conversation ITSELF a moment after the first answer
-  // lands, and that would land on top of the first attempt. The second one is
-  // the one that sticks; only it reports, so the run's note says what the chat
-  // ended up called rather than narrating two attempts.
+  // Called once the conversation exists, kept up during the wait (see
+  // keepNaming), and settled once the reply is in. claude.ai titles a new
+  // conversation ITSELF — early, moments into the first answer — and that
+  // lands on top of the send-time attempt. Only the final pass reports, so the
+  // run's note says what the chat ended up called rather than narrating the
+  // attempts.
   async function nameThisChat(msg, notes, onlyIfUnnamed) {
     if (!msg.title || !msg.firstInChat) return;
     const uuid = conversationUuid();
@@ -380,6 +381,35 @@
     if (!notes) return;
     if (named && named.ok) notes.push('named this chat "' + named.name + '"');
     else notes.push("could not name this chat (" + ((named && named.error) || "no answer") + ")");
+  }
+
+  // Keep the run's name on a conversation it just opened, while the reply is
+  // still being written. claude.ai auto-titles a new conversation EARLY —
+  // moments into the first answer, not after it (from the operator, watching
+  // it live) — and its title lands on top of the rename made at send time.
+  // The pass after the reply used to be the correction, which on a long
+  // Cowork turn left the chat under claude.ai's name for hours. So the first
+  // minutes of the wait re-check on a backoff and re-stamp only where the
+  // auto-title has won; the post-reply pass remains the last word, and the
+  // only one that reports. Returns a stopper, called when the wait ends.
+  function keepNaming(msg) {
+    if (!msg.title || !msg.firstInChat) return () => {};
+    let alive = true;
+    (async () => {
+      // Clustered early, because that is when the auto-title lands.
+      for (const wait of [20000, 30000, 60000, 120000, 240000]) {
+        await C.sleep(wait);
+        if (!alive) return;
+        try {
+          await nameThisChat(msg, null, true);
+        } catch (e) {
+          /* the post-reply pass is the last word */
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
   }
 
   async function harvestReply(msgEl) {
@@ -1119,6 +1149,22 @@
         : 0;
     }
 
+    // While the reply is written, keep the run's name on the chat — claude.ai
+    // auto-titles early, and waiting for the reply to correct that left the
+    // chat under the wrong name for the length of the turn.
+    const stopNaming = keepNaming(msg);
+    let waited;
+    try {
+      waited = await waitForReply(
+        runId,
+        before,
+        W.STEP_TIMEOUT_MS,
+        sentAt,
+        msg.marker || null
+      );
+    } finally {
+      stopNaming();
+    }
     const {
       el,
       apiText,
@@ -1134,13 +1180,7 @@
       marker: wantedMarker,
       via: settledVia,
       state,
-    } = await waitForReply(
-      runId,
-      before,
-      W.STEP_TIMEOUT_MS,
-      sentAt,
-      msg.marker || null
-    );
+    } = waited;
     if (haltedWhileWaiting)
       return await standDown(
         runId,
