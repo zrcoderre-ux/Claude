@@ -575,3 +575,16 @@ test("a short filename must appear whole — its letters alone vouch for nothing
   assert.equal(K.nameSeen("attach the papers", "a.txt"), false);
   assert.equal(K.nameSeen("a.txt", "a.txt"), true);
 });
+
+test("the approval switch is believed when the page says so, not when a menu closes", () => {
+  // The trigger's own aria-label is the mode in force.
+  assert.equal(K.approvalTook({ triggerLabel: "Automatically approve" }, "auto"), true);
+  assert.equal(K.approvalTook({ triggerLabel: "Skip all approvals" }, "skip"), true);
+  // The row marking itself checked is the same word said earlier.
+  assert.equal(K.approvalTook({ triggerLabel: "Manually approve", rowChecked: true }, "auto"), true);
+  // Neither is not evidence — that is as true of Escape.
+  assert.equal(K.approvalTook({ triggerLabel: "Manually approve" }, "auto"), false);
+  assert.equal(K.approvalTook({}, "auto"), false);
+  assert.equal(K.approvalTook({ triggerLabel: "Automatically approve" }, "nonsense"), false);
+  assert.equal(K.approvalTook(null, "auto"), false);
+});
