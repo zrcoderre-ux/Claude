@@ -426,18 +426,27 @@
     // work, with the report nowhere in it. That copy is long, so the length
     // test waves it through; only the reply's own ending can convict it.
     const prose = W.stripPlaceholders(stabilityText(msgEl));
-    const faithful =
-      !!copied && W.plausibleCopy(copied, rendered) && W.copyCarriesEnd(copied, prose);
+    // Which test the copy failed, in words. The failure is INTERMITTENT — the
+    // same control copies faithfully in one Cowork conversation and copies the
+    // scratch work in the next — so the run's note is the only record of which
+    // kind this step drew, and "gave nothing usable" told nobody anything.
+    const copyWhy = !copied
+      ? "the copy box gave nothing"
+      : !W.plausibleCopy(copied, rendered)
+      ? "the copy was too short to be the reply"
+      : !W.copyCarriesEnd(copied, prose)
+      ? "the copy did not carry the reply's ending — Cowork's copy control sometimes copies the turn's tool prompts instead of the answer"
+      : "";
 
     // The copy box stays first choice — Claude's own markdown, minus the
     // thinking. Both sides of the length comparison are stripped, so a reply
     // that was largely unrenderable doesn't make an honest copy look suspect.
-    if (faithful) return { text: copied, via: "copy" };
+    if (!copyWhy) return { text: copied, via: "copy" };
 
     let api = "";
     const uuid = conversationUuid();
     if (uuid) api = W.stripPlaceholders(W.lastAssistantText(await fetchConversation(uuid)));
-    if (api) return { text: api, via: "api" };
+    if (api) return { text: api, via: "api", copyWhy: copyWhy };
 
     // Whichever survivor says the most. A copy that failed the ending test is
     // not a survivor: it is KNOWN to be something other than the reply, and
@@ -449,7 +458,7 @@
       .filter((c) => c.text)
       .sort((a, b) => a.text.length - b.text.length)
       .pop();
-    if (best) return { text: best.text, via: best.via };
+    if (best) return { text: best.text, via: best.via, copyWhy: copyWhy };
     return {
       text: "",
       via: "none",
@@ -1305,7 +1314,7 @@
     // The conversation itself answered — no need to go back to the page for a
     // copy of what we already have, and in the case that got us here the page
     // doesn't have it.
-    const { text, via, reason } = apiText
+    const { text, via, reason, copyWhy } = apiText
       ? { text: apiText, via: "api" }
       : await harvestReply(el);
     if (!text)
@@ -1317,7 +1326,7 @@
     if (via !== "copy")
       notes.push(
         "reply read from the " + (via === "api" ? "conversation API" : "page") +
-          " (the copy box gave nothing usable)"
+          " (" + (copyWhy || "the copy box gave nothing usable") + ")"
       );
 
     const url = location.href;
