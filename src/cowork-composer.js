@@ -168,10 +168,29 @@
     return n;
   }
 
-  // The send control, looked for inside the composer first. Cowork has not
-  // confirmed Chat's exact labels, so the cascade is wider here — but only
-  // inside the composer's own box, where "send" can't mean anything else.
+  // The send control. Cowork's composer starts a TASK: its button reads
+  // "Start Task" where Chat's reads "Send message" — named by the operator
+  // off the live page, after a run found nothing wearing any of Chat's
+  // labels. Captions are judged by CUMCowork.isSendCaption (letters alone,
+  // prefix-anchored, so "Restart task" can never press as sending), on the
+  // aria-label and the visible text both, in the composer's box first and
+  // page-wide after; Chat's shapes stay in the cascade for the day the two
+  // surfaces converge.
   function findSendControl(scope) {
+    const byCaption = (root) => {
+      let list;
+      try {
+        list = (root || document).querySelectorAll('button,[role="button"]');
+      } catch (e) {
+        return null;
+      }
+      for (const el of list) {
+        if (C.isOurs(el) || !C.isVisible(el)) continue;
+        const aria = (el.getAttribute && el.getAttribute("aria-label")) || "";
+        if (K.isSendCaption(aria) || K.isSendCaption(el.textContent)) return el;
+      }
+      return null;
+    };
     const inScope = (sel) => {
       let list;
       try {
@@ -183,6 +202,8 @@
       return null;
     };
     return (
+      byCaption(scope) ||
+      byCaption(document) ||
       inScope('button[aria-label*="send" i]') ||
       inScope('[data-testid="send-button"]') ||
       inScope('button[type="submit"]') ||
@@ -501,7 +522,7 @@
 
   // Watch for the message leaving, with Cowork's evidence — see
   // CUMCowork.sentEvidence for what counts and in what order of strength.
-  async function confirmSent(hadText, humanBefore, pathBefore) {
+  async function confirmSent(hadText, humanBefore, pathBefore, hadButton) {
     for (let i = 0; i < 24; i++) {
       await sleep(400);
       const ed = C.findEditor();
@@ -510,7 +531,10 @@
         becameSession: !!K.sessionId(location.pathname) && location.pathname !== pathBefore,
         humanGrew: humanTurns() > humanBefore,
         cleared: !!hadText && !!ed && (ed.textContent || "").trim() === "",
-        sendStoodDown: !btn || C.sendDisabled(btn),
+        // Only a control that was STANDING before the press can stand down.
+        // With no control ever found this is vacuously true from the first
+        // look, and would confirm an Enter that sent nothing.
+        sendStoodDown: !!hadButton && (!btn || C.sendDisabled(btn)),
       });
       if (ev) return ev;
     }
@@ -658,11 +682,14 @@
           if (btn && !C.sendDisabled(btn)) break;
           await sleep(300);
         }
-        if (!btn) return fail("no send control found in the Cowork composer");
-
-        if (!C.sendDisabled(btn)) {
+        // No control found is NOT the end: Enter in the editor is the
+        // composer's own send and needs no button at all. The run that
+        // taught this got everything right — project, attach, prompt — and
+        // then died here without ever pressing the one key that would have
+        // finished the job.
+        if (btn && !C.sendDisabled(btn)) {
           C.robustClick(btn);
-          const ev = await confirmSent(hadText, humanBefore, pathBefore);
+          const ev = await confirmSent(hadText, humanBefore, pathBefore, true);
           if (ev) {
             say("send", ev);
             notes.push(story());
@@ -689,7 +716,7 @@
         } catch (e) {
           /* the report below says what was observed */
         }
-        const ev2 = await confirmSent(hadText, humanBefore, pathBefore);
+        const ev2 = await confirmSent(hadText, humanBefore, pathBefore, !!btn);
         if (ev2) {
           say("send", ev2 + " (via Enter)");
           notes.push(story());
@@ -698,9 +725,11 @@
           return { ok: true, notes: notes };
         }
         return fail(
-          C.sendDisabled(btn)
-            ? "the send control never enabled (uploads may still be processing, or the composer rejected the message)"
-            : "pressed send but nothing showed the message leaving"
+          !btn
+            ? "no send control matched any known shape, and Enter sent nothing"
+            : C.sendDisabled(btn)
+            ? "the send control never enabled (uploads may still be processing, or the composer rejected the message), and Enter sent nothing"
+            : "pressed send, then Enter, and nothing showed the message leaving"
         );
       }
     }

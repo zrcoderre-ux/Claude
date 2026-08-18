@@ -612,3 +612,20 @@ test("the characters between the words are not trusted — letters alone carry t
   assert.equal(K.nameSeen("Text file creation", name), false, "the near-namesake chat");
   assert.equal(K.nameSeen("2026-08-17", name), false, "a bare date");
 });
+
+test("Cowork's send button says Start Task, and only sending words press it", () => {
+  // From the operator, off the live page: Cowork uses "Start Task" where
+  // Chat uses "Send message".
+  assert.equal(K.isSendCaption("Start Task"), true);
+  assert.equal(K.isSendCaption("Start task"), true);
+  assert.equal(K.isSendCaption("Start Task ⏎"), true, "a shortcut hint after the words");
+  assert.equal(K.isSendCaption("Send message"), true);
+  assert.equal(K.isSendCaption("Send Message"), true);
+  assert.equal(K.isSendCaption("Send"), true);
+  // Prefix-anchored: nothing that merely CONTAINS the words may press.
+  assert.equal(K.isSendCaption("Restart task"), false);
+  assert.equal(K.isSendCaption("Start"), false, "half a caption is no caption");
+  assert.equal(K.isSendCaption("Dictate"), false);
+  assert.equal(K.isSendCaption("Add files, connectors, and more"), false);
+  assert.equal(K.isSendCaption(""), false);
+});
