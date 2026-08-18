@@ -63,3 +63,12 @@ than inline in the wiring.
 - **claude.ai's DOM and API shapes are unversioned.** Match button labels exactly,
   guard every parse, and keep the heuristics in a tested pure module so a shape
   change is a small edit rather than an investigation.
+- **Cowork is not Chat with a different address (standing instruction from the
+  repo owner).** Never assume plumbing built for Chat works on Cowork — build
+  parallel Cowork paths unless a piece has been CONFIRMED working on both
+  surfaces. Confirmed so far: the Chat/Cowork toggle, the approval menu, the
+  model menu, and generic mechanics (clicks, menu open/close, hidden-tab
+  sleeps). Confirmed broken on Cowork: upload confirmations (its traffic runs
+  in a worker no page hook sees), the event-stream and socket hooks, Chat's
+  chip selectors, and the `/chat/` URL tests. Cowork sends go through
+  `src/cowork-composer.js`; its decisions live in `src/cowork.js`.

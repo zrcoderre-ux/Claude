@@ -802,8 +802,6 @@
   // read back by the panel's button.
   let lastSurfaceWhy = "";
   const surfaceWhy = () => lastSurfaceWhy;
-  let lastProjectWhy = "";
-  const projectWhy = () => lastProjectWhy;
   let lastRenameWhy = "";
   const renameWhy = () => lastRenameWhy;
 
@@ -1066,135 +1064,6 @@
   }
 
   /**
-   * Choose a project from Cowork's own menu. Unlike a scheduled send's project,
-   * which is an address to navigate to, this one is a control on the composer —
-   * so it is the only way to put a Cowork session in a project.
-   *
-   * The rows carry names and no uuids, so the name is all there is to match on,
-   * and the two rows that navigate away ("Create new project", "View all
-   * projects") are excluded by name for the same reason: clicking either during
-   * an unattended send is worse than not finding the project.
-   */
-  async function selectCoworkProject(name) {
-    const k = K();
-    const why = (text, verdict) => {
-      lastProjectWhy = text;
-      return verdict;
-    };
-    if (!k) return why("CUMCowork not loaded in this world", "unsupported");
-    if (!String(name || "").trim()) return why("no project asked for", "inherit");
-
-    // The trigger reads "Project" until something is chosen and the project's
-    // own name after — so both are how it might be found, and both are compared
-    // on letters alone. This markup carries characters that no whitespace rule
-    // removes, which is what made the surface toggle unmatchable.
-    // A MENU trigger, not merely a button with the right word on it. Cowork's
-    // opens a menu and says so — aria-haspopup, or an aria-expanded it flips —
-    // while claude.ai's left navigation has a "Projects" entry that only
-    // navigates. Clicking that one took the run to the projects page and left
-    // it there, which is not a near miss of choosing a project: it is the end
-    // of the run, and it is why this asks what a control DOES and not just what
-    // it says.
-    const opensAMenu = (b) =>
-      b.hasAttribute("aria-haspopup") ||
-      b.hasAttribute("aria-expanded") ||
-      b.hasAttribute("aria-controls");
-    const triggers = Array.from(document.querySelectorAll("button")).filter(
-      (b) => !isOurs(b) && opensAMenu(b)
-    );
-    let trigger = triggers.find((b) => k.projectTriggerIs(b.textContent, name));
-    if (trigger) return why("the trigger already reads " + JSON.stringify(name), "ok");
-    trigger = triggers.find((b) => k.isProjectTriggerCaption(b.textContent));
-    if (!trigger)
-      return why(
-        "no project menu — nothing that opens a menu is captioned Project or named " +
-          JSON.stringify(name) + " (" + triggers.length + " menu buttons on the page)",
-        "unsupported"
-      );
-    const before = menuItems();
-    const trouble = await openMenu(trigger, before);
-    if (trouble) return why(trouble, "notfound");
-
-    // The list is labelled "Search projects", which is a promise of a filter —
-    // and a filter is not a nicety here. A long list renders only what fits, so
-    // a project far down it is not in the page to be clicked until the typing
-    // brings it there. Same shape as the repo picker, for the same reason.
-    // The menu is open and has rows in it — openMenu said so — which is what
-    // makes it safe to look for the box they live in. An EMPTY container was
-    // being accepted before, and an empty container is exactly what a menu that
-    // never opened looks like.
-    const rowsNow = menuItems();
-    const holder = (el) => el && rowsNow.some((r) => el.contains(r));
-    let box =
-      Array.from(document.querySelectorAll('[role="listbox"][aria-label*="project" i]')).find(holder) ||
-      Array.from(document.querySelectorAll('[role="listbox"]')).find(holder) ||
-      Array.from(document.querySelectorAll('[role="menu"],[role="dialog"]')).find(holder) ||
-      null;
-    // Only ever inside the menu. Falling back to the document would find the
-    // composer's own editor and type the project's name into the prompt — the
-    // message would go out mangled, which is far worse than a project not
-    // chosen.
-    if (!box) return why("rows opened but nothing recognisable holds them", "notfound");
-    const filter = box.querySelector('input:not([type="hidden"]), [contenteditable="true"]');
-    if (filter) {
-      try {
-        filter.focus();
-        const typed = document.execCommand && document.execCommand("insertText", false, name);
-        if (!typed && "value" in filter) {
-          filter.value = name;
-          filter.dispatchEvent(new Event("input", { bubbles: true }));
-        }
-      } catch (e) {
-        /* an unfiltered list is still a list */
-      }
-      await sleep(700);
-    }
-
-    const rowOf = () => {
-      const seen = [];
-      for (const el of box.querySelectorAll('[role="option"],[role="menuitem"]')) {
-        if (isOurs(el)) continue;
-        const t = el.textContent || "";
-        if (!k.isProjectRow(t)) continue; // never "Create new project" — it navigates
-        seen.push(t.replace(/\s+/g, " ").trim().slice(0, 40));
-        if (k.projectRowMatches(t, name)) return el;
-      }
-      lastSeenRows = seen;
-      return null;
-    };
-    let lastSeenRows = [];
-    let row = rowOf();
-    for (let i = 0; i < 12 && !row; i++) {
-      await sleep(200);
-      row = rowOf();
-    }
-    if (!row) {
-      closeMenu();
-      return why(
-        "no row named " + JSON.stringify(name) + " among " +
-          JSON.stringify(lastSeenRows.join(" | ")) +
-          (filter ? " (filtered)" : " (no filter box found)"),
-        "notfound"
-      );
-    }
-    robustClick(row);
-
-    // Believed only when the trigger says so. A menu that closed is not a
-    // project that was chosen, and an unattended send has no other way to tell
-    // the difference.
-    for (let i = 0; i < 10; i++) {
-      await sleep(200);
-      if (triggers.concat([trigger]).some((b) => k.projectTriggerIs(b.textContent, name)))
-        return why("clicked the row and the trigger now reads it", "ok");
-      const live = Array.from(document.querySelectorAll("button")).filter((b) => !isOurs(b));
-      if (live.some((b) => k.projectTriggerIs(b.textContent, name)))
-        return why("clicked the row and the trigger now reads it", "ok");
-    }
-    closeMenu();
-    return why("clicked the row but no trigger came to read " + JSON.stringify(name), "failed");
-  }
-
-  /**
    * Rename a Cowork session, the way a person does it.
    *
    * There is no API for this. Renaming one by hand makes no HTTP request at
@@ -1364,6 +1233,24 @@
   // not available, repo picker missing) that must not stop the send.
   async function sendMessage(opts) {
     const o = opts || {};
+    // Cowork is not Chat with a different address, and nothing below is
+    // trusted there. The Cowork driver (src/cowork-composer.js) takes those
+    // sends whole; this function is the CHAT path. If that driver isn't
+    // loaded, a Cowork send fails loudly rather than proceeding on plumbing
+    // built for another surface — the failure that taught this rule was a run
+    // that switched its model and then silently did nothing else.
+    const cw = root.CUMCoworkSend;
+    if (cw && cw.applies(o)) return cw.send(o);
+    const kc = K();
+    if (
+      kc &&
+      (kc.surfaceFromLabel(o.surface || "") === "cowork" || kc.isCoworkUrl(location.href))
+    )
+      return {
+        ok: false,
+        error: "this is a Cowork send and the Cowork driver isn't loaded",
+        notes: [],
+      };
     const notes = [];
     const files = o.files || [];
     // Asked between the slow phases — attaching, uploading, typing — because a
@@ -1413,38 +1300,12 @@
       }
     }
 
-    // Approval belongs to Cowork. Asking for one anywhere else isn't an error
-    // worth stopping for, but it is worth saying: the mode is remembered for
-    // the whole account, so "it must have worked" is exactly the assumption
-    // that gets a job sent under a mode nobody chose.
-    if (k && o.approval) {
-      if (!k.approvalApplies(o.surface, currentSurface())) {
-        notes.push("asked for " + k.describeMode(o.approval) + " but this isn't Cowork — sent as-is");
-      } else {
-        try {
-          const r = await selectApproval(o.approval);
-          if (r === "unsupported")
-            notes.push("asked for " + k.describeMode(o.approval) + " but found no approval control");
-          else if (r === "failed") notes.push("couldn't set approval to " + k.describeMode(o.approval));
-        } catch (e) {
-          notes.push("approval switch failed");
-        }
-      }
-    }
-
-    // A Cowork project is a control, not an address — the only way in.
-    if (k && o.coworkProject && k.approvalApplies(o.surface, currentSurface())) {
-      try {
-        const r = await selectCoworkProject(o.coworkProject);
-        if (r === "unsupported") notes.push("no project menu on this page (" + projectWhy() + ")");
-        else if (r === "notfound")
-          notes.push('project "' + o.coworkProject + '" not chosen (' + projectWhy() + ")");
-        else if (r === "failed")
-          notes.push('project "' + o.coworkProject + '" not chosen (' + projectWhy() + ")");
-      } catch (e) {
-        notes.push("project select failed");
-      }
-    }
+    // Approval modes and projects are Cowork furniture, and Cowork sends never
+    // reach this function — the driver above takes them. A job carrying either
+    // onto the Chat path is on the wrong surface, and quietly obliging would
+    // mean hunting for controls this page doesn't have. Said, never silent.
+    if (o.approval || o.coworkProject)
+      notes.push("Cowork settings (approval/project) ignored — this send is on Chat");
 
     if (o.codeRepo) {
       try {
@@ -1576,7 +1437,6 @@
     selectCodeRepo,
     findSurfaceGroup,
     surfaceWhy,
-    projectWhy,
     renameCoworkSession,
     renameWhy,
     currentSurface,
@@ -1584,7 +1444,9 @@
     findApprovalTrigger,
     currentApproval,
     selectApproval,
-    selectCoworkProject,
+    menuItems,
+    openMenu,
+    closeMenu,
     harvestModels,
     harvestRepos,
     scrapeRepos,

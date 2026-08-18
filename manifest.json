@@ -71,6 +71,7 @@
         "src/content.js",
         "src/autocontinue.js",
         "src/composer.js",
+        "src/cowork-composer.js",
         "src/replycopy.js",
         "src/autodownload.js",
         "src/scheduler-run.js",
