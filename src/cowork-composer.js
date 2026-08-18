@@ -313,6 +313,29 @@
       await sleep(200);
       row = rowOf();
     }
+    // A filter that left NOTHING is evidence against the typed text, not
+    // against the list — a polluted name filters every real project away.
+    // Clear it and read the list plain before giving up.
+    if (!row && filter && !lastSeen.length) {
+      try {
+        filter.focus();
+        if ("value" in filter && filter.select) filter.select();
+        else if (document.execCommand) document.execCommand("selectAll", false, null);
+        const cleared = document.execCommand && document.execCommand("delete", false, null);
+        if (!cleared && "value" in filter) {
+          filter.value = "";
+          filter.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      } catch (e) {
+        /* the filtered verdict below still reports honestly */
+      }
+      await sleep(700);
+      row = rowOf();
+      for (let i = 0; i < 6 && !row; i++) {
+        await sleep(200);
+        row = rowOf();
+      }
+    }
     if (!row) {
       C.closeMenu();
       return {
@@ -320,7 +343,7 @@
         why:
           "no row named " + JSON.stringify(name) + " among " +
           JSON.stringify(lastSeen.join(" | ")) +
-          (filter ? " (filtered)" : " (no filter box found)"),
+          (filter ? " (filtered, then unfiltered)" : " (no filter box found)"),
       };
     }
     C.robustClick(row);
@@ -580,18 +603,27 @@
     if (!editor) return fail("no prompt editor on this Cowork page");
     say("editor", "found");
 
+    // The project's name, cleaned at the moment of USE. A scraped name can
+    // arrive carrying the sidebar row's own furniture — "Draft Tentative
+    // RulingsToggle chats for Draft Tentative Rulings" — and a run armed with
+    // that name filters the project menu down to nothing and fails. Cleaning
+    // here heals every config already stored, without re-arming anything.
+    const J = window.CUMJobs;
+    const project =
+      (J && j.coworkProject ? J.cleanProjectName(j.coworkProject) : j.coworkProject) || null;
+
     // The toggle only exists on the composer home; inside a conversation there
     // is no surface to choose and no project menu to open.
     const onHome = !!C.findSurfaceGroup();
     const phases = K.coworkPhases({
       onSession: !onHome,
       approval: !!j.approval,
-      project: !!j.coworkProject,
+      project: !!project,
       model: !!j.model,
       files: !!files.length,
       text: !!j.text,
     });
-    if (!onHome && j.coworkProject)
+    if (!onHome && project)
       notes.push("project not chosen — this page is already inside a conversation");
 
     // What the toggle was on before we touched it, for the note a changed
@@ -629,13 +661,13 @@
           );
         say("approval", K.describeMode(j.approval) + " (" + r.why + ")");
       } else if (phase === "project") {
-        const r = await selectProject(j.coworkProject);
+        const r = await selectProject(project);
         if (!r.ok)
           return fail(
-            'project "' + j.coworkProject + '" not chosen — ' + r.why +
+            'project "' + project + '" not chosen — ' + r.why +
               " — not sent: a message that lands outside its project is worse than one that waits"
           );
-        say("project", JSON.stringify(j.coworkProject) + " (" + r.why + ")");
+        say("project", JSON.stringify(project) + " (" + r.why + ")");
       } else if (phase === "model") {
         let r;
         try {
