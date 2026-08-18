@@ -2342,7 +2342,18 @@
   function markSent(run, info) {
     const i = info || {};
     const chats = Object.assign({}, run.chats);
-    if (i.chatId && i.url) chats[i.chatId] = Object.assign({}, chats[i.chatId], { url: i.url });
+    // `opened` marks a conversation THIS RUN opened: the record had no url
+    // until the run's own send put one there. A chat the operator pasted in
+    // arrives with its url already set, so it can never earn the flag — which
+    // is what keeps renaming scoped to conversations the run itself started,
+    // even on a resume (see ownsChatName).
+    if (i.chatId && i.url) {
+      const had = chats[i.chatId] || {};
+      chats[i.chatId] = Object.assign({}, had, {
+        url: i.url,
+        opened: !!(had.opened || !had.url),
+      });
+    }
     return Object.assign({}, run, {
       status: "running",
       phase: "awaiting-reply",
@@ -2350,6 +2361,24 @@
       sentAt: i.now,
       lastProgressAt: i.now,
     });
+  }
+
+  /**
+   * Whether this run may (re)name this conversation — `saved` being the run's
+   * own record for the chat (run.chats[chatId]).
+   *
+   * No record, or a record with no url, means the run is about to open the
+   * conversation itself: the name is the run's to give. A url the run's own
+   * send put there (`opened`, from markSent) keeps it the run's — which is
+   * what lets a step resumed after a worker restart catch up a rename the
+   * send-time pass never made. A url that arrived any other way is a chat the
+   * operator pointed the run at, and retitling their work is never the
+   * extension's business. Records from before `opened` existed fall on that
+   * safe side too: no flag, no rename.
+   */
+  function ownsChatName(saved) {
+    if (!saved || !saved.url) return true;
+    return !!saved.opened;
   }
 
   function heartbeat(run, now) {
@@ -2374,7 +2403,15 @@
     // from a retried step must not advance the run twice).
     if (typeof i.stepIndex === "number" && i.stepIndex !== run.stepIndex) return run;
     const chats = Object.assign({}, run.chats);
-    if (i.chatId) chats[i.chatId] = Object.assign({}, chats[i.chatId], { url: i.url || (chats[i.chatId] || {}).url || null });
+    if (i.chatId) {
+      const had = chats[i.chatId] || {};
+      chats[i.chatId] = Object.assign({}, had, {
+        url: i.url || had.url || null,
+        // The same "this run opened it" bookkeeping as markSent, for the path
+        // where a step lands without markSent having recorded the url first.
+        opened: !!(had.opened || (i.url && !had.url)),
+      });
+    }
     const next = run.stepIndex + 1;
     const total = typeof i.total === "number" ? i.total : run.totalSteps;
     const reply = str(i.reply);
@@ -2441,10 +2478,13 @@
     if (!members.length) return run;
     const chats = Object.assign({}, run.chats);
     for (const m of members)
-      if (m.chatId)
-        chats[m.chatId] = Object.assign({}, chats[m.chatId], {
-          url: m.url || (chats[m.chatId] || {}).url || null,
+      if (m.chatId) {
+        const had = chats[m.chatId] || {};
+        chats[m.chatId] = Object.assign({}, had, {
+          url: m.url || had.url || null,
+          opened: !!(had.opened || (m.url && !had.url)),
         });
+      }
 
     const next = members[members.length - 1].stepIndex + 1;
     const total = typeof i.total === "number" ? i.total : run.totalSteps;
@@ -3086,6 +3126,7 @@
     noteRunUsage,
     formatPct,
     markSent,
+    ownsChatName,
     heartbeat,
     withWindow,
     applyStepResult,

@@ -437,3 +437,141 @@ test("either header control answering is proof the rename took", () => {
   assert.equal(K.titleNames("Share", "Drafting (A)"), false);
   assert.equal(K.titleNames("More options for x", ""), false);
 });
+
+// ---- the parallel send path ------------------------------------------------
+
+test("a Cowork send on the composer home runs every phase it was asked for, in order", () => {
+  assert.deepEqual(
+    K.coworkPhases({
+      onSession: false,
+      approval: true,
+      project: true,
+      model: true,
+      files: true,
+      text: true,
+    }),
+    ["surface", "approval", "project", "model", "attach", "prompt", "send"]
+  );
+});
+
+test("inside a conversation there is no surface to choose and no project menu to open", () => {
+  assert.deepEqual(
+    K.coworkPhases({
+      onSession: true,
+      approval: true,
+      project: true, // asked for, but the control isn't on this page
+      model: true,
+      files: false,
+      text: true,
+    }),
+    ["approval", "model", "prompt", "send"]
+  );
+});
+
+test("a bare continuation — text only, into an open session — is prompt and send", () => {
+  assert.deepEqual(K.coworkPhases({ onSession: true, text: true }), ["prompt", "send"]);
+});
+
+test("send is always the last phase, whatever else was asked", () => {
+  for (const job of [
+    {},
+    { onSession: true },
+    { onSession: false, files: true },
+    { onSession: false, approval: true, project: true, model: true, files: true, text: true },
+  ]) {
+    const phases = K.coworkPhases(job);
+    assert.equal(phases[phases.length - 1], "send");
+  }
+});
+
+test("any one source reaching the expected count proves the attachments landed", () => {
+  assert.equal(K.attachOutcome({ expected: 2, uploads: 2, chips: 0, named: 0 }).ok, true);
+  assert.equal(K.attachOutcome({ expected: 2, uploads: 0, chips: 2, named: 0 }).ok, true);
+  assert.equal(K.attachOutcome({ expected: 2, uploads: 0, chips: 0, named: 2 }).ok, true);
+  assert.equal(K.attachOutcome({ expected: 0 }).ok, true);
+});
+
+test("no source reaching the count is a send that must not go out, and the why counts everything", () => {
+  const r = K.attachOutcome({ expected: 3, uploads: 1, chips: 2, named: 0 });
+  assert.equal(r.ok, false);
+  // The report names every source, so a failure says what was actually seen.
+  assert.ok(r.why.indexOf("3") !== -1);
+  assert.ok(r.why.indexOf("1 upload") !== -1);
+  assert.ok(r.why.indexOf("2 chip") !== -1);
+});
+
+test("missing upload confirmations prove nothing on Cowork — the visible evidence carries alone", () => {
+  // Cowork's uploads run inside a worker no page hook sees; zero confirmations
+  // with every chip visible is the NORMAL success case, not a failure.
+  assert.equal(K.attachOutcome({ expected: 5, uploads: 0, chips: 5, named: 5 }).ok, true);
+});
+
+test("the proof a Cowork message left, strongest evidence first", () => {
+  assert.equal(
+    K.sentEvidence({ becameSession: true, humanGrew: true, cleared: true, sendStoodDown: true }),
+    "the address became a Cowork session"
+  );
+  assert.equal(
+    K.sentEvidence({ humanGrew: true, cleared: true }),
+    "a new human turn appeared"
+  );
+  assert.equal(K.sentEvidence({ cleared: true, sendStoodDown: true }), "the editor emptied");
+  assert.equal(K.sentEvidence({ sendStoodDown: true }), "the send control stood down");
+  assert.equal(K.sentEvidence({}), "");
+  assert.equal(K.sentEvidence(null), "");
+});
+
+test("the project trigger's caption is matched across the wordings claude.ai has used", () => {
+  for (const t of [
+    "Project",
+    "No project",
+    "Select a project",
+    "Select project",
+    "Choose project",
+    "Choose a project",
+    "Add to project",
+    "Add to a project",
+  ])
+    assert.equal(K.isProjectTriggerCaption(t), true, t);
+});
+
+test("'Projects' is still the navigation entry, never the trigger", () => {
+  // Accepting it once sent a run to the projects page and left it there.
+  assert.equal(K.isProjectTriggerCaption("Projects"), false);
+  assert.equal(K.isProjectTriggerCaption("View all projects"), false);
+});
+
+// ---- knowing whether a conversation already has its name -------------------
+
+test("two titles are the same name on their letters alone", () => {
+  assert.equal(K.sameTitle("Drafting (A)", "Drafting (A)"), true);
+  // The invisible characters this markup carries — a zero-width space — must
+  // not make a name fail to equal itself.
+  assert.equal(K.sameTitle("Draft​ing (A)", "Drafting (A)"), true);
+  assert.equal(K.sameTitle("  drafting (a)  ", "Drafting (A)"), true);
+  assert.equal(K.sameTitle("Drafting (A)", "Drafting (B)"), false);
+  assert.equal(K.sameTitle("", ""), false); // nothing is not a name two things share
+  assert.equal(K.sameTitle(null, "x"), false);
+});
+
+test("a conversation payload's name reads out, and anything else reads as none", () => {
+  assert.equal(K.conversationName({ name: "  Smith v Jones — MSJ  " }), "Smith v Jones — MSJ");
+  assert.equal(K.conversationName({}), "");
+  assert.equal(K.conversationName(null), "");
+  assert.equal(K.conversationName("not an object"), "");
+});
+
+test("a filename on screen vouches for its file, truncated or whole", () => {
+  assert.equal(K.nameSeen("combined-documents.txt ×", "combined-documents.txt"), true);
+  // A chip that truncates keeps the stem or a leading slice.
+  assert.equal(K.nameSeen("combined-documents", "combined-documents.txt"), true);
+  assert.equal(K.nameSeen("8.21.26 MSJ …", "8.21.26 MSJ combined papers.txt"), true);
+  assert.equal(K.nameSeen("", "a.txt"), false);
+  assert.equal(K.nameSeen("nothing relevant here", "combined-documents.txt"), false);
+});
+
+test("a short filename must appear whole — its letters alone vouch for nothing", () => {
+  // "a" appears in almost any composer text; that must not count as "a.txt".
+  assert.equal(K.nameSeen("attach the papers", "a.txt"), false);
+  assert.equal(K.nameSeen("a.txt", "a.txt"), true);
+});

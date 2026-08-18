@@ -333,7 +333,7 @@
   // lands, and that would land on top of the first attempt. The second one is
   // the one that sticks; only it reports, so the run's note says what the chat
   // ended up called rather than narrating two attempts.
-  async function nameThisChat(msg, notes) {
+  async function nameThisChat(msg, notes, onlyIfUnnamed) {
     if (!msg.title || !msg.firstInChat) return;
     const uuid = conversationUuid();
     // A Cowork SESSION has no rename API — renaming one by hand makes no HTTP
@@ -349,6 +349,10 @@
     // PROJECT is an ordinary chat with an ordinary uuid, and the API is both
     // available and better there — no menus, nothing to mis-click.
     if (uuid && /^cse_/.test(uuid)) {
+      // renameCoworkSession reads the title off the header before touching
+      // anything and answers "ok" for a name already in place — which is the
+      // check-first behaviour the onlyIfUnnamed pass wants; it only changes
+      // what gets SAID about it below.
       let r;
       try {
         r = await C.renameCoworkSession(msg.title);
@@ -356,9 +360,21 @@
         r = "failed";
       }
       if (!notes) return;
-      if (r === "ok") notes.push('named this chat "' + msg.title + '"');
-      else notes.push("could not name this Cowork chat (" + (C.renameWhy() || r) + ")");
+      const already = /already called/i.test(C.renameWhy() || "");
+      if (r === "ok") {
+        if (!(onlyIfUnnamed && already)) notes.push('named this chat "' + msg.title + '"');
+      } else notes.push("could not name this Cowork chat (" + (C.renameWhy() || r) + ")");
       return;
+    }
+    if (onlyIfUnnamed && uuid) {
+      // This pass exists to CATCH UP a rename an earlier send never made — not
+      // to stamp the title again over one that took, or over one typed by
+      // hand. Ask the conversation itself first; if the fetch won't answer,
+      // fall through and rename, which is idempotent where it was already
+      // right.
+      const K = window.CUMCowork;
+      const conv = await fetchConversation(uuid, 10000);
+      if (K && conv && K.sameTitle(K.conversationName(conv), msg.title)) return;
     }
     const named = uuid ? await renameConversation(uuid, msg.title) : null;
     if (!notes) return;
@@ -1075,6 +1091,13 @@
         // The answer is already sitting there: anything counts.
         before = { count: -1, text: null, apiText: "" };
       }
+      // A chat this run opened may still be sitting unnamed: a worker that
+      // died between send and reply died before the rename too, and the pass
+      // that follows the reply could be an hour away. Check now, while the
+      // reply is awaited, and name it only if nothing has yet — the title of a
+      // chat the operator supplied never arrives in msg (see ownsChatName), so
+      // this can only ever touch the run's own conversations.
+      await nameThisChat(msg, notes, true);
       // The message went out before this tab took the step over; anything the
       // stream signals from here on is fair game. A wave member's own record
       // says when, since the run's single sentAt describes whichever member

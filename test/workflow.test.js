@@ -3111,3 +3111,53 @@ test("a caller asking for longer than the floor still gets what it asked for", (
   };
   assert.equal(W.settleReason(s), null, "the floor raises a ceiling, it never lowers one");
 });
+
+// ---- who may name a conversation, and when ---------------------------------
+
+test("a conversation the run's own send opened stays the run's to name, on resume too", () => {
+  const { run } = startedRun();
+  // Before anything is sent there is no record: the run is about to open the
+  // conversation itself, so the name is its to give.
+  assert.equal(W.ownsChatName((run.chats || {}).a), true);
+  assert.equal(W.ownsChatName(undefined), true);
+  // The run's own send put the url there — markSent marks it opened, and a
+  // step resumed after a worker restart may catch up the rename.
+  const sent = W.markSent(run, { chatId: "a", url: "https://claude.ai/cowork/cse_abc", now: NOW });
+  assert.equal(sent.chats.a.opened, true);
+  assert.equal(W.ownsChatName(sent.chats.a), true);
+});
+
+test("a chat the operator pasted in never earns the flag, however many sends return to it", () => {
+  const wf = twoChatWorkflow();
+  wf.chats[0].startUrl = "https://claude.ai/chat/00000000-0000-4000-8000-000000000001";
+  const run = W.markStarted(W.newRun(wf, "r1", NOW, { type: "now" }), NOW);
+  // Seeded from the pasted link: url present, not opened by the run.
+  assert.equal(W.ownsChatName(run.chats.a), false);
+  // A later send INTO that conversation records the url again — and must not
+  // launder it into a run-opened one.
+  const sent = W.markSent(run, { chatId: "a", url: run.chats.a.url, now: NOW });
+  assert.equal(!!sent.chats.a.opened, false);
+  assert.equal(W.ownsChatName(sent.chats.a), false);
+});
+
+test("records from before the flag existed fall on the safe side: no rename", () => {
+  // An in-flight run from an older version has {url} with no `opened`. The
+  // run cannot say it opened that chat, so it must not claim the name.
+  assert.equal(W.ownsChatName({ url: "https://claude.ai/chat/u1" }), false);
+});
+
+test("the flag survives the step landing and the wave folding", () => {
+  const { run } = startedRun();
+  const sent = W.markSent(run, { chatId: "a", url: "https://claude.ai/chat/u1", now: NOW });
+  const landed = W.applyStepResult(sent, {
+    stepIndex: 0, chatId: "a", reply: "DRAFT", url: "https://claude.ai/chat/u1", now: NOW + 1, total: 3,
+  });
+  assert.equal(landed.chats.a.opened, true, "applyStepResult keeps it");
+  const waved = W.applyWaveResult(landed, {
+    members: [{ stepIndex: 1, chatId: "b", chatName: "Critic", reply: "R", url: "https://claude.ai/chat/u2", at: NOW + 2 }],
+    now: NOW + 2,
+    total: 3,
+  });
+  assert.equal(waved.chats.b.opened, true, "a wave member's chat is run-opened too");
+  assert.equal(waved.chats.a.opened, true, "and the earlier chat keeps its flag");
+});

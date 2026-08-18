@@ -464,6 +464,31 @@ in Cowork) and the approval mode works like the model: set on the chat, and
 overridable **per step**, leaving the conversation on it for the steps after —
 so one chat can research with the brakes off and then edit a filing with them on.
 
+### Cowork sends run on their own driver
+
+Cowork is **not Chat with a different address**, and nothing built for Chat is
+assumed to work there until it has been *seen* working there. The run that made
+this a rule switched its model and then silently did nothing else — no project
+chosen, no message sent — because everything after the model menu was Chat
+plumbing being trusted on a surface that had never confirmed it. The specific
+break: Cowork's uploads run inside a worker the page's hooks can't see, so
+Chat's "wait for the upload responses" confirmation can never fire, and Chat's
+chip selectors counted zero on a composer that was visibly holding the files.
+
+So a Cowork send goes through `src/cowork-composer.js`, a parallel driver that
+borrows from the Chat one only what is surface-agnostic mechanics (clicks,
+menus, sleeping in a hidden tab) or has been confirmed on Cowork itself (the
+Chat/Cowork toggle, the approval menu, the model menu). Everything else is its
+own: choosing the project (a wider net than literal `<button>`s, with the
+navigating rows still excluded by name), confirming attachments by what the
+composer **visibly carries** — chips or the filenames themselves, truncation
+tolerated — and proving the send by Cowork's own evidence (the address becoming
+`/cowork/cse_…`, a new human turn, the editor emptying). Every phase reports,
+and a phase that fails **fails the send loudly** — a message posted into the
+wrong project, or under an approval mode nobody chose, is worse than one that
+waits. The decisions live in `src/cowork.js`, pure and tested; the driver holds
+only the wiring.
+
 ## Workflows
 
 A scheduled send fires one message into one chat. A **workflow** runs a piece of
@@ -1303,6 +1328,18 @@ no Rename in it is closed again and the run says which items it saw. A conversat
 chat with an ordinary uuid and still uses the API, which is better where it
 works — no menus, nothing to mis-click.
 
+**A resumed step checks the name it owes.** Naming a conversation normally
+happens twice — once when the send opens it, once after the reply lands, so
+claude.ai's own auto-title doesn't win. A worker restart between send and reply
+used to skip both: the resume payload no longer carried the title, and the chat
+sat unnamed for however long the reply took. Now a chat the **run itself
+opened** stays the run's to name across a resume (`ownsChatName` — the record
+carries an `opened` flag the run's own send set), and a re-attached step checks
+while it waits: if the conversation hasn't yet been given the run's name, it is
+named right there, not an hour later. A chat you pasted in can never earn that
+flag, so your own conversations are never retitled — including records written
+before the flag existed, which fall on the safe side.
+
 In a borrowed window a run gives up everything the isolated one provided for
 free, and gives it up deliberately: nothing is resized (the window is yours), no
 Options tab is pinned into it, **Close window** isn't offered — those tabs were
@@ -1970,7 +2007,8 @@ src/cowork.js          Chat/Cowork surface + approval modes (pure)
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown
 src/content.css        Floating-button styles (light + dark)
-src/composer.js        The one place that drives claude.ai's composer DOM
+src/composer.js        Drives claude.ai's CHAT composer DOM (+ shared mechanics)
+src/cowork-composer.js Parallel Cowork send driver — Cowork's own evidence
 src/scheduler-run.js   Sends a queued job through the composer
 src/workflow-run.js    Runs one workflow step and reads Claude's reply
 src/jobform.js         Shared scheduled-send form (options page + pill modal)

@@ -417,7 +417,16 @@
    */
   function isProjectTriggerCaption(text) {
     const t = squash(text);
-    return t === "project" || t === "noproject" || t === "selectaproject";
+    return (
+      t === "project" ||
+      t === "noproject" ||
+      t === "selectaproject" ||
+      t === "selectproject" ||
+      t === "chooseproject" ||
+      t === "chooseaproject" ||
+      t === "addtoproject" ||
+      t === "addtoaproject"
+    );
   }
 
   // Rows that look like projects but aren't. Clicking either of these navigates
@@ -428,6 +437,113 @@
     const t = lower(rowText);
     if (!t) return false;
     return NOT_PROJECTS.indexOf(t) === -1;
+  }
+
+  // ---- the parallel send path --------------------------------------------
+  //
+  // Cowork is not Chat with a different address, and nothing built for Chat is
+  // assumed to work here until it has been seen working here. The run that
+  // taught this switched its model and then silently did nothing else — no
+  // project chosen, no message sent — because the pieces after the model menu
+  // were Chat plumbing being trusted on a surface that never confirmed them.
+  // These are the decisions the Cowork send driver (src/cowork-composer.js)
+  // runs on; the driver holds only the DOM wiring.
+
+  /**
+   * Which phases a Cowork send performs, in order. The composer home has the
+   * surface toggle and the project menu; a page already inside a conversation
+   * has neither, and asking for them there would be hunting for controls that
+   * are not on the page.
+   */
+  function coworkPhases(job) {
+    const j = job || {};
+    const out = [];
+    if (!j.onSession) out.push("surface");
+    if (j.approval) out.push("approval");
+    if (j.project && !j.onSession) out.push("project");
+    if (j.model) out.push("model");
+    if (j.files) out.push("attach");
+    if (j.text) out.push("prompt");
+    out.push("send");
+    return out;
+  }
+
+  /**
+   * Did the attachments actually land? Cowork's upload traffic runs inside a
+   * worker the page hooks cannot see (the same blindness that makes its turn
+   * end unknowable from the network), so upload confirmations MAY never arrive
+   * and their absence proves nothing. The composer showing the files is the
+   * evidence that exists: a chip per file, or the filenames themselves. Any
+   * one source reaching the expected count is enough; none reaching it is a
+   * send that must not go out — a prompt that says "the attached papers"
+   * arriving bare sends anyway, and Claude answers plausibly from nothing.
+   */
+  function attachOutcome(ev) {
+    const e = ev || {};
+    const want = Math.max(0, Number(e.expected) || 0);
+    if (!want) return { ok: true, why: "nothing to attach" };
+    const uploads = Math.max(0, Number(e.uploads) || 0);
+    const chips = Math.max(0, Number(e.chips) || 0);
+    const named = Math.max(0, Number(e.named) || 0);
+    if (uploads >= want) return { ok: true, why: uploads + " upload(s) confirmed" };
+    if (chips >= want) return { ok: true, why: chips + " attachment chip(s) visible" };
+    if (named >= want) return { ok: true, why: named + " filename(s) visible in the composer" };
+    return {
+      ok: false,
+      why:
+        "expected " + want + " attachment(s); saw " + uploads + " upload confirmation(s), " +
+        chips + " chip(s), " + named + " filename(s)",
+    };
+  }
+
+  /**
+   * Whether a composer's visible text is carrying this filename. The failing
+   * run put this beyond doubt: the files visibly attach on Cowork ("It adds
+   * the files and then stops") while the upload confirmations and Chat's chip
+   * markup both show nothing — so the name on screen is the evidence. Chips
+   * truncate long names, so the stem or a leading slice is enough, but only at
+   * eight characters or more: "a.txt" must appear whole, or an unrelated "a"
+   * anywhere in the composer would vouch for it.
+   */
+  function nameSeen(text, name) {
+    const t = str(text);
+    const n = str(name).trim();
+    if (!t || !n) return false;
+    if (t.indexOf(n) !== -1) return true;
+    const stem = n.replace(/\.[A-Za-z0-9]{1,8}$/, "").trim();
+    if (stem.length >= 8 && t.indexOf(stem) !== -1) return true;
+    const prefix = n.slice(0, 12).trim();
+    return prefix.length >= 8 && t.indexOf(prefix) !== -1;
+  }
+
+  /**
+   * The proof a Cowork message actually left. /chat/ never appears in a Cowork
+   * address, so the Chat driver's confirmation could never fire here; the
+   * evidence that exists is the address becoming a session, a new human turn
+   * mounting, the editor emptying, or the send control standing down — in that
+   * order of strength. Returns the sentence naming the strongest evidence
+   * seen, or "" for none.
+   */
+  function sentEvidence(ev) {
+    const e = ev || {};
+    if (e.becameSession) return "the address became a Cowork session";
+    if (e.humanGrew) return "a new human turn appeared";
+    if (e.cleared) return "the editor emptied";
+    if (e.sendStoodDown) return "the send control stood down";
+    return "";
+  }
+
+  /** Whether two titles are the same name, letters and digits only — the
+   * comparison that survives the invisible characters this markup carries. */
+  function sameTitle(a, b) {
+    const x = squash(a);
+    return !!x && x === squash(b);
+  }
+
+  /** The name a conversation payload carries, or "". What a resumed step
+   * checks before renaming: a title already the run's needs no second stamp. */
+  function conversationName(conv) {
+    return conv && typeof conv === "object" ? norm(conv.name) : "";
   }
 
   const api = {
@@ -464,6 +580,12 @@
     nameFromRenameSession,
     titleNames,
     isProjectRow,
+    coworkPhases,
+    attachOutcome,
+    nameSeen,
+    sentEvidence,
+    sameTitle,
+    conversationName,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMCowork = api;

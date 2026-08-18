@@ -1377,9 +1377,13 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
     text: W.composeStepText(m, run.lastReply),
     files: awaitOnly ? [] : docs,
     model: m.model && (m.modelOverride || !saved.url) ? m.model : null,
-    firstInChat: m.firstInChat && !saved.url,
+    // Naming is scoped to conversations the run itself opened — and stays
+    // theirs on a resume, so a step re-attached after a worker restart can
+    // catch up a rename the send-time pass never made. ownsChatName tells a
+    // run-opened chat from one the operator pasted in.
+    firstInChat: m.firstInChat && W.ownsChatName(saved),
     title:
-      run.nameChats !== false && m.firstInChat && !saved.url
+      run.nameChats !== false && m.firstInChat && W.ownsChatName(saved)
         ? W.chatTitle(run, m.chatName)
         : null,
     codeRepo: m.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
@@ -1667,14 +1671,14 @@ async function driveRun(runId, opts) {
         // into work that was already there.
         model: step.model && (step.modelOverride || !saved.url) ? step.model : null,
         // What to call this conversation, when the run is the one opening it.
-        // `!saved.url` is the test for that: a chat the run was pointed at
+        // ownsChatName is the test for that: a chat the run was pointed at
         // already had a link, and retitling a conversation you started yourself
-        // is not the extension's business.
-        firstInChat: step.firstInChat && !saved.url,
-        // Save what the reply offers. Off unless the workflow asks: it writes
-        // to your disk, which is not a run's decision to make.
-            title:
-          run.nameChats !== false && step.firstInChat && !saved.url
+        // is not the extension's business — while one the run's own send opened
+        // stays the run's to name even on a resume, so a step re-attached after
+        // a worker restart can catch up a rename the send-time pass never made.
+        firstInChat: step.firstInChat && W.ownsChatName(saved),
+        title:
+          run.nameChats !== false && step.firstInChat && W.ownsChatName(saved)
             ? W.chatTitle(run, step.chatName)
             : null,
         codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
