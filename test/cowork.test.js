@@ -588,3 +588,16 @@ test("the approval switch is believed when the page says so, not when a menu clo
   assert.equal(K.approvalTook({ triggerLabel: "Automatically approve" }, "nonsense"), false);
   assert.equal(K.approvalTook(null, "auto"), false);
 });
+
+test("the operator's own test file is seen, and its near-namesake chat is not", () => {
+  // The live page carries a sidebar chat called "Text file creation" — a
+  // near-namesake of the test file "2026-08-17 Text file creation". Matching
+  // anchors to the NAME's start, so the chip vouches however it truncates and
+  // the chat row never does.
+  const name = "2026-08-17 Text file creation.txt";
+  assert.equal(K.nameSeen("2026-08-17 Text file creation.txt ×", name), true);
+  assert.equal(K.nameSeen("2026-08-17 Text file creation", name), true, "extension stripped");
+  assert.equal(K.nameSeen("2026-08-17 Text fi…", name), true, "end-truncated chip");
+  assert.equal(K.nameSeen("Text file creation", name), false, "the sidebar chat");
+  assert.equal(K.nameSeen("2026-08-17", name), false, "a bare date on the page");
+});
