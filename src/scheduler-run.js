@@ -42,8 +42,12 @@
     return { ok: true, note };
   }
 
-  // Scrape the visible project links (for the options-page picker).
+  // Scrape the visible project links (for the options-page picker). Cleaned
+  // as they come in: a row's textContent carries its own furniture ("Toggle
+  // chats for <name>" from the chats expander), and a name stored dirty armed
+  // a run that filtered the project menu down to nothing and failed.
   function scrapeProjects() {
+    const J = window.CUMJobs;
     const out = [];
     document.querySelectorAll('a[href*="/project/"]').forEach((a) => {
       const href = a.getAttribute("href");
@@ -51,7 +55,8 @@
       const m = href.match(/\/project\/([0-9a-f-]{36})/i);
       if (!m) return;
       if (out.some((p) => p.uuid === m[1])) return;
-      out.push({ uuid: m[1], href, name: (a.textContent || "").replace(/\s+/g, " ").trim().slice(0, 100) });
+      const raw = (a.textContent || "").replace(/\s+/g, " ").trim().slice(0, 100);
+      out.push({ uuid: m[1], href, name: (J && J.cleanProjectName(raw)) || raw });
     });
     return out;
   }

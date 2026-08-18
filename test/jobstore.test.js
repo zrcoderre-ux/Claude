@@ -239,3 +239,14 @@ test("the surface chip names the approval mode only where there is one", () => {
   );
   assert.equal(J.surfaceLabel(J.newJob({ surface: "cowork" }, "i", NOW)), "Cowork");
 });
+
+test("cleanProjectName strips the chats-toggle caption a live run was armed with", () => {
+  // Off a failed run's own note: the sidebar row's expander reads "Toggle
+  // chats for <name>", textContent runs it straight onto the title, and the
+  // doubled name filtered the project menu down to nothing.
+  assert.equal(
+    J.cleanProjectName("Draft Tentative RulingsToggle chats for Draft Tentative Rulings"),
+    "Draft Tentative Rulings"
+  );
+  assert.equal(J.cleanProjectName("Draft Tentative Rulings"), "Draft Tentative Rulings");
+});
