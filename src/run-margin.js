@@ -599,6 +599,18 @@
   });
   setInterval(tick, POLL_MS);
   setInterval(position, 1000);
+  // Snap back on every page NAVIGATION too, unless persistence is ticked —
+  // the owner's rule: an unticked box means the default spot, page after page,
+  // not just run after run.
+  let lastHref = location.href;
+  setInterval(() => {
+    if (location.href === lastHref) return;
+    lastHref = location.href;
+    if (!sticky && custom) {
+      custom = null;
+      position();
+    }
+  }, 800);
   window.addEventListener("resize", position);
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
