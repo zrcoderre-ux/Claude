@@ -111,13 +111,21 @@
 
   // A reply's text with its CONTROLS' captions removed — a Cowork reply
   // carries tool-status pills, and a label or key built over "Ran a command…"
-  // says nothing about what the reply says.
+  // says nothing about what the reply says. The pills are not all buttons,
+  // and textContent flattens block elements with NO newline between them —
+  // "Ran 4 agentsRan 4 agents", live — so a line filter can't reach them
+  // here: the pill ELEMENTS are removed instead, judged by the same pure test
+  // (T.isActivityLine) the API-built list filters its lines with.
   function textOf(node) {
     if (!node) return "";
     let copy;
     try {
       copy = node.cloneNode(true);
       for (const b of copy.querySelectorAll('button,[role="button"]')) b.remove();
+      for (const p of Array.from(copy.querySelectorAll("div,span,p,li,a"))) {
+        if (!copy.contains(p)) continue; // gone with an outer pill already
+        if (T.isActivityLine(p.textContent)) p.remove();
+      }
     } catch (e) {
       return (node.textContent || "").trim();
     }
@@ -469,7 +477,12 @@
     if (!force && key === lastKey) return;
     lastKey = key;
 
-    const seen = T.tocEntries(paired.map((p) => ({ text: p.text, prev: p.prev })));
+    // One bookmark per prompt (the owner's rule) — collapsed BEFORE comparing
+    // with what's stored, so the interim replies this drops don't read as
+    // missing entries and refetch the conversation forever.
+    const seen = T.onePerPrompt(
+      T.tocEntries(paired.map((p) => ({ text: p.text, prev: p.prev })))
+    );
     if (fromApi) {
       // The conversation is the list; the page only says when to ask for it
       // again. A message on screen that the list doesn't know is one you just
@@ -480,7 +493,7 @@
       // page is all there is. Merge rather than replace: what's mounted is a
       // window, and rebuilding from it is what made entries disappear as you
       // scrolled.
-      entries = withSteps(T.mergeWindows(entries, seen));
+      entries = withSteps(T.onePerPrompt(T.mergeWindows(entries, seen)));
     }
     build();
     render();
@@ -588,8 +601,7 @@
           lastHuman = null;
         }
         if (!mine.length) return;
-        entries = T.tocEntries(mine);
-        entries = withSteps(entries);
+        entries = withSteps(T.onePerPrompt(T.tocEntries(mine)));
         fromApi = true;
         convId = uuid;
         build();

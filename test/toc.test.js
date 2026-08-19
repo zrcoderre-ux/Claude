@@ -214,3 +214,52 @@ test("prompt-built entries without prevKey still match on their own key", () => 
   const marked = T.stepMarks(entries, [{ label: "1", prompt: "Draft the ruling for the attached papers." }]);
   assert.equal(marked[0].step, "1");
 });
+
+// ---- narration out, one bookmark per prompt ---------------------------------
+
+test("activity narration is not part of the bookmarked reply", () => {
+  // Live pill captions, verbatim.
+  assert.equal(T.isActivityLine("Ran 14 commands, used a skill · 1 note"), true);
+  assert.equal(T.isActivityLine("Ran 4 agents"), true);
+  assert.equal(T.isActivityLine("Reading project file Authority Watch Register 8.17.2026.md"), true);
+  assert.equal(T.isActivityLine("Searched the web"), true);
+  assert.equal(T.isActivityLine("1 note"), true);
+  // Prose that happens to open with the same verbs stays.
+  assert.equal(T.isActivityLine("Read this carefully before ruling on the demurrer."), false);
+  assert.equal(T.isActivityLine("The motion is granted."), false);
+  assert.equal(T.isActivityLine(""), false);
+
+  const stripped = T.readerText("Ran 4 agents\nThe ruling stands for three reasons.\n1 note");
+  assert.equal(stripped, "The ruling stands for three reasons.");
+  // ...and tocEntries labels over the stripped text, so the list never says
+  // "Ran a command".
+  const entries = T.tocEntries([{ text: "Ran 4 agents\nBifurcation is denied because…", prev: "p" }]);
+  assert.match(entries[0].label, /^Bifurcation is denied/);
+});
+
+test("one bookmark per prompt — the last reader-directed reply of each turn", () => {
+  const entries = T.tocEntries([
+    { text: "Interim agent hand-off.", prev: "First prompt, long enough to be distinctive." },
+    { text: "THE REPORT the reader wants.", prev: null }, // follow-on, no human between
+    { text: "Reply to the second ask.", prev: "Second prompt, also long enough to matter." },
+  ]);
+  const one = T.onePerPrompt(entries);
+  assert.equal(one.length, 2, "two prompts, two bookmarks");
+  assert.match(one[0].label, /^THE REPORT/);
+  // The kept reply wears the GROUP's prompt key, so a workflow step — matched
+  // by its prompt — still finds it.
+  assert.equal(one[0].prevKey, T.entryKey("First prompt, long enough to be distinctive."));
+  assert.match(one[1].label, /^Reply to the second ask/);
+  assert.equal(one[0].n, 1);
+  assert.equal(one[1].n, 2);
+  // A trailing narration-only reply doesn't steal the bookmark from the report.
+  const tail = T.onePerPrompt(
+    T.tocEntries([
+      { text: "THE REPORT.", prev: "First prompt, long enough to be distinctive." },
+      { text: "Ran 4 agents", prev: null },
+    ])
+  );
+  assert.equal(tail.length, 1);
+  assert.match(tail[0].label, /^THE REPORT/);
+  assert.deepEqual(T.onePerPrompt([]), []);
+});
