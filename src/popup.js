@@ -25,6 +25,7 @@
     save: document.getElementById("save"),
     status: document.getElementById("status"),
     showOverage: document.getElementById("show-overage"),
+    runConsoleSticky: document.getElementById("run-console-sticky"),
     estimateDecimals: document.getElementById("estimate-decimals"),
     autoContinue: document.getElementById("auto-continue"),
     allowOnce: document.getElementById("allow-once"),
@@ -142,6 +143,7 @@
       STORAGE_KEY,
       MANUAL_URL_KEY,
       OVERAGE_KEY,
+      "cum_runmargin_sticky",
       ESTIMATE_KEY,
       AUTOCONTINUE_KEY,
       AUTODOWNLOAD_KEY,
@@ -153,6 +155,7 @@
       render(res && res[STORAGE_KEY]);
       if (res && res[MANUAL_URL_KEY]) el.endpoint.value = res[MANUAL_URL_KEY];
       el.showOverage.checked = !!(res && res[OVERAGE_KEY]);
+      el.runConsoleSticky.checked = !!(res && res.cum_runmargin_sticky);
       el.estimateDecimals.checked = !!(res && res[ESTIMATE_KEY]);
       acCfg = Object.assign(acCfg, (res && res[AUTOCONTINUE_KEY]) || {});
       el.autoContinue.checked = !!acCfg.enabled;
@@ -346,6 +349,18 @@
   el.showOverage.addEventListener("change", () => {
     chrome.storage.local.set({ [OVERAGE_KEY]: el.showOverage.checked }, () =>
       flash(el.showOverage.checked ? "Extra usage on" : "Extra usage off")
+    );
+  });
+
+  el.runConsoleSticky.addEventListener("change", () => {
+    const on = el.runConsoleSticky.checked;
+    // Turning it off also forgets the stored spot, so the console snaps back
+    // to its default rather than remembering a preference that is now off.
+    const write = on
+      ? { cum_runmargin_sticky: true }
+      : { cum_runmargin_sticky: false, cum_runmargin_geo: null };
+    chrome.storage.local.set(write, () =>
+      flash(on ? "Run console remembers where you put it" : "Run console snaps back to default")
     );
   });
 

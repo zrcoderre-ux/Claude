@@ -1475,7 +1475,11 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   line-height: 1.4;
 }
 #cum-runmargin[hidden] { display: none; }
-.cum-rm-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* Draggable by its title bar, resizable from its corner (the browser's own
+   handle). Whether the result is remembered is the popup's checkbox. */
+#cum-runmargin { resize: both; min-width: 280px; min-height: 120px; }
+.cum-rm-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; cursor: grab; user-select: none; }
+.cum-rm-head:active { cursor: grabbing; }
 .cum-rm-title { font-weight: 700; font-size: 13.5px; flex: 1 1 auto; }
 .cum-rm-badge {
   font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
