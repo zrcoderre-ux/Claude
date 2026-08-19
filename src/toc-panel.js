@@ -758,16 +758,34 @@
   // Jumping to a step's message, for the workflow index next door. It knows
   // which prompt it wants and nothing about where messages are; this knows how
   // to find one that may not even be rendered. See seek().
+  // The nearest human turn above a node — the prompt a reply answers.
+  function humanBefore(node) {
+    let prev = null;
+    for (const h of humanMessages()) {
+      try {
+        if (node.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_PRECEDING) prev = h;
+        else break;
+      } catch (e) {
+        break;
+      }
+    }
+    return prev;
+  }
+
   window.CUMTocJump = {
     toPrompt: function (prompt) {
       // The list tracks replies keyed to the prompts they answer, so a step's
-      // prompt finds the REPLY to that step — which is where reading back
-      // through a run actually wants to land. Same matching rule as the step
-      // marks, asked of the pure module.
+      // prompt finds the REPLY to that step. A step jump lands on the PROMPT
+      // itself where it's mounted (the owner's rule — the spot where that
+      // prompt was sent), and on the reply when the human turn isn't there to
+      // land on. Same matching rule as the step marks, asked of the pure
+      // module.
       const at = T.findByPrompt(entries, prompt);
       // Nothing in the list yet — the page may still be loading. Say so rather
       // than scrolling somewhere arbitrary.
       if (at === -1) return false;
+      const node = mountedNodeFor(at);
+      if (node) return jumpTo(humanBefore(node) || node);
       go(at);
       return true;
     },
