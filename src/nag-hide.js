@@ -58,7 +58,7 @@
     for (const el of leaves) {
       if (el.children.length) continue; // the phrase lives in a leaf
       const t = el.textContent || "";
-      if (!N.isNagText(t)) continue;
+      if (!N.looksLikeNag(t)) continue; // the words, at banner size, in the leaf itself
       if (C && C.isOurs(el)) continue;
       let inTurn = false;
       try {
@@ -67,17 +67,20 @@
         inTurn = true; // can't tell — leave it alone
       }
       if (inTurn) continue;
-      // Climb to the banner's own box: the nearest ancestor still saying only
-      // banner-sized things. Bounded, so the box can never be the page.
+      // Climb to the banner's own box: ONLY while the parent still reads as
+      // just the banner. The first version climbed to the largest ancestor
+      // under a character bound and then demanded banner size of what it
+      // reached — a contradiction that hid nothing on a fresh chat, where the
+      // composer's whole container ("How can I help you today?" plus the
+      // banner) is short enough to climb into and too long to pass. The
+      // strictness has to steer the climb, not judge it afterwards.
       let box = el;
       for (let i = 0; i < 5; i++) {
         const p = box.parentElement;
         if (!p || p === document.body || p === document.documentElement) break;
-        const pt = (p.textContent || "").replace(/\s+/g, " ").trim();
-        if (pt.length > N.CLIMB_ROOM) break;
+        if (!N.looksLikeNag(p.textContent)) break;
         box = p;
       }
-      if (!N.looksLikeNag(box.textContent)) continue;
       if (box.hasAttribute(MARK)) continue;
       try {
         box.setAttribute(MARK, "1");

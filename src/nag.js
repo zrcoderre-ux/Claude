@@ -41,22 +41,21 @@
     return PHRASES.some((p) => t.indexOf(p) !== -1);
   }
 
-  // A banner says its phrase and stops; a paragraph discussing limits goes on.
-  // The live banner's whole text — "Approaching weekly limitGet more usage" —
-  // is ~40 characters; triple that is still no sentence about anything.
-  const MAX_BANNER_CHARS = 140;
+  // A banner says its phrase and stops; anything else goes on. The live
+  // banner's whole text — "Approaching weekly limitGet more usage" — is 39
+  // characters. The ceiling was 140 once, and a fresh chat's compact composer
+  // container fit UNDER it, which would have made the composer itself "the
+  // banner" and hidden the prompt box; twice the real banner is room enough
+  // for every wording variant and no room at all for a box that holds
+  // anything else.
+  const MAX_BANNER_CHARS = 80;
   /** Whether this text IS a nag — the words, at banner size. */
   function looksLikeNag(text) {
     if (!isNagText(text)) return false;
     return String(text || "").replace(/\s+/g, " ").trim().length <= MAX_BANNER_CHARS;
   }
 
-  // How much text an ancestor may hold and still be the banner's own box —
-  // the climb bound the wiring uses, so hiding the banner can never hide the
-  // container the banner merely sits in.
-  const CLIMB_ROOM = 240;
-
-  const api = { isNagText, looksLikeNag, MAX_BANNER_CHARS, CLIMB_ROOM };
+  const api = { isNagText, looksLikeNag, MAX_BANNER_CHARS };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMNag = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
