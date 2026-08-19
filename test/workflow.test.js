@@ -102,18 +102,21 @@ test("only actual text is folded into a combined upload", () => {
   assert.equal(W.isTextDoc({ name: "mystery", type: "" }), false);
 });
 
-test("bundleText announces what's inside and marks where each document begins", () => {
+test("bundleText opens with a numbered index and marks where each document begins", () => {
   const out = W.bundleText([
     { name: "Motion.txt", text: "  THE MOTION  " },
-    { name: "Complaint.txt", text: "THE COMPLAINT" },
+    { name: "Complaint.txt", text: "THE COMPLAINT AND MORE" },
   ]);
   assert.match(out, /^This file contains 2 documents/);
-  assert.match(out, /They are, in order: Motion\.txt, Complaint\.txt\./);
+  // A real index up top — one numbered line per document, with its length —
+  // not a prose sentence running the names together (the owner's ask).
+  assert.match(out, /Index, in order:\n1\. Motion\.txt — 2 words\n2\. Complaint\.txt — 4 words/);
   assert.match(out, /===== BEGIN FILE: Motion\.txt =====\n\nTHE MOTION\n\n===== END FILE: Motion\.txt =====/);
   assert.match(out, /===== BEGIN FILE: Complaint\.txt =====/);
   // An empty document contributes nothing but doesn't break the count.
   const one = W.bundleText([{ name: "a.txt", text: "A" }, { name: "b.txt", text: "   " }]);
-  assert.match(one, /^This file contains 1 document/);
+  assert.match(one, /^This file contains 1 document,/);
+  assert.match(one, /1\. a\.txt — 1 word\b/);
   assert.equal(W.bundleText([]), "");
   assert.equal(W.bundleText(null), "");
 });
