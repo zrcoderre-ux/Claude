@@ -2,10 +2,10 @@
  * Claude Usage Meter — the table of contents panel (ISOLATED world content
  * script).
  *
- * A floating box, one per conversation, listing your own messages. Click one
- * and the chat jumps to the END of that prompt — which is where Claude's answer
- * to it begins, and so the place you actually want to land when you're reading
- * back through what a conversation did.
+ * A box, one per conversation, listing CLAUDE'S REPLIES (the owner's spec —
+ * the replies are where the work product is). Click one and the chat jumps to
+ * the top of that reply. Each entry is keyed to the prompt it answers, which
+ * is how a workflow step — identified by its prompt — still finds its reply.
  *
  * Starts minimized — a chat you're just reading shouldn't have a panel over it —
  * behind a button in claude.ai's own header, in with the file and share
@@ -72,18 +72,25 @@
     }
   }
 
-  // ---- finding your messages ---------------------------------------------
-  // The same selector cascade the workflow runner uses, for the same reason:
+  // ---- finding the messages ----------------------------------------------
+  // The same selector cascades the workflow runner uses, for the same reason:
   // claude.ai's markup is unversioned, so try each and take the first that
-  // matches anything.
+  // matches anything. The list tracks Claude's REPLIES (the owner's spec);
+  // the human messages are still read, because each reply is keyed to the
+  // prompt it answers — that is how a workflow step finds its reply.
   const HUMAN_SELECTORS = [
     '[data-testid="user-message"]',
     ".font-user-message",
     '[data-testid="human-message"]',
   ];
+  const REPLY_SELECTORS = [
+    '[data-testid="assistant-message"]',
+    ".font-claude-response",
+    ".font-claude-message",
+  ];
 
-  function humanMessages() {
-    for (const sel of HUMAN_SELECTORS) {
+  function bySelectors(sels) {
+    for (const sel of sels) {
       let nodes;
       try {
         nodes = document.querySelectorAll(sel);
@@ -94,6 +101,46 @@
       if (list.length) return list;
     }
     return [];
+  }
+  function humanMessages() {
+    return bySelectors(HUMAN_SELECTORS);
+  }
+  function replyMessages() {
+    return bySelectors(REPLY_SELECTORS);
+  }
+
+  // A reply's text with its CONTROLS' captions removed — a Cowork reply
+  // carries tool-status pills, and a label or key built over "Ran a command…"
+  // says nothing about what the reply says.
+  function textOf(node) {
+    if (!node) return "";
+    let copy;
+    try {
+      copy = node.cloneNode(true);
+      for (const b of copy.querySelectorAll('button,[role="button"]')) b.remove();
+    } catch (e) {
+      return (node.textContent || "").trim();
+    }
+    return (copy.textContent || "").trim();
+  }
+
+  // Each rendered reply with the text of the prompt it answers — the nearest
+  // human turn above it in the document.
+  function repliesWithPrev() {
+    const replies = replyMessages();
+    const humans = humanMessages();
+    return replies.map((r) => {
+      let prev = null;
+      for (const h of humans) {
+        try {
+          if (r.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_PRECEDING) prev = h;
+          else break;
+        } catch (e) {
+          break;
+        }
+      }
+      return { node: r, text: textOf(r), prev: prev ? (prev.textContent || "").trim() : null };
+    });
   }
 
   function isOurs(node) {
@@ -112,9 +159,8 @@
     return null;
   }
 
-  // Put the END of a prompt near the top of the view, so what's on screen is
-  // the answer to it. scrollIntoView({block:"end"}) would park it at the
-  // BOTTOM, hiding the very thing you jumped to read.
+  // Put the TOP of the reply near the top of the view: the reply IS the thing
+  // being jumped to now, so its beginning is what belongs on screen.
   const TOP_GAP = 72; // room for claude.ai's own header
   function jumpTo(node) {
     if (!node || !node.isConnected) return false;
@@ -124,11 +170,11 @@
       if (scroller) {
         const base = scroller.getBoundingClientRect();
         scroller.scrollTo({
-          top: scroller.scrollTop + (rect.bottom - base.top) - TOP_GAP,
+          top: scroller.scrollTop + (rect.top - base.top) - TOP_GAP,
           behavior: "smooth",
         });
       } else {
-        window.scrollTo({ top: window.scrollY + rect.bottom - TOP_GAP, behavior: "smooth" });
+        window.scrollTo({ top: window.scrollY + rect.top - TOP_GAP, behavior: "smooth" });
       }
       flash(node);
       return true;
@@ -167,34 +213,34 @@
   // screen is recognisable, which happens before the list has been fetched.
   function windowOffset(nodes) {
     for (let i = 0; i < nodes.length; i++) {
-      const key = T.entryKey(nodes[i].textContent || "");
+      const key = T.entryKey(textOf(nodes[i]));
       const at = entries.findIndex((e) => e.key === key);
       if (at !== -1) return at - i;
     }
     return null;
   }
 
-  // Which mounted message is which entry. Matched on text, and where a chat
-  // repeats itself — "continue", twenty times — on whichever match is nearest
-  // to where that entry ought to be, which the window offset makes answerable.
+  // Which mounted reply is which entry. Matched on text, and where a chat
+  // repeats itself on whichever match is nearest to where that entry ought to
+  // be, which the window offset makes answerable.
   function mountedNodeFor(index) {
     const want = entries[index];
     if (!want) return null;
-    const nodes = humanMessages();
+    const nodes = replyMessages();
     const base = windowOffset(nodes);
     let best = null;
     nodes.forEach((node, i) => {
-      if (T.entryKey(node.textContent || "") !== want.key) return;
+      if (T.entryKey(textOf(node)) !== want.key) return;
       const d = Math.abs((base === null ? i : base + i) - index);
       if (!best || d < best.d) best = { node: node, d: d };
     });
     return best ? best.node : null;
   }
 
-  // Where in the list the view currently is — the first mounted message we can
+  // Where in the list the view currently is — the first mounted reply we can
   // place. Null when nothing on screen is recognisable.
   function indexOnScreen() {
-    const nodes = humanMessages();
+    const nodes = replyMessages();
     const base = windowOffset(nodes);
     return base === null ? null : base;
   }
@@ -261,7 +307,7 @@
     btn = document.createElement("button");
     btn.id = BTN_ID;
     btn.type = "button";
-    btn.title = "Your messages in this chat";
+    btn.title = "Claude's replies in this chat";
     btn.innerHTML = `<span class="cum-toc-icon">☰</span><span class="cum-toc-count"></span>`;
     btn.addEventListener("click", () => setOpen(!open));
 
@@ -270,7 +316,7 @@
     el.hidden = true;
     el.innerHTML =
       `<div class="cum-toc-body">` +
-      `<div class="cum-toc-head"><span class="cum-toc-title">Your messages</span>` +
+      `<div class="cum-toc-head"><span class="cum-toc-title">Replies</span>` +
       `<button class="cum-toc-close" type="button" title="Minimize">–</button></div>` +
       `<div class="cum-toc-list"></div></div>`;
     (document.body || document.documentElement).appendChild(el);
@@ -362,14 +408,14 @@
 
   function refresh(force) {
     if (!el && !document.body) return;
-    const nodes = humanMessages();
+    const paired = repliesWithPrev();
     // A cheap fingerprint, so a chat that hasn't changed doesn't rebuild the
     // list on every mutation — claude.ai mutates constantly while streaming.
-    const key = nodes.length + ":" + nodes.map((n) => (n.textContent || "").length).join(",");
+    const key = paired.length + ":" + paired.map((p) => p.text.length).join(",");
     if (!force && key === lastKey) return;
     lastKey = key;
 
-    const seen = T.tocEntries(nodes.map((n) => ({ text: n.textContent || "" })));
+    const seen = T.tocEntries(paired.map((p) => ({ text: p.text, prev: p.prev })));
     if (fromApi) {
       // The conversation is the list; the page only says when to ask for it
       // again. A message on screen that the list doesn't know is one you just
@@ -473,14 +519,22 @@
         // Still the same chat? A slow answer for the chat you just left must
         // not become the list for the one you're in.
         if (!conv || uuid !== (W ? W.conversationId(location.pathname) : null)) return;
-        const mine = M.messagesOf(conv).filter((m) => {
+        // Claude's replies, each carrying the prompt it answers — walked in
+        // order so a reply is keyed to the human turn just above it.
+        const mine = [];
+        let lastHuman = null;
+        for (const m of M.messagesOf(conv)) {
           const who = String((m && (m.sender || m.role)) || "").toLowerCase();
-          return who === "human" || who === "user";
-        });
+          if (who === "human" || who === "user") {
+            lastHuman = M.parts(m).text;
+            continue;
+          }
+          if (who !== "assistant") continue;
+          mine.push({ text: M.parts(m).text, prev: lastHuman, at: St ? St.atOf(m) : null });
+          lastHuman = null;
+        }
         if (!mine.length) return;
-        entries = T.tocEntries(
-          mine.map((m) => ({ text: M.parts(m).text, at: St ? St.atOf(m) : null }))
-        );
+        entries = T.tocEntries(mine);
         entries = withSteps(entries);
         fromApi = true;
         convId = uuid;
@@ -640,13 +694,11 @@
   // to find one that may not even be rendered. See seek().
   window.CUMTocJump = {
     toPrompt: function (prompt) {
-      const want = T.entryKey(prompt);
-      if (!want) return false;
-      // The same rule the step marks use: a run's message is the prompt with
-      // the carried material under it, so the turn BEGINS with the prompt.
-      let at = entries.findIndex(
-        (e) => e.key === want || (want.length >= 12 && e.key.indexOf(want) === 0)
-      );
+      // The list tracks replies keyed to the prompts they answer, so a step's
+      // prompt finds the REPLY to that step — which is where reading back
+      // through a run actually wants to land. Same matching rule as the step
+      // marks, asked of the pure module.
+      const at = T.findByPrompt(entries, prompt);
       // Nothing in the list yet — the page may still be loading. Say so rather
       // than scrolling somewhere arbitrary.
       if (at === -1) return false;

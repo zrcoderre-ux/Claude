@@ -168,3 +168,49 @@ test("seeking an unmounted message aims by how far through the chat it is", () =
   assert.equal(T.seekDelta(0, 10, 1000, 0), 0);
   assert.equal(T.seekDelta(0, 10, 0, 20), 0);
 });
+
+// ---- the list tracks replies, keyed to the prompts they answer -------------
+
+test("a reply entry carries the key of the prompt it answers", () => {
+  const list = T.tocEntries([
+    { text: "The ruling is granted for three reasons…", prev: "Draft the tentative ruling for the attached motion." },
+    { text: "Here is the revision.", prev: null },
+  ]);
+  assert.equal(list[0].prevKey, T.entryKey("Draft the tentative ruling for the attached motion."));
+  assert.equal(list[1].prevKey, "");
+  assert.equal(list[0].key, T.entryKey("The ruling is granted for three reasons…"));
+});
+
+test("a step claims the REPLY that answers its prompt", () => {
+  const entries = T.tocEntries([
+    { text: "Understood, reading the papers now.", prev: "Use the tentative-ruling skill." },
+    { text: "TENTATIVE RULING: the motion is granted…", prev: "Draft the tentative ruling for the attached motion papers." },
+  ]);
+  const marked = T.stepMarks(entries, [
+    { label: "1", prompt: "Draft the tentative ruling for the attached motion papers.", runName: "MSJ" },
+  ]);
+  assert.equal(marked[0].step, undefined);
+  assert.equal(marked[1].step, "1");
+  assert.equal(marked[1].run, "MSJ");
+});
+
+test("findByPrompt lands on the reply, and says so when the list has nothing", () => {
+  const entries = T.tocEntries([
+    { text: "Reply one.", prev: "First prompt, long enough to be distinctive." },
+    { text: "Reply two.", prev: "Second prompt, also long enough to matter." },
+  ]);
+  assert.equal(T.findByPrompt(entries, "Second prompt, also long enough to matter."), 1);
+  // The run pastes carried material under the prompt, so prefix matching holds.
+  assert.equal(T.findByPrompt(entries, "First prompt, long enough to be distinctive."), 0);
+  assert.equal(T.findByPrompt(entries, "never sent"), -1);
+  assert.equal(T.findByPrompt([], "anything at all here"), -1);
+  assert.equal(T.findByPrompt(entries, ""), -1);
+});
+
+test("prompt-built entries without prevKey still match on their own key", () => {
+  // The old shape — lists built from prompts — keeps working, which is what
+  // lets the two shapes coexist across an update.
+  const entries = T.tocEntries([{ text: "Draft the ruling for the attached papers." }]);
+  const marked = T.stepMarks(entries, [{ label: "1", prompt: "Draft the ruling for the attached papers." }]);
+  assert.equal(marked[0].step, "1");
+});
