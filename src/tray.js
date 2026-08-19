@@ -78,13 +78,19 @@
     return null;
   }
 
-  // How far LEFT of its anchor the tray is displaced — set when a panel of
-  // ours occupies the right column (the bookmark panel standing in for the
-  // closed sidebar), so the buttons move over by the panel's width exactly as
-  // the native panel moves them.
+  // How far LEFT of its anchor the tray is displaced — claimed by name, one
+  // claim per panel that occupies the right column (the bookmark panel
+  // standing in for the closed sidebar; the run console dragged up in line
+  // with the buttons). The largest single claim applies — the panels sit at
+  // the same right edge, so the tray clears the widest one and has cleared
+  // them all.
   let extraRight = 0;
-  function offset(px) {
-    extraRight = Math.max(0, Number(px) || 0);
+  const extras = {};
+  function offset(name, px) {
+    extras[name] = Math.max(0, Number(px) || 0);
+    let want = 0;
+    for (const k of Object.keys(extras)) want = Math.max(want, extras[k]);
+    extraRight = want;
     position();
   }
 

@@ -64,3 +64,48 @@ test("the chat shifts by the NATIVE panel's width, and never twice", () => {
   assert.equal(P.chatReserve({ sidebarOpen: false, sideW: 312 }), 0);
   assert.equal(P.chatReserve(null), 0);
 });
+
+test("the top drags the console up and down, clamped to the window", () => {
+  const up = P.consolePlace({ w: 1400, h: 900 }, 312, { top: 8 });
+  assert.equal(up.top, 8);
+  assert.equal(up.right, P.GAP, "vertical placement is the operator's; horizontal never is");
+  // Dragged above the window: it stops at the top edge.
+  assert.equal(P.consolePlace({ w: 1400, h: 900 }, 312, { top: -50 }).top, 0);
+  // Dragged (or remembered from a taller monitor) below the window: enough of
+  // it stays on screen to grab back.
+  const low = P.consolePlace({ w: 1400, h: 600 }, 312, { top: 5000, height: 400 });
+  assert.ok(low.top <= 600 - 140 - 12);
+  assert.ok(low.top + low.height <= 600 - 12 + 1);
+  // No dragged top: the default, under the button row.
+  assert.equal(P.consolePlace({ w: 1400, h: 900 }, 312, { width: 700 }).top, P.CONSOLE_TOP);
+});
+
+test("the console pushes the buttons left only when dragged in line with them", () => {
+  // Below the button row (the default): the buttons stay put.
+  assert.equal(P.trayDodge(52, 546, 44), 0);
+  // Dragged up in line with the row: they can never overlap — the row clears
+  // the console's whole width plus a gap.
+  assert.equal(P.trayDodge(8, 546, 44), 546 + P.GAP);
+  // Nothing to measure, nothing to dodge.
+  assert.equal(P.trayDodge(null, 546, 44), 0);
+  assert.equal(P.trayDodge(8, 546, null), 0);
+});
+
+test("our own chat reservation does not read as the sidebar (the cascade)", () => {
+  // Live failure: console open, sidebar closed. The reservation put a 312px
+  // margin on the app root; measured against the WINDOW the toggle now sat
+  // 312+ from the edge, which read as "sidebar open", which dropped the
+  // reservation, which read as "sidebar closed"… a cascade that never
+  // settled. Against the APP ROOT's edge the margin moves both together.
+  const vw = 1400;
+  const rootRightWithMargin = vw - 312; // our reservation applied
+  const toggleRight = rootRightWithMargin - 16; // toggle just inside the root
+  const gap = P.sideGap(toggleRight, rootRightWithMargin, vw);
+  assert.ok(gap <= P.SIDE_OPEN_MIN, "still reads CLOSED — no cascade");
+  assert.ok(vw - toggleRight > P.SIDE_OPEN_MIN, "the window-edge reading was the bug");
+  // The native panel actually open still shows: the toggle moves left INSIDE
+  // the root, whose edge stays put.
+  assert.ok(P.sideGap(vw - 312 - 16, vw, vw) > P.SIDE_OPEN_MIN);
+  // No root to measure: the window edge is the fallback, not a crash.
+  assert.equal(P.sideGap(vw - 16, null, vw), 16);
+});

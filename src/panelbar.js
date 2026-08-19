@@ -59,12 +59,14 @@
   const CONSOLE_TOP = 52;
 
   /**
-   * Where the run console sits — the owner's corrected spec: FIXED to the
-   * right edge, only its dimensions adjustable, never its placement. `custom`
-   * is { width, height } from the operator's own resizing, or null for the
-   * defaults (1.75× the side panel's width, a bit over half the window tall).
-   * Both are clamped to the window: a resize saved on a big monitor must not
-   * overflow a laptop.
+   * Where the run console sits — the owner's spec, as amended: FIXED to the
+   * right edge, dimensions adjustable, and the TOP draggable up and down —
+   * vertical placement is the operator's, horizontal never is. `custom` is
+   * { width, height, top } from the operator's own dragging, or null for the
+   * defaults (1.75× the side panel's width, a bit over half the window tall,
+   * top just under the button row). Everything is clamped to the window: a
+   * spot saved on a big monitor must not overflow a laptop, and a dragged
+   * top always leaves at least the minimum height on screen.
    */
   function consolePlace(viewport, sideW, custom) {
     const vw = (viewport && Number(viewport.w)) || 0;
@@ -72,9 +74,50 @@
     const c = custom || null;
     const defW = Math.round((Number(sideW) || SIDE_W) * MARGIN_FACTOR);
     const width = Math.max(300, Math.min((c && c.width) || defW, Math.max(300, vw - 40)));
+    const rawTop = c && typeof c.top === "number" ? c.top : CONSOLE_TOP;
+    const top = Math.max(0, Math.min(Math.round(rawTop), Math.max(0, vh - 140 - 12)));
     const defH = Math.round(vh * 0.6);
-    const height = Math.max(140, Math.min((c && c.height) || defH, Math.max(140, vh - CONSOLE_TOP - 12)));
-    return { right: GAP, top: CONSOLE_TOP, width, height };
+    const height = Math.max(140, Math.min((c && c.height) || defH, Math.max(140, vh - top - 12)));
+    return { right: GAP, top, width, height };
+  }
+
+  /**
+   * How far the TRAY must move left to clear the console — the owner's rule:
+   * the console affects the buttons' placement ONLY when it is dragged in
+   * line with them, and they can never overlap. The console sits at the right
+   * edge; when its top rises above the button row's bottom, the row must
+   * clear the console's whole width (plus a gap). Below the row, nothing.
+   */
+  function trayDodge(consoleTop, consoleWidth, trayBottom) {
+    // A measurement that is missing is not a measurement of zero.
+    if (typeof consoleTop !== "number" || !isFinite(consoleTop)) return 0;
+    if (typeof trayBottom !== "number" || !isFinite(trayBottom)) return 0;
+    if (consoleTop >= trayBottom) return 0;
+    return Math.max(0, Math.round(Number(consoleWidth) || 0) + GAP);
+  }
+
+  // A toggle-to-edge gap wider than this reads as the native side panel
+  // being open (the panel itself is ~312; buttons are ~40).
+  const SIDE_OPEN_MIN = 200;
+
+  /**
+   * The gap that tells the native side panel's state, read off its toggle:
+   * the panel open pushes the toggle left by its own width, so the gap
+   * between the toggle and the right edge IS the panel. But measured against
+   * the WINDOW edge that gap lies: our own chat reservation (a margin-right
+   * on the app root) displaces the toggle exactly the way the native panel
+   * does, and a detector that measured to the window chased its own margin —
+   * console open, sidebar closed → margin on → "sidebar open" → margin off →
+   * "sidebar closed" → margin on, a cascade that never settled. Measured
+   * against the APP ROOT's right edge, our margin moves root and toggle
+   * together and cancels out, while the native panel — inside the root —
+   * still shows as the gap. The window edge is only the fallback for when
+   * the root cannot be measured.
+   */
+  function sideGap(toggleRight, rootRight, viewportW) {
+    const rr = Number(rootRight);
+    const edge = isFinite(rr) && rr > 0 ? rr : Number(viewportW) || 0;
+    return Math.round(edge - (Number(toggleRight) || 0));
   }
 
   /**
@@ -92,7 +135,19 @@
     return 0;
   }
 
-  const api = { GAP, FALLBACK, trayPlace, consolePlace, chatReserve, SIDE_W, MARGIN_FACTOR, CONSOLE_TOP };
+  const api = {
+    GAP,
+    FALLBACK,
+    trayPlace,
+    consolePlace,
+    trayDodge,
+    sideGap,
+    SIDE_OPEN_MIN,
+    chatReserve,
+    SIDE_W,
+    MARGIN_FACTOR,
+    CONSOLE_TOP,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMPanelBar = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

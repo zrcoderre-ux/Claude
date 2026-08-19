@@ -137,8 +137,19 @@
     try {
       const t = H && H.sidebarToggle();
       if (!t) return { open: false, width: lastSideW };
-      const gap = window.innerWidth - t.getBoundingClientRect().right;
-      if (gap > 200) {
+      // Measured against the APP ROOT's edge, not the window's: our own chat
+      // reservation moves root and toggle together, so it cancels out instead
+      // of reading as the sidebar and setting off a reposition cascade
+      // (see CUMPanelBar.sideGap).
+      let rootRight = null;
+      try {
+        const root = H.appRoot && H.appRoot();
+        if (root) rootRight = root.getBoundingClientRect().right;
+      } catch (e) {
+        /* the window edge is the fallback */
+      }
+      const gap = P.sideGap(t.getBoundingClientRect().right, rootRight, window.innerWidth);
+      if (gap > P.SIDE_OPEN_MIN) {
         lastSideW = Math.round(gap);
         return { open: true, width: lastSideW };
       }
@@ -163,18 +174,37 @@
     el.style.width = at.width + "px";
     el.style.height = at.height + "px";
     applied = { w: el.offsetWidth, h: el.offsetHeight };
+    dodgeTray(at);
+  }
+
+  // The owner's never-overlap rule, live now that the top drags: the console
+  // pushes the tray buttons left only when it has been dragged up in line
+  // with them.
+  function dodgeTray(at) {
+    const T = window.CUMTray;
+    if (!T || !T.offset) return;
+    if (!at) return T.offset("run", 0);
+    let trayBottom = null;
+    try {
+      const tray = document.getElementById("cum-tray");
+      if (tray && !tray.hidden) trayBottom = tray.getBoundingClientRect().bottom;
+    } catch (e) {
+      /* no tray, no dodge */
+    }
+    T.offset("run", trayBottom === null ? 0 : P.trayDodge(at.top, at.width, trayBottom));
   }
 
   function keepGeo() {
-    if (sticky && custom) storageSet({ [GEO_KEY]: { width: custom.width, height: custom.height } });
+    if (sticky && custom)
+      storageSet({ [GEO_KEY]: { width: custom.width, height: custom.height, top: custom.top } });
   }
 
-  // The resize handles the owner asked for, on the edges that GROW a
-  // right-anchored panel: the bottom (taller), the left side (wider), and the
-  // bottom-left corner (both). The browser's own handle sat bottom-right —
-  // the one edge of this panel that can never move.
+  // The handles the owner asked for: the edges that GROW a right-anchored
+  // panel — the bottom (taller), the left side (wider), the bottom-left
+  // corner (both) — and the TOP, which drags the whole panel up and down
+  // (vertical placement is the operator's; horizontal never is).
   function wireHandles() {
-    const grab = (sel, wide, tall) => {
+    const grab = (sel, wide, tall, lift) => {
       const h = el.querySelector(sel);
       if (!h) return;
       h.addEventListener("pointerdown", (e) => {
@@ -184,12 +214,15 @@
         const sy = e.clientY;
         const w0 = el.offsetWidth;
         const h0 = el.offsetHeight;
+        const t0 = el.getBoundingClientRect().top;
         const move = (ev) => {
           const next = Object.assign({}, custom || {});
           // The right edge is pinned, so dragging the LEFT edge leftward
           // makes it wider.
           if (wide) next.width = Math.max(300, Math.round(w0 - (ev.clientX - sx)));
           if (tall) next.height = Math.max(140, Math.round(h0 + (ev.clientY - sy)));
+          // The top MOVES; consolePlace clamps it to the window.
+          if (lift) next.top = Math.round(t0 + (ev.clientY - sy));
           custom = next;
           position();
         };
@@ -202,9 +235,10 @@
         document.addEventListener("pointerup", up, true);
       });
     };
-    grab(".cum-rm-hl", true, false);
-    grab(".cum-rm-hb", false, true);
-    grab(".cum-rm-hc", true, true);
+    grab(".cum-rm-hl", true, false, false);
+    grab(".cum-rm-hb", false, true, false);
+    grab(".cum-rm-hc", true, true, false);
+    grab(".cum-rm-ht", false, false, true);
   }
 
   // ---- rendering ----------------------------------------------------------
@@ -448,7 +482,7 @@
 
     el.insertAdjacentHTML(
       "beforeend",
-      `<div class="cum-rm-hl"></div><div class="cum-rm-hb"></div><div class="cum-rm-hc"></div>`
+      `<div class="cum-rm-hl"></div><div class="cum-rm-hb"></div><div class="cum-rm-hc"></div><div class="cum-rm-ht" title="Drag up or down"></div>`
     );
     wire(run, wf);
     wireEdit(run);
@@ -649,6 +683,7 @@
     if (el) el.hidden = true;
     showTab(false);
     reserveChat(false);
+    dodgeTray(null);
   }
 
   async function tick() {
@@ -670,6 +705,7 @@
       if (el) el.hidden = true;
       showTab(true);
       reserveChat(false);
+      dodgeTray(null);
       return;
     }
     showTab(false);
@@ -717,10 +753,12 @@
   storageGet([OPEN_KEY, STICKY_KEY, GEO_KEY]).then((r) => {
     if (r[OPEN_KEY] === false) open = false;
     sticky = !!r[STICKY_KEY];
-    // Dimensions only — a stored spot from the draggable era carries left/top
-    // this fixed-position console no longer has any use for.
-    if (sticky && r[GEO_KEY])
+    // Dimensions and the dragged top — never a stored LEFT: horizontal
+    // placement belongs to the right edge, always.
+    if (sticky && r[GEO_KEY]) {
       custom = { width: r[GEO_KEY].width || 0, height: r[GEO_KEY].height || 0 };
+      if (typeof r[GEO_KEY].top === "number") custom.top = r[GEO_KEY].top;
+    }
     tick();
   });
   setInterval(tick, POLL_MS);

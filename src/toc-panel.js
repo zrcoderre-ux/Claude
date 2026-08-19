@@ -357,8 +357,22 @@
     try {
       const t = H && H.sidebarToggle();
       if (t) {
-        const gap = window.innerWidth - t.getBoundingClientRect().right;
-        if (gap > 200) side = { open: true, width: Math.round(gap) };
+        // Against the APP ROOT's edge, not the window's — our own chat
+        // reservation moves root and toggle together, so it cancels out
+        // instead of reading as the sidebar and setting off a cascade of
+        // column → inline → column that never let the panel settle
+        // (see CUMPanelBar.sideGap).
+        let rootRight = null;
+        try {
+          const root = H.appRoot && H.appRoot();
+          if (root) rootRight = root.getBoundingClientRect().right;
+        } catch (e2) {
+          /* the window edge is the fallback */
+        }
+        const gap = P
+          ? P.sideGap(t.getBoundingClientRect().right, rootRight, window.innerWidth)
+          : window.innerWidth - t.getBoundingClientRect().right;
+        if (gap > ((P && P.SIDE_OPEN_MIN) || 200)) side = { open: true, width: Math.round(gap) };
       }
     } catch (e) {
       /* closed is the safe reading */
@@ -385,7 +399,7 @@
     // margins so two panels can never double them).
     if (T.reserve && P)
       T.reserve("toc", P.chatReserve({ sidebarOpen: side.open, tocColumn: column, sideW: side.width }));
-    if (T.offset) T.offset(column ? side.width + 8 : 0);
+    if (T.offset) T.offset("toc", column ? side.width + 8 : 0);
   }
 
   function setOpen(next) {
