@@ -759,7 +759,7 @@
     let menus;
     try {
       menus = document.querySelectorAll(
-        '[role="menu"],[role="listbox"],[role="dialog"],[data-state="open"]'
+        '[role="menu"],[role="listbox"],[role="dialog"],[data-state="open"],[data-radix-popper-content-wrapper]'
       );
     } catch (e) {
       return null;
@@ -775,6 +775,31 @@
         if (C.isOurs(el) || !C.isVisible(el)) continue;
         const label = el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent;
         if (A.isSaveLabel(label)) return el;
+      }
+      // Cowork's menus can wear no roles at all — its project menu answered
+      // every role scan with nothing while visibly listing rows, and its file
+      // menu did it again live: "Google Drive | Download" on screen, nothing
+      // above matching either of them. Inside an OPEN container the word
+      // still leads (isSaveLabel), so this cannot press a stray page-wide
+      // "Save": the innermost element whose caption IS a save label, climbed
+      // to the clickable thing it sits on, never out of the container.
+      let wide = null;
+      let leaves;
+      try {
+        leaves = m.querySelectorAll('button,[role="button"],[role="menuitem"],a,li,div,span');
+      } catch (e) {
+        continue;
+      }
+      for (const el of leaves) {
+        if (C.isOurs(el) || !C.isVisible(el)) continue;
+        const label = el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent;
+        if (!A.isSaveLabel(label)) continue;
+        if (!wide || wide.contains(el)) wide = el;
+      }
+      if (wide) {
+        const clickable =
+          wide.closest && wide.closest('button,[role="button"],[role="menuitem"],[role="option"],a,li');
+        return clickable && m.contains(clickable) ? clickable : wide;
       }
     }
     return null;
