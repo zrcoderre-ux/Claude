@@ -93,13 +93,19 @@
       return;
     }
     const b = build();
-    // Where in the header this goes is src/headerslot.js's problem, and the
-    // contents button asks the same question — so they end up beside each other
-    // rather than each landing on a different anchor.
-    const where = H ? H.place(b) : "loose";
-    b.classList.toggle("cum-save-loose", where === "loose");
-    b.classList.toggle("cum-save-docked", where === "docked");
-    if (!H && b.parentNode !== document.body) document.body.appendChild(b);
+    // In the tray beside claude.ai's own sidebar toggle (the owner's spec —
+    // src/tray.js), first slot, so Save leads the row. The header slot remains
+    // only as the fallback for a tray that didn't load.
+    const T = window.CUMTray;
+    if (T) {
+      b.classList.remove("cum-save-loose", "cum-save-docked");
+      T.put("save", b);
+    } else {
+      const where = H ? H.place(b) : "loose";
+      b.classList.toggle("cum-save-loose", where === "loose");
+      b.classList.toggle("cum-save-docked", where === "docked");
+      if (!H && b.parentNode !== document.body) document.body.appendChild(b);
+    }
     measureStack();
   }
 

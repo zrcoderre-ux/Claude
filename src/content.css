@@ -922,6 +922,54 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 #cum-toc[hidden] { display: none; }
 #cum-toc.cum-toc-dragging { user-select: none; }
 
+/* ---- The tray beside claude.ai's own sidebar toggle -----------------------
+   Save, Bookmark and Run in one flex row pinned by its RIGHT edge (the owner's
+   spec — see src/tray.js). Panels open in line with the buttons; a panel
+   appearing widens the row leftward, which is what shifts the other buttons
+   over while the edge beside the native control stays put. */
+#cum-tray {
+  position: fixed;
+  top: 8px;
+  right: 12px;
+  z-index: 2147483644;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+}
+.cum-tray-slot {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.cum-tray-slot > * { pointer-events: auto; }
+/* The buttons ride over the page rather than in claude.ai's header now, so
+   they carry their own ground. */
+.cum-tray-slot > button {
+  background: #ffffff;
+  color: #1f1f1f;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+/* A panel in the tray is laid out by the row: its top level with the buttons,
+   its size the native sidebar's (the owner measured 312 wide), its list
+   scrolling inside rather than growing past the window. */
+#cum-toc.cum-inline,
+#cum-run.cum-inline {
+  position: static;
+}
+#cum-toc.cum-inline .cum-toc-body,
+#cum-run.cum-inline .cum-run-body {
+  width: 312px;
+  max-width: 312px;
+}
+#cum-toc.cum-inline .cum-toc-list,
+#cum-run.cum-inline .cum-run-list {
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
 /* The toggle, styled like the header it sits in rather than like this
    extension — same reasoning as the Save button beside it. */
 #cum-toc-btn {
@@ -1095,6 +1143,7 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   #cum-toc-btn:hover { background: rgba(255, 255, 255, 0.08); }
   #cum-toc-btn.cum-toc-on { background: rgba(224, 135, 101, 0.2); }
   #cum-toc-btn.cum-toc-corner { background: #2a2a28; color: #f0efea; }
+  .cum-tray-slot > button { background: #2a2a28; color: #f0efea; }
   .cum-toc-count, .cum-toc-title { color: #a5a29a; }
   .cum-toc-head { border-bottom-color: rgba(255, 255, 255, 0.1); }
   .cum-toc-close { color: #a5a29a; }

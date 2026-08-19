@@ -2027,6 +2027,8 @@ src/incognito.js       Incognito recovery records (pure)
 src/incognito-watch.js Keeps a copy while an incognito chat is open
 src/mdexport.js        A conversation as Markdown (pure)
 src/headerslot.js      Finds the file/share cluster and puts our buttons in it
+src/panelbar.js        Tray geometry beside the native sidebar toggle (pure)
+src/tray.js            The Save/Bookmark/Run tray, panels opening in line
 src/save-chat.js       The Save button in claude.ai's header
 src/replycopy.js       claude.ai's copy box: where it is, and what it wrote
 src/tentative.js       The tentative ruling out of a reply (pure)
