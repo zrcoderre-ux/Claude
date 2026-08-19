@@ -641,6 +641,36 @@
       const label = el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent;
       if (A.isSaveLabel(label)) return el;
     }
+    // Nothing NEW says Download — but the menu an opener opens can be
+    // PRE-MOUNTED: its rows sit hidden in the document before the press, so
+    // every one of them was already in the census and the diff above is blind
+    // to the whole menu. That is how "More ways to open" was pressed, the menu
+    // opened, and the Download sitting in plain sight was never pressed. A
+    // VISIBLE save-labelled control inside an open menu or dialog is the same
+    // answer arrived at the other way — the containment is what keeps a stray
+    // page-wide "Save" caption from qualifying, exactly as the comment above
+    // demands.
+    let menus;
+    try {
+      menus = document.querySelectorAll(
+        '[role="menu"],[role="listbox"],[role="dialog"],[data-state="open"]'
+      );
+    } catch (e) {
+      return null;
+    }
+    for (const m of menus) {
+      let rows;
+      try {
+        rows = m.querySelectorAll(ANY_CONTROL);
+      } catch (e) {
+        continue;
+      }
+      for (const el of rows) {
+        if (C.isOurs(el) || !C.isVisible(el)) continue;
+        const label = el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent;
+        if (A.isSaveLabel(label)) return el;
+      }
+    }
     return null;
   }
 
@@ -804,6 +834,14 @@
       offer.node.removeAttribute("data-cum-dl");
     } catch (e) {
       /* ignore */
+    }
+    // The LEDGER too, or the attribute is theatre: the seen key is what plan()
+    // and the manual button actually gate on, and a failed chase that kept it
+    // read back as "already pressed this page load — nothing left to press",
+    // said to the operator standing there wanting to press it.
+    if (offer.key) {
+      const at = seen.indexOf(offer.key);
+      if (at !== -1) seen.splice(at, 1);
     }
     if (arrived === null) {
       toast(`Pressed ${offer.name || "that file"} — couldn't check your downloads to confirm it saved`);
@@ -1195,9 +1233,12 @@
           (o.opener ? " — an opener, so Download gets chased into whatever it opens" : ""));
       if (!take.length) return finishProbe(out.concat(["Nothing left to press — reload the page to start over."]));
 
-      // Remembered, so the automatic path doesn't come back and press it again.
+      // Remembered, so the automatic path doesn't come back and press it again
+      // — and carried ON the offer, so a chase that fails can hand the key
+      // back rather than locking the file until the page reloads.
       const keys = A.offerKeys(A.turnSignature(msg.textContent), offers.map((o) => o.name));
       offers.forEach((o, i) => {
+        o.key = keys[i] || null;
         if (o === take[0] && keys[i] && seen.indexOf(keys[i]) === -1) seen.push(keys[i]);
       });
       say("Pressing it now. If a panel opens, Download is looked for inside it and pressed too.");
