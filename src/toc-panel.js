@@ -284,18 +284,21 @@
     return el;
   }
 
-  // Pinned to the UPPER RIGHT, high, always (the owner's corrected
-  // instruction — the first fix read "upper left" and sat too low; the spot
-  // wanted is just under the top of the page, under Chrome's bookmarks bar).
-  // It used to ride claude.ai's header through src/headerslot.js, and
-  // whenever the header offered no anchor — Cowork routinely offers none — it
-  // fell back to docking in the meter's own pill stack, which is the opposite
-  // corner from the wanted one. A fixed corner needs no anchor, so there is
-  // nothing left to fall back from and nowhere else it can end up.
+  // In the tray beside claude.ai's own sidebar toggle (the owner's spec —
+  // src/tray.js). The button and the panel ride the same slot, panel to the
+  // button's side, its top level with the button row; the tray follows the
+  // toggle as the sidebar opens and closes, which a fixed corner could not.
+  // The corner remains only as the fallback for a tray that didn't load.
   function placeButton() {
     if (!btn) return;
+    const T = window.CUMTray;
+    if (T) {
+      btn.classList.remove("cum-toc-corner");
+      if (el) el.classList.add("cum-inline");
+      T.put("toc", btn, el);
+      return;
+    }
     btn.classList.add("cum-toc-corner");
-    btn.classList.remove("cum-toc-loose", "cum-toc-docked");
     const home = document.body || document.documentElement;
     if (btn.parentNode !== home) home.appendChild(btn);
   }
@@ -493,6 +496,8 @@
   let dragged = false;
   function applyPos(p, persist) {
     if (!el || !p) return;
+    // In the tray the panel is laid out by the row, not by stored coordinates.
+    if (el.classList.contains("cum-inline")) return;
     const r = el.getBoundingClientRect();
     const left = Math.min(Math.max(0, p.left), Math.max(0, window.innerWidth - r.width));
     const top = Math.min(Math.max(0, p.top), Math.max(0, window.innerHeight - r.height));
@@ -517,6 +522,8 @@
       let sx = 0, sy = 0, ox = 0, oy = 0, on = false;
       h.addEventListener("pointerdown", (e) => {
         if (e.button !== 0) return;
+        // In the tray the panel is part of a row and doesn't drag.
+        if (el.classList.contains("cum-inline")) return;
         // Not on a control that lives in the bar. Starting a drag here captures
         // the pointer, and a captured pointer sends the click that follows to
         // the CAPTURING element — so the minimize button was being pressed and

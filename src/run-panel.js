@@ -122,6 +122,17 @@
 
   function place() {
     if (!btn) return;
+    // In the tray beside claude.ai's own sidebar toggle (the owner's spec —
+    // src/tray.js): button and panel share the run slot, the panel opening in
+    // line with the button row. The header slot remains only as the fallback
+    // for a tray that didn't load.
+    const T = window.CUMTray;
+    if (T) {
+      btn.classList.remove("cum-run-loose", "cum-run-docked");
+      if (el) el.classList.add("cum-inline");
+      T.put("run", btn, el);
+      return;
+    }
     const where = H ? H.place(btn) : "loose";
     btn.classList.toggle("cum-run-loose", where === "loose");
     btn.classList.toggle("cum-run-docked", where === "docked");
@@ -261,6 +272,8 @@
   let dragged = false;
   function applyPos(p, persist) {
     if (!el || !p) return;
+    // In the tray the panel is laid out by the row, not by stored coordinates.
+    if (el.classList.contains("cum-inline")) return;
     const r = el.getBoundingClientRect();
     const left = Math.min(Math.max(0, p.left), Math.max(0, window.innerWidth - r.width));
     const top = Math.min(Math.max(0, p.top), Math.max(0, window.innerHeight - r.height));
@@ -284,6 +297,8 @@
       on = false;
     h.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
+      // In the tray the panel is part of a row and doesn't drag.
+      if (el.classList.contains("cum-inline")) return;
       // Not on the minimize button. A drag started here captures the pointer,
       // and a captured pointer sends the click that follows to the capturing
       // element — so the button would be pressed and the bar clicked.
