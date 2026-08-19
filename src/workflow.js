@@ -3081,6 +3081,25 @@
     );
   }
 
+  /**
+   * Whether the run console should repaint this tick. The console holds
+   * forms (Fix & continue, Edit run), and a redraw mid-typing eats the
+   * keystrokes — so while a form is open, only a change to the run's own
+   * core may repaint. But the operator's OWN clicks on the console (opening
+   * a form, picking a step, adding a row) must always paint: `asked` is that
+   * signal, and it wins outright. Without it the anti-repaint guard blocks
+   * the form's own first paint — the button appears to do nothing.
+   *
+   * s: { asked, key, lastKey, core, lastCore, formOpen } → boolean.
+   */
+  function consoleRedraw(s) {
+    const o = s || {};
+    if (o.asked) return true;
+    if (o.key === o.lastKey) return false;
+    if (o.formOpen && o.core === o.lastCore) return false;
+    return true;
+  }
+
   const api = {
     WORKFLOWS_KEY,
     RUNS_KEY,
@@ -3236,6 +3255,7 @@
     isNewReply,
     settleReason,
     turnSettled,
+    consoleRedraw,
     builtinWorkflow,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

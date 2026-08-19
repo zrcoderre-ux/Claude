@@ -1475,11 +1475,34 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   line-height: 1.4;
 }
 #cum-runmargin[hidden] { display: none; }
-/* Draggable by its title bar, resizable from its corner (the browser's own
-   handle). Whether the result is remembered is the popup's checkbox. */
-#cum-runmargin { resize: both; min-width: 280px; min-height: 120px; }
-.cum-rm-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; cursor: grab; user-select: none; }
-.cum-rm-head:active { cursor: grabbing; }
+/* Fixed to the right edge — only the DIMENSIONS are draggable (the owner's
+   corrected spec), from the edges that grow a right-anchored panel: the
+   bottom, the left side, and the bottom-left corner. Whether a resize is
+   remembered is the popup's checkbox. */
+.cum-rm-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cum-rm-hl, .cum-rm-hb, .cum-rm-hc { position: absolute; z-index: 2; }
+.cum-rm-hl { left: -3px; top: 0; bottom: 14px; width: 8px; cursor: ew-resize; }
+.cum-rm-hb { left: 14px; right: 0; bottom: -3px; height: 8px; cursor: ns-resize; }
+.cum-rm-hc { left: -3px; bottom: -3px; width: 16px; height: 16px; cursor: nesw-resize; }
+/* The panel needs to be the handles' positioning box. */
+#cum-runmargin { position: fixed; }
+/* The bookmark panel standing in for the closed native sidebar: a right-edge
+   column of the native panel's own width. */
+#cum-toc.cum-column {
+  position: fixed;
+  right: 0;
+  top: 48px;
+  bottom: 8px;
+  z-index: 2147483643;
+}
+#cum-toc.cum-column .cum-toc-body {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+#cum-toc.cum-column .cum-toc-list { flex: 1 1 auto; overflow-y: auto; max-height: none; }
 .cum-rm-title { font-weight: 700; font-size: 13.5px; flex: 1 1 auto; }
 .cum-rm-badge {
   font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px;

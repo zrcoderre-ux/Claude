@@ -3223,3 +3223,34 @@ test("too little rendered text to judge by is not a conviction", () => {
   assert.equal(W.copyCarriesEnd("anything", ""), true);
   assert.equal(W.copyCarriesEnd("", "a long enough rendered reply to actually judge against"), false);
 });
+
+// ---- the run console's redraw decision -------------------------------------
+
+test("opening a form repaints even though the run's core stood still", () => {
+  // The live failure: Fix & continue and Edit run appeared to do nothing —
+  // clicking set the draft, but the anti-repaint guard saw an open form over
+  // an unchanged core and skipped the form's own first paint.
+  assert.equal(
+    W.consoleRedraw({ asked: true, key: "k2", lastKey: "k1", core: "c", lastCore: "c", formOpen: true }),
+    true
+  );
+});
+
+test("a heartbeat under an open form does not pull the textarea out from under the operator", () => {
+  assert.equal(
+    W.consoleRedraw({ asked: false, key: "k-with-new-note", lastKey: "k1", core: "c", lastCore: "c", formOpen: true }),
+    false
+  );
+});
+
+test("with no form open, any change repaints and no change holds still", () => {
+  assert.equal(W.consoleRedraw({ asked: false, key: "k2", lastKey: "k1", core: "c2", lastCore: "c1", formOpen: false }), true);
+  assert.equal(W.consoleRedraw({ asked: false, key: "k1", lastKey: "k1", core: "c", lastCore: "c", formOpen: false }), false);
+});
+
+test("the run moving repaints even while a form is open", () => {
+  assert.equal(
+    W.consoleRedraw({ asked: false, key: "k2", lastKey: "k1", core: "c2", lastCore: "c1", formOpen: true }),
+    true
+  );
+});

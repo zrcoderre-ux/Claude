@@ -34,29 +34,33 @@ test("a nonsense anchor is treated as absent rather than obeyed", () => {
   assert.equal(P.trayPlace(1400, { left: 12, top: 10 }).anchored, false, "the LEFT sidebar's toggle");
 });
 
-test("the run console sits under an open left panel with room beneath it", () => {
-  const at = P.marginPlace({ w: 1400, h: 900 }, { left: 0, right: 288, top: 0, bottom: 600, width: 288, height: 600 });
-  assert.equal(at.left, 0);
-  assert.equal(at.top, 600 + P.GAP);
-  assert.equal(at.width, Math.round(288 * P.MARGIN_FACTOR));
+test("the console is pinned to the right edge, dimensions only", () => {
+  const at = P.consolePlace({ w: 1400, h: 900 }, 312, null);
+  assert.equal(at.right, P.GAP);
+  assert.equal(at.top, P.CONSOLE_TOP);
+  assert.equal(at.width, Math.round(312 * P.MARGIN_FACTOR));
+  const sized = P.consolePlace({ w: 1400, h: 900 }, 312, { width: 700, height: 500 });
+  assert.equal(sized.width, 700);
+  assert.equal(sized.height, 500);
+  assert.equal(sized.right, P.GAP, "resizing never moves it off the right edge");
 });
 
-test("a full-height open panel has no underneath, so the console sits alongside", () => {
-  const at = P.marginPlace({ w: 1400, h: 900 }, { left: 0, right: 288, top: 0, bottom: 900, width: 288, height: 900 });
-  assert.equal(at.left, 288 + P.GAP);
-  assert.equal(at.top, 56);
+test("a resize saved on a big monitor is clamped to a small window", () => {
+  const at = P.consolePlace({ w: 800, h: 600 }, 312, { width: 1200, height: 900 });
+  assert.ok(at.width <= 800 - 40);
+  assert.ok(at.height <= 600 - P.CONSOLE_TOP - 12);
 });
 
-test("closed rail or no sidebar: where the open panel would go", () => {
-  const rail = P.marginPlace({ w: 1400, h: 900 }, { left: 0, right: 64, top: 0, bottom: 900, width: 64, height: 900 });
-  assert.equal(rail.left, 64 + P.GAP);
-  assert.equal(rail.top, 56);
-  assert.equal(rail.width, Math.round(P.MARGIN_BASE_W * P.MARGIN_FACTOR));
-  const none = P.marginPlace({ w: 1400, h: 900 }, null);
-  assert.equal(none.left, P.GAP);
-});
-
-test("the console never outgrows a small window", () => {
-  const at = P.marginPlace({ w: 480, h: 700 }, null);
-  assert.ok(at.width <= 480 - 40 || at.width === 320);
+test("the chat shifts by the NATIVE panel's width, and never twice", () => {
+  // Native panel open: it already shifted the chat — ours add nothing.
+  assert.equal(P.chatReserve({ sidebarOpen: true, consoleOpen: true, tocColumn: true, sideW: 312 }), 0);
+  // Native closed, console open: the chat shifts as if the native panel were
+  // open — the side panel's width, not the console's own.
+  assert.equal(P.chatReserve({ sidebarOpen: false, consoleOpen: true, sideW: 312 }), 312);
+  // The bookmark column reserves the same, and both together still reserve one.
+  assert.equal(P.chatReserve({ sidebarOpen: false, tocColumn: true, sideW: 312 }), 312);
+  assert.equal(P.chatReserve({ sidebarOpen: false, consoleOpen: true, tocColumn: true, sideW: 312 }), 312);
+  // Everything closed: the chat sits centred, untouched.
+  assert.equal(P.chatReserve({ sidebarOpen: false, sideW: 312 }), 0);
+  assert.equal(P.chatReserve(null), 0);
 });
