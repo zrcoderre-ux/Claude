@@ -64,6 +64,20 @@
         }
       }
     }
+    // The tab a step is being DRIVEN in knows it, even before the conversation
+    // has an address: a first send sits at /new for its whole upload, which is
+    // exactly when the Pause is wanted and was nowhere on the page.
+    try {
+      const at = window.CUMWfStep && window.CUMWfStep.current();
+      if (at) {
+        const run = runs.find(
+          (r) => r && r.id === at.runId && (W.isRunActive(r) || r.status === "paused")
+        );
+        if (run) return { run, chatId: at.chatId };
+      }
+    } catch (e) {
+      /* ignore */
+    }
     return null;
   }
 
@@ -121,7 +135,9 @@
     const paused = run.status === "paused";
     const node = build();
     const total = run.totalSteps || 0;
-    const here = W.chatName(W.runSource(run, wf), chatId);
+    // A step published by the tab itself may not know its chat's name yet.
+    const named = chatId ? W.chatName(W.runSource(run, wf), chatId) : "";
+    const here = named && named !== "(missing chat)" ? named : "this chat";
     // How long this step has been going. Updated on every tick, before the
     // redraw gate — the rest of the pill says the same thing minute to minute,
     // but this is the part you watch when you're wondering whether to wait.

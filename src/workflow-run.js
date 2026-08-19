@@ -237,6 +237,34 @@
     return C.isGenerating();
   }
 
+  // Something in the reply visibly WORKING — a spinner, a progress control, a
+  // busy region. On Cowork, prose stillness is the only settle signal there
+  // is, and an agent turn holds its prose perfectly still for MINUTES while
+  // sub-agents run — a step settled on "Launching parallel retrieval while I
+  // finish the record." and handed that, mid-turn, to the next chat. The
+  // pills' own text can't be the counter-signal (it re-captions forever —
+  // #196); a visible working indicator can, because it goes away when the
+  // work does. Only VISIBLE ones count: a hidden spinner kept in the markup
+  // must not hold a finished step hostage.
+  function busyIn(el) {
+    if (!el) return false;
+    const sel =
+      '[aria-busy="true"],[role="progressbar"],[class*="spinner" i],[class*="animate-spin" i],[data-state="running" i]';
+    const anyVisible = (root) => {
+      let list;
+      try {
+        list = root.querySelectorAll(sel);
+      } catch (e) {
+        return false;
+      }
+      for (const n of list) if (C.isVisible(n)) return true;
+      return false;
+    };
+    if (anyVisible(el)) return true;
+    const near = el.parentElement;
+    return !!(near && anyVisible(near));
+  }
+
   // ---- the copy box ------------------------------------------------------
   // Where it is, and how to catch what it writes, is src/replycopy.js — shared
   // with the Copy-ruling button, which sits beside the same control.
@@ -451,9 +479,13 @@
     // Whichever survivor says the most. A copy that failed the ending test is
     // not a survivor: it is KNOWN to be something other than the reply, and
     // being long — which is what got it here — must not win it the fallback.
+    // The page's candidate is the PROSE, never the raw text: raw textContent
+    // carries the tool pills' captions, doubled by their nesting, and a
+    // hand-off opening "Ran 14 commands, used a skill · 1 noteRan 14
+    // commands…" reached a live run's next chat as material to work from.
     const best = [
       { text: copied && W.copyCarriesEnd(copied, prose) ? copied : "", via: "copy" },
-      { text: rendered, via: "dom" },
+      { text: prose, via: "dom" },
     ]
       .filter((c) => c.text)
       .sort((a, b) => a.text.length - b.text.length)
@@ -692,7 +724,7 @@
     const stillGoing = () => {
       let generating = false;
       try {
-        generating = C.isGenerating();
+        generating = C.isGenerating() || busyIn(lastAssistant());
       } catch (e) {
         /* the stream below is the fallback */
       }
@@ -872,7 +904,7 @@
           // and only if a stream actually opened for it — a "done" left over
           // from the previous turn must not release this one.
           const streamDone = streamDoneAt > since && streamDoneAt >= streamStartedAt;
-          const generating = streaming(el);
+          const generating = streaming(el) || busyIn(el);
           const reason = W.settleReason({
             text,
             generating,
@@ -979,14 +1011,23 @@
   // attachments is where claude.ai starts showing Claude fewer than were sent;
   // one file is either there or it isn't.
   // ---- one step ----------------------------------------------------------
+  // The step this tab is driving right now, published for the pill. A run's
+  // pill matches by conversation URL, and a FIRST send sits at /new for its
+  // whole upload — the phase most worth pausing, and the one where the Pause
+  // was missing because there was no address to match yet.
+  let activeStep = null;
+  window.CUMWfStep = { current: () => activeStep };
+
   async function runStep(msg) {
     const stop = startHeartbeat(msg.runId);
     // Watched for the whole life of the step, so a Pause pressed in ANY of the
     // run's chats reaches this one at once rather than at its next poll.
     const unwatch = watchForHalt(msg.runId);
+    activeStep = { runId: msg.runId, chatId: msg.chatId || null };
     try {
       return await runStepInner(msg);
     } finally {
+      activeStep = null;
       unwatch();
       stop();
     }
