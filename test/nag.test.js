@@ -26,3 +26,15 @@ test("ordinary page text is left alone", () => {
   assert.equal(N.isNagText(null), false);
   assert.equal(N.looksLikeNag("Dismiss"), false);
 });
+
+test("the composer's container is not the banner, even on a fresh chat", () => {
+  // The wiring climbs only while the parent still reads as just the banner.
+  // On a fresh chat the composer's whole container is short — this is the
+  // text that fooled the first version's climb — and it must NOT qualify, or
+  // hiding the banner hides the prompt box with it.
+  const composer =
+    "How can I help you today?Type / for skillsApproaching weekly limit" +
+    "Get more usageFable 5 HighDraft Tentative RulingsSkip all approvals";
+  assert.equal(N.isNagText(composer), true, "the words are in there");
+  assert.equal(N.looksLikeNag(composer), false, "but this box is more than the banner");
+});
