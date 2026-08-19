@@ -492,6 +492,91 @@
     return found;
   }
 
+  // ---- Cowork's artifact blocks -------------------------------------------
+  // Cowork presents a produced file OUTSIDE the reply: an artifact block —
+  // "Verification report … 8.19.2026Document · MD" with a "More ways to open"
+  // disclosure on it — which is why the reply-scoped scan above found nothing
+  // there (the probe showed the reply holding zero controls). A parallel
+  // path, per the repo rule: Cowork is not Chat.
+  //
+  // The pressable control is the labelled disclosure, deliberately: the
+  // block's own action cell is an icon glyph with no text and no label
+  // (the owner traced it), and pressing an unlabelled control to see what
+  // happens is how a "download" turns out to be Delete. The disclosure's
+  // menu holds Download; save()'s census-and-chase presses it there, and
+  // its Google Drive row never reads as a save (goesElsewhere).
+  const ARTIFACT_BLOCK = '[class*="artifact-block"]';
+
+  function artifactBlocks() {
+    let nodes;
+    try {
+      nodes = Array.from(document.querySelectorAll(ARTIFACT_BLOCK)).filter((el) => !C.isOurs(el));
+    } catch (e) {
+      return [];
+    }
+    // Outermost only — the block nests cells whose classes match too.
+    return nodes.filter((el) => !nodes.some((o) => o !== el && o.contains(el)));
+  }
+
+  /**
+   * The files Cowork's artifact blocks are offering.
+   *
+   * `newestOnly` is the automatic path's turn-position guard, standing in for
+   * the live gate the broken Cowork stream signal cannot provide: only blocks
+   * AT OR AFTER the second-newest reply count, so a block mounted by
+   * scrolling the backlog into view — which arrives ABOVE the newest replies
+   * — is never a candidate. The census (in artifactPlan) covers what was
+   * already at the bottom when the ledger started. The manual button passes
+   * false and sees the whole page.
+   */
+  function artifactOffers(newestOnly) {
+    const out = [];
+    let anchor = null;
+    if (newestOnly) {
+      const msgs = assistantMessages();
+      if (!msgs.length) return out;
+      anchor = msgs[Math.max(0, msgs.length - 2)];
+    }
+    for (const block of artifactBlocks()) {
+      try {
+        if (anchor) {
+          const rel = anchor.compareDocumentPosition(block);
+          if (!(rel & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+        }
+        const card = A.artifactCard(block.textContent);
+        if (!card) continue;
+        hover(block); // the action cell draws its controls under the pointer
+        const btns = Array.from(block.querySelectorAll('button,[role="button"]')).filter(
+          (el) => !C.isOurs(el)
+        );
+        const by = (test) =>
+          btns.find(
+            (el) =>
+              test(el.getAttribute("aria-label")) ||
+              test(el.getAttribute("title")) ||
+              test(el.textContent)
+          );
+        // A control that names itself a save beats the disclosure; the
+        // disclosure beats guessing.
+        const direct = by(A.isSaveLabel);
+        const ctrl = direct || by(A.isDisclosureLabel);
+        if (!ctrl) continue;
+        const name = card.name + "." + card.type;
+        out.push({
+          key: "artifact|" + A.normLabel(name),
+          name: name,
+          node: ctrl,
+          ready: ready(ctrl),
+          opener: !direct,
+          at: null,
+        });
+      } catch (e) {
+        /* a block this can't read is a block it doesn't press */
+      }
+    }
+    return out;
+  }
+
   // What's already in Downloads, asked of the worker — chrome.downloads is not
   // exposed to content scripts. Refreshed on a slow cadence: it changes when a
   // file is saved, and it is only ever used to hold one back.
@@ -937,7 +1022,11 @@
     }
 
     const offers = collect();
-    const res = A.plan(offers, {
+    // Cowork's artifact blocks run alongside the reply scan — and only on
+    // Cowork: on Chat a block drawn inside the reply would be found by both
+    // paths and saved twice.
+    const arts = location.pathname.indexOf("/cowork") === 0 ? artifactOffers(true) : [];
+    const ctx = {
       enabled: cfg.enabled,
       generating,
       pending: armed, // a turn ended; its answer hasn't shown up yet
@@ -951,22 +1040,26 @@
       catchUp: !!cfg.catchUp,
       lookbackMs: A.lookbackMsFor(cfg),
       downloaded: downloaded,
-    });
-    report(offers, res, generating);
+    };
+    const res = A.plan(offers, ctx);
+    const ares = A.artifactPlan(arts, ctx);
+    report(offers, res, generating, arts);
 
     for (const k of res.adopt) if (seen.indexOf(k) === -1) seen.push(k);
-    if (res.hold === "baseline") {
+    for (const k of ares.adopt) if (seen.indexOf(k) === -1) seen.push(k);
+    if (res.hold === "baseline" || ares.hold === "baseline") {
       baselined = true;
       return;
     }
-    if (!res.take) {
-      if (res.hold === "cap" && !toldCap) {
+    const take = res.take || ares.take;
+    if (!take) {
+      if ((res.hold === "cap" || ares.hold === "cap") && !toldCap) {
         toldCap = true;
         toast(`Auto-download paused — saved ${count}. Reload to save more.`);
       }
       return;
     }
-    save(res.take);
+    save(take);
   }
 
   // ---- What it can see -----------------------------------------------------
@@ -976,10 +1069,11 @@
   // is what made this take three rounds. The last reading is written where the
   // popup can show it, and only when it changes, so an idle tab writes nothing.
   let lastReport = "";
-  function report(offers, res, generating) {
+  function report(offers, res, generating, arts) {
     const line =
       offers.length +
       " offered · " +
+      ((arts || []).length ? (arts || []).length + " artifact file(s) · " : "") +
       (res.take ? "saving" : res.hold || "nothing new") +
       " · " +
       live.length +
@@ -1094,6 +1188,16 @@
         );
       });
       if (!anywhere) say("  (none anywhere — not just in the newest reply)");
+
+      // Cowork's file cards live OUTSIDE the reply, as artifact blocks.
+      say("--- artifact blocks (how Cowork presents produced files) ---");
+      const arts = artifactOffers(false);
+      for (const o of arts)
+        say(
+          "  " + JSON.stringify(o.name) + " — " + label(o.node) +
+            (o.opener ? " (a disclosure; Download is chased into its menu)" : "")
+        );
+      if (!arts.length) say("  (none)");
 
       // ...then the newest one in detail, which is what the automatic path acts
       // on and therefore what its silence is about.
@@ -1235,6 +1339,21 @@
       );
 
       say(cards.length + (cards.length === 1 ? " file card found" : " file cards found"));
+      // Cowork keeps a produced file OUTSIDE the reply, in an artifact block —
+      // the manual button sees the whole page, newest block first.
+      let artifact = false;
+      if (!offers.length) {
+        const arts = artifactOffers(false);
+        if (arts.length) {
+          artifact = true;
+          offers = arts.slice().reverse();
+          say(
+            arts.length +
+              (arts.length === 1 ? " artifact file on the page" : " artifact files on the page") +
+              " — Cowork presents files outside the reply"
+          );
+        }
+      }
       if (!offers.length) {
         say("Nothing to press — no control anywhere in this conversation reads as a way to save a file.");
         for (const c of cards)
@@ -1256,12 +1375,17 @@
 
       // Remembered, so the automatic path doesn't come back and press it again
       // — and carried ON the offer, so a chase that fails can hand the key
-      // back rather than locking the file until the page reloads.
-      const keys = A.offerKeys(A.turnSignature(msg.textContent), offers.map((o) => o.name));
-      offers.forEach((o, i) => {
-        o.key = keys[i] || null;
-        if (o === take[0] && keys[i] && seen.indexOf(keys[i]) === -1) seen.push(keys[i]);
-      });
+      // back rather than locking the file until the page reloads. An artifact
+      // offer arrives already keyed by its own name.
+      if (artifact) {
+        if (take[0].key && seen.indexOf(take[0].key) === -1) seen.push(take[0].key);
+      } else {
+        const keys = A.offerKeys(A.turnSignature(msg.textContent), offers.map((o) => o.name));
+        offers.forEach((o, i) => {
+          o.key = keys[i] || null;
+          if (o === take[0] && keys[i] && seen.indexOf(keys[i]) === -1) seen.push(keys[i]);
+        });
+      }
       say("Pressing it now. If a panel opens, Download is looked for inside it and pressed too.");
       save(take[0]);
     } catch (e) {
