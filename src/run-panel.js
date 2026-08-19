@@ -100,9 +100,17 @@
     btn = document.createElement("button");
     btn.id = BTN_ID;
     btn.type = "button";
-    btn.title = "The whole run — every step, in every chat";
+    btn.title = "The whole run — its controls and every step";
     btn.innerHTML = `<span class="cum-run-ico">⇄</span><span class="cum-run-count"></span>`;
-    btn.addEventListener("click", () => setOpen(!open));
+    // The button opens the run CONSOLE now (the owner's spec — the margin
+    // panel with the full controls, src/run-margin.js), which carries its own
+    // Steps view. The little steps panel here survives only as the fallback
+    // for a console that didn't load.
+    btn.addEventListener("click", () => {
+      const RM = window.CUMRunMargin;
+      if (RM) return RM.toggle();
+      setOpen(!open);
+    });
 
     el = document.createElement("div");
     el.id = ID;

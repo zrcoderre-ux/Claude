@@ -591,6 +591,20 @@
     render(run, wf);
   }
 
+  // The console as a destination other buttons can open — the tray's Run
+  // button toggles this now, rather than a smaller steps panel of its own.
+  window.CUMRunMargin = {
+    toggle: function () {
+      open = !open;
+      storageSet({ [OPEN_KEY]: open });
+      lastKey = "";
+      tick();
+    },
+    isOpen: function () {
+      return !!(open && el && !el.hidden);
+    },
+  };
+
   storageGet([OPEN_KEY, STICKY_KEY, GEO_KEY]).then((r) => {
     if (r[OPEN_KEY] === false) open = false;
     sticky = !!r[STICKY_KEY];
