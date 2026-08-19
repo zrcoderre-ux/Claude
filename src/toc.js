@@ -1,9 +1,13 @@
 /**
  * Claude Usage Meter — table of contents for a conversation (pure module).
  *
- * A long chat is a scroll bar and nothing else. This turns YOUR messages into
- * a list you can jump between — the same job a table of authorities does in a
- * brief — so the shape of a conversation is visible without reading it.
+ * A long chat is a scroll bar and nothing else. This turns CLAUDE'S REPLIES
+ * into a list you can jump between (the owner's spec — the replies are where
+ * the work product is; the prompts were tracked first and asked for less
+ * often) — the same job a table of authorities does in a brief, so the shape
+ * of a conversation is visible without reading it. Each entry also carries
+ * the key of the prompt it ANSWERS, which is how a workflow step — identified
+ * by its prompt — still finds its place in the list.
  *
  * Only the labelling and list-building live here. Finding the messages and
  * scrolling to them is DOM work and belongs in src/toc-panel.js; this is the
@@ -70,6 +74,11 @@
         n: out.length + 1,
         id: (typeof m === "object" && m.id) || null,
         key: entryKey(text),
+        // The message this one ANSWERS — the preceding prompt's key, where the
+        // caller knows it. The list tracks Claude's replies now (the owner's
+        // spec), but a workflow's steps are still identified by their PROMPTS,
+        // so the prompt each reply answers is how a step finds its reply.
+        prevKey: typeof m === "object" && m.prev != null ? entryKey(m.prev) : "",
         label: label || "(no text)",
         empty: !label,
         chars: text.length,
@@ -171,6 +180,21 @@
    * with the label to show ("2B") and the prompt that was sent.
    */
   const MIN_PREFIX = 12;
+  // A prompt long enough to be distinctive is matched as a prefix, since the
+  // message carries material after it. A short one — "Continue" — has to match
+  // outright, or it would claim the first message that happened to start with
+  // the same word.
+  function promptMatches(key, want) {
+    const k = str(key);
+    return want.length >= MIN_PREFIX ? k.indexOf(want) === 0 : k === want;
+  }
+  // The key a step's prompt is matched against. A reply entry carries the
+  // preceding prompt's key (`prevKey`) and is claimed through it — the reply
+  // ANSWERING a step is that step's entry; an entry without one (the old
+  // prompt-built lists, and tests that build them) is matched on its own key.
+  function promptKeyOf(entry) {
+    return str(entry.prevKey || entry.key);
+  }
   function stepMarks(entries, steps) {
     const out = (entries || []).map((e) => Object.assign({}, e));
     let from = 0;
@@ -180,13 +204,7 @@
       let hit = -1;
       for (let i = from; i < out.length; i++) {
         if (out[i].step) continue;
-        const key = str(out[i].key);
-        // A prompt long enough to be distinctive is matched as a prefix, since
-        // the message carries material after it. A short one — "Continue" —
-        // has to match outright, or it would claim the first message that
-        // happened to start with the same word.
-        const same = want.length >= MIN_PREFIX ? key.indexOf(want) === 0 : key === want;
-        if (same) {
+        if (promptMatches(promptKeyOf(out[i]), want)) {
           hit = i;
           break;
         }
@@ -196,6 +214,17 @@
       from = hit + 1;
     }
     return out;
+  }
+
+  /**
+   * The entry a prompt leads to — for the workflow index's jump. With the list
+   * tracking replies, the entry a step's prompt finds is the REPLY to that
+   * step, which is where reading back through a run actually wants to land.
+   */
+  function findByPrompt(entries, prompt) {
+    const want = entryKey(prompt);
+    if (!want) return -1;
+    return (entries || []).findIndex((e) => e && promptMatches(promptKeyOf(e), want));
   }
 
   function seekDelta(fromIndex, toIndex, span, count) {
@@ -210,6 +239,7 @@
     entryKey,
     mergeWindows,
     stepMarks,
+    findByPrompt,
     seekDelta,
     MAX_LABEL,
   };
