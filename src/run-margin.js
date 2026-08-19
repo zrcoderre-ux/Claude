@@ -37,6 +37,8 @@
   let lastKey = "";
   let showSteps = false;
   let fixDraft = null; // { stepIndex, refetchCarry, sent, chats } while fixing
+  let editDraft = null; // { name, steps } while editing the run in place
+  let lastCore = "";
   let busyNote = "";
   // Where the operator dragged or resized it to, or null for the default
   // geometry. Sticky (the popup checkbox, off by default) decides whether this
@@ -303,6 +305,119 @@
     );
   }
 
+  // Editing the run IN PLACE (the owner's spec — no round trip to Options).
+  // The worker's cum-wf-edit-run applies the same patch the Options editor
+  // sends; this form covers the working set — the matter's name and each
+  // step's chat, prompt, model, marker and carry, plus adding and removing
+  // steps. Documents still go through Options: they are stored bytes, and a
+  // form that silently couldn't take them would be worse than saying so.
+  function editHtml(run, wf) {
+    if (!editDraft) return "";
+    const source = W.runSource(run, wf);
+    const chats = source.chats || [];
+    const chatOpts = (sel) =>
+      chats
+        .map((c) => `<option value="${esc(c.id)}"${c.id === sel ? " selected" : ""}>${esc(c.name)}</option>`)
+        .join("");
+    const rows = editDraft.steps
+      .map((s, i) => {
+        if (s.kind === "pause")
+          return (
+            `<div class="cum-rm-editstep" data-i="${i}"><div class="cum-rm-row">` +
+            `<b>Step ${i + 1}</b> <span class="cum-rm-badge">pause</span>` +
+            `<button class="cum-rm-btn cum-rm-danger" data-eact="del" data-i="${i}">✕</button></div></div>`
+          );
+        return (
+          `<div class="cum-rm-editstep" data-i="${i}">` +
+          `<div class="cum-rm-row"><b>Step ${i + 1}</b>` +
+          `<select class="cum-rm-editchat" data-i="${i}">${chatOpts(s.chatId)}</select>` +
+          `<label class="cum-rm-check" style="margin:0"><input type="checkbox" class="cum-rm-editcarry" data-i="${i}"${
+            s.carry !== false ? " checked" : ""
+          }/> carries in</label>` +
+          `<button class="cum-rm-btn cum-rm-danger" data-eact="del" data-i="${i}" title="Remove this step">✕</button></div>` +
+          `<textarea class="cum-rm-editprompt" data-i="${i}" rows="3">${esc(s.prompt || "")}</textarea>` +
+          `<div class="cum-rm-row">` +
+          `<input type="text" class="cum-rm-editmodel" data-i="${i}" placeholder="model (blank = chat's)" value="${esc(s.model || "")}"/>` +
+          `<input type="text" class="cum-rm-editmarker" data-i="${i}" placeholder="reply must contain…" value="${esc(s.marker || "")}"/>` +
+          `</div></div>`
+        );
+      })
+      .join("");
+    return (
+      `<div class="cum-rm-fix">` +
+      `<div class="cum-rm-row"><b>Matter</b> <input type="text" class="cum-rm-editname" value="${esc(
+        editDraft.name || ""
+      )}" placeholder="This run's name" style="flex:1 1 auto"/></div>` +
+      rows +
+      `<div class="cum-rm-row"><button class="cum-rm-btn" data-eact="add">+ Add step</button></div>` +
+      `<div class="cum-rm-note">Documents and chat set-up still edit in Options — they carry stored files.</div>` +
+      `<div class="cum-rm-row"><button class="cum-rm-btn cum-rm-go" data-eact="save">Save changes</button>` +
+      `<button class="cum-rm-btn" data-eact="cancel">Cancel</button></div>` +
+      `</div>`
+    );
+  }
+
+  function wireEdit(run) {
+    if (!editDraft) return;
+    const upd = (sel, field, read) =>
+      el.querySelectorAll(sel).forEach((i) =>
+        i.addEventListener("input", () => {
+          const at = parseInt(i.getAttribute("data-i"), 10);
+          if (editDraft.steps[at]) editDraft.steps[at][field] = read(i);
+        })
+      );
+    upd(".cum-rm-editprompt", "prompt", (i) => i.value);
+    upd(".cum-rm-editmodel", "model", (i) => i.value.trim() || null);
+    upd(".cum-rm-editmarker", "marker", (i) => i.value.trim() || null);
+    el.querySelectorAll(".cum-rm-editchat").forEach((i) =>
+      i.addEventListener("change", () => {
+        const at = parseInt(i.getAttribute("data-i"), 10);
+        if (editDraft.steps[at]) editDraft.steps[at].chatId = i.value;
+      })
+    );
+    el.querySelectorAll(".cum-rm-editcarry").forEach((i) =>
+      i.addEventListener("change", () => {
+        const at = parseInt(i.getAttribute("data-i"), 10);
+        if (editDraft.steps[at]) editDraft.steps[at].carry = i.checked;
+      })
+    );
+    const name = el.querySelector(".cum-rm-editname");
+    if (name) name.addEventListener("input", () => (editDraft.name = name.value));
+    el.querySelectorAll("[data-eact]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const act = b.getAttribute("data-eact");
+        if (act === "del") {
+          editDraft.steps.splice(parseInt(b.getAttribute("data-i"), 10), 1);
+          lastKey = "";
+          return tick();
+        }
+        if (act === "add") {
+          const last = editDraft.steps[editDraft.steps.length - 1];
+          editDraft.steps.push({ chatId: (last && last.chatId) || null, prompt: "", carry: true });
+          lastKey = "";
+          return tick();
+        }
+        if (act === "cancel") {
+          editDraft = null;
+          lastKey = "";
+          return tick();
+        }
+        if (act === "save") {
+          if (!editDraft.steps.length) return alert("A run needs at least one step.");
+          b.disabled = true;
+          busyNote = "Saving…";
+          const patch = { name: editDraft.name, steps: editDraft.steps };
+          editDraft = null;
+          return send({ type: "cum-wf-edit-run", runId: run.id, patch }, (res) => {
+            busyNote = res && res.ok ? "Saved." : "Could not save: " + ((res && res.error) || "no answer");
+            lastKey = "";
+            tick();
+          });
+        }
+      })
+    );
+  }
+
   function render(run, wf) {
     build();
     const label = W.runLabel(run);
@@ -323,7 +438,7 @@
         ? `<button class="cum-rm-btn cum-rm-go" data-act="anyway">Go anyway</button>`
         : "") +
       (run.status !== "running"
-        ? `<button class="cum-rm-btn" data-act="edit" title="Opens the run editor in Options — it is the one full authoring form">Edit run</button>`
+        ? `<button class="cum-rm-btn" data-act="edit" title="Change the matter's name, its steps and prompts — right here">Edit run</button>`
         : "") +
       (active || paused ? `<button class="cum-rm-btn cum-rm-danger" data-act="cancel">Cancel</button>` : "") +
       (Object.keys(run.chats || {}).length
@@ -348,9 +463,11 @@
       (run.note ? `<div class="cum-rm-note">${esc(run.note)}</div>` : "") +
       (busyNote ? `<div class="cum-rm-note">${esc(busyNote)}</div>` : "") +
       (showSteps ? stepsHtml(run, wf) : "") +
-      fixHtml(run, wf);
+      fixHtml(run, wf) +
+      editHtml(run, wf);
 
     wire(run, wf);
+    wireEdit(run);
     wireDrag(el.querySelector(".cum-rm-head"));
     position();
   }
@@ -398,7 +515,17 @@
           return send({ type: "cum-wf-show-chats", runId: run.id }, after());
         }
         if (act === "edit") {
-          return send({ type: "cum-open-options" });
+          if (editDraft) editDraft = null;
+          else {
+            const source = W.runSource(run, wf);
+            editDraft = {
+              name: run.name || "",
+              steps: (source.steps || []).map((s) => Object.assign({}, s)),
+            };
+            fixDraft = null; // one form at a time
+          }
+          lastKey = "";
+          return tick();
         }
         if (act === "save") {
           const name = prompt("Save this run's chats and steps as a new workflow, called:", W.runLabel(run).title);
@@ -580,16 +707,31 @@
     build();
     el.hidden = false;
     // Redraw only when the run moved — the console holds forms, and a redraw
-    // mid-typing would eat the keystrokes.
-    const key = [run.id, run.status, run.stepIndex, run.phase, run.note, run.error, showSteps, !!fixDraft, busyNote].join("|");
+    // mid-typing would eat the keystrokes. While EITHER form is open, only a
+    // change to the run's own core (its status, its step) may repaint; notes
+    // and heartbeats may not pull the textarea out from under the operator.
+    const core = [run.id, run.status, run.stepIndex, run.phase].join("|");
+    const key = [core, run.note, run.error, showSteps, !!fixDraft, !!editDraft, busyNote].join("|");
     if (key === lastKey) return position();
-    // …but never while a Fix & continue form is being filled in.
-    if (fixDraft && key.split("|").slice(0, 3).join("|") === lastKey.split("|").slice(0, 3).join("|") && lastKey.includes("|true|")) {
-      return position();
-    }
+    if ((fixDraft || editDraft) && core === lastCore) return position();
+    lastCore = core;
     lastKey = key;
     render(run, wf);
   }
+
+  // The console as a destination other buttons can open — the tray's Run
+  // button toggles this now, rather than a smaller steps panel of its own.
+  window.CUMRunMargin = {
+    toggle: function () {
+      open = !open;
+      storageSet({ [OPEN_KEY]: open });
+      lastKey = "";
+      tick();
+    },
+    isOpen: function () {
+      return !!(open && el && !el.hidden);
+    },
+  };
 
   storageGet([OPEN_KEY, STICKY_KEY, GEO_KEY]).then((r) => {
     if (r[OPEN_KEY] === false) open = false;

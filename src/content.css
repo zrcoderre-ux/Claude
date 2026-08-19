@@ -1550,3 +1550,21 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   .cum-rm-fix select, .cum-rm-fixurl { background: #1f1f1e; color: #f0efea; border-color: rgba(255,255,255,0.22); }
   #cum-runmargin-tab { background: #2a2a28; color: #f0efea; border-color: rgba(255, 255, 255, 0.18); }
 }
+
+/* The in-console run editor */
+.cum-rm-editstep { border-top: 1px solid rgba(0,0,0,0.09); padding-top: 6px; margin-top: 6px; }
+.cum-rm-editprompt {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: 12px;
+  border: 1px solid rgba(0,0,0,0.2); border-radius: 8px; padding: 5px 7px;
+  background: #fff; color: inherit; resize: vertical; margin: 4px 0;
+}
+.cum-rm-editmodel, .cum-rm-editmarker { flex: 1 1 45%; }
+.cum-rm-editname { font: inherit; font-size: 12.5px; padding: 4px 7px;
+  border: 1px solid rgba(0,0,0,0.2); border-radius: 8px; background: #fff; color: inherit; }
+
+@media (prefers-color-scheme: dark) {
+  .cum-rm-editstep { border-top-color: rgba(255,255,255,0.12); }
+  .cum-rm-editprompt, .cum-rm-editname {
+    background: #1f1f1e; color: #f0efea; border-color: rgba(255,255,255,0.22);
+  }
+}
