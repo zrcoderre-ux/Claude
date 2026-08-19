@@ -43,6 +43,35 @@
       .filter((l) => l.length > 0);
   }
 
+  // A line that NARRATES Claude's tool work rather than speaks to the reader.
+  // Cowork's turn pills flatten into a reply's text — "Ran 14 commands, used a
+  // skill · 1 note", "Ran 4 agents", "Reading project file X.md" — and the
+  // owner's rule is that a bookmark is the reply directed at the READER, so
+  // these carry nothing. A verb alone is not enough — "Read this carefully
+  // before responding" is prose — so a line is activity only when it is
+  // short, LEADS with a doing-verb (or a bare count), and NAMES the tool-ish
+  // thing done.
+  const ACT_VERB =
+    /^(ran|used|using|read|reading|searched|searching|viewed|viewing|created|creating|wrote|writing|edited|editing|fetched|fetching|checked|checking|opened|opening|listed|listing|browsed|browsing|analyzed|analyzing)\b/;
+  const ACT_NOUN =
+    /\b(command|commands|agent|agents|skill|skills|note|notes|file|files|document|documents|search|searches|tool|tools|source|sources|website|websites|web|page|pages|line|lines|task|tasks|todo|todos)\b/;
+  const ACT_COUNT = /^\d+\s+[a-z]+$/;
+  function isActivityLine(line) {
+    const s = str(line).replace(/\s+/g, " ").trim().toLowerCase();
+    if (!s || s.length > 90) return false;
+    if (!ACT_NOUN.test(s)) return false;
+    return ACT_VERB.test(s) || ACT_COUNT.test(s);
+  }
+
+  /** The reply as the reader gets it — the activity narration dropped. */
+  function readerText(text) {
+    return str(text)
+      .split("\n")
+      .filter((l) => !isActivityLine(l))
+      .join("\n")
+      .trim();
+  }
+
   // A label for one message. Cut on a word boundary where there is one — a
   // label ending mid-word reads as though the text is missing rather than
   // shortened.
@@ -68,7 +97,7 @@
     const out = [];
     for (const m of messages || []) {
       if (!m) continue;
-      const text = typeof m === "string" ? m : str(m.text);
+      const text = readerText(typeof m === "string" ? m : str(m.text));
       const label = tocLabel(text);
       out.push({
         n: out.length + 1,
@@ -103,6 +132,38 @@
 
   function renumber(list) {
     return list.map((e, i) => Object.assign({}, e, { n: i + 1 }));
+  }
+
+  /**
+   * One bookmark per prompt (the owner's rule). A Cowork turn can render
+   * several assistant messages — agent hand-offs, interim notes — and only
+   * the LAST is the reply directed at the reader. Entries are grouped by the
+   * prompt they answer: an entry carrying a prompt key of its own starts a
+   * new group when that key differs from the group's; an entry with none — a
+   * follow-on reply with no human turn between — joins the group it follows.
+   * Successive prompts with no replies between them produce no entries of
+   * their own, so they collapse into the one group without being counted.
+   * Each group keeps its last NON-EMPTY entry, wearing the group's prompt key
+   * so a workflow step still finds it.
+   */
+  function onePerPrompt(entries) {
+    const groups = [];
+    for (const e of entries || []) {
+      if (!e) continue;
+      const key = str(e.prevKey);
+      const cur = groups[groups.length - 1];
+      if (!cur || (key && key !== cur.key)) groups.push({ key: key, members: [e] });
+      else cur.members.push(e);
+    }
+    const out = groups.map((g) => {
+      const best =
+        g.members
+          .slice()
+          .reverse()
+          .find((m) => !m.empty) || g.members[g.members.length - 1];
+      return Object.assign({}, best, { prevKey: g.key || str(best.prevKey) });
+    });
+    return renumber(out);
   }
 
   function sameBlock(host, part, offset) {
@@ -237,6 +298,9 @@
     tocLabel,
     tocEntries,
     entryKey,
+    isActivityLine,
+    readerText,
+    onePerPrompt,
     mergeWindows,
     stepMarks,
     findByPrompt,
