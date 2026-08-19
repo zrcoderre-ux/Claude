@@ -97,33 +97,39 @@
     return ids.map((id) => store[W.runKey(id)]).filter(Boolean);
   }
 
-  // The run this conversation belongs to — the pill's own rules: matched by
-  // URL, or published by the tab driving a step, and holding on to a run that
-  // has STOPPED here too (paused, errored), since those are exactly the ones
-  // the console exists to fix.
+  // The run this conversation belongs to. Live runs win — matched by URL, or
+  // published by the tab driving a step — but a FINISHED run keeps its
+  // console too: Edit run, Save as workflow, Steps and Fix & continue all
+  // outlive the run, and skipping done/canceled here left the tray's Run
+  // button visible with its click doing nothing. The pick is
+  // CUMWorkflow.consoleRun, pure and tested.
   function findRun(runs, href) {
-    for (const run of runs) {
-      if (!run || run.status === "done" || run.status === "canceled") continue;
+    const matched = (run) => {
       for (const chatId of Object.keys(run.chats || {})) {
         const url = (run.chats[chatId] || {}).url;
         if (!url) continue;
         try {
-          if (J.sameConversationUrl(url, href)) return run;
+          if (J.sameConversationUrl(url, href)) return true;
         } catch (e) {
           /* ignore */
         }
       }
-    }
+      return false;
+    };
+    let drivingId = null;
     try {
       const at = window.CUMWfStep && window.CUMWfStep.current();
-      if (at) {
-        const run = runs.find((r) => r && r.id === at.runId);
-        if (run && run.status !== "done" && run.status !== "canceled") return run;
-      }
+      if (at) drivingId = at.runId;
     } catch (e) {
       /* ignore */
     }
-    return null;
+    return W.consoleRun(
+      (runs || []).map((run) => ({
+        run: run,
+        matched: run ? matched(run) : false,
+        driving: !!(run && drivingId && run.id === drivingId),
+      }))
+    );
   }
 
   // ---- geometry -----------------------------------------------------------
@@ -249,6 +255,8 @@
     paused: "Paused",
     error: "Stopped",
     draft: "Draft",
+    done: "Finished",
+    canceled: "Canceled",
   };
 
   function whenText(run) {
