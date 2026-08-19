@@ -25,6 +25,7 @@
     save: document.getElementById("save"),
     status: document.getElementById("status"),
     showOverage: document.getElementById("show-overage"),
+    hideNags: document.getElementById("hide-nags"),
     runConsoleSticky: document.getElementById("run-console-sticky"),
     estimateDecimals: document.getElementById("estimate-decimals"),
     autoContinue: document.getElementById("auto-continue"),
@@ -144,6 +145,7 @@
       MANUAL_URL_KEY,
       OVERAGE_KEY,
       "cum_runmargin_sticky",
+      "cum_hide_nags",
       ESTIMATE_KEY,
       AUTOCONTINUE_KEY,
       AUTODOWNLOAD_KEY,
@@ -156,6 +158,7 @@
       if (res && res[MANUAL_URL_KEY]) el.endpoint.value = res[MANUAL_URL_KEY];
       el.showOverage.checked = !!(res && res[OVERAGE_KEY]);
       el.runConsoleSticky.checked = !!(res && res.cum_runmargin_sticky);
+      el.hideNags.checked = !!(res && res.cum_hide_nags);
       el.estimateDecimals.checked = !!(res && res[ESTIMATE_KEY]);
       acCfg = Object.assign(acCfg, (res && res[AUTOCONTINUE_KEY]) || {});
       el.autoContinue.checked = !!acCfg.enabled;
@@ -349,6 +352,12 @@
   el.showOverage.addEventListener("change", () => {
     chrome.storage.local.set({ [OVERAGE_KEY]: el.showOverage.checked }, () =>
       flash(el.showOverage.checked ? "Extra usage on" : "Extra usage off")
+    );
+  });
+
+  el.hideNags.addEventListener("change", () => {
+    chrome.storage.local.set({ cum_hide_nags: el.hideNags.checked }, () =>
+      flash(el.hideNags.checked ? "Hiding claude.ai's usage banners" : "claude.ai's banners shown again")
     );
   });
 
