@@ -494,8 +494,37 @@
     );
     wire(run, wf);
     wireEdit(run);
+    wireSteps(run, wf);
     wireHandles();
     position();
+  }
+
+  // A step in THIS conversation scrolls the chat to where that prompt was
+  // sent, the way a bookmark does (the owner's rule) — the console must not
+  // reload the page it is controlling. A step in another chat keeps its link
+  // and opens that conversation.
+  function wireSteps(run, wf) {
+    if (!showSteps) return;
+    const dir = W.runDirectory(run, wf);
+    el.querySelectorAll(".cum-rm-step").forEach((a) => {
+      a.addEventListener("click", (e) => {
+        const i = parseInt(a.getAttribute("data-i"), 10);
+        const s = dir.find((d) => d.index === i);
+        if (!s) return;
+        let here = !s.url;
+        try {
+          here = here || J.sameConversationUrl(s.url, location.href);
+        } catch (e2) {
+          /* another chat's link stays a link */
+        }
+        if (!here) return;
+        e.preventDefault();
+        const TJ = window.CUMTocJump;
+        if (TJ && TJ.toPrompt(s.prompt)) return;
+        busyNote = "that step's message isn't in the chat's list yet — scroll the chat once and press it again";
+        repaint();
+      });
+    });
   }
 
   function wire(run, wf) {
