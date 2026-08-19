@@ -1494,6 +1494,66 @@
     }
   }
 
+  // Pressing claude.ai's OWN Stop in a run's conversation pauses the run (the
+  // owner's rule): stopping the turn by hand is a decision about the work, and
+  // the run finding out a poll later — or not at all, between steps — left it
+  // marching on past a stop the operator had already pressed. TRUSTED clicks
+  // only: the extension's own Stop presses are dispatched events, so a pause
+  // the run itself performs can never echo back as the operator's.
+  function pauseRunFor(runId) {
+    if (!runId) return;
+    try {
+      chrome.runtime.sendMessage({ type: "cum-wf-pause", runId: runId }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch (e) {
+      /* the interrupted-reply path still catches it at the next poll */
+    }
+  }
+  async function runOfThisConversation() {
+    const J = window.CUMJobs;
+    if (!J) return null;
+    const ids = (await C.storageGet(W.RUN_IDS_KEY))[W.RUN_IDS_KEY] || [];
+    if (!ids.length) return null;
+    const store = await C.storageGet(ids.map(W.runKey));
+    for (const id of ids) {
+      const run = store[W.runKey(id)];
+      if (!run || !W.isRunActive(run)) continue;
+      for (const cid of Object.keys(run.chats || {})) {
+        const url = (run.chats[cid] || {}).url;
+        try {
+          if (url && J.sameConversationUrl(url, location.href)) return run.id;
+        } catch (e) {
+          /* try the next chat */
+        }
+      }
+    }
+    return null;
+  }
+  try {
+    document.addEventListener(
+      "click",
+      (e) => {
+        if (!e.isTrusted) return;
+        let stop = null;
+        try {
+          stop = C.findStop();
+        } catch (err) {
+          return;
+        }
+        if (!stop) return;
+        if (e.target !== stop && !(stop.contains && stop.contains(e.target))) return;
+        // The step this tab is driving names its run outright; a run's
+        // conversation between steps is matched by address, like the pill.
+        if (activeStep && activeStep.runId) return pauseRunFor(activeStep.runId);
+        runOfThisConversation().then(pauseRunFor);
+      },
+      true
+    );
+  } catch (e) {
+    /* the interrupted-reply path still pauses mid-step stops */
+  }
+
   chrome.runtime?.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg) return;
     // Pause was pressed somewhere in this run. Whether or not this tab is
