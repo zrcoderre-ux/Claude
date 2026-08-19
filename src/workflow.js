@@ -3156,6 +3156,30 @@
   }
 
   /**
+   * Which run the in-conversation console shows, from candidates
+   * [{ run, matched, driving }] — `matched` meaning this conversation is one
+   * of the run's chats, `driving` meaning this tab is publishing a step for
+   * it. A LIVE run wins: matched first, then driving. But a FINISHED run
+   * keeps its console too — Edit run, Save as workflow, Steps and
+   * Fix & continue all outlive the run (the owner's rule), and skipping
+   * done/canceled outright left the tray's Run button visible and its click
+   * doing nothing at all. Among finished runs the newest wins: a
+   * conversation is re-used by later runs of the same workflow, and the one
+   * on screen is the latest.
+   */
+  function consoleRun(cands) {
+    const list = (cands || []).filter((c) => c && c.run);
+    const ended = (r) => r.status === "done" || r.status === "canceled";
+    for (const c of list) if (!ended(c.run) && c.matched) return c.run;
+    for (const c of list) if (!ended(c.run) && c.driving) return c.run;
+    let done = null;
+    const at = (r) => r.startedAt || r.createdAt || 0;
+    for (const c of list)
+      if (ended(c.run) && c.matched && (!done || at(c.run) > at(done))) done = c.run;
+    return done;
+  }
+
+  /**
    * Whether the run console should repaint this tick. The console holds
    * forms (Fix & continue, Edit run), and a redraw mid-typing eats the
    * keystrokes — so while a form is open, only a change to the run's own
@@ -3331,6 +3355,7 @@
     isNewReply,
     settleReason,
     turnSettled,
+    consoleRun,
     consoleRedraw,
     builtinWorkflow,
   };

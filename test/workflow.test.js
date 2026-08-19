@@ -3307,3 +3307,26 @@ test("an unrecognised payload reports its shape instead of nothing", () => {
   );
   assert.equal(W.payloadShape(null), "no payload");
 });
+
+// ---- which run the in-conversation console shows ----------------------------
+
+test("a finished run keeps its console — the live failure was a Run button that did nothing", () => {
+  const done = { id: "d", status: "done", startedAt: 100 };
+  // The console skipped done/canceled outright, while the tray's Run button
+  // matched them — a visible button whose click opened nothing.
+  assert.equal(W.consoleRun([{ run: done, matched: true }]), done);
+  // A LIVE run in the same conversation outranks it.
+  const live = { id: "l", status: "paused", startedAt: 50 };
+  assert.equal(W.consoleRun([{ run: done, matched: true }, { run: live, matched: true }]), live);
+  // Among finished runs the NEWEST wins — a conversation is re-used by later
+  // runs of the same workflow.
+  const older = { id: "o", status: "done", startedAt: 10 };
+  assert.equal(W.consoleRun([{ run: older, matched: true }, { run: done, matched: true }]), done);
+  // The tab driving a step shows its run even before a URL is stored.
+  const driving = { id: "g", status: "running" };
+  assert.equal(W.consoleRun([{ run: driving, driving: true }]), driving);
+  // A finished run somewhere ELSE is not this conversation's console.
+  assert.equal(W.consoleRun([{ run: done, matched: false }]), null);
+  assert.equal(W.consoleRun([]), null);
+  assert.equal(W.consoleRun(null), null);
+});
