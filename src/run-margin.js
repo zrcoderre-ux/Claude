@@ -322,7 +322,7 @@
       (run.status === "waiting" && !run.ignoreOutage
         ? `<button class="cum-rm-btn cum-rm-go" data-act="anyway">Go anyway</button>`
         : "") +
-      (run.status !== "running" && run.status !== "done"
+      (run.status !== "running"
         ? `<button class="cum-rm-btn" data-act="edit" title="Opens the run editor in Options — it is the one full authoring form">Edit run</button>`
         : "") +
       (active || paused ? `<button class="cum-rm-btn cum-rm-danger" data-act="cancel">Cancel</button>` : "") +
