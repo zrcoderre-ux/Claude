@@ -288,6 +288,23 @@
    * the pointer invisible — it had no control, so it was not a card, so it was
    * never hovered, so it never got one. Chicken, meet egg.
    */
+  // Narration, not an offer — "Reading project file …" is Claude reviewing
+  // its own material, and there is no live file behind the card (the owner's
+  // rule). Checked on the card AND one step above it, because the verb can
+  // sit just outside the element that holds the filename.
+  function isNarration(card) {
+    try {
+      const t = (card.textContent || "").replace(/\s+/g, " ").trim();
+      if (A.isFileActivity(t)) return true;
+      const p = card.parentElement;
+      if (!p) return false;
+      const pt = (p.textContent || "").replace(/\s+/g, " ").trim();
+      return pt.length <= CARD_MAX_TEXT + 40 && A.isFileActivity(pt);
+    } catch (e) {
+      return false;
+    }
+  }
+
   function cardsIn(root) {
     let nodes;
     try {
@@ -306,6 +323,7 @@
         continue;
       }
       if (text.length > CARD_MAX_TEXT) continue;
+      if (A.isFileActivity(text)) continue;
       if (A.fileNameIn(text)) named.push(el);
     }
 
@@ -329,7 +347,9 @@
       // A card's own text runs the name into the type chip beside it —
       // "ruling.md" + "md" is "ruling.mdmd" — and no filename survives that.
       const name = A.fileNameIn(start.textContent) || "";
-      push(climbToControl(start, Math.min(CARD_MAX_TEXT, name.length + 40)), false, name);
+      const card = climbToControl(start, Math.min(CARD_MAX_TEXT, name.length + 40));
+      if (isNarration(card)) continue; // internal file review — nothing to save
+      push(card, false, name);
     }
     for (const chip of chips) {
       // A chip on its own is not a card — the card is the thing that holds the
@@ -338,6 +358,7 @@
       const card = climbToControl(chip, CARD_MAX_TEXT);
       const text = (card.textContent || "").replace(/\s+/g, " ").trim();
       if (A.isTypeChip(text)) continue; // never grew past the chip
+      if (isNarration(card)) continue;
       push(card, true);
     }
     return out.filter((c) => !out.some((o) => o !== c && c.el.contains(o.el)));
