@@ -167,6 +167,34 @@
     return DISCLOSURE_RE.test(s);
   }
 
+  // A caption that DESCRIBES Claude working through a file rather than
+  // offering one. Cowork narrates its internal file review as a card —
+  // "Reading project file Authority Watch Register 8.17.2026.md", live from
+  // the owner's chat — that names a file and takes a press, but there is no
+  // live file behind it: pressing it opens a review of the project's own
+  // document, and nothing is there to save.
+  //
+  // Matched as a PHRASE — an activity verb leading into a file-ish noun —
+  // rather than by the verb alone, because the verb alone is how files get
+  // NAMED: "Reading List.md" is a file called Reading List, and a bare-verb
+  // rule would have quietly stopped saving it. (fileNameIn can't referee
+  // this: its pattern is deliberately wide enough that the whole narration,
+  // verb and all, reads as one long filename.) "Created ruling.md" stays
+  // pressable on purpose — creation is Cowork genuinely handing a file over,
+  // and only the reading-type verbs are listed here.
+  const ACTIVITY_RE = new RegExp(
+    "^(?:read(?:ing)?|re-?read(?:ing)?|view(?:ing|ed)?|open(?:ing|ed)?|search(?:ing|ed)?|" +
+      "scann(?:ing|ed)|scan|analyz(?:ing|ed)|analys(?:ing|ed)|review(?:ing|ed)?|check(?:ing|ed)?|" +
+      "examin(?:ing|ed)|inspect(?:ing|ed)?|load(?:ing|ed)?|fetch(?:ing|ed)?)\\s+" +
+      "(?:(?:the|a|this|its|your)\\s+)?(?:project\\s+)?" +
+      "(?:file|files|document|documents|doc|docs|attachment|attachments|source|sources|knowledge)\\b"
+  );
+  function isFileActivity(text) {
+    const s = normLabel(text);
+    if (!s || s.length > 200) return false;
+    return ACTIVITY_RE.test(s);
+  }
+
   // Text that names a file. This is what identifies a card: claude.ai draws
   // what Claude produced as a small panel with the filename on it, and the
   // filename is the part that doesn't change when the markup does.
@@ -465,6 +493,7 @@
     mentionsSave,
     goesElsewhere,
     isDisclosureLabel,
+    isFileActivity,
     LOOKBACK_MS,
     LOOKBACK_DEFAULT_MIN,
     LOOKBACK_MIN_MIN,

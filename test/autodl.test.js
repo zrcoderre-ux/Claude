@@ -656,3 +656,26 @@ test("a longer window really does reach further back", () => {
     "inside an hour"
   );
 });
+
+// ---- internal file review is not a file offer ------------------------------
+
+test("Cowork's internal file review is narration, not a file offer", () => {
+  // Live from the owner's chat: this card names a file, takes a press, and
+  // hands you nothing — pressing it opens a review of the project's own
+  // document. The extension must not attempt to download it.
+  assert.equal(A.isFileActivity("Reading project file Authority Watch Register 8.17.2026.md"), true);
+  assert.equal(A.isFileActivity("Read file notes 8.12.2026.md"), true);
+  assert.equal(A.isFileActivity("Viewed document exhibit list.pdf"), true);
+  assert.equal(A.isFileActivity("Searching project files"), true);
+});
+
+test("a file Claude hands over still reads as an offer", () => {
+  // Creation is Cowork genuinely producing a file — it keeps being pressed.
+  assert.equal(A.isFileActivity("Created ruling revised.md"), false);
+  // A bare filename is a card, whatever words the name starts with.
+  assert.equal(A.isFileActivity("Authority Watch Register 8.17.2026.md"), false);
+  assert.equal(A.isFileActivity("Reading List.md"), false, "a file NAMED with the verb still saves");
+  assert.equal(A.isFileActivity("Download ruling.docx"), false);
+  assert.equal(A.isFileActivity(""), false);
+  assert.equal(A.isFileActivity(null), false);
+});
