@@ -1242,7 +1242,10 @@
           (run.status === "waiting" && !run.ignoreOutage
             ? `<button class="job-run wf-run-anyway" data-id="${run.id}" title="This outage doesn't affect what this run is doing — carry on now, and don't wait out another">Go anyway</button>`
             : "") +
-          (run.status !== "running" && run.status !== "done"
+          // Every status but running — a finished run included (the owner's
+          // rule): edited, it is one Fix & continue or Re-run from being work
+          // again, and the editor was already willing; only this button hid it.
+          (run.status !== "running"
             ? `<button class="${WF.isDraft(run) ? "job-run" : "job-edit"} wf-run-edit" data-id="${
                 run.id
               }" title="${
@@ -1250,6 +1253,8 @@
                   ? (run.docs || []).length
                     ? "Name this matter, tweak its steps — this run only"
                     : "Name this matter, add its papers, tweak its steps — this run only"
+                  : run.status === "done" || run.status === "canceled"
+                  ? "Tweak this finished run's steps or documents, then Fix & continue or Re-run it"
                   : "Add a step, fix a prompt, add documents — this run only"
               }">${WF.isDraft(run) ? "Set up" : "Edit run"}</button>`
             : "") +
