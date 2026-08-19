@@ -213,6 +213,155 @@
 
   // ---- choosing the project ------------------------------------------------
 
+  // The containers a popup can arrive in, censused so "opened" can be read off
+  // the page even when the rows wear no role at all — which Cowork's project
+  // menu has done on a live run.
+  const POPUP =
+    '[role="menu"],[role="listbox"],[role="dialog"],[data-state="open"],[data-radix-popper-content-wrapper]';
+  function popupCensus() {
+    try {
+      return new Set(Array.from(document.querySelectorAll(POPUP)));
+    } catch (e) {
+      return new Set();
+    }
+  }
+  function newPopup(before) {
+    let all;
+    try {
+      all = Array.from(document.querySelectorAll(POPUP));
+    } catch (e) {
+      return null;
+    }
+    const fresh = all.filter((el) => !before.has(el) && !C.isOurs(el) && C.isVisible(el));
+    return fresh.find((el) => !fresh.some((o) => o !== el && o.contains(el))) || null;
+  }
+
+  /**
+   * Open the project menu on Cowork — its own gestures, not Chat's. The live
+   * failure this answers: C.openMenu clicked the trigger both ways and gave
+   * up with aria-expanded still "false". So this escalates through every way
+   * a popup trigger can be asked to open — the shared pointer click; the same
+   * sequence stamped pointerType "mouse", which a picky handler can demand
+   * and a synthetic PointerEvent doesn't carry by default; a native click;
+   * then the keyboard the ARIA pattern promises (Enter, Space, ArrowDown) —
+   * and it reads "opened" off the page three ways: a NEW popup container, new
+   * role'd rows, or the trigger's own aria-expanded. Returns { box, why }.
+   */
+  async function openProjectMenu(trigger) {
+    const rowsBefore = C.menuItems().length;
+    const before = popupCensus();
+    const opened = () => {
+      const fresh = newPopup(before);
+      if (fresh) return fresh;
+      const rows = C.menuItems();
+      if (rows.length > rowsBefore) {
+        const holder = (el) => el && rows.some((r) => el.contains(r));
+        return (
+          Array.from(
+            document.querySelectorAll('[role="listbox"],[role="menu"],[role="dialog"]')
+          ).find(holder) || null
+        );
+      }
+      return null;
+    };
+    const key = (type, k, code, keyCode) => {
+      try {
+        trigger.dispatchEvent(
+          new KeyboardEvent(type, {
+            key: k,
+            code: code,
+            keyCode: keyCode,
+            which: keyCode,
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+      } catch (e) {
+        /* the report below is the point */
+      }
+    };
+    const focusFirst = () => {
+      try {
+        trigger.focus();
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    const mouseTyped = () => {
+      const r = trigger.getBoundingClientRect();
+      const p = {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        button: 0,
+        pointerId: 1,
+        isPrimary: true,
+        pointerType: "mouse",
+        clientX: r.left + r.width / 2,
+        clientY: r.top + r.height / 2,
+      };
+      for (const [Ctor, type] of [
+        [PointerEvent, "pointerdown"],
+        [MouseEvent, "mousedown"],
+        [PointerEvent, "pointerup"],
+        [MouseEvent, "mouseup"],
+        [MouseEvent, "click"],
+      ]) {
+        try {
+          trigger.dispatchEvent(new Ctor(type, p));
+        } catch (e) {
+          /* ignore */
+        }
+      }
+    };
+    const gestures = [
+      ["a pointer click", () => C.robustClick(trigger)],
+      ["a mouse-typed pointer click", mouseTyped],
+      [
+        "a native click",
+        () => {
+          try {
+            if (typeof trigger.click === "function") trigger.click();
+          } catch (e) {
+            /* ignore */
+          }
+        },
+      ],
+      ["Enter", () => (focusFirst(), key("keydown", "Enter", "Enter", 13), key("keyup", "Enter", "Enter", 13))],
+      ["Space", () => (focusFirst(), key("keydown", " ", "Space", 32), key("keyup", " ", "Space", 32))],
+      [
+        "ArrowDown",
+        () => (focusFirst(), key("keydown", "ArrowDown", "ArrowDown", 40), key("keyup", "ArrowDown", "ArrowDown", 40)),
+      ],
+    ];
+    const tried = [];
+    for (const g of gestures) {
+      tried.push(g[0]);
+      g[1]();
+      for (let i = 0; i < 8; i++) {
+        await sleep(150);
+        const box = opened();
+        if (box) return { box: box, why: "" };
+      }
+      // Says open but nothing found yet — a menu still rendering gets longer.
+      if (trigger.getAttribute && trigger.getAttribute("aria-expanded") === "true") {
+        for (let i = 0; i < 8; i++) {
+          await sleep(200);
+          const box = opened();
+          if (box) return { box: box, why: "" };
+        }
+      }
+    }
+    const attr = (n) => (trigger.getAttribute && trigger.getAttribute(n)) || "unset";
+    return {
+      box: null,
+      why:
+        "would not open for " + tried.join(", ") +
+        " (aria-haspopup " + JSON.stringify(attr("aria-haspopup")) +
+        ", aria-expanded ended " + JSON.stringify(attr("aria-expanded")) + ")",
+    };
+  }
+
   /**
    * Choose a project from Cowork's menu, the wide way. The Chat driver's
    * version looked at literal <button> elements only; when claude.ai stops
@@ -244,10 +393,14 @@
       document.querySelectorAll('button,[role="button"],[role="combobox"]')
     ).filter((b) => !C.isOurs(b) && C.isVisible(b) && opensAMenu(b));
 
-    let trigger = candidates.find((b) => K.projectTriggerIs(caption(b), name));
-    if (trigger) return { ok: true, why: "the trigger already reads " + JSON.stringify(name) };
-    trigger = candidates.find((b) => K.isProjectTriggerCaption(caption(b)));
-    if (!trigger)
+    const already = candidates.find((b) => K.projectTriggerIs(caption(b), name));
+    if (already) return { ok: true, why: "the trigger already reads " + JSON.stringify(name) };
+    // EVERY control captioned like a project trigger, not just the first — a
+    // live run found a trigger, clicked it both ways, and the menu never
+    // opened; when there are two (a pre-mounted twin from another layout is
+    // claude.ai's habit), the first may be the dead one.
+    const triggers = candidates.filter((b) => K.isProjectTriggerCaption(caption(b)));
+    if (!triggers.length)
       return {
         ok: false,
         why:
@@ -257,24 +410,24 @@
           ")",
       };
 
-    const trouble = await C.openMenu(trigger, C.menuItems());
-    if (trouble) {
-      C.closeMenu();
-      return { ok: false, why: trouble };
-    }
-
     // Only ever inside the menu — falling back to the document would find the
     // composer's own editor and type the project's name into the prompt.
-    const rows = C.menuItems();
-    const holder = (el) => el && rows.some((r) => el.contains(r));
-    const box =
-      Array.from(
-        document.querySelectorAll('[role="listbox"],[role="menu"],[role="dialog"]')
-      ).find(holder) || null;
-    if (!box) {
+    let box = null;
+    const attempts = [];
+    for (const t of triggers) {
+      const got = await openProjectMenu(t);
+      if (got.box) {
+        box = got.box;
+        break;
+      }
+      attempts.push(JSON.stringify(caption(t) || "(uncaptioned)") + " " + got.why);
       C.closeMenu();
-      return { ok: false, why: "rows opened but nothing recognisable holds them" };
     }
+    if (!box)
+      return {
+        ok: false,
+        why: "the project menu never opened — " + attempts.join(" · "),
+      };
     // A long list renders only what fits, so the filter isn't a nicety: a
     // project far down it is not in the page to be clicked until typing brings
     // it there.
