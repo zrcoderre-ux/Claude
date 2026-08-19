@@ -1455,3 +1455,94 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   .cum-ruling-btn:hover { background: rgba(255, 255, 255, 0.08); }
   .cum-ruling-btn.cum-ruling-bad { color: #ff8a7a; border-color: rgba(255, 138, 122, 0.5); }
 }
+
+/* ---- The run console in the left margin ------------------------------------
+   The entire run controllable from inside a chat (the owner's spec — see
+   src/run-margin.js). Sits under the left sidebar panel when it is open,
+   where that panel would go when it is closed; ~1.75x its width. */
+#cum-runmargin {
+  position: fixed;
+  z-index: 2147483643;
+  overflow-y: auto;
+  background: #ffffff;
+  color: #1f1f1f;
+  border: 1.5px solid rgba(0, 0, 0, 0.18);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  padding: 10px 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+#cum-runmargin[hidden] { display: none; }
+.cum-rm-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cum-rm-title { font-weight: 700; font-size: 13.5px; flex: 1 1 auto; }
+.cum-rm-badge {
+  font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.07); white-space: nowrap;
+}
+.cum-rm-status-paused, .cum-rm-status-error { background: rgba(201, 100, 66, 0.18); }
+.cum-rm-status-running { background: rgba(80, 160, 90, 0.16); }
+.cum-rm-x {
+  border: 0; background: transparent; color: inherit; cursor: pointer;
+  font-size: 13px; padding: 2px 6px; border-radius: 6px;
+}
+.cum-rm-x:hover { background: rgba(0, 0, 0, 0.07); }
+.cum-rm-btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.cum-rm-btn {
+  border: 1px solid rgba(0, 0, 0, 0.18); border-radius: 8px; background: transparent;
+  color: inherit; font: inherit; font-size: 12px; font-weight: 600;
+  padding: 4px 9px; cursor: pointer;
+}
+.cum-rm-btn:hover { background: rgba(0, 0, 0, 0.06); }
+.cum-rm-btn:disabled { opacity: 0.5; cursor: default; }
+.cum-rm-go { background: rgba(201, 100, 66, 0.14); }
+.cum-rm-danger { border-color: rgba(180, 60, 40, 0.5); }
+.cum-rm-facts { color: #444; }
+.cum-rm-err { margin-top: 6px; color: #a33; white-space: pre-wrap; }
+.cum-rm-note { margin-top: 6px; color: #6b6b6b; white-space: pre-wrap; }
+.cum-rm-steps { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+.cum-rm-step {
+  display: flex; gap: 8px; align-items: baseline; padding: 4px 6px;
+  border-radius: 8px; color: inherit; text-decoration: none;
+}
+.cum-rm-step:hover { background: rgba(201, 100, 66, 0.1); }
+.cum-rm-step-n { font-weight: 700; color: #c96442; min-width: 20px; }
+.cum-rm-step-main { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cum-rm-here .cum-rm-step-main b { color: #c96442; }
+.cum-rm-done { opacity: 0.65; }
+.cum-rm-fix { margin-top: 8px; border-top: 1px solid rgba(0,0,0,0.12); padding-top: 8px; }
+.cum-rm-row { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+.cum-rm-fix select, .cum-rm-fixurl {
+  font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid rgba(0,0,0,0.2);
+  border-radius: 6px; background: #fff; color: inherit; max-width: 100%;
+}
+.cum-rm-prompt {
+  max-height: 120px; overflow: auto; background: rgba(0,0,0,0.045);
+  border-radius: 8px; padding: 6px 8px; white-space: pre-wrap; font-size: 11.5px; margin: 6px 0;
+}
+.cum-rm-check { display: block; margin: 5px 0; }
+.cum-rm-fixchat { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+.cum-rm-fixchat span { min-width: 90px; font-weight: 600; }
+.cum-rm-fixchat input { flex: 1 1 auto; }
+#cum-runmargin-tab {
+  position: fixed; left: 0; top: 120px; z-index: 2147483643;
+  writing-mode: vertical-rl; padding: 10px 4px; border-radius: 0 8px 8px 0;
+  border: 1px solid rgba(0,0,0,0.18); border-left: 0; background: #fff; color: #1f1f1f;
+  font: 600 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+#cum-runmargin-tab[hidden] { display: none; }
+
+@media (prefers-color-scheme: dark) {
+  #cum-runmargin { background: #2a2a28; color: #f0efea; border-color: rgba(255, 255, 255, 0.18); }
+  .cum-rm-badge { background: rgba(255, 255, 255, 0.12); }
+  .cum-rm-x:hover { background: rgba(255, 255, 255, 0.1); }
+  .cum-rm-btn { border-color: rgba(255, 255, 255, 0.22); }
+  .cum-rm-btn:hover { background: rgba(255, 255, 255, 0.08); }
+  .cum-rm-facts { color: #c9c7c0; }
+  .cum-rm-note { color: #a5a29a; }
+  .cum-rm-prompt { background: rgba(255, 255, 255, 0.07); }
+  .cum-rm-fix select, .cum-rm-fixurl { background: #1f1f1e; color: #f0efea; border-color: rgba(255,255,255,0.22); }
+  #cum-runmargin-tab { background: #2a2a28; color: #f0efea; border-color: rgba(255, 255, 255, 0.18); }
+}

@@ -33,3 +33,30 @@ test("a nonsense anchor is treated as absent rather than obeyed", () => {
   assert.equal(P.trayPlace(1400, { left: 1200, top: 600 }).anchored, false);
   assert.equal(P.trayPlace(1400, { left: 12, top: 10 }).anchored, false, "the LEFT sidebar's toggle");
 });
+
+test("the run console sits under an open left panel with room beneath it", () => {
+  const at = P.marginPlace({ w: 1400, h: 900 }, { left: 0, right: 288, top: 0, bottom: 600, width: 288, height: 600 });
+  assert.equal(at.left, 0);
+  assert.equal(at.top, 600 + P.GAP);
+  assert.equal(at.width, Math.round(288 * P.MARGIN_FACTOR));
+});
+
+test("a full-height open panel has no underneath, so the console sits alongside", () => {
+  const at = P.marginPlace({ w: 1400, h: 900 }, { left: 0, right: 288, top: 0, bottom: 900, width: 288, height: 900 });
+  assert.equal(at.left, 288 + P.GAP);
+  assert.equal(at.top, 56);
+});
+
+test("closed rail or no sidebar: where the open panel would go", () => {
+  const rail = P.marginPlace({ w: 1400, h: 900 }, { left: 0, right: 64, top: 0, bottom: 900, width: 64, height: 900 });
+  assert.equal(rail.left, 64 + P.GAP);
+  assert.equal(rail.top, 56);
+  assert.equal(rail.width, Math.round(P.MARGIN_BASE_W * P.MARGIN_FACTOR));
+  const none = P.marginPlace({ w: 1400, h: 900 }, null);
+  assert.equal(none.left, P.GAP);
+});
+
+test("the console never outgrows a small window", () => {
+  const at = P.marginPlace({ w: 480, h: 700 }, null);
+  assert.ok(at.width <= 480 - 40 || at.width === 320);
+});
