@@ -83,6 +83,7 @@
         "src/tray.js",
         "src/toc-panel.js",
         "src/run-panel.js",
+        "src/run-margin.js",
         "src/save-chat.js",
         "src/copy-ruling.js",
         "src/stamps.js",
