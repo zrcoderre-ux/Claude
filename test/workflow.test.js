@@ -3257,3 +3257,53 @@ test("the run moving repaints even while a form is open", () => {
     true
   );
 });
+
+// ---- Fix & continue's DEFAULTS are exclusive too ---------------------------
+
+test("a fix form's defaults never open with both boxes checked", () => {
+  // The owner caught it live in the run console: a carrying step interrupted
+  // mid-wait defaulted "already went out" AND "re-read the carry" both on.
+  // With no `changed` argument — the defaults case — the message already
+  // being out wins.
+  assert.deepEqual(W.exclusiveFix({ refetchCarry: true, sent: true }), {
+    refetchCarry: false,
+    sent: true,
+  });
+});
+
+// ---- reading a Cowork session's payload ------------------------------------
+
+test("a Cowork session payload is read defensively, assistant entries only", () => {
+  // The chat shape, should the collections simply agree.
+  assert.equal(
+    W.coworkReplyText({ chat_messages: [{ sender: "human", text: "ask" }, { sender: "assistant", text: "THE RULING" }] }),
+    "THE RULING"
+  );
+  // A messages array with role and content blocks.
+  assert.equal(
+    W.coworkReplyText({
+      messages: [
+        { role: "user", content: [{ type: "text", text: "the prompt" }] },
+        { role: "assistant", content: [{ type: "text", text: "THE REPORT" }] },
+      ],
+    }),
+    "THE REPORT"
+  );
+  // One level down, and by `author`.
+  assert.equal(
+    W.coworkReplyText({ session: { events: [{ author: "assistant", text: "NESTED" }] } }),
+    "NESTED"
+  );
+  // An unattributed entry could as easily be the prompt — never taken.
+  assert.equal(W.coworkReplyText({ messages: [{ text: "who wrote this?" }] }), "");
+  assert.equal(W.coworkReplyText(null), "");
+  assert.equal(W.coworkReplyText({ uuid: "cse_x", name: "run" }), "");
+});
+
+test("an unrecognised payload reports its shape instead of nothing", () => {
+  assert.equal(
+    W.payloadShape({ uuid: "cse_x", name: "run", steps: [{ id: 1, kind: "tool" }] }),
+    "keys: uuid,name,steps; steps[0]: id,kind"
+  );
+  assert.equal(W.payloadShape(null), "no payload");
+});

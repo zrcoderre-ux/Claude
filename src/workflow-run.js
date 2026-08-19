@@ -473,7 +473,12 @@
 
     let api = "";
     const uuid = conversationUuid();
-    if (uuid) api = W.stripPlaceholders(W.lastAssistantText(await fetchConversation(uuid)));
+    if (uuid) {
+      const conv = await fetchConversation(uuid);
+      api = W.stripPlaceholders(
+        /^cse_/.test(uuid) ? W.coworkReplyText(conv) : W.lastAssistantText(conv)
+      );
+    }
     if (api) return { text: api, via: "api", copyWhy: copyWhy };
 
     // Whichever survivor says the most. A copy that failed the ending test is
@@ -803,52 +808,65 @@
             // between "the API said nothing new" and "the API was never
             // consulted", and only one of those is a claude.ai problem.
             api = { noConvId: true, path: location.pathname };
-          } else if (/^cse_/.test(uuid)) {
-            // The API path for a Cowork session was inferred from a read and
-            // has never been seen to answer with messages. Its empty reply was
-            // being reported as "the conversation never answered" — an
-            // authority verdict from a source that is not an authority here.
-            api = { apiUnreadable: true };
           } else {
+            // A Cowork session is asked too, now. Refusing to ask it cost a
+            // live step: the reply finished an hour before the timeout, the
+            // DOM never showed it, and everything else is dead on Cowork —
+            // no stream events, no page state worth reading. The parse is
+            // defensive (W.coworkReplyText), and when the session answers in
+            // a shape nothing recognises, the report carries that shape so
+            // it can be wired in from one paste.
+            const cse = /^cse_/.test(uuid);
             const conv = await fetchConversation(uuid, 20000);
-            const apiText = W.stripPlaceholders(W.lastAssistantText(conv));
-            const fresh = apiText && apiText !== (before.apiText || "");
-            api = { apiChars: apiText.length, apiAnswered: !!conv };
-            if (fresh && W.looksInterrupted(apiText)) {
-              // Cut off part-way. Where a ruling is expected this is the exact
-              // case a Continue fixes, so ask before giving up on it.
-              if (marker && !nudged && (await nudge())) {
-                before = Object.assign({}, before, { apiText: apiText });
-                await C.sleep(POLL_MS);
-                continue;
+            const apiText = W.stripPlaceholders(
+              cse ? W.coworkReplyText(conv) : W.lastAssistantText(conv)
+            );
+            if (cse && !apiText) {
+              // The session answered in a shape nothing recognised (or not at
+              // all). Say so and let the DOM watch below keep its turn — the
+              // page is still a candidate answer.
+              api = conv
+                ? { apiAnswered: true, coworkShape: W.payloadShape(conv) }
+                : { apiFailed: true };
+            } else {
+              const fresh = apiText && apiText !== (before.apiText || "");
+              api = { apiChars: apiText.length, apiAnswered: !!conv };
+              if (fresh && W.looksInterrupted(apiText)) {
+                // Cut off part-way. Where a ruling is expected this is the exact
+                // case a Continue fixes, so ask before giving up on it.
+                if (marker && !nudged && (await nudge())) {
+                  before = Object.assign({}, before, { apiText: apiText });
+                  await C.sleep(POLL_MS);
+                  continue;
+                }
+                return { el: null, canceled: false, interrupted: true };
               }
-              return { el: null, canceled: false, interrupted: true };
-            }
-            if (fresh && !marker)
-              return { el: el, apiText: apiText, canceled: false, via: "api" };
-            if (fresh && W.hasMarker(apiText, marker)) {
-              // The marker is the ruling's first line, so this may be a ruling
-              // that is still being written. Wait for it to hold still.
-              if (settledOnMarker(apiText, now))
+              if (fresh && !marker)
                 return { el: el, apiText: apiText, canceled: false, via: "api" };
-              api = Object.assign({}, api, { holding: "waiting for the ruling to finish" });
-            } else if (fresh && !skipped.has(apiText)) {
-              // A finished reply that isn't the one being waited for. Ask it to
-              // carry on, once; a second one that still isn't the ruling is a
-              // judgement call, and the run pauses for you to make it.
-              skipped.add(apiText);
-              before = Object.assign({}, before, { apiText: apiText });
-              api = Object.assign({}, api, { skipped: skipped.size, marker: marker });
-              if (!nudged) {
-                await nudge();
-              } else {
-                return {
-                  el: null,
-                  canceled: false,
-                  noRuling: true,
-                  skipped: skipped.size,
-                  marker: marker,
-                };
+              if (fresh && W.hasMarker(apiText, marker)) {
+                // The marker is the ruling's first line, so this may be a ruling
+                // that is still being written. Wait for it to hold still.
+                if (settledOnMarker(apiText, now))
+                  return { el: el, apiText: apiText, canceled: false, via: "api" };
+                api = Object.assign({}, api, { holding: "waiting for the ruling to finish" });
+              } else if (fresh && !skipped.has(apiText)) {
+                // A finished reply that isn't the one being waited for. Ask it to
+                // carry on, once; a second one that still isn't the ruling is a
+                // judgement call, and the run pauses for you to make it.
+                skipped.add(apiText);
+                before = Object.assign({}, before, { apiText: apiText });
+                api = Object.assign({}, api, { skipped: skipped.size, marker: marker });
+                if (!nudged) {
+                  await nudge();
+                } else {
+                  return {
+                    el: null,
+                    canceled: false,
+                    noRuling: true,
+                    skipped: skipped.size,
+                    marker: marker,
+                  };
+                }
               }
             }
           }
@@ -1115,10 +1133,15 @@
       apiText: "",
     };
     const priorUuid = conversationUuid();
-    if (priorUuid)
+    if (priorUuid) {
+      // The same parser the wait loop will use, or the baseline and the poll
+      // compare different readings of the same conversation: a Cowork session
+      // parsed only at poll time would read its PREVIOUS reply as fresh.
+      const conv = await fetchConversation(priorUuid, 15000);
       before.apiText = W.stripPlaceholders(
-        W.lastAssistantText(await fetchConversation(priorUuid, 15000))
+        /^cse_/.test(priorUuid) ? W.coworkReplyText(conv) : W.lastAssistantText(conv)
       );
+    }
 
     if (!msg.awaitOnly) {
       // Whatever this step was told to upload, uploaded as-is. Text documents
@@ -1319,8 +1342,11 @@
           (typeof s.apiChars === "number"
             ? ", the conversation itself last showed " + s.apiChars + " chars" +
               (s.apiAnswered ? "" : " (it never answered)")
-            : s.apiUnreadable
-            ? ", the conversation API can't be read on this surface"
+            : s.coworkShape
+            ? ", the Cowork session answered but no reply was recognised in its payload (" +
+              s.coworkShape + ") — paste this so the shape can be wired in"
+            : s.apiFailed
+            ? ", the Cowork session API was asked and didn't answer"
             : s.noConvId
             ? ", and this tab's URL (" + s.path + ") holds no conversation id, so the " +
               "conversation itself was never asked"

@@ -2762,6 +2762,68 @@
     return "";
   }
 
+  /**
+   * The newest assistant text out of a COWORK session payload
+   * (GET /api/organizations/{org}/conversations/cse_{id}).
+   *
+   * Until now the runner refused to ask this endpoint at all — its shape had
+   * never been seen to answer with messages, and an authority verdict from a
+   * non-authority is worse than silence. A live step then showed the cost:
+   * the reply finished an hour before the timeout, the DOM never showed it,
+   * and every other signal is dead on Cowork (no stream events, no readable
+   * page state). So now the session IS asked, and read defensively: the chat
+   * shape first (the collections may simply agree), then the arrays a session
+   * payload plausibly keeps its turns in — top-level or one level down — each
+   * entry read with the same message reader as chat, and only entries that
+   * NAME an assistant sender are taken (an unattributed entry could as easily
+   * be the prompt, and handing the prompt on as the reply is the failure this
+   * whole pipeline exists to prevent). When nothing parses, the caller
+   * reports the payload's SHAPE (payloadShape) so the real one can be wired
+   * in from a single paste instead of another lost run.
+   */
+  function coworkReplyText(conv) {
+    if (!conv || typeof conv !== "object") return "";
+    const fromChat = lastAssistantText(conv);
+    if (fromChat) return fromChat;
+    const roots = [conv, conv.session, conv.conversation, conv.chat, conv.data].filter(
+      (o) => o && typeof o === "object"
+    );
+    for (const root of roots) {
+      for (const key of ["chat_messages", "messages", "events", "turns", "entries"]) {
+        const arr = Array.isArray(root[key]) ? root[key] : null;
+        if (!arr) continue;
+        for (let i = arr.length - 1; i >= 0; i--) {
+          const m = arr[i];
+          if (!m || typeof m !== "object") continue;
+          const sender = str(m.sender || m.role || m.author).toLowerCase();
+          if (sender !== "assistant") continue;
+          const text = messageText(m);
+          if (text) return text;
+        }
+      }
+    }
+    return "";
+  }
+
+  /**
+   * A payload's shape in one reportable line: its top-level keys, and the
+   * first object element's keys of the likeliest array. This is what turns
+   * "the API can't be read on this surface" into a paste that fixes it.
+   */
+  function payloadShape(conv) {
+    if (!conv || typeof conv !== "object") return "no payload";
+    const keys = Object.keys(conv).slice(0, 14);
+    let arrBit = "";
+    for (const k of keys) {
+      const v = conv[k];
+      if (Array.isArray(v) && v.length && v[0] && typeof v[0] === "object") {
+        arrBit = "; " + k + "[0]: " + Object.keys(v[0]).slice(0, 10).join(",");
+        break;
+      }
+    }
+    return "keys: " + keys.join(",") + arrBit;
+  }
+
   // Split a message into the prose Claude wrote and the artifacts it produced.
   // Thinking and tool RESULTS are scratch work and stay out — but an artifact is
   // a tool call whose payload IS the answer, and a report written into one would
@@ -3253,6 +3315,8 @@
     markCanceled,
     progressText,
     lastAssistantText,
+    coworkReplyText,
+    payloadShape,
     messageParts,
     hasUnsupportedBlocks,
     isMostlyPlaceholder,
