@@ -448,12 +448,24 @@
     return out.concat([newDoc(Object.assign({}, bundle, fields), bundle && bundle.id)]);
   }
 
+  // The header is a real index — one numbered line per document, with its
+  // length — rather than a prose sentence running the names together (the
+  // owner's ask). The length is there so the reader can tell a two-page
+  // declaration from a two-hundred-page exhibit before going looking for it.
   function bundleText(parts) {
     const list = (parts || []).filter((p) => p && trimmed(p.text));
     if (!list.length) return "";
+    const words = (t) => str(t).trim().split(/\s+/).length;
     const head =
-      "This file contains " + list.length + " documents, one after another. " +
-      "They are, in order: " + list.map((p) => trimmed(p.name) || "untitled").join(", ") + ".";
+      "This file contains " + list.length + " document" + (list.length === 1 ? "" : "s") +
+      ", one after another, each between its own BEGIN FILE and END FILE markers. " +
+      "Index, in order:\n" +
+      list
+        .map((p, i) => {
+          const n = words(p.text);
+          return i + 1 + ". " + (trimmed(p.name) || "untitled") + " — " + n + " word" + (n === 1 ? "" : "s");
+        })
+        .join("\n");
     const body = list.map(
       (p) =>
         "===== BEGIN FILE: " + (trimmed(p.name) || "untitled") + " =====\n\n" +
