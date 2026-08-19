@@ -27,6 +27,8 @@
 
   const ID = "cum-runmargin";
   const OPEN_KEY = "cum_runmargin_open";
+  const STICKY_KEY = "cum_runmargin_sticky"; // the popup's checkbox
+  const GEO_KEY = "cum_runmargin_geo"; // { left, top, width, height } when sticky
   const POLL_MS = 2500;
   const WORKFLOWS_KEY = "cum_workflows";
 
@@ -36,6 +38,14 @@
   let showSteps = false;
   let fixDraft = null; // { stepIndex, refetchCarry, sent, chats } while fixing
   let busyNote = "";
+  // Where the operator dragged or resized it to, or null for the default
+  // geometry. Sticky (the popup checkbox, off by default) decides whether this
+  // survives: off, it lives in memory and a NEW RUN snaps back to default; on,
+  // it is stored and every run opens where the last one was left.
+  let custom = null;
+  let sticky = false;
+  let lastRunId = null;
+  let applied = { w: 0, h: 0 }; // what position() last set, so a resize we made isn't read as one the operator made
 
   const esc = (s) =>
     String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
@@ -134,11 +144,81 @@
 
   function position() {
     if (!el || el.hidden) return;
+    if (custom) {
+      // The operator's own spot, clamped on screen — a window that shrank must
+      // not leave the console somewhere unreachable.
+      const left = Math.min(Math.max(0, custom.left), Math.max(0, window.innerWidth - 120));
+      const top = Math.min(Math.max(0, custom.top), Math.max(0, window.innerHeight - 80));
+      el.style.left = left + "px";
+      el.style.top = top + "px";
+      if (custom.width) el.style.width = custom.width + "px";
+      if (custom.height) el.style.height = custom.height + "px";
+      el.style.maxHeight = Math.max(160, window.innerHeight - top - 12) + "px";
+      applied = { w: el.offsetWidth, h: el.offsetHeight };
+      return;
+    }
     const at = P.marginPlace({ w: window.innerWidth, h: window.innerHeight }, sidebarRect());
     el.style.left = at.left + "px";
     el.style.top = at.top + "px";
     el.style.width = at.width + "px";
+    el.style.height = "";
     el.style.maxHeight = Math.max(200, window.innerHeight - at.top - 16) + "px";
+    applied = { w: el.offsetWidth, h: el.offsetHeight };
+  }
+
+  function keepGeo() {
+    if (sticky && custom) storageSet({ [GEO_KEY]: custom });
+  }
+
+  // Dragging by the title bar. Buttons in the bar keep their clicks; a drag
+  // under four pixels is a click, not a move.
+  function wireDrag(head) {
+    if (!head) return;
+    let sx = 0, sy = 0, ox = 0, oy = 0, on = false, moved = false;
+    head.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      try {
+        if (e.target && e.target.closest && e.target.closest("button")) return;
+      } catch (err) {
+        /* ignore */
+      }
+      on = true;
+      moved = false;
+      sx = e.clientX;
+      sy = e.clientY;
+      const r = el.getBoundingClientRect();
+      ox = r.left;
+      oy = r.top;
+      try {
+        head.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* ignore */
+      }
+    });
+    head.addEventListener("pointermove", (e) => {
+      if (!on) return;
+      const dx = e.clientX - sx;
+      const dy = e.clientY - sy;
+      if (!moved && Math.hypot(dx, dy) < 4) return;
+      moved = true;
+      custom = Object.assign({}, custom || { width: el.offsetWidth, height: 0 }, {
+        left: Math.round(ox + dx),
+        top: Math.round(oy + dy),
+      });
+      position();
+    });
+    const end = (e) => {
+      if (!on) return;
+      on = false;
+      if (moved) keepGeo();
+      try {
+        head.releasePointerCapture(e.pointerId);
+      } catch (err) {
+        /* ignore */
+      }
+    };
+    head.addEventListener("pointerup", end);
+    head.addEventListener("pointercancel", end);
   }
 
   // ---- rendering ----------------------------------------------------------
@@ -271,6 +351,7 @@
       fixHtml(run, wf);
 
     wire(run, wf);
+    wireDrag(el.querySelector(".cum-rm-head"));
     position();
   }
 
@@ -426,6 +507,27 @@
       el.id = ID;
     }
     (document.body || document.documentElement).appendChild(el);
+    // The corner handle is the browser's own (CSS resize). A change position()
+    // didn't make is the operator's, and becomes the custom size.
+    try {
+      new ResizeObserver(() => {
+        if (!el || el.hidden) return;
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        if (Math.abs(w - applied.w) < 7 && Math.abs(h - applied.h) < 7) return;
+        const r = el.getBoundingClientRect();
+        custom = Object.assign({}, custom || {}, {
+          left: custom ? custom.left : Math.round(r.left),
+          top: custom ? custom.top : Math.round(r.top),
+          width: w,
+          height: h,
+        });
+        applied = { w, h };
+        keepGeo();
+      }).observe(el);
+    } catch (e) {
+      /* dragging still works; only the resize handle goes unremembered */
+    }
     return el;
   }
 
@@ -461,6 +563,12 @@
     }
     const run = findRun(runs, location.href);
     if (!run) return hideAll();
+    // A NEW run returns to the default geometry — unless the popup's sticky
+    // box is ticked, in which case where you put it is where it stays.
+    if (run.id !== lastRunId) {
+      lastRunId = run.id;
+      if (!sticky) custom = null;
+    }
     if (!open) {
       if (el) el.hidden = true;
       showTab(true);
@@ -483,8 +591,10 @@
     render(run, wf);
   }
 
-  storageGet(OPEN_KEY).then((r) => {
+  storageGet([OPEN_KEY, STICKY_KEY, GEO_KEY]).then((r) => {
     if (r[OPEN_KEY] === false) open = false;
+    sticky = !!r[STICKY_KEY];
+    if (sticky && r[GEO_KEY]) custom = r[GEO_KEY];
     tick();
   });
   setInterval(tick, POLL_MS);
@@ -493,6 +603,19 @@
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
+      if (changes[STICKY_KEY]) {
+        sticky = !!changes[STICKY_KEY].newValue;
+        // Turned off in the popup: snap back to the default now, not at the
+        // next run — the checkbox says what the console does, immediately.
+        if (!sticky) {
+          custom = null;
+          position();
+        }
+      }
+      if (changes[GEO_KEY] && changes[GEO_KEY].newValue === null && !sticky) {
+        custom = null;
+        position();
+      }
       if (Object.keys(changes).some((k) => k.indexOf("cum_wf_run") === 0 || k === W.RUN_IDS_KEY)) tick();
     });
   } catch (e) {
