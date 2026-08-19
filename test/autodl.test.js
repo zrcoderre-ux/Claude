@@ -679,3 +679,64 @@ test("a file Claude hands over still reads as an offer", () => {
   assert.equal(A.isFileActivity(""), false);
   assert.equal(A.isFileActivity(null), false);
 });
+
+// ---- Cowork's artifact blocks ----------------------------------------------
+
+test("an artifact block's text reads as a name and a type", () => {
+  // Live from the owner's console dump: the display name runs straight into
+  // the kind word, and the destinations trail after the type.
+  assert.deepEqual(
+    A.artifactCard(
+      "Verification report 26stcp07311 petition to compel arbitration 8.19.2026Document · MD Google Drive"
+    ),
+    { name: "Verification report 26stcp07311 petition to compel arbitration 8.19.2026", type: "md" }
+  );
+  assert.deepEqual(A.artifactCard("Citation verification log 26stcp07311 8.19.2026Document · MD"), {
+    name: "Citation verification log 26stcp07311 8.19.2026",
+    type: "md",
+  });
+  // Not everything with a dot in it is a block.
+  assert.equal(A.artifactCard("Here's the report · reviewed carefully"), null);
+  assert.equal(A.artifactCard(""), null);
+  assert.equal(A.artifactCard(null), null);
+});
+
+test("artifact blocks save on Cowork by census, not the live gate", () => {
+  // The stream signal that feeds the live gate is confirmed broken on
+  // Cowork, so the census is the gate: what was on the page when the ledger
+  // started is adopted, and a block that appears after it is output.
+  const offers = [{ key: "artifact|report.md", name: "report.md", ready: true }];
+  const base = { enabled: true, baselined: true, seen: [], count: 0, max: 20, now: 10000, lastAt: 0 };
+
+  // Before the census closes: adopted, never saved.
+  const first = A.artifactPlan(offers, Object.assign({}, base, { baselined: false }));
+  assert.equal(first.hold, "baseline");
+  assert.deepEqual(first.adopt, ["artifact|report.md"]);
+  assert.equal(first.take, null);
+
+  // After: a fresh block is output, and is taken.
+  const taken = A.artifactPlan(offers, base);
+  assert.equal(taken.take, offers[0]);
+
+  // Adopted or already pressed: left alone.
+  assert.equal(A.artifactPlan(offers, Object.assign({}, base, { seen: ["artifact|report.md"] })).take, null);
+
+  // The shared ceilings still hold.
+  assert.equal(A.artifactPlan(offers, Object.assign({}, base, { generating: true })).hold, "generating");
+  assert.equal(A.artifactPlan(offers, Object.assign({}, base, { count: 20 })).hold, "cap");
+  assert.equal(A.artifactPlan(offers, Object.assign({}, base, { lastAt: 9500 })).hold, "cooldown");
+  assert.equal(A.artifactPlan(offers, Object.assign({}, base, { enabled: false })).hold, "off");
+  const notReady = A.artifactPlan(
+    [{ key: "artifact|x.md", name: "x.md", ready: false }],
+    base
+  );
+  assert.equal(notReady.take, null);
+  assert.equal(notReady.hold, "not ready");
+});
+
+test("the census does not close over a Cowork turn still in flight", () => {
+  const offers = [{ key: "artifact|report.md", name: "report.md", ready: true }];
+  const held = A.artifactPlan(offers, { enabled: true, baselined: false, generating: true });
+  assert.equal(held.hold, "settling");
+  assert.deepEqual(held.adopt, [], "nothing adopted while the answer is still arriving");
+});

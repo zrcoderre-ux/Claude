@@ -245,6 +245,78 @@
     return name;
   }
 
+  // ---- Cowork's artifact blocks -------------------------------------------
+  //
+  // Cowork presents a file Claude produced OUTSIDE the reply: an "artifact
+  // block" — live from the owner's console dump, a container whose text runs
+  // the file's display name straight into a kind-and-type caption,
+  //   "Verification report … 8.19.2026Document · MD Google Drive"
+  // — with a "More ways to open" disclosure on it (Download lives in that
+  // menu) and a Google Drive button that must never be pressed. The reply's
+  // own container holds none of it, which is why the reply-scoped card scan
+  // found nothing on Cowork.
+
+  /** The block's text, read: { name, type } — or null for text that isn't one. */
+  function artifactCard(text) {
+    const s = str(text).replace(/\s+/g, " ").trim();
+    if (!s || s.length > 300) return null;
+    // The display name runs into the kind word with no space; the type is the
+    // short token after the separator dot.
+    const m = /^(.*?)\s*(?:Document|Spreadsheet|Presentation|Image|Code|Text|File)\s*·\s*([A-Za-z0-9]{1,6})\b/.exec(
+      s
+    );
+    if (!m) return null;
+    const name = m[1].trim();
+    if (!name) return null;
+    return { name: name, type: m[2].toLowerCase() };
+  }
+
+  /**
+   * What to do about the artifact blocks on a Cowork page — the parallel of
+   * `plan`, because the live gate cannot exist there: the stream hook that
+   * tells Chat "this reply landed in front of us" is confirmed broken on
+   * Cowork, so "watched arrive" is never true and the chat rule would hold
+   * every file forever. What stands in for it, together, is:
+   *
+   * - **The census** — everything on the page when the ledger starts is
+   *   adopted, never saved. Same as Chat.
+   * - **Turn position, supplied by the caller** — only blocks at or after the
+   *   newest reply or two are offered at all, so a block mounted by scrolling
+   *   the backlog into view arrives ABOVE the newest replies and is never a
+   *   candidate. That is the caller's filter; this plan trusts the list it is
+   *   given.
+   * - The shared ceilings: the page cap, the cooldown, one save per call.
+   */
+  function artifactPlan(offers, ctx) {
+    const c = ctx || {};
+    const list = Array.isArray(offers) ? offers : [];
+    const none = { adopt: [], take: null, hold: null };
+    if (!c.enabled) return Object.assign({}, none, { hold: "off" });
+    if (!c.baselined) {
+      if (c.generating || c.pending) return Object.assign({}, none, { hold: "settling" });
+      return { adopt: list.map((o) => o.key).filter(Boolean), take: null, hold: "baseline" };
+    }
+    const seen = {};
+    for (const k of c.seen || []) seen[k] = true;
+    const fresh = list.filter((o) => o && o.key && !seen[o.key]);
+    if (!fresh.length) return none;
+    if (c.generating) return Object.assign({}, none, { hold: "generating" });
+    const max = c.max > 0 ? c.max : MAX_PER_PAGE;
+    if ((c.count || 0) >= max) return Object.assign({}, none, { hold: "cap" });
+    const cooldown = c.cooldownMs == null ? COOLDOWN_MS : c.cooldownMs;
+    if (c.lastAt && (c.now || 0) - c.lastAt < cooldown)
+      return Object.assign({}, none, { hold: "cooldown" });
+    let held = null;
+    for (const o of fresh) {
+      if (o.ready === false) {
+        held = held || "not ready";
+        continue;
+      }
+      return { adopt: [o.key], take: o, hold: null };
+    }
+    return Object.assign({}, none, { hold: held });
+  }
+
   // How a file is recognised as one you already have.
   //
   // Matched on the NAME, because that is the only thing a card on the page and
@@ -494,6 +566,8 @@
     goesElsewhere,
     isDisclosureLabel,
     isFileActivity,
+    artifactCard,
+    artifactPlan,
     LOOKBACK_MS,
     LOOKBACK_DEFAULT_MIN,
     LOOKBACK_MIN_MIN,
