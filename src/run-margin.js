@@ -40,6 +40,15 @@
   let editDraft = null; // { name, steps } while editing the run in place
   let lastCore = "";
   let busyNote = "";
+  // The operator clicked something on the console itself — the next tick MUST
+  // repaint, even while a form is open (the anti-repaint guard otherwise
+  // blocked the form's own first paint: Fix & continue and Edit run appeared
+  // to do nothing). See CUMWorkflow.consoleRedraw.
+  let asked = false;
+  function repaint() {
+    asked = true;
+    tick();
+  }
   // Where the operator dragged or resized it to, or null for the default
   // geometry. Sticky (the popup checkbox, off by default) decides whether this
   // survives: off, it lives in memory and a NEW RUN snaps back to default; on,
@@ -363,19 +372,16 @@
         const act = b.getAttribute("data-eact");
         if (act === "del") {
           editDraft.steps.splice(parseInt(b.getAttribute("data-i"), 10), 1);
-          lastKey = "";
-          return tick();
+          return repaint();
         }
         if (act === "add") {
           const last = editDraft.steps[editDraft.steps.length - 1];
           editDraft.steps.push({ chatId: (last && last.chatId) || null, prompt: "", carry: true });
-          lastKey = "";
-          return tick();
+          return repaint();
         }
         if (act === "cancel") {
           editDraft = null;
-          lastKey = "";
-          return tick();
+          return repaint();
         }
         if (act === "save") {
           if (!editDraft.steps.length) return alert("A run needs at least one step.");
@@ -385,8 +391,7 @@
           editDraft = null;
           return send({ type: "cum-wf-edit-run", runId: run.id, patch }, (res) => {
             busyNote = res && res.ok ? "Saved." : "Could not save: " + ((res && res.error) || "no answer");
-            lastKey = "";
-            tick();
+            repaint();
           });
         }
       })
@@ -458,13 +463,11 @@
         if (act === "close") {
           open = false;
           storageSet({ [OPEN_KEY]: false });
-          lastKey = "";
-          return tick();
+          return repaint();
         }
         if (act === "steps") {
           showSteps = !showSteps;
-          lastKey = "";
-          return tick();
+          return repaint();
         }
         if (act === "resume") {
           b.disabled = true;
@@ -503,8 +506,7 @@
             };
             fixDraft = null; // one form at a time
           }
-          lastKey = "";
-          return tick();
+          return repaint();
         }
         if (act === "save") {
           const name = prompt("Save this run's chats and steps as a new workflow, called:", W.runLabel(run).title);
@@ -519,8 +521,7 @@
           storageGet(WORKFLOWS_KEY).then((r) => {
             storageSet({ [WORKFLOWS_KEY]: W.upsertWorkflow(r[WORKFLOWS_KEY] || [], made) });
             busyNote = 'Saved as workflow "' + (made.name || "untitled") + '".';
-            lastKey = "";
-            tick();
+            repaint();
           });
           return;
         }
@@ -537,13 +538,11 @@
               chats,
             };
           }
-          lastKey = "";
-          return tick();
+          return repaint();
         }
         if (act === "fix-cancel") {
           fixDraft = null;
-          lastKey = "";
-          return tick();
+          return repaint();
         }
         if (act === "fix-go") {
           const chats = {};
@@ -560,8 +559,7 @@
           fixDraft = null;
           return send({ type: "cum-wf-resume", runId: run.id, patch }, (res) => {
             busyNote = res && res.ok ? res.note || "" : (res && res.error) || "no answer";
-            lastKey = "";
-            tick();
+            repaint();
           });
         }
       });
@@ -573,24 +571,21 @@
         const source = W.runSource(run, wf);
         fixDraft.refetchCarry = !!W.carrySource(source, fixDraft.stepIndex).needed;
         fixDraft.sent = false;
-        lastKey = "";
-        tick();
+        repaint();
       });
     const refetch = el.querySelector(".cum-rm-refetch");
     if (refetch)
       refetch.addEventListener("change", () => {
         fixDraft.refetchCarry = refetch.checked;
         Object.assign(fixDraft, W.exclusiveFix(fixDraft, "refetch"));
-        lastKey = "";
-        tick();
+        repaint();
       });
     const sent = el.querySelector(".cum-rm-sent");
     if (sent)
       sent.addEventListener("change", () => {
         fixDraft.sent = sent.checked;
         Object.assign(fixDraft, W.exclusiveFix(fixDraft, "sent"));
-        lastKey = "";
-        tick();
+        repaint();
       });
     el.querySelectorAll(".cum-rm-fixurl").forEach((i) =>
       i.addEventListener("input", () => (fixDraft.chats[i.getAttribute("data-chat")] = i.value.trim()))
@@ -600,8 +595,7 @@
   function after() {
     return () => {
       busyNote = "";
-      lastKey = "";
-      tick();
+      repaint();
     };
   }
 
@@ -644,8 +638,7 @@
       tab.addEventListener("click", () => {
         open = true;
         storageSet({ [OPEN_KEY]: true });
-        lastKey = "";
-        tick();
+        repaint();
       });
       (document.body || document.documentElement).appendChild(tab);
     }
@@ -685,14 +678,24 @@
     const wf = W.getWorkflow(workflows, run.workflowId);
     build();
     el.hidden = false;
-    // Redraw only when the run moved — the console holds forms, and a redraw
-    // mid-typing would eat the keystrokes. While EITHER form is open, only a
-    // change to the run's own core (its status, its step) may repaint; notes
-    // and heartbeats may not pull the textarea out from under the operator.
+    // Redraw only when the run moved OR the operator asked — the console
+    // holds forms, and a redraw mid-typing would eat the keystrokes. While
+    // EITHER form is open, only a change to the run's own core (its status,
+    // its step) may repaint on its own; but the operator's own clicks
+    // (opening a form, picking a step) always paint. The decision is
+    // CUMWorkflow.consoleRedraw, pure and tested.
     const core = [run.id, run.status, run.stepIndex, run.phase].join("|");
     const key = [core, run.note, run.error, showSteps, !!fixDraft, !!editDraft, busyNote].join("|");
-    if (key === lastKey) return position();
-    if ((fixDraft || editDraft) && core === lastCore) return position();
+    const draw = W.consoleRedraw({
+      asked,
+      key,
+      lastKey,
+      core,
+      lastCore,
+      formOpen: !!(fixDraft || editDraft),
+    });
+    asked = false;
+    if (!draw) return position();
     lastCore = core;
     lastKey = key;
     render(run, wf);
@@ -704,8 +707,7 @@
     toggle: function () {
       open = !open;
       storageSet({ [OPEN_KEY]: open });
-      lastKey = "";
-      tick();
+      repaint();
     },
     isOpen: function () {
       return !!(open && el && !el.hidden);
