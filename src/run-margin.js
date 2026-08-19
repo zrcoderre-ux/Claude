@@ -565,12 +565,20 @@
             const source = W.runSource(run, wf);
             const chats = {};
             for (const c of source.chats || []) chats[c.id] = (run.chats && run.chats[c.id] && run.chats[c.id].url) || "";
-            fixDraft = {
-              stepIndex: Math.min(run.stepIndex, Math.max(0, (run.totalSteps || 1) - 1)),
-              refetchCarry: !!W.carrySource(source, run.stepIndex).needed,
-              sent: run.phase === "awaiting-reply",
-              chats,
-            };
+            // Through exclusiveFix, as the Options form does — the two ticks
+            // are mutually exclusive, and a message already out wins: without
+            // this, a carrying step interrupted mid-wait opened with BOTH
+            // boxes checked (the owner caught it live).
+            fixDraft = Object.assign(
+              {
+                stepIndex: Math.min(run.stepIndex, Math.max(0, (run.totalSteps || 1) - 1)),
+                chats,
+              },
+              W.exclusiveFix({
+                refetchCarry: !!W.carrySource(source, run.stepIndex).needed,
+                sent: run.phase === "awaiting-reply",
+              })
+            );
           }
           return repaint();
         }
