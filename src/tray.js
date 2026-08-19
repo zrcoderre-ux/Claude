@@ -78,11 +78,61 @@
     return null;
   }
 
+  // How far LEFT of its anchor the tray is displaced — set when a panel of
+  // ours occupies the right column (the bookmark panel standing in for the
+  // closed sidebar), so the buttons move over by the panel's width exactly as
+  // the native panel moves them.
+  let extraRight = 0;
+  function offset(px) {
+    extraRight = Math.max(0, Number(px) || 0);
+    position();
+  }
+
   function position() {
     if (!tray) return;
     const at = P.trayPlace(window.innerWidth, anchorRect());
     tray.style.top = at.top + "px";
-    tray.style.right = at.right + "px";
+    tray.style.right = at.right + extraRight + "px";
+  }
+
+  // ---- pushing the CHAT over, the way the native panel does ----------------
+  // Panels register how much room they need; the chat is shifted by the
+  // largest single claim (never a sum — see CUMPanelBar.chatReserve, which
+  // computes each claim). Applied as a margin on claude.ai's own app root,
+  // and taken back off the same element it was put on, even when the SPA has
+  // rebuilt and the root has changed since.
+  const reserves = {};
+  let reservedOn = null;
+  function reserve(name, px) {
+    reserves[name] = Math.max(0, Number(px) || 0);
+    let want = 0;
+    for (const k of Object.keys(reserves)) want = Math.max(want, reserves[k]);
+    let root = null;
+    try {
+      root = H && H.appRoot ? H.appRoot() : null;
+    } catch (e) {
+      root = null;
+    }
+    if (reservedOn && reservedOn !== root) {
+      try {
+        reservedOn.style.removeProperty("margin-right");
+      } catch (e) {
+        /* the old root is gone with the page it belonged to */
+      }
+      reservedOn = null;
+    }
+    if (!root) return;
+    try {
+      if (want > 0) {
+        root.style.setProperty("margin-right", want + "px");
+        reservedOn = root;
+      } else {
+        root.style.removeProperty("margin-right");
+        reservedOn = null;
+      }
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   /**
@@ -109,5 +159,5 @@
   setInterval(position, TICK_MS);
   window.addEventListener("resize", position);
 
-  window.CUMTray = { put: put, position: position };
+  window.CUMTray = { put: put, position: position, reserve: reserve, offset: offset };
 })();

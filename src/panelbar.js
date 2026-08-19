@@ -49,36 +49,50 @@
     return { top: Math.max(0, Math.round(a.top)), right: Math.max(0, Math.round(vw - a.left + GAP)), anchored: true };
   }
 
-  // The left sidebar panel's usual width, for sizing before it has been seen
-  // open — and the factor the owner asked for.
-  const MARGIN_BASE_W = 288;
+  // The native side panel's usual width, for every decision made before it
+  // has been measured open (the owner measured 312) — and the run console's
+  // width factor of it.
+  const SIDE_W = 312;
   const MARGIN_FACTOR = 1.75;
+  // Where the console's top sits: below the tray's button row, which it may
+  // never overlap.
+  const CONSOLE_TOP = 52;
 
   /**
-   * Where the run console sits, as { left, top, width }. `side` is the left
-   * sidebar's rect ({ left, right, top, bottom, width, height }) or null.
-   * The owner's spec: right underneath the left panel when it is open, and
-   * where the panel would go when it is closed; about 1.75× the panel's width.
-   *
-   * Three cases, in order: an open panel with room beneath it gets the console
-   * directly under it; an open panel running the full height gets it alongside
-   * (there is no "underneath" to have); a closed rail — or no sidebar at all —
-   * gets it where the open panel would go, beside the rail under the top bar.
+   * Where the run console sits — the owner's corrected spec: FIXED to the
+   * right edge, only its dimensions adjustable, never its placement. `custom`
+   * is { width, height } from the operator's own resizing, or null for the
+   * defaults (1.75× the side panel's width, a bit over half the window tall).
+   * Both are clamped to the window: a resize saved on a big monitor must not
+   * overflow a laptop.
    */
-  function marginPlace(viewport, side) {
+  function consolePlace(viewport, sideW, custom) {
     const vw = (viewport && Number(viewport.w)) || 0;
     const vh = (viewport && Number(viewport.h)) || 0;
-    const open = !!(side && side.width >= 200);
-    const baseW = open ? side.width : MARGIN_BASE_W;
-    const width = Math.max(320, Math.min(Math.round(baseW * MARGIN_FACTOR), Math.max(320, vw - 40)));
-    if (open && side.bottom < vh - 160)
-      return { left: Math.max(0, Math.round(side.left)), top: Math.round(side.bottom + GAP), width };
-    if (open) return { left: Math.round(side.right + GAP), top: 56, width };
-    const left = side ? Math.min(Math.max(GAP, Math.round(side.right + GAP)), 120) : GAP;
-    return { left, top: 56, width };
+    const c = custom || null;
+    const defW = Math.round((Number(sideW) || SIDE_W) * MARGIN_FACTOR);
+    const width = Math.max(300, Math.min((c && c.width) || defW, Math.max(300, vw - 40)));
+    const defH = Math.round(vh * 0.6);
+    const height = Math.max(140, Math.min((c && c.height) || defH, Math.max(140, vh - CONSOLE_TOP - 12)));
+    return { right: GAP, top: CONSOLE_TOP, width, height };
   }
 
-  const api = { GAP, FALLBACK, trayPlace, marginPlace, MARGIN_BASE_W, MARGIN_FACTOR };
+  /**
+   * How far the CHAT is pushed left by the extension's panels — always by the
+   * NATIVE side panel's width, never a panel's own (the owner's spec: our
+   * panels shift the conversation exactly as the native one does, so the chat
+   * centres the same either way). The native panel being open already
+   * provides the shift, so ours add nothing on top of it; and two of our
+   * panels open at once still reserve the one width, not two.
+   */
+  function chatReserve(state) {
+    const s = state || {};
+    if (s.sidebarOpen) return 0;
+    if (s.consoleOpen || s.tocColumn) return Math.round(Number(s.sideW) || SIDE_W);
+    return 0;
+  }
+
+  const api = { GAP, FALLBACK, trayPlace, consolePlace, chatReserve, SIDE_W, MARGIN_FACTOR, CONSOLE_TOP };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMPanelBar = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

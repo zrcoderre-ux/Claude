@@ -118,109 +118,84 @@
   }
 
   // ---- geometry -----------------------------------------------------------
-  // claude.ai's left sidebar: a tall element hugging the left edge. Open is a
-  // panel (~288 wide); closed is a slim rail or nothing.
-  function sidebarRect() {
-    let best = null;
-    let list;
+  // The NATIVE right sidebar's state, read off its toggle: the panel open
+  // pushes the toggle left by its own width, so the gap between the toggle
+  // and the window edge IS the panel. Its width is remembered from the last
+  // time it was seen open (the owner measured 312).
+  const H = window.CUMHeaderSlot;
+  let lastSideW = P.SIDE_W;
+  function sideState() {
     try {
-      list = document.querySelectorAll('nav, aside, [data-testid*="sidebar" i], [class*="sidebar" i]');
-    } catch (e) {
-      return null;
-    }
-    for (const s of list) {
-      if (s.closest && s.closest("#" + ID)) continue;
-      let r;
-      try {
-        r = s.getBoundingClientRect();
-      } catch (e) {
-        continue;
+      const t = H && H.sidebarToggle();
+      if (!t) return { open: false, width: lastSideW };
+      const gap = window.innerWidth - t.getBoundingClientRect().right;
+      if (gap > 200) {
+        lastSideW = Math.round(gap);
+        return { open: true, width: lastSideW };
       }
-      if (r.left > 40 || r.width < 40 || r.width > 420) continue;
-      if (r.height < window.innerHeight * 0.3) continue;
-      if (!best || r.width > best.width)
-        best = { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+    } catch (e) {
+      /* closed is the safe reading */
     }
-    return best;
+    return { open: false, width: lastSideW };
   }
 
   function position() {
     if (!el || el.hidden) return;
-    if (custom) {
-      // The operator's own spot, clamped on screen — a window that shrank must
-      // not leave the console somewhere unreachable.
-      const left = Math.min(Math.max(0, custom.left), Math.max(0, window.innerWidth - 120));
-      const top = Math.min(Math.max(0, custom.top), Math.max(0, window.innerHeight - 80));
-      el.style.left = left + "px";
-      el.style.top = top + "px";
-      if (custom.width) el.style.width = custom.width + "px";
-      if (custom.height) el.style.height = custom.height + "px";
-      el.style.maxHeight = Math.max(160, window.innerHeight - top - 12) + "px";
-      applied = { w: el.offsetWidth, h: el.offsetHeight };
-      return;
-    }
-    const at = P.marginPlace({ w: window.innerWidth, h: window.innerHeight }, sidebarRect());
-    el.style.left = at.left + "px";
+    // Fixed to the right edge, always — only the DIMENSIONS are the
+    // operator's (the corrected spec). Placement is not draggable.
+    const at = P.consolePlace(
+      { w: window.innerWidth, h: window.innerHeight },
+      sideState().width,
+      custom
+    );
+    el.style.right = at.right + "px";
+    el.style.left = "";
     el.style.top = at.top + "px";
     el.style.width = at.width + "px";
-    el.style.height = "";
-    el.style.maxHeight = Math.max(200, window.innerHeight - at.top - 16) + "px";
+    el.style.height = at.height + "px";
     applied = { w: el.offsetWidth, h: el.offsetHeight };
   }
 
   function keepGeo() {
-    if (sticky && custom) storageSet({ [GEO_KEY]: custom });
+    if (sticky && custom) storageSet({ [GEO_KEY]: { width: custom.width, height: custom.height } });
   }
 
-  // Dragging by the title bar. Buttons in the bar keep their clicks; a drag
-  // under four pixels is a click, not a move.
-  function wireDrag(head) {
-    if (!head) return;
-    let sx = 0, sy = 0, ox = 0, oy = 0, on = false, moved = false;
-    head.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      try {
-        if (e.target && e.target.closest && e.target.closest("button")) return;
-      } catch (err) {
-        /* ignore */
-      }
-      on = true;
-      moved = false;
-      sx = e.clientX;
-      sy = e.clientY;
-      const r = el.getBoundingClientRect();
-      ox = r.left;
-      oy = r.top;
-      try {
-        head.setPointerCapture(e.pointerId);
-      } catch (err) {
-        /* ignore */
-      }
-    });
-    head.addEventListener("pointermove", (e) => {
-      if (!on) return;
-      const dx = e.clientX - sx;
-      const dy = e.clientY - sy;
-      if (!moved && Math.hypot(dx, dy) < 4) return;
-      moved = true;
-      custom = Object.assign({}, custom || { width: el.offsetWidth, height: 0 }, {
-        left: Math.round(ox + dx),
-        top: Math.round(oy + dy),
+  // The resize handles the owner asked for, on the edges that GROW a
+  // right-anchored panel: the bottom (taller), the left side (wider), and the
+  // bottom-left corner (both). The browser's own handle sat bottom-right —
+  // the one edge of this panel that can never move.
+  function wireHandles() {
+    const grab = (sel, wide, tall) => {
+      const h = el.querySelector(sel);
+      if (!h) return;
+      h.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const sx = e.clientX;
+        const sy = e.clientY;
+        const w0 = el.offsetWidth;
+        const h0 = el.offsetHeight;
+        const move = (ev) => {
+          const next = Object.assign({}, custom || {});
+          // The right edge is pinned, so dragging the LEFT edge leftward
+          // makes it wider.
+          if (wide) next.width = Math.max(300, Math.round(w0 - (ev.clientX - sx)));
+          if (tall) next.height = Math.max(140, Math.round(h0 + (ev.clientY - sy)));
+          custom = next;
+          position();
+        };
+        const up = () => {
+          document.removeEventListener("pointermove", move, true);
+          document.removeEventListener("pointerup", up, true);
+          keepGeo();
+        };
+        document.addEventListener("pointermove", move, true);
+        document.addEventListener("pointerup", up, true);
       });
-      position();
-    });
-    const end = (e) => {
-      if (!on) return;
-      on = false;
-      if (moved) keepGeo();
-      try {
-        head.releasePointerCapture(e.pointerId);
-      } catch (err) {
-        /* ignore */
-      }
     };
-    head.addEventListener("pointerup", end);
-    head.addEventListener("pointercancel", end);
+    grab(".cum-rm-hl", true, false);
+    grab(".cum-rm-hb", false, true);
+    grab(".cum-rm-hc", true, true);
   }
 
   // ---- rendering ----------------------------------------------------------
@@ -466,9 +441,13 @@
       fixHtml(run, wf) +
       editHtml(run, wf);
 
+    el.insertAdjacentHTML(
+      "beforeend",
+      `<div class="cum-rm-hl"></div><div class="cum-rm-hb"></div><div class="cum-rm-hc"></div>`
+    );
     wire(run, wf);
     wireEdit(run);
-    wireDrag(el.querySelector(".cum-rm-head"));
+    wireHandles();
     position();
   }
 
@@ -634,28 +613,25 @@
       el.id = ID;
     }
     (document.body || document.documentElement).appendChild(el);
-    // The corner handle is the browser's own (CSS resize). A change position()
-    // didn't make is the operator's, and becomes the custom size.
-    try {
-      new ResizeObserver(() => {
-        if (!el || el.hidden) return;
-        const w = el.offsetWidth;
-        const h = el.offsetHeight;
-        if (Math.abs(w - applied.w) < 7 && Math.abs(h - applied.h) < 7) return;
-        const r = el.getBoundingClientRect();
-        custom = Object.assign({}, custom || {}, {
-          left: custom ? custom.left : Math.round(r.left),
-          top: custom ? custom.top : Math.round(r.top),
-          width: w,
-          height: h,
-        });
-        applied = { w, h };
-        keepGeo();
-      }).observe(el);
-    } catch (e) {
-      /* dragging still works; only the resize handle goes unremembered */
-    }
     return el;
+  }
+
+  // Push the CHAT over by the native panel's width while the console is open
+  // and the native panel is not — the owner's spec: the conversation centres
+  // exactly as it would under the native panel, so toggling the sidebar under
+  // an open console reflows nothing.
+  function reserveChat(visible) {
+    const T = window.CUMTray;
+    if (!T || !T.reserve) return;
+    const side = sideState();
+    T.reserve(
+      "run",
+      window.CUMPanelBar.chatReserve({
+        sidebarOpen: side.open,
+        consoleOpen: !!visible,
+        sideW: side.width,
+      })
+    );
   }
 
   let tab = null;
@@ -679,6 +655,7 @@
   function hideAll() {
     if (el) el.hidden = true;
     showTab(false);
+    reserveChat(false);
   }
 
   async function tick() {
@@ -699,9 +676,11 @@
     if (!open) {
       if (el) el.hidden = true;
       showTab(true);
+      reserveChat(false);
       return;
     }
     showTab(false);
+    reserveChat(true);
     const workflows = (await storageGet(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [];
     const wf = W.getWorkflow(workflows, run.workflowId);
     build();
@@ -736,11 +715,19 @@
   storageGet([OPEN_KEY, STICKY_KEY, GEO_KEY]).then((r) => {
     if (r[OPEN_KEY] === false) open = false;
     sticky = !!r[STICKY_KEY];
-    if (sticky && r[GEO_KEY]) custom = r[GEO_KEY];
+    // Dimensions only — a stored spot from the draggable era carries left/top
+    // this fixed-position console no longer has any use for.
+    if (sticky && r[GEO_KEY])
+      custom = { width: r[GEO_KEY].width || 0, height: r[GEO_KEY].height || 0 };
     tick();
   });
   setInterval(tick, POLL_MS);
-  setInterval(position, 1000);
+  // Reposition AND re-reserve: the sidebar toggling under an open console
+  // flips who provides the chat's shift, and the hand-off must be seamless.
+  setInterval(() => {
+    position();
+    if (el && !el.hidden) reserveChat(true);
+  }, 1000);
   // Snap back on every page NAVIGATION too, unless persistence is ticked —
   // the owner's rule: an unticked box means the default spot, page after page,
   // not just run after run.

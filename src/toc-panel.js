@@ -338,15 +338,54 @@
   function placeButton() {
     if (!btn) return;
     const T = window.CUMTray;
-    if (T) {
-      btn.classList.remove("cum-toc-corner");
-      if (el) el.classList.add("cum-inline");
-      T.put("toc", btn, el);
+    if (!T) {
+      btn.classList.add("cum-toc-corner");
+      const home = document.body || document.documentElement;
+      if (btn.parentNode !== home) home.appendChild(btn);
       return;
     }
-    btn.classList.add("cum-toc-corner");
-    const home = document.body || document.documentElement;
-    if (btn.parentNode !== home) home.appendChild(btn);
+    btn.classList.remove("cum-toc-corner");
+
+    // The owner's spec: with the native sidebar CLOSED, the open bookmark
+    // panel stands in for it — a right-edge column of the native panel's own
+    // width, the chat and the buttons pushed left exactly as the native panel
+    // pushes them. With the native panel OPEN, the bookmark rides the tray
+    // slot beside it, as before.
+    const H = window.CUMHeaderSlot;
+    const P = window.CUMPanelBar;
+    let side = { open: false, width: (P && P.SIDE_W) || 312 };
+    try {
+      const t = H && H.sidebarToggle();
+      if (t) {
+        const gap = window.innerWidth - t.getBoundingClientRect().right;
+        if (gap > 200) side = { open: true, width: Math.round(gap) };
+      }
+    } catch (e) {
+      /* closed is the safe reading */
+    }
+    const showing = !!(el && open && entries.length);
+    const column = showing && !side.open;
+    if (column) {
+      el.classList.remove("cum-inline");
+      el.classList.add("cum-column");
+      const home = document.body || document.documentElement;
+      if (el.parentNode !== home) home.appendChild(el);
+      el.style.width = side.width + "px";
+      T.put("toc", btn); // the button stays in the row; the panel takes the column
+    } else {
+      if (el) {
+        el.classList.remove("cum-column");
+        el.classList.add("cum-inline");
+        el.style.width = "";
+      }
+      T.put("toc", btn, el);
+    }
+    // The chat moves over by the panel's width, and so do the buttons —
+    // identically to the native panel (both through the tray, which owns the
+    // margins so two panels can never double them).
+    if (T.reserve && P)
+      T.reserve("toc", P.chatReserve({ sidebarOpen: side.open, tocColumn: column, sideW: side.width }));
+    if (T.offset) T.offset(column ? side.width + 8 : 0);
   }
 
   function setOpen(next) {
@@ -356,6 +395,7 @@
     if (btn) btn.classList.toggle("cum-toc-on", open);
     if (open) refresh(true);
     render();
+    placeButton(); // the column stands up (or down) the moment it's toggled
     if (open) keepOnScreen();
   }
 
