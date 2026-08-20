@@ -1371,6 +1371,18 @@ rather than something you asked for. **Open this run in a window of its own** is
 a workflow setting like every other, so a run inherits it and can change it for
 that matter alone.
 
+**A run's chats sit in a tab group**, whichever window they open in — at run
+start, as each step opens its conversation, and again when **Open chats**
+brings them back. The group is named and colored **for the case**, the way
+everything else is now: the key's hint titles it (`Rasho`), the color seeds on
+the run's key so **every run of one case wears the same color** (a keyless run
+seeds on its own id), and a keyless run titles by its matter name. The
+grouping is stateless — the run's next tab joins wherever its other chats
+already sit, so a browser restart or a group you closed by hand just starts a
+fresh one — a tab you grouped yourself is respected, the pinned Options tab is
+never grouped, and any grouping failure is swallowed: it's furniture, and a
+run never fails over furniture.
+
 **A Cowork step is more patient, because it has to be.** A step normally settles
 on a reply once the text has held still for six seconds — safe in Chat, where an
 open response stream *proves* that a pause is a tool call rather than a finished

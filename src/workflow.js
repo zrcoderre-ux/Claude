@@ -1946,6 +1946,31 @@
     return "";
   }
 
+  // What a run's TAB GROUP is called and colored. Named like everything else
+  // now is — for the case: the key's hint first, then the matter's own name,
+  // then the template's. Chrome truncates long group titles ungracefully, so
+  // this cuts them itself. The color seed is the run's KEY where it has one,
+  // so every run of a case — and every run in its group, which shares the
+  // key — wears the same color; a keyless run falls back to its own id.
+  const TAB_GROUP_COLORS = ["blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"];
+
+  function tabGroupTitle(run, keys) {
+    const key = run && run.pseudoKeyId && keys ? keys[run.pseudoKeyId] : null;
+    const name =
+      (key && trimmed(key.hint)) ||
+      runBaseName(run && run.name) ||
+      trimmed(run && run.templateName) ||
+      "run";
+    return name.length > 24 ? name.slice(0, 23) + "…" : name;
+  }
+
+  function tabGroupColor(seed) {
+    const s = str(seed);
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return TAB_GROUP_COLORS[h % TAB_GROUP_COLORS.length];
+  }
+
   /**
    * Updating the CASE's key from anywhere updates it everywhere the case
    * lives. Given the conversation the change was made in (or a run id), the
@@ -3531,6 +3556,8 @@
     distinctPseudoKeys,
     rekeyPlan,
     groupLabel,
+    tabGroupTitle,
+    tabGroupColor,
     parseRunDate,
     isoRunDate,
     runDateLabel,
