@@ -1670,3 +1670,23 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   border: 1px solid #c96442; background: #c96442; color: #fff; flex: 0 0 auto;
 }
 .cum-pseudo-clean-copy:hover { background: #b85838; }
+
+/* The as-you-type prompt at the caret: press → to swap the real name. */
+.cum-pseudo-tip {
+  position: fixed; z-index: 2147483003; max-width: 340px;
+  background: #7a1f1f; color: #fff; border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 9px; padding: 5px 10px; font: 12.5px/1.4 system-ui, sans-serif;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35); pointer-events: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cum-pseudo-tip b { font-weight: 700; }
+.cum-pseudo-tip-how { opacity: 0.75; font-size: 11.5px; }
+
+/* The peek toggle in the cleaner, and the paused badge. */
+.cum-pseudo-clean-toggle {
+  font: inherit; border-radius: 8px; padding: 5px 10px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.25); background: #1f1f1e; color: #f0efea;
+  flex: 0 0 auto;
+}
+.cum-pseudo-clean-toggle:hover { background: #34332f; }
+.cum-pseudo-badge.cum-pseudo-paused { background: #4a4a45; font-style: italic; }

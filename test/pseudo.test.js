@@ -330,3 +330,33 @@ test("the case hint is the real name the exports used most", () => {
   ]);
   assert.strictEqual(key.hint, "Rasho");
 });
+
+// ---- the as-you-type prompt ---------------------------------------------------
+
+test("endingReal fires only when the caret sits at the end of a just-typed real", () => {
+  const key = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 9],
+    ["person-token", "Rasho", "Strangeways", "", "", "", 20],
+    ["person-token", "As", "Quill", "", "", "", 1], // common — never prompted
+  ]);
+  const ahead = P.compileTypeahead(key);
+  // The word just finished.
+  const hit = P.endingReal(ahead, "Defendant served Rasho");
+  assert.strictEqual(hit.real, "Rasho");
+  assert.strictEqual(hit.fake, "Strangeways");
+  // Longest first: the full name is offered whole, not its surname token.
+  assert.strictEqual(P.endingReal(ahead, "Plaintiff Helen Rasho").real, "Helen Rasho");
+  // Mid-word, wrong edges, and text past the word: no prompt.
+  assert.strictEqual(P.endingReal(ahead, "Defendant served Rash"), null);
+  assert.strictEqual(P.endingReal(ahead, "xRasho"), null);
+  assert.strictEqual(P.endingReal(ahead, "Rasho appeared"), null);
+  // Common English never prompts.
+  assert.strictEqual(P.endingReal(ahead, "such as"), null);
+  // The matched text keeps the typed casing — the swap mirrors it.
+  const caps = P.endingReal(ahead, "V. HELEN RASHO");
+  assert.strictEqual(caps.matched, "HELEN RASHO");
+  assert.strictEqual(P.mirrorCase(caps.matched, caps.fake), "INGRID STRANGEWAYS");
+  assert.strictEqual(P.mirrorCase("Rasho", "Strangeways"), "Strangeways");
+  // Empty input is silent.
+  assert.strictEqual(P.endingReal(ahead, ""), null);
+});

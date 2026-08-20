@@ -1763,10 +1763,18 @@ at a glance.
    out of the translated view: that carries the real names, because it copies
    what you're looking at. Don't paste it back into a chat — which the next
    point is watching for anyway.
-2. **Warns before you leak.** The composer is scanned for the key's **real**
-   values (every spelling the key knows, tokens included). Each one found gets
-   a banner naming the value and the fake to use instead. It warns and never
-   rewrites — the composer is yours. One declared exception: a draft that
+2. **Catches a real name as you type it — press → to swap.** The moment the
+   caret finishes typing one of the key's real values, a small prompt appears
+   at the caret (`Rasho → Strangeways — press → to swap · Esc to keep`).
+   **ArrowRight** swaps the just-typed name for its pseudonym in place —
+   longest match first, so a full name swaps whole; casing mirrored, so
+   `HELEN RASHO` becomes `INGRID STRANGEWAYS`; and it goes through the
+   composer's own typing path, so **Ctrl+Z brings the real name back**.
+   Escape keeps the real name and stops asking at that spot; typing on
+   simply moves past it. The red **banner stays as the net** for everything
+   the caret is *not* on — pasted text, a dismissed prompt — without ever
+   doubling the value currently being offered. Nothing is rewritten without
+   the keypress: the composer is yours. One declared exception: a draft that
    **begins** `PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS` is the operator
    pasting pincites out of Lexis — published citations, always safe — and the
    warning stands down for that draft. And **ordinary English is never
@@ -1782,7 +1790,14 @@ at a glance.
    **Copy cleaned** button, so what lands in the chat is the cleaned version.
    It only swaps values the key knows, and says so; it never writes into the
    composer itself — pasting is your move, and the composer warning is still
-   watching either way.
+   watching either way. The panel also holds the **peek toggle** —
+   **⏸ Show the fakes / ▶ Show real names** — which pauses this chat's
+   translation so you can see the conversation exactly as claude.ai renders
+   it, then puts the real names back. This tab only, never remembered (a
+   peek that silently outlived the visit would be translation quietly off),
+   and the badge says plainly when it's paused. The composer warning, the
+   typeahead and the upload guard stay on while paused — they're safety,
+   not display.
 
 **The key never rides an upload.** Independent of any attachment, on every
 claude.ai page: a file picked, dropped, or pasted into a chat is checked, and
