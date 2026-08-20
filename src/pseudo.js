@@ -210,11 +210,53 @@
     return { text: out, count: count };
   }
 
-  /** Warning matcher over the REAL values. */
+  // Ordinary English that a key row can end up binding (a harvested token, a
+  // one-word business short form) but that a person types in NORMAL USE —
+  // "as", "and", "was", "is". Flagging those makes the warning cry wolf, and
+  // rewriting them in the cleaner would wreck the sentence, so a real value
+  // that IS one of these words, standing alone, is left out of both. The
+  // multi-word forms stay: "Cross River Bank" is a party even though every
+  // word in it is ordinary.
+  const COMMON_WORDS = new Set(
+    (
+      "a an the and or but nor so if then than as at by for from in into of on onto to with " +
+      "without under over is are was were be been being am do does did done has have had " +
+      "having will would can could shall should may might must not no yes it its he she they " +
+      "them his her their this that these those there here who whom whose which what when " +
+      "where why how all any each every some most more less few both other another same such " +
+      "only also very just about above below between during before after again further once " +
+      "per via etc et al mr mrs ms dr jr sr no. vs v"
+    ).split(/\s+/)
+  );
+
+  // A real value the warning and the cleaner both leave alone: a single
+  // ordinary word (or a bare letter). Applied at COMPILE time, not parse
+  // time, so a key already stored benefits without being reloaded.
+  function isCommonReal(value) {
+    const f = fold(value);
+    return f.length < 2 || (COMMON_WORDS.has(f) && f.indexOf(" ") === -1);
+  }
+
+  /** Warning matcher over the REAL values — common English left out. */
   function compileReals(key) {
-    const warn = (key && key.warn) || [];
+    const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
     const map = new Map();
     for (const w of warn) if (!map.has(fold(w.real))) map.set(fold(w.real), w);
+    const rx = buildMatcher(warn.map((w) => w.real));
+    return { rx: rx, map: map };
+  }
+
+  /**
+   * FORWARD matcher: real → fake, the ReAnonymize direction, for the badge's
+   * cleaner box. Built from the same rows the warning watches (alt spellings
+   * included — real→fake is exactly what they are for; keeps and common
+   * words excluded), longest real first so a full name wins over its own
+   * tokens. translate() runs it — same engine, opposite direction.
+   */
+  function compileForward(key) {
+    const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
+    const map = new Map();
+    for (const w of warn) if (!map.has(fold(w.real))) map.set(fold(w.real), w.fake);
     const rx = buildMatcher(warn.map((w) => w.real));
     return { rx: rx, map: map };
   }
@@ -276,6 +318,8 @@
     compile,
     translate,
     compileReals,
+    compileForward,
+    isCommonReal,
     findReals,
     isPincitePaste,
     buildMatcher,

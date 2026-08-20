@@ -1740,7 +1740,20 @@ party's real name is exactly what must not be typed.
    rewrites — the composer is yours. One declared exception: a draft that
    **begins** `PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS` is the operator
    pasting pincites out of Lexis — published citations, always safe — and the
-   warning stands down for that draft.
+   warning stands down for that draft. And **ordinary English is never
+   flagged**: a key row binding a bare "as"/"and"/"was" (a stray token, a
+   one-word short form) is left out of the warning — and out of the cleaner
+   below — because those words are what normal writing is made of. Multi-word
+   values keep warning even when their words are ordinary ("Cross River
+   Bank").
+3. **Cleans text for pasting.** Click the badge and a small panel opens:
+   type or paste text with real names into the top box and the bottom box
+   shows it pseudonymized live — the same map run forward (real → fake),
+   longest name first, alt spellings covered, keeps left verbatim — with a
+   **Copy cleaned** button, so what lands in the chat is the cleaned version.
+   It only swaps values the key knows, and says so; it never writes into the
+   composer itself — pasting is your move, and the composer warning is still
+   watching either way.
 
 **The key never rides an upload.** Independent of any attachment, on every
 claude.ai page: a file picked, dropped, or pasted into a chat is checked, and

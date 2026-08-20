@@ -207,3 +207,43 @@ test("a pincite paste declares itself and stands the warning down", () => {
   assert.ok(!P.isPincitePaste("PINCITE CHECK for Rasho"));
   assert.ok(!P.isPincitePaste(""));
 });
+
+test("compileForward pseudonymizes typed text: longest real first, keeps verbatim", () => {
+  const key = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 9],
+    ["person-token", "Rasho", "Strangeways", "", "", "", 20],
+    ["entity", "Cal", "no", "", "", "", 0], // a keep is left alone in both directions
+    ["case_number", "24STCV01234", "87NNCV55555", "", "", "", 4],
+  ]);
+  const f = P.compileForward(key);
+  const r = P.translate(f, "Helen Rasho (Cal case 24STCV01234): Rasho appeared.");
+  assert.strictEqual(r.text, "Ingrid Strangeways (Cal case 87NNCV55555): Strangeways appeared.");
+  assert.strictEqual(r.count, 3);
+  // ALL-CAPS mirrors forward too.
+  assert.strictEqual(P.translate(f, "HELEN RASHO").text, "INGRID STRANGEWAYS");
+});
+
+test("an alt spelling is forward-usable: typing the OCR spelling still cleans", () => {
+  const key = keyOf([
+    ["person", "Sara", "Keswick", "", "", "", 5],
+    ["person", "Sarra", "Keswick", "", "alt spelling", "", 2],
+  ]);
+  const f = P.compileForward(key);
+  assert.strictEqual(P.translate(f, "Sarra met Sara").text, "Keswick met Keswick");
+});
+
+test("common English is never flagged and never rewritten", () => {
+  // A key that (wrongly or not) binds ordinary words alongside a real party.
+  const key = keyOf([
+    ["person-token", "As", "Quill", "", "", "", 1],
+    ["person-token", "Was", "Marlow", "", "", "", 1],
+    ["person-token", "And", "Fenmore", "", "", "", 1],
+    ["person", "Rasho", "Strangeways", "", "", "", 9],
+  ]);
+  assert.ok(P.isCommonReal("as") && P.isCommonReal("The") && P.isCommonReal("v"));
+  assert.ok(!P.isCommonReal("Rasho") && !P.isCommonReal("Cross River Bank"));
+  const hits = P.findReals(P.compileReals(key), "As it was, Rasho and I left.");
+  assert.deepStrictEqual(hits.map((h) => h.real), ["Rasho"]);
+  const cleaned = P.translate(P.compileForward(key), "As it was, Rasho and I left.");
+  assert.strictEqual(cleaned.text, "As it was, Strangeways and I left.");
+});

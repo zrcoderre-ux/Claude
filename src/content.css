@@ -1600,7 +1600,7 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   position: fixed; left: 14px; bottom: 14px; z-index: 2147483000;
   background: #2a2a28; color: #f0efea; border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px; padding: 5px 11px; font: 12px/1.35 system-ui, sans-serif;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); pointer-events: auto; cursor: help;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); pointer-events: auto; cursor: pointer;
   max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -1641,3 +1641,32 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   }
   .cum-pseudo-guard-send { color: #ff9f9f; }
 }
+
+/* The cleaner behind the badge: type real names, copy out the fakes. */
+.cum-pseudo-clean {
+  position: fixed; left: 14px; bottom: 52px; z-index: 2147483001;
+  width: min(420px, 90vw); background: #2a2a28; color: #f0efea;
+  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 12px;
+  padding: 10px 12px; font: 12.5px/1.4 system-ui, sans-serif;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  display: flex; flex-direction: column; gap: 7px;
+}
+.cum-pseudo-clean-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+.cum-pseudo-clean-x {
+  background: none; border: none; color: inherit; font: inherit; cursor: pointer;
+  padding: 2px 6px; border-radius: 6px;
+}
+.cum-pseudo-clean-x:hover { background: rgba(255, 255, 255, 0.1); }
+.cum-pseudo-clean-in, .cum-pseudo-clean-out {
+  width: 100%; box-sizing: border-box; min-height: 72px; resize: vertical;
+  font: 12.5px/1.45 system-ui, sans-serif; border-radius: 8px; padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22); background: #1f1f1e; color: #f0efea;
+}
+.cum-pseudo-clean-out { background: #232321; color: #d9e7d9; }
+.cum-pseudo-clean-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.cum-pseudo-clean-note { color: #c9c7c0; font-size: 11.5px; }
+.cum-pseudo-clean-copy {
+  font: inherit; font-weight: 600; border-radius: 8px; padding: 5px 12px; cursor: pointer;
+  border: 1px solid #c96442; background: #c96442; color: #fff; flex: 0 0 auto;
+}
+.cum-pseudo-clean-copy:hover { background: #b85838; }

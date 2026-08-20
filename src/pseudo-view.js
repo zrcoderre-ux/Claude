@@ -134,10 +134,15 @@
       key: key,
       compiled: P.compile(key),
       compiledReals: P.compileReals(key),
+      // real → fake, for the badge's cleaner box.
+      forward: P.compileForward(key),
       via: via,
     };
     swapped = new WeakMap();
     shown = 0;
+    // A different key means a different map — a cleaner left open would keep
+    // showing the last case's title over this one's swaps.
+    closeCleaner();
     render();
     sweepSoon();
   }
@@ -239,6 +244,7 @@
         warnBox.remove();
         warnBox = null;
       }
+      closeCleaner();
       return;
     }
     if (!badge) {
@@ -247,12 +253,106 @@
       badge.title =
         "Display only: this tab swaps the pseudonyms back to the real names for YOU. " +
         "Claude still holds — and only ever sees — the fakes. Sends, copies and " +
-        "exports read claude.ai's own data, not this view.";
+        "exports read claude.ai's own data, not this view. " +
+        "Click to open the cleaner: type text with real names, copy out the fakes.";
+      badge.addEventListener("click", toggleCleaner);
       document.documentElement.appendChild(badge);
     }
     const name = active.key.name || "pseudonym key";
     badge.textContent =
       "🔑 " + name + (shown ? " — " + shown + " name" + (shown === 1 ? "" : "s") + " restored" : "");
+  }
+
+  // ---- the cleaner: type real names, paste out fakes -------------------------
+  //
+  // Opens from the badge. Whatever is typed is pseudonymized LIVE with the
+  // attached key — the ReAnonymize direction, longest real first, keeps left
+  // verbatim, common English never touched — into a read-only box beside it,
+  // with Copy. It writes nothing into the composer: pasting the cleaned text
+  // is deliberately the user's own move.
+
+  let cleaner = null;
+
+  function closeCleaner() {
+    if (cleaner) {
+      cleaner.remove();
+      cleaner = null;
+    }
+  }
+
+  function runCleaner() {
+    if (!cleaner || !active) return;
+    const src = cleaner.querySelector(".cum-pseudo-clean-in").value;
+    const out = cleaner.querySelector(".cum-pseudo-clean-out");
+    const note = cleaner.querySelector(".cum-pseudo-clean-note");
+    const r = P.translate(active.forward, src);
+    out.value = r.text;
+    note.textContent = src
+      ? r.count + " value" + (r.count === 1 ? "" : "s") + " swapped. Only values the key " +
+        "knows are swapped — read it before pasting."
+      : "";
+  }
+
+  function toggleCleaner() {
+    if (cleaner) return closeCleaner();
+    if (!active) return;
+    cleaner = document.createElement("div");
+    cleaner.className = "cum-pseudo-clean";
+    const head = document.createElement("div");
+    head.className = "cum-pseudo-clean-head";
+    const title = document.createElement("span");
+    title.textContent = "Pseudonymize for pasting — " + (active.key.name || "key");
+    const x = document.createElement("button");
+    x.className = "cum-pseudo-clean-x";
+    x.textContent = "✕";
+    x.title = "Close";
+    x.addEventListener("click", closeCleaner);
+    head.append(title, x);
+
+    const input = document.createElement("textarea");
+    input.className = "cum-pseudo-clean-in";
+    input.placeholder = "Type or paste text with real names…";
+    input.addEventListener("input", runCleaner);
+
+    const out = document.createElement("textarea");
+    out.className = "cum-pseudo-clean-out";
+    out.readOnly = true;
+    out.placeholder = "The cleaned version appears here.";
+
+    const foot = document.createElement("div");
+    foot.className = "cum-pseudo-clean-foot";
+    const note = document.createElement("span");
+    note.className = "cum-pseudo-clean-note";
+    const copy = document.createElement("button");
+    copy.className = "cum-pseudo-clean-copy";
+    copy.textContent = "Copy cleaned";
+    copy.addEventListener("click", () => {
+      const text = out.value;
+      if (!text) return;
+      const flash = (ok) => {
+        copy.textContent = ok ? "Copied ✓" : "Select it and copy by hand";
+        setTimeout(() => {
+          copy.textContent = "Copy cleaned";
+        }, 1600);
+      };
+      try {
+        navigator.clipboard.writeText(text).then(
+          () => flash(true),
+          () => {
+            out.select();
+            flash(document.execCommand("copy"));
+          }
+        );
+      } catch (e) {
+        out.select();
+        flash(document.execCommand("copy"));
+      }
+    });
+    foot.append(note, copy);
+
+    cleaner.append(head, input, out, foot);
+    document.documentElement.appendChild(cleaner);
+    input.focus();
   }
 
   function warnHtmlFor(hits) {
