@@ -2123,6 +2123,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;
   }
+  // Re-key a CASE from wherever the change was made: the run the given
+  // conversation belongs to (or the named run), every member of its group —
+  // a group is one case, one key — and any chat-level attachment shadowing
+  // one of those conversations. Unlike an edit, this is allowed while a run
+  // is RUNNING: the key is display-side only, and mid-run is precisely when
+  // someone updates it from a chat.
+  if (msg && msg.type === "cum-pseudo-rekey") {
+    (async () => {
+      const [runs, res] = await Promise.all([
+        readRuns(),
+        get(["cum_run_groups", "cum_pseudo_chats"]),
+      ]);
+      const plan = W.rekeyPlan(runs, res.cum_run_groups || [], {
+        conv: msg.conv,
+        runId: msg.runId,
+      });
+      for (const id of plan.runIds) {
+        // Fresh read per run, so a concurrent write from the runner is never
+        // clobbered by a stale copy.
+        const run = await readRun(id);
+        if (run) await saveRun(Object.assign({}, run, { pseudoKeyId: msg.keyId || null }));
+      }
+      const chats = res.cum_pseudo_chats || {};
+      let dirty = false;
+      for (const conv of plan.convs) {
+        if (!(conv in chats)) continue; // a run-owned chat needs no entry of its own
+        if (msg.keyId) {
+          if (chats[conv] !== msg.keyId) {
+            chats[conv] = msg.keyId;
+            dirty = true;
+          }
+        } else {
+          delete chats[conv];
+          dirty = true;
+        }
+      }
+      if (dirty) await set({ cum_pseudo_chats: chats });
+      return { ok: true, runs: plan.runIds.length };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
+  }
   // Stop a run where it is. The page driving the current step notices on its
   // next poll and lets go; whatever Claude has already been sent stays sent.
   if (msg && msg.type === "cum-wf-cancel" && msg.runId) {

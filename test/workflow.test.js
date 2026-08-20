@@ -3545,3 +3545,27 @@ test("a group is one case, one key: the guard's question and the resolution agre
   const groups = [{ id: "g1", runIds: ["r1", "r2", "r3"] }];
   assert.equal(W.runPseudoKey(runs[1], runs, groups), "rasho#a1b2");
 });
+
+test("rekeyPlan: a key changed in one chat reaches the run, its group, and their chats", () => {
+  const u = (n) => "https://claude.ai/chat/0a1b2c3d-4e5f-6789-abcd-ef000000000" + n;
+  const runs = [
+    { id: "r1", createdAt: 1, chats: { a: { url: u(1) }, b: { url: u(2) } } },
+    { id: "r2", createdAt: 2, chats: { a: { url: u(3) } } }, // grouped with r1
+    { id: "r3", createdAt: 3, chats: { a: { url: u(4) } } }, // unrelated case
+  ];
+  const groups = [{ id: "g1", runIds: ["r1", "r2"] }];
+  // From a chat r1 owns: r1 and its group-mate r2 rewrite; r3 does not.
+  const plan = W.rekeyPlan(runs, groups, { conv: "0a1b2c3d-4e5f-6789-abcd-ef0000000001" });
+  assert.deepEqual(plan.runIds.sort(), ["r1", "r2"]);
+  // Every conversation those runs own is named, so a stray chat-level
+  // attachment shadowing one of them can be brought along.
+  assert.deepEqual(plan.convs.sort(), [
+    "0a1b2c3d-4e5f-6789-abcd-ef0000000001",
+    "0a1b2c3d-4e5f-6789-abcd-ef0000000002",
+    "0a1b2c3d-4e5f-6789-abcd-ef0000000003",
+  ]);
+  // By run id (the run editor's path): same expansion.
+  assert.deepEqual(W.rekeyPlan(runs, groups, { runId: "r2" }).runIds.sort(), ["r1", "r2"]);
+  // A conversation no run owns: empty plan — the caller attaches chat-level.
+  assert.deepEqual(W.rekeyPlan(runs, groups, { conv: "not-owned" }), { runIds: [], convs: [] });
+});

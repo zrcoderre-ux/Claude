@@ -1925,6 +1925,51 @@
     return mates.length ? mates[0].pseudoKeyId : null;
   }
 
+  /**
+   * Updating the CASE's key from anywhere updates it everywhere the case
+   * lives. Given the conversation the change was made in (or a run id), the
+   * plan names every run to rewrite — the run(s) that own the conversation
+   * plus every member of their groups, a group being one case — and every
+   * conversation an existing CHAT-level attachment might be shadowing.
+   * Empty runIds means the conversation belongs to no run, and the caller
+   * falls back to a plain chat attachment.
+   */
+  function rekeyPlan(runs, groups, opts) {
+    const o = opts || {};
+    const primaries = new Set();
+    for (const r of runs || []) {
+      if (!r) continue;
+      if (o.runId && r.id === o.runId) primaries.add(r.id);
+      if (o.conv) {
+        const chats = r.chats || {};
+        for (const cid of Object.keys(chats)) {
+          const url = chats[cid] && chats[cid].url;
+          if (url && conversationKey(url) === o.conv) primaries.add(r.id);
+        }
+      }
+    }
+    if (!primaries.size) return { runIds: [], convs: [] };
+    const runIds = new Set(primaries);
+    for (const id of Array.from(primaries)) {
+      const gid = groupOf(groups, id);
+      if (!gid) continue;
+      for (const g of groups || []) {
+        if (g && g.id === gid) for (const m of g.runIds || []) runIds.add(m);
+      }
+    }
+    const byId = new Map((runs || []).map((r) => [r && r.id, r]));
+    const convs = new Set();
+    for (const id of runIds) {
+      const r = byId.get(id);
+      const chats = (r && r.chats) || {};
+      for (const cid of Object.keys(chats)) {
+        const url = chats[cid] && chats[cid].url;
+        if (url) convs.add(conversationKey(url));
+      }
+    }
+    return { runIds: Array.from(runIds), convs: Array.from(convs) };
+  }
+
   // The runs list's default order: runs still being set up first (they're the
   // ones waiting on you), then newest first. The other two orders build on it.
   function createdOrder(a, b) {
@@ -3463,6 +3508,7 @@
 
   const api = {
     distinctPseudoKeys,
+    rekeyPlan,
     parseRunDate,
     isoRunDate,
     runDateLabel,

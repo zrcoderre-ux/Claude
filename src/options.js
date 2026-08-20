@@ -1223,6 +1223,15 @@
             alert("Could not save: " + (res.error || "unknown error"));
             return renderRuns();
           }
+          // A key changed here changes the CASE's key — the group and every
+          // chat-level attachment follow (one case, one key). Sent after the
+          // edit has landed, so the rekey can never read a stale run.
+          if ((edited.pseudoKeyId || null) !== (run.pseudoKeyId || null))
+            chrome.runtime.sendMessage({
+              type: "cum-pseudo-rekey",
+              runId: run.id,
+              keyId: edited.pseudoKeyId || null,
+            });
           // The editor's own "When it starts" — applied after the edit, so the
           // run that goes is the one you just finished setting up.
           if (!trigger || !WF.canRetrigger(run)) return renderRuns();

@@ -993,6 +993,16 @@ under two members dissolves. Members wear a `⛓ group N` badge; **Ungroup
 checked** takes runs back out. Grouping also switches the sort to Related
 runs, since that's what saving a group is asking to see.
 
+**Updating the key anywhere updates it everywhere the case lives.** Two
+kinds of update, both covered. *Refreshing the key's content* (re-loading
+`pseudonym_key.xlsx` after a re-run) lands on the same library entry, so
+every chat and run attached to it recompiles on the spot — nothing to
+re-attach. *Switching which key* from any chat a run owns (the popup's
+Attach/Detach) — or from the run's own editor — rewrites the run, **every
+run in its group, and their chats** in one move, including any chat-level
+attachment that would otherwise shadow the change. A chat no run owns still
+attaches and detaches on its own.
+
 **A group has one pseudonym key, because runs are per case.** A group of
 related runs is one case, and one case has one key — so setting the key on
 any member covers the whole group, and a member never needs (or gets) a
