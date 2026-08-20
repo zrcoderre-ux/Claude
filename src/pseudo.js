@@ -259,6 +259,11 @@
     return /[A-Z]/.test(s) && s === s.toUpperCase();
   }
 
+  /** The replacement in the matched text's own voice: a caption shouts. */
+  function mirrorCase(sample, value) {
+    return isAllCaps(sample) ? String(value).toUpperCase() : value;
+  }
+
   /** Reversal matcher: translate() swaps every fake for its real value. */
   function compile(key) {
     const pairs = (key && key.pairs) || [];
@@ -357,6 +362,45 @@
     return out;
   }
 
+  /**
+   * Typeahead entries for the as-you-type prompt: the warning's own rows
+   * (common English out), longest real first so "Helen Rasho" is offered
+   * whole before its surname token, each carrying a regex that matches only
+   * at the very END of the text — the word the caret just finished.
+   */
+  function compileTypeahead(key) {
+    const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
+    return warn
+      .slice()
+      .sort((a, b) => b.real.length - a.real.length)
+      .map((w) => ({
+        real: w.real,
+        fake: w.fake,
+        rx: new RegExp(
+          "(?<![A-Za-z0-9_])" + escapeRe(w.real).replace(/ /g, "\\s+") + "$",
+          "i"
+        ),
+      }));
+  }
+
+  /**
+   * The real value `textBefore` ENDS with — the name just typed out, caret
+   * hard against its last character — or null. `matched` is the text as the
+   * user actually typed it, which is what the swap must remove and what the
+   * fake's casing mirrors. Each test runs against only the tail, so a long
+   * draft costs the same as a short one per keystroke.
+   */
+  function endingReal(ahead, textBefore) {
+    const t = String(textBefore || "");
+    if (!t) return null;
+    for (const e of ahead || []) {
+      const tail = t.slice(-(e.real.length * 2 + 8));
+      const m = e.rx.exec(tail);
+      if (m) return { real: e.real, fake: e.fake, matched: m[0] };
+    }
+    return null;
+  }
+
   // A draft that opens with this header is the operator pasting pincites out
   // of Lexis — published citations, so the party-name collisions with the
   // key's reals are authorities, not leaks (the same reason the scrubber
@@ -398,6 +442,9 @@
     compileForward,
     isCommonReal,
     findReals,
+    compileTypeahead,
+    endingReal,
+    mirrorCase,
     isPincitePaste,
     buildMatcher,
     conversationKeyFromUrl,

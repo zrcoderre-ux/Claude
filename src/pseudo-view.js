@@ -136,10 +136,13 @@
       compiledReals: P.compileReals(key),
       // real → fake, for the badge's cleaner box.
       forward: P.compileForward(key),
+      // the as-you-type prompt's entries (press → to swap).
+      ahead: P.compileTypeahead(key),
       via: via,
     };
     swapped = new WeakMap();
     shown = 0;
+    paused = false; // a peek never outlives its chat
     // A different key means a different map — a cleaner left open would keep
     // showing the last case's title over this one's swaps.
     closeCleaner();
@@ -185,9 +188,37 @@
     return false;
   }
 
+  // Paused = "let me peek at what claude.ai is actually showing": the fakes
+  // are put back and no new text is translated until resumed. Per-tab and
+  // deliberately NOT persisted — a peek that silently outlived the visit
+  // would be a translation quietly off. The composer warning, the typeahead
+  // and the upload guard stay on: they are safety, not display.
+  let paused = false;
+
+  function setPaused(on) {
+    paused = !!on;
+    if (paused) {
+      for (const turn of document.querySelectorAll(MSG_SEL)) {
+        const walker = document.createTreeWalker(turn, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          const p = swapped.get(node);
+          if (p && p.count > 0 && node.nodeValue === p.text) {
+            node.nodeValue = p.orig;
+            swapped.delete(node);
+          }
+        }
+      }
+      shown = 0;
+    } else {
+      sweepSoon();
+    }
+    render();
+  }
+
   function sweep() {
     sweepTimer = null;
-    if (!active || !active.compiled.rx) return;
+    if (!active || paused || !active.compiled.rx) return;
     let total = 0;
     for (const turn of document.querySelectorAll(MSG_SEL)) {
       const walker = document.createTreeWalker(turn, NodeFilter.SHOW_TEXT);
@@ -205,12 +236,14 @@
         const r = P.translate(active.compiled, text);
         if (r.count > 0) {
           node.nodeValue = r.text;
-          swapped.set(node, { text: r.text, count: r.count });
+          // `orig` is what the pause toggle restores — the fakes as claude.ai
+          // rendered them.
+          swapped.set(node, { text: r.text, orig: text, count: r.count });
           total += r.count;
         } else {
           // Remember the miss too, so a long conversation isn't re-scanned
           // node by node on every streaming tick.
-          swapped.set(node, { text: text, count: 0 });
+          swapped.set(node, { text: text, orig: text, count: 0 });
         }
       }
     }
@@ -245,6 +278,7 @@
         warnBox = null;
       }
       closeCleaner();
+      hideTip();
       return;
     }
     if (!badge) {
@@ -265,8 +299,12 @@
     const name =
       (active.key.hint ? active.key.hint + " · " : "") +
       (active.key.name || "pseudonym key");
-    badge.textContent =
-      "🔑 " + name + (shown ? " — " + shown + " name" + (shown === 1 ? "" : "s") + " restored" : "");
+    badge.textContent = paused
+      ? "🔑 " + name + " — ⏸ showing the fakes"
+      : "🔑 " + name + (shown ? " — " + shown + " name" + (shown === 1 ? "" : "s") + " restored" : "");
+    badge.classList.toggle("cum-pseudo-paused", paused);
+    const tog = cleaner && cleaner.querySelector(".cum-pseudo-clean-toggle");
+    if (tog) tog.textContent = paused ? "▶ Show real names" : "⏸ Show the fakes";
   }
 
   // ---- the cleaner: type real names, paste out fakes -------------------------
@@ -327,6 +365,15 @@
 
     const foot = document.createElement("div");
     foot.className = "cum-pseudo-clean-foot";
+    // The peek toggle: pause the in-chat translation to see exactly what
+    // claude.ai is showing (the fakes), then bring the real names back.
+    const toggle = document.createElement("button");
+    toggle.className = "cum-pseudo-clean-toggle";
+    toggle.textContent = paused ? "▶ Show real names" : "⏸ Show the fakes";
+    toggle.title =
+      "Pause or resume this chat's translation. Paused shows the conversation exactly " +
+      "as claude.ai renders it — the fakes. This tab only, and never remembered.";
+    toggle.addEventListener("click", () => setPaused(!paused));
     const note = document.createElement("span");
     note.className = "cum-pseudo-clean-note";
     const copy = document.createElement("button");
@@ -354,7 +401,7 @@
         flash(document.execCommand("copy"));
       }
     });
-    foot.append(note, copy);
+    foot.append(toggle, note, copy);
 
     cleaner.append(head, input, out, foot);
     document.documentElement.appendChild(cleaner);
@@ -388,8 +435,13 @@
     // A draft opening with the PINCITE CHECK header is the operator pasting
     // official-reporter pincites out of Lexis — published citations, declared
     // safe. The warning stands down for that draft (P.isPincitePaste).
-    const hits =
-      text && !P.isPincitePaste(text) ? P.findReals(active.compiledReals, text) : [];
+    const hits = (
+      text && !P.isPincitePaste(text) ? P.findReals(active.compiledReals, text) : []
+    ).filter(
+      // The value the caret prompt is offering right now is being handled —
+      // the banner covers everything the caret is NOT on.
+      (h) => !(tipHit && tipEl && !tipEl.hidden && P.fold(h.real) === P.fold(tipHit.real))
+    );
     if (!hits.length) {
       if (warnBox) warnBox.hidden = true;
       return;
@@ -413,6 +465,124 @@
       warnBox.appendChild(more);
     }
   }
+
+  // ---- the as-you-type prompt: finish a real name, press → for the fake -----
+  //
+  // The moment the caret sits at the end of a just-typed REAL value, a small
+  // prompt appears at the caret offering the pseudonym; ArrowRight swaps it
+  // in place (via the selection + insertText, which ProseMirror handles as
+  // ordinary typing), Escape dismisses for that spot, and any other typing
+  // moves the caret past the word and the prompt goes on its own. The
+  // banner below stays as the net for everything the caret is NOT on —
+  // pasted text, a dismissed prompt — but never doubles the value currently
+  // being offered.
+
+  let tipEl = null;
+  let tipHit = null; // { real, fake, matched, at } while showing
+  let tipDismissed = null; // "at|real" the user Escaped, until the text moves
+  let tipTimer = null;
+
+  function editorEl() {
+    const C = window.CUMComposer;
+    return (
+      (C && C.findEditor && C.findEditor()) ||
+      document.querySelector('div[contenteditable="true"]')
+    );
+  }
+
+  // The caret's position as an offset into the editor's own text, plus that
+  // text up to the caret — null when the selection isn't a caret in the
+  // editor.
+  function caretContext(ed) {
+    const sel = window.getSelection();
+    if (!ed || !sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    const r = sel.getRangeAt(0);
+    if (!ed.contains(r.startContainer)) return null;
+    const pre = document.createRange();
+    pre.selectNodeContents(ed);
+    pre.setEnd(r.startContainer, r.startOffset);
+    return { textBefore: pre.toString(), range: r };
+  }
+
+  function hideTip() {
+    tipHit = null;
+    if (tipEl) tipEl.hidden = true;
+  }
+
+  function updateTip() {
+    tipTimer = null;
+    if (!active || !active.ahead || !active.ahead.length) return hideTip();
+    const ed = editorEl();
+    const ctx = ed && caretContext(ed);
+    const hit = ctx && P.endingReal(active.ahead, ctx.textBefore);
+    if (!hit) return hideTip();
+    const sig = ctx.textBefore.length + "|" + P.fold(hit.real);
+    if (tipDismissed === sig) return hideTip();
+    tipHit = { real: hit.real, fake: hit.fake, matched: hit.matched, sig: sig };
+    if (!tipEl) {
+      tipEl = document.createElement("div");
+      tipEl.className = "cum-pseudo-tip";
+      document.documentElement.appendChild(tipEl);
+    }
+    tipEl.textContent = "";
+    const swap = document.createElement("b");
+    swap.textContent = hit.matched + " → " + P.mirrorCase(hit.matched, hit.fake);
+    const how = document.createElement("span");
+    how.className = "cum-pseudo-tip-how";
+    how.textContent = "  press → to swap · Esc to keep";
+    tipEl.append(swap, how);
+    tipEl.hidden = false;
+    // At the caret, just above the line; a collapsed caret still has a rect.
+    let rect = ctx.range.getBoundingClientRect();
+    if (!rect || (!rect.top && !rect.left)) rect = ed.getBoundingClientRect();
+    tipEl.style.left = Math.min(rect.left, window.innerWidth - 340) + "px";
+    tipEl.style.top = Math.max(6, rect.top - 34) + "px";
+  }
+
+  function tipSoon() {
+    if (tipTimer) return;
+    tipTimer = setTimeout(updateTip, 80);
+  }
+
+  function swapAtCaret() {
+    const ed = editorEl();
+    const ctx = ed && caretContext(ed);
+    const hit = ctx && P.endingReal(active.ahead, ctx.textBefore);
+    // Confirm against what's showing — the caret may have moved since.
+    if (!hit || !tipHit || P.fold(hit.real) !== P.fold(tipHit.real)) return false;
+    const sel = window.getSelection();
+    for (let i = 0; i < hit.matched.length; i++) sel.modify("extend", "backward", "character");
+    ed.focus();
+    // The same door composer.js types through — ProseMirror treats it as
+    // ordinary input, so undo (Ctrl+Z) brings the real name back if wanted.
+    document.execCommand("insertText", false, P.mirrorCase(hit.matched, hit.fake));
+    hideTip();
+    return true;
+  }
+
+  window.addEventListener(
+    "keydown",
+    (ev) => {
+      if (!tipHit || !tipEl || tipEl.hidden) return;
+      if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+      if (ev.key === "ArrowRight") {
+        if (swapAtCaret()) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+        }
+      } else if (ev.key === "Escape") {
+        tipDismissed = tipHit.sig;
+        hideTip();
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+      }
+    },
+    true
+  );
+
+  document.addEventListener("selectionchange", () => {
+    if (active) tipSoon();
+  });
 
   // ---- the key-upload guard ---------------------------------------------------
   //
