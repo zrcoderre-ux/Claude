@@ -552,24 +552,49 @@
       }
     });
 
+    // Attaching (or switching) a key in a chat that belongs to a RUN updates
+    // the whole case: the run, every run in its group, and their chats —
+    // runs are per case, one case one key. The background owns that write
+    // (cum-pseudo-rekey); only a chat no run owns gets a plain chat-level
+    // attachment here.
+    function rekeyOrChat(keyId, saidRun, saidChat) {
+      chrome.runtime.sendMessage(
+        { type: "cum-pseudo-rekey", conv: tabConv, keyId: keyId },
+        (res) => {
+          void chrome.runtime.lastError; // background gone: fall back below
+          if (res && res.ok && res.runs) {
+            renderPseudo();
+            say(saidRun.replace("%n", res.runs));
+            return;
+          }
+          if (keyId) chats[tabConv] = keyId;
+          else delete chats[tabConv];
+          chrome.storage.local.set({ [CHATS_KEY]: chats }, () => {
+            renderPseudo();
+            say(saidChat);
+          });
+        }
+      );
+    }
+
     ui.attach.addEventListener("click", () => {
       const ids = Object.keys(keys);
       if (!tabConv || !ids.length) return;
       const id = ui.select.hidden ? ids[0] : ui.select.value || ids[0];
-      chats[tabConv] = id;
-      chrome.storage.local.set({ [CHATS_KEY]: chats }, () => {
-        renderPseudo();
-        say("Attached — that chat now shows real names (display only).");
-      });
+      rekeyOrChat(
+        id,
+        "Attached to this case — %n run(s) and all their chats follow.",
+        "Attached — that chat now shows real names (display only)."
+      );
     });
 
     ui.detach.addEventListener("click", () => {
       if (!tabConv) return;
-      delete chats[tabConv];
-      chrome.storage.local.set({ [CHATS_KEY]: chats }, () => {
-        renderPseudo();
-        say("Detached — reload the chat to see the fakes again.");
-      });
+      rekeyOrChat(
+        null,
+        "Detached from this case — %n run(s) and all their chats follow.",
+        "Detached — reload the chat to see the fakes again."
+      );
     });
 
     ui.forget.addEventListener("click", () => {
