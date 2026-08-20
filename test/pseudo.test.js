@@ -360,3 +360,43 @@ test("endingReal fires only when the caret sits at the end of a just-typed real"
   // Empty input is silent.
   assert.strictEqual(P.endingReal(ahead, ""), null);
 });
+
+// ---- possessives are the same party -------------------------------------------
+
+test("a bare row covers the possessive: Zachary is John, so Zachary's is John's", () => {
+  const key = keyOf([["person", "Zachary", "John", "", "", "", 8]]);
+  // Forward (the cleaner and the swap): the 's rides across, as typed.
+  const f = P.compileForward(key);
+  assert.strictEqual(P.translate(f, "Zachary's motion").text, "John's motion");
+  assert.strictEqual(P.translate(f, "Zachary’s motion").text, "John’s motion");
+  assert.strictEqual(P.translate(f, "ZACHARY'S MOTION").text, "JOHN'S MOTION");
+  // Display (fake → real): John's shows as Zachary's.
+  const c = P.compile(key);
+  assert.strictEqual(P.translate(c, "John's reply; John agreed.").text, "Zachary's reply; Zachary agreed.");
+  // The warning sees the possessive too…
+  assert.deepStrictEqual(P.findReals(P.compileReals(key), "Zachary's fault").map((h) => h.real), ["Zachary"]);
+  // …and the typeahead offers the fake WITH the 's.
+  const hit = P.endingReal(P.compileTypeahead(key), "It was Zachary's");
+  assert.strictEqual(hit.matched, "Zachary's");
+  assert.strictEqual(hit.fake, "John's");
+  // No loose edges: a name that merely starts the same is untouched.
+  assert.strictEqual(P.translate(f, "Zacharyson stayed").count, 0);
+});
+
+test("a possessive row covers the bare name: Zachary's is John's, so Zachary is John", () => {
+  const key = keyOf([["person", "Zachary's", "John's", "", "", "", 8]]);
+  const f = P.compileForward(key);
+  assert.strictEqual(P.translate(f, "Zachary's car; Zachary drove.").text, "John's car; John drove.");
+  const c = P.compile(key);
+  assert.strictEqual(P.translate(c, "John's car; John drove.").text, "Zachary's car; Zachary drove.");
+  // Both spellings warn.
+  const hits = P.findReals(P.compileReals(key), "Zachary met Zachary's counsel");
+  assert.deepStrictEqual(hits.map((h) => h.real).sort(), ["Zachary", "Zachary's"]);
+  // A key that ALREADY has its own bare row keeps it — nothing derived over it.
+  const both = keyOf([
+    ["person", "Zachary's", "John's", "", "", "", 8],
+    ["person", "Zachary", "John", "", "", "", 9],
+  ]);
+  assert.strictEqual(both.rows, 2);
+  assert.strictEqual(P.translate(P.compileForward(both), "Zachary went").text, "John went");
+});

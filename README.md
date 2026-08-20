@@ -1720,7 +1720,14 @@ row is forward-only (its real still warns, its fake belongs to the canonical
 row); a fake claimed by two canonical reals is **retired from reversal rather
 than guessed at** — the macro's own fail-safe; and the pinned
 "(never in text)" sheet rides along for the warning side, since a pinned
-party's real name is exactly what must not be typed.
+party's real name is exactly what must not be typed. **A possessive is the
+same party** (PDF-Linker's own rule): a bare row covers the possessive —
+`Zachary → John` turns `Zachary's` into `John's`, the `'s` riding across as
+typed, straight or typographic apostrophe alike — and a possessive row
+derives its bare form, so `Zachary's → John's` also maps `Zachary` to
+`John`. This holds in every direction: display, the composer warning, the
+typeahead swap (which offers `John's` when you typed `Zachary's`), and the
+cleaner.
 
 **Keys are case-specific, and several live side by side.** Every attachment
 is per-conversation, and every tab resolves its own chat's key — so two chats
