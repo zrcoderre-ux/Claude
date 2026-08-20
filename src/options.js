@@ -1790,6 +1790,7 @@
   const SPLIT_KEY = "cum_split";
   const S = window.CUMSplit;
   const CHAT_COLOR = "#c96442";
+  const COWORK_COLOR = "#7a5bbd";
   const CODE_COLOR = "#4a7ebb";
 
   const sp = {
@@ -1803,7 +1804,7 @@
 
   if (sp.reset) {
     sp.reset.addEventListener("click", () => {
-      if (!confirm("Reset the Chat vs Code chart? This clears its tracked data and starts fresh.")) return;
+      if (!confirm("Reset the Chat vs Cowork vs Code chart? This clears its tracked data and starts fresh.")) return;
       chrome.storage.local.remove("cum_split", renderSplit);
     });
   }
@@ -1811,7 +1812,7 @@
   function renderSplit() {
     chrome.storage.local.get(SPLIT_KEY, (res) => {
       const model = (res && res[SPLIT_KEY]) || null;
-      const s = S ? S.share(model) : { total: 0, chatPct: 0, codePct: 0 };
+      const s = S ? S.share(model) : { total: 0, chatPct: 0, coworkPct: 0, codePct: 0 };
       if (!s.total) {
         sp.wrap.hidden = true;
         if (sp.tools) sp.tools.hidden = true;
@@ -1821,15 +1822,23 @@
       sp.empty.hidden = true;
       sp.wrap.hidden = false;
       if (sp.tools) sp.tools.hidden = false;
+      // Whole numbers that still add to 100: Chat and Cowork round, and Code
+      // takes whatever is left, so the legend never reads 99%.
       const chat = Math.round(s.chatPct);
-      const code = 100 - chat;
+      const cowork = Math.round(s.coworkPct);
+      const code = Math.max(0, 100 - chat - cowork);
+      const stop = s.chatPct + s.coworkPct;
       sp.pie.style.background =
-        `conic-gradient(${CHAT_COLOR} 0 ${s.chatPct}%, ${CODE_COLOR} ${s.chatPct}% 100%)`;
+        `conic-gradient(${CHAT_COLOR} 0 ${s.chatPct}%, ` +
+        `${COWORK_COLOR} ${s.chatPct}% ${stop}%, ` +
+        `${CODE_COLOR} ${stop}% 100%)`;
       const key = (color, label, val) =>
         `<div class="split-key"><span class="split-sw" style="background:${color}"></span>` +
         `${label} <b>${val}%</b></div>`;
       sp.legend.innerHTML =
-        key(CHAT_COLOR, "Home (chat)", chat) + key(CODE_COLOR, "Code", code);
+        key(CHAT_COLOR, "Chat", chat) +
+        key(COWORK_COLOR, "Cowork", cowork) +
+        key(CODE_COLOR, "Code", code);
     });
   }
 

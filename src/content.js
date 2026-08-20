@@ -20,7 +20,7 @@
   const LOG_KEY = "cum_log"; // journal of hit-100 / window-reset events
   const PREDICT_KEY = "cum_predict"; // session↔weekly correlation model
   const DAILY_KEY = "cum_daily"; // per-day weekly-usage attribution
-  const SPLIT_KEY = "cum_split"; // chat vs Claude Code usage split
+  const SPLIT_KEY = "cum_split"; // chat vs Cowork vs Claude Code usage split
   const JOBS_KEY = "cum_jobs"; // scheduled sends (read only, for the held count)
   const STATUS_KEY = "cum_status"; // status.claude.com snapshot (background polls)
   const STATUS_CFG_KEY = "cum_status_cfg"; // { warn, holdSends } — both default on
@@ -231,12 +231,15 @@
     updateSplit(weeklyPct);
   }
 
-  // ---- Home (chat) vs Code usage split -----------------------------------
-  // Live increments are attributed to the tab you're in. But a weekly jump that
-  // follows a gap (reopen, mobile, or a long pause) may have come from anywhere,
-  // so we check whether a Home chat was touched during the gap: Home chats all
-  // carry an updated_at in chat_conversations_v2, and Code sessions don't — so a
-  // gap with no fresh Home activity was Code.
+  // ---- Chat vs Cowork vs Code usage split --------------------------------
+  // Live increments are attributed to the tab you're in — three surfaces, not
+  // two: Chat, Cowork and Code. But a weekly jump that follows a gap (reopen,
+  // mobile, or a long pause) may have come from anywhere, so we check whether a
+  // Home CHAT was touched during the gap: those all carry an updated_at in
+  // chat_conversations_v2. Neither a Code session nor a Cowork one does — a
+  // Cowork session lives under /conversations — so a gap with no fresh chat
+  // activity is Cowork-or-Code, and src/split.js divides it by what those two
+  // have been seen doing live rather than handing it all to Code on a guess.
   const SPLIT_GAP_MS = 10 * 60 * 1000; // "gap" = this long since the last reading
   const SPLIT_GAP_PCT = 0.3; // ...and at least this many weekly %-points
   let lastHomeActivityAt = null; // max Home-chat updated_at we've seen (ms)
@@ -248,7 +251,28 @@
   let lastCtxLearn = { key: null, tokens: null };
 
   function currentSurface() {
-    return /^\/code(\/|$)/.test(location.pathname) ? "code" : "chat";
+    if (/^\/code(\/|$)/.test(location.pathname)) return "code";
+    return isCoworkSurface() ? "cowork" : "chat";
+  }
+
+  // Cowork is not an address. A session settles on /cowork/cse_<id>, but the
+  // composer home stays /new whichever surface it's set to, and the setting is
+  // sticky across tabs — so the URL answers where it can, and where it can't the
+  // page's own Chat/Cowork toggle does. That toggle is one of the few pieces
+  // CONFIRMED working on both surfaces, and composer.js already reads it every
+  // way the markup has been seen marking the live half.
+  function isCoworkSurface() {
+    try {
+      const K = window.CUMCowork;
+      if (K && K.isCoworkUrl && K.isCoworkUrl(location.href)) return true;
+      // An open conversation carries no toggle, so a stale account-wide setting
+      // must never speak for it: a /chat/ page is Chat, full stop.
+      if (/^\/chat(\/|$)/.test(location.pathname)) return false;
+      const C = window.CUMComposer;
+      return !!(C && C.currentSurface && C.currentSurface() === "cowork");
+    } catch (e) {
+      return false; // an unreadable page is the surface it has always been
+    }
   }
 
   function convKey() {
@@ -323,6 +347,8 @@
   // learn the conversion rate. Returns 0 when we can't measure it cleanly (new
   // conversation, no context estimate, or context shrank).
   function liveLearnTokens() {
+    // Chat only: the rate is measured against content read out of
+    // chat_conversations_v2, and neither Cowork nor Code appears there.
     if (currentSurface() !== "chat") {
       lastCtxLearn = { key: null, tokens: null };
       return 0;
@@ -363,8 +389,8 @@
         const gapMs = model.lastAt != null ? Date.now() - model.lastAt : Infinity;
         const now = Date.now();
         if (gapDelta > SPLIT_GAP_PCT && gapMs > SPLIT_GAP_MS) {
-          // Gap — decide Home vs Code from fresh Home-conversation activity, and
-          // when both were used, split by how much Home content was added.
+          // Gap — decide chat vs the rest from fresh Home-chat activity, and
+          // when both were used, split by how much chat content was added.
           splitBusy = true;
           const boundaryAt = model.lastAt || 0;
           lastHomeWeighted = null;
@@ -391,7 +417,8 @@
                   );
                   writeSplit(m2, {
                     weeklyPct: currentWeekly, weeklyResetAt: state.weeklyResetAt,
-                    chatDelta: parts.chatDelta, codeDelta: parts.codeDelta, at: now,
+                    chatDelta: parts.chatDelta, coworkDelta: parts.coworkDelta,
+                    codeDelta: parts.codeDelta, at: now,
                   });
                 }
                 splitBusy = false;
@@ -399,7 +426,7 @@
             }
           }, 500);
         } else {
-          // Live — attribute to the tab we're in, and (on Home) learn the
+          // Live — attribute to the surface we're on, and (in Chat) learn the
           // weekly-%-per-token rate from how much this conversation grew.
           writeSplit(model, {
             weeklyPct: currentWeekly, weeklyResetAt: state.weeklyResetAt,

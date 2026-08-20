@@ -52,6 +52,9 @@ bottom-right corner of [claude.ai](https://claude.ai).
   passes **50%, 75% and 90%**. On by default, with its own switch and an
   adjustable daily share in the popup. See
   [Usage-pace warnings](#usage-pace-warnings).
+- **Where your usage goes** (Options) — a pie of your weekly usage across
+  **Chat**, **Cowork** and **Claude Code**. See
+  [Where your usage goes](#where-your-usage-goes-chat-cowork-code).
 - **Usage log + CSV** (Options) — records when you hit 100% and the usage % at
   each 5-hour reset; export to a spreadsheet.
 - **Scheduled sends** — queue files (pick individually or **a whole folder**) +
@@ -2007,6 +2010,39 @@ failing even that they float at the bottom left. Never loose at the top right:
 that's where Share lives, and a Save button covering Share is worse than no Save
 button at all.
 
+## Where your usage goes: Chat, Cowork, Code
+
+**Options → Chat vs Cowork vs Claude Code** is a pie of which surface your weekly
+usage was spent on. Three buckets, because Cowork is a surface of its own and not
+a flavour of chat — a Cowork session costs what it costs, and folding it into
+Home hid that.
+
+**Live readings are attributed to the surface you're on**, which the tab can read
+directly. Code is the one an address settles (`/code`). Cowork mostly isn't:
+a session lands on `/cowork/cse_<id>`, but the composer home stays `/new`
+whichever surface it's set to, and the setting is sticky across tabs — so the URL
+answers where it can, and where it can't the page's own **Chat/Cowork toggle**
+does (one of the few pieces confirmed to work on both surfaces). A `/chat/`
+conversation is Chat whatever the account-wide toggle was last left on.
+
+**A gap is where the evidence runs out.** When usage rises with no tab watching
+— your phone, another browser, a tab that was closed — the extension asks
+`chat_conversations_v2` which Home chats were touched during the gap, and how
+much content they grew by, and gives the chats their measured share. Neither a
+Cowork session nor a Code session appears in that listing (a Cowork session lives
+under `/conversations`), so **what's left over is Cowork-or-Code with nothing to
+tell them apart**.
+
+That remainder is divided in the proportion those two have been seen **live** —
+readings where the surface was read off the page rather than inferred. Two
+properties matter about that rule:
+
+- It **never invents Cowork out of nothing**. An account that has never had a
+  Cowork reading gets the whole remainder as Code, which is exactly what this did
+  before Cowork was a bucket.
+- The evidence counters are fed **only by live readings**, never by a gap's own
+  attribution, so the division can't drift off feeding on its own guesses.
+
 ## Usage-pace warnings
 
 The meter tells you where you are; this tells you when where you are is a
@@ -2259,6 +2295,8 @@ src/harvest.js         Pure usage-parsing logic (shared by ext + tests)
 src/estimate.js        Pure tenths-place calibrator (shared by ext + tests)
 src/status.js          Pure status.claude.com model + the scheduled-send gate
 src/usagewarn.js       Daily-share + weekly-milestone warnings (pure)
+src/split.js           Chat vs Cowork vs Code attribution, incl. gaps (pure)
+src/daily.js           Per-day attribution of weekly-limit usage (pure)
 src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/cowork.js          Chat/Cowork surface + approval modes (pure)
@@ -2297,6 +2335,7 @@ test/harvest.test.js   Unit tests for the parsing heuristics
 test/estimate.test.js  Unit tests for the tenths-place calibrator
 test/status.test.js    Unit tests for the status model + hold decisions
 test/usagewarn.test.js Unit tests for the pace warnings + their re-arming
+test/split.test.js     Unit tests for surface attribution and gap splitting
 test/workflow.test.js  Unit tests for the workflow model + run transitions
 test/toc.test.js       Unit tests for the table-of-contents labelling
 test/stamp.test.js     Unit tests for turn times and the gaps between them
