@@ -65,6 +65,8 @@
         "src/mdexport.js",
         "src/incognito.js",
         "src/stamp.js",
+        "src/xlsxread.js",
+        "src/pseudo.js",
         "src/cowork.js",
         "src/panelbar.js",
         "src/nag.js",
@@ -87,6 +89,7 @@
         "src/run-panel.js",
         "src/run-margin.js",
         "src/save-chat.js",
+        "src/pseudo-view.js",
         "src/copy-ruling.js",
         "src/stamps.js",
         "src/incognito-watch.js"

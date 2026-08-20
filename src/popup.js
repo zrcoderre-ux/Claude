@@ -420,4 +420,154 @@
   el.openLog.addEventListener("click", () => {
     chrome.runtime.openOptionsPage();
   });
+
+  // ---- Pseudonym key ------------------------------------------------------
+  //
+  // Loading the key here PARSES it (src/xlsxread.js + src/pseudo.js) and stores
+  // only the map — the file itself is never uploaded anywhere. Attach binds the
+  // key to the conversation in the active tab; the content script
+  // (pseudo-view.js) does the display translation and the composer warning.
+  (function pseudoSection() {
+    const P = window.CUMPseudo;
+    const X = window.CUMXlsx;
+    const KEYS_KEY = "cum_pseudo_keys";
+    const CHATS_KEY = "cum_pseudo_chats";
+    const ui = {
+      here: document.getElementById("pseudo-here"),
+      chat: document.getElementById("pseudo-chat"),
+      select: document.getElementById("pseudo-select"),
+      attach: document.getElementById("pseudo-attach"),
+      detach: document.getElementById("pseudo-detach"),
+      load: document.getElementById("pseudo-load"),
+      forget: document.getElementById("pseudo-forget"),
+      file: document.getElementById("pseudo-file"),
+      status: document.getElementById("pseudo-status"),
+    };
+    if (!ui.load || !P || !X) return;
+
+    let keys = {};
+    let chats = {};
+    let tabConv = null; // conversation key of the active tab, if it's a chat
+    let tabTitle = "";
+
+    function say(text) {
+      ui.status.textContent = text;
+      ui.status.hidden = false;
+      setTimeout(() => {
+        ui.status.hidden = true;
+      }, 2600);
+    }
+
+    function keyLabel(k) {
+      return (k.name || "key") + " · " + k.rows + " rows";
+    }
+
+    function renderPseudo() {
+      const ids = Object.keys(keys);
+      ui.select.hidden = ids.length < 2;
+      ui.select.innerHTML = "";
+      for (const id of ids) {
+        const opt = document.createElement("option");
+        opt.value = id;
+        opt.textContent = keyLabel(keys[id]);
+        ui.select.appendChild(opt);
+      }
+      ui.forget.hidden = !ids.length;
+      const attachedId = tabConv ? chats[tabConv] : null;
+      ui.here.textContent = attachedId && keys[attachedId] ? keys[attachedId].name : ids.length ? "loaded, not attached here" : "none loaded";
+      ui.chat.textContent = tabConv
+        ? (attachedId ? "attached to: " : "this chat: ") + (tabTitle || tabConv)
+        : "open a claude.ai conversation to attach";
+      ui.attach.disabled = !tabConv || !ids.length;
+      ui.detach.hidden = !attachedId;
+      if (attachedId && keys[attachedId]) ui.select.value = attachedId;
+    }
+
+    function loadPseudoState() {
+      chrome.storage.local.get([KEYS_KEY, CHATS_KEY], (res) => {
+        keys = (res && res[KEYS_KEY]) || {};
+        chats = (res && res[CHATS_KEY]) || {};
+        renderPseudo();
+      });
+    }
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = (tabs || [])[0];
+      if (tab && /^https:\/\/claude\.ai\//.test(tab.url || "")) {
+        const conv = P.conversationKeyFromUrl(tab.url);
+        if (conv && conv !== "/new" && conv !== "/") {
+          tabConv = conv;
+          tabTitle = tab.title || "";
+        }
+      }
+      loadPseudoState();
+    });
+
+    ui.load.addEventListener("click", () => ui.file.click());
+
+    ui.file.addEventListener("change", async () => {
+      const f = ui.file.files && ui.file.files[0];
+      ui.file.value = "";
+      if (!f) return;
+      try {
+        const wb = await X.parseXlsx(await f.arrayBuffer());
+        if (!P.sheetsLookLikeKey(wb.sheets)) {
+          say("That workbook has no Real Value / Replacement sheet — not a pseudonym key.");
+          return;
+        }
+        const key = P.parseKey(wb.sheets, f.name);
+        if (!key.rows) {
+          say("The key parsed but holds no usable rows.");
+          return;
+        }
+        const id = P.fold(f.name);
+        key.savedAt = Date.now();
+        keys[id] = key;
+        chrome.storage.local.set({ [KEYS_KEY]: keys }, () => {
+          renderPseudo();
+          ui.select.value = id;
+          const d = key.dropped || {};
+          say(
+            "Loaded " + keyLabel(key) +
+              (d.keeps ? " · " + d.keeps + " keep rows skipped" : "") +
+              (d.ambiguous ? " · " + d.ambiguous + " ambiguous fakes retired" : "")
+          );
+        });
+      } catch (e) {
+        say("Couldn't read that file: " + String((e && e.message) || e));
+      }
+    });
+
+    ui.attach.addEventListener("click", () => {
+      const ids = Object.keys(keys);
+      if (!tabConv || !ids.length) return;
+      const id = ui.select.hidden ? ids[0] : ui.select.value || ids[0];
+      chats[tabConv] = id;
+      chrome.storage.local.set({ [CHATS_KEY]: chats }, () => {
+        renderPseudo();
+        say("Attached — that chat now shows real names (display only).");
+      });
+    });
+
+    ui.detach.addEventListener("click", () => {
+      if (!tabConv) return;
+      delete chats[tabConv];
+      chrome.storage.local.set({ [CHATS_KEY]: chats }, () => {
+        renderPseudo();
+        say("Detached — reload the chat to see the fakes again.");
+      });
+    });
+
+    ui.forget.addEventListener("click", () => {
+      const ids = Object.keys(keys);
+      if (!ids.length) return;
+      const id = ui.select.hidden ? ids[0] : ui.select.value || ids[0];
+      delete keys[id];
+      for (const conv of Object.keys(chats)) if (chats[conv] === id) delete chats[conv];
+      chrome.storage.local.set({ [KEYS_KEY]: keys, [CHATS_KEY]: chats }, () => {
+        renderPseudo();
+        say("Forgotten, and detached everywhere it was attached.");
+      });
+    });
+  })();
 })();

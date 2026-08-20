@@ -233,6 +233,16 @@
       `Text pasted anywhere here that isn't a box becomes a .txt document, named from its first line.</p>` +
       `<div class="cumwf-docs cumwf-list"></div></div>` +
 
+      // The matter's pseudonym key rides the run the way its papers do — but
+      // ATTACHED, never uploaded: the run's conversations show the reader the
+      // real names while Claude keeps seeing the fakes (src/pseudo-view.js),
+      // and the key file itself stays out of every chat.
+      `<div class="cumwf-pseudo-row"><label class="cumwf-label">Pseudonym key</label>` +
+      `<select class="cumwf-pseudo"><option value="">None</option></select>` +
+      `<p class="cumwf-hint">Keys are loaded from pseudonym_key.xlsx in the extension's popup. ` +
+      `Attaching one here translates the fakes back to real names in this run's chats — display ` +
+      `only, nothing is sent — and warns if a prompt carries a real name. The key is never uploaded.</p></div>` +
+
       // ...but HOW they upload is the template's business, and travels to every
       // run, so it sits with the other switches rather than with the papers.
       `<label class="cumwf-check"><input class="cumwf-bundle" type="checkbox" /> Combine text documents into ` +
@@ -333,6 +343,8 @@
       fileInput: q(".cumwf-file-input"),
       docs: q(".cumwf-docs"),
       docsRow: q(".cumwf-docs-row"),
+      pseudo: q(".cumwf-pseudo"),
+      pseudoRow: q(".cumwf-pseudo-row"),
       descRow: q(".cumwf-desc-row"),
       steps: q(".cumwf-steps"),
       addStep: q(".cumwf-add-step"),
@@ -1236,6 +1248,35 @@
       // matter's exhibits to the next one.
       if (ui.nameRow) ui.nameRow.hidden = !editingRun;
       if (ui.docsRow) ui.docsRow.hidden = !editingRun;
+      // The key is the matter's, exactly as the papers are.
+      if (ui.pseudoRow) ui.pseudoRow.hidden = !editingRun;
+    }
+
+    // The popup's stored key library — read fresh each open, so a key loaded a
+    // moment ago is already offered.
+    function loadPseudoKeys() {
+      if (!ui.pseudo) return;
+      try {
+        chrome.storage.local.get("cum_pseudo_keys", (res) => {
+          const keys = (res && res.cum_pseudo_keys) || {};
+          ui.pseudo.innerHTML = "";
+          const none = document.createElement("option");
+          none.value = "";
+          none.textContent = "None";
+          ui.pseudo.appendChild(none);
+          for (const id of Object.keys(keys)) {
+            const opt = document.createElement("option");
+            opt.value = id;
+            opt.textContent = (keys[id].name || id) + " · " + (keys[id].rows || 0) + " rows";
+            ui.pseudo.appendChild(opt);
+          }
+          ui.pseudo.value = (wf && wf.pseudoKeyId) || "";
+          if (ui.pseudo.value !== ((wf && wf.pseudoKeyId) || ""))
+            ui.pseudo.value = ""; // the stored key is gone; don't pretend
+        });
+      } catch (e) {
+        /* the picker just stays at None */
+      }
     }
 
     function open(workflow) {
@@ -1243,6 +1284,7 @@
       editingRun = false;
       originalDocIds = (wf.docs || []).map((d) => d.id);
       pendingFiles.clear();
+      loadPseudoKeys();
       ui.template.value = wf.templateName || wf.name || "";
       // Only show a run name when one has actually been set — a template at
       // rest carries its own name in both fields, and echoing it here would
@@ -1363,6 +1405,7 @@
         carryFinal: ui.rrCarry.checked,
         reuseDocs: ui.rrDocs.checked,
       };
+      if (ui.pseudo) wf.pseudoKeyId = ui.pseudo.value || null;
       const candidate = W.newWorkflow(wf, wf.id, Date.now());
       const problems = W.validate(candidate);
       // An unassigned document is a warning, not a blocker — it just doesn't get
@@ -1463,6 +1506,7 @@
               allowRerun: run.allowRerun,
               rerun: run.rerun,
               ignoreOutage: run.ignoreOutage,
+              pseudoKeyId: run.pseudoKeyId,
             },
             run.id,
             Date.now()

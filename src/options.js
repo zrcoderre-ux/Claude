@@ -1141,6 +1141,7 @@
             nameChats: edited.nameChats !== false,
             allowRerun: !!edited.allowRerun,
             ignoreOutage: !!edited.ignoreOutage,
+            pseudoKeyId: edited.pseudoKeyId || null,
           },
         },
         (res) => {
