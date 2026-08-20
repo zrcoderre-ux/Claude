@@ -3527,3 +3527,21 @@ test("xlsx documents are dropped at every shaping path and at the runner's read"
   assert.deepEqual(W.allDocs({ docs: docs }).map((d) => d.name), ["motion.pdf"]);
   assert.ok(W.docBarred("Key (1).xlsx") && W.docBarred("book.xlsm") && !W.docBarred("brief.docx"));
 });
+
+test("a group is one case, one key: the guard's question and the resolution agree", () => {
+  const runs = [
+    { id: "r1", createdAt: 1, pseudoKeyId: "rasho#a1b2" },
+    { id: "r2", createdAt: 2 },
+    { id: "r3", createdAt: 3, pseudoKeyId: "rasho#a1b2" },
+    { id: "r4", createdAt: 4, pseudoKeyId: "deng#c3d4" },
+  ];
+  // One case's runs: one distinct key, however many members name it.
+  assert.deepEqual(W.distinctPseudoKeys(runs, ["r1", "r2", "r3"]), ["rasho#a1b2"]);
+  // Two cases checked together: two keys — the state Save group refuses.
+  assert.deepEqual(W.distinctPseudoKeys(runs, ["r1", "r4"]), ["rasho#a1b2", "deng#c3d4"]);
+  // No keys at all is fine — a group may predate its key.
+  assert.deepEqual(W.distinctPseudoKeys(runs, ["r2"]), []);
+  // And once grouped, the one key reaches the member that never named it.
+  const groups = [{ id: "g1", runIds: ["r1", "r2", "r3"] }];
+  assert.equal(W.runPseudoKey(runs[1], runs, groups), "rasho#a1b2");
+});

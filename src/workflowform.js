@@ -250,7 +250,9 @@
       `<select class="cumwf-pseudo"><option value="">None</option></select>` +
       `<p class="cumwf-hint">Keys are loaded from pseudonym_key.xlsx in the extension's popup. ` +
       `Attaching one here translates the fakes back to real names in this run's chats — display ` +
-      `only, nothing is sent — and warns if a prompt carries a real name. The key is never uploaded.</p></div>` +
+      `only, nothing is sent — and warns if a prompt carries a real name. The key is never uploaded. ` +
+      `Runs are per case, so one key covers a whole related-runs group: set it on any one of them ` +
+      `and the rest share it.</p></div>` +
 
       // ...but HOW they upload is the template's business, and travels to every
       // run, so it sits with the other switches rather than with the papers.
