@@ -1780,8 +1780,10 @@ at a glance.
 
 1. **Shows you the real names.** Every fake in the rendered messages is
    swapped for its real value — longest first, whole words only,
-   case-insensitively, an ALL-CAPS occurrence mirrored (`INGRID STRANGEWAYS`
-   → `HELEN RASHO`). A badge (bottom-left) names the key and counts the swaps,
+   case-insensitively, **and in the case it was written in**: `INGRID
+   STRANGEWAYS` → `HELEN RASHO`, `ingrid strangeways` → `helen rasho`,
+   `Ingrid Strangeways` → `Helen Rasho`. See [Case comes across with the
+   name](#case-comes-across-with-the-name). A badge (bottom-left) names the key and counts the swaps,
    so what you see is never silently different from what Claude sees. **Drag it
    anywhere** — like the usage pill, where you put it is where it stays, in
    every tab and across reloads, and the cleaner below opens off it wherever it
@@ -1837,6 +1839,34 @@ still caught — is held back behind a dialog that defaults to **Keep it out**.
 Uploading it takes the affirmative **Upload anyway**; other files in the same
 batch pass through untouched. The check reads the file locally and decides
 before claude.ai's own handlers ever see the event.
+
+### Case comes across with the name
+
+A fake Claude writes in a caption is shouted, in a slug it's lowercased, and in
+a sentence it's ordinary. The real name comes back written the same way, in both
+directions — the display swap and the cleaner's real→fake pass run the same
+rule.
+
+The baseline is **the key's own spelling**. A fake written exactly as the key
+spells it gets the real value exactly as the key stores it; only a *departure*
+from that spelling is carried across:
+
+| In the text | The key spells it | You see |
+| --- | --- | --- |
+| `Onyx filed it.` | `Onyx` | `IBM filed it.` |
+| `ONYX, Defendant.` | `Onyx` | `IBM, Defendant.` |
+| `onyx` | `Onyx` | `ibm` |
+| `Quenby's motion` | `Quenby` | `McDonald's motion` |
+| `QUENBY'S MOTION` | `Quenby` | `MCDONALD'S MOTION` |
+
+That baseline is the whole reason `IBM` doesn't come back as `Ibm` and
+`McDonald` doesn't come back as `Mcdonald`. **Deliberate case inside a value —
+`McDonald`, `LLC`, `OneWest` — is a shape no transform can be derived from**, so
+text carrying it is left exactly as written rather than guessed at, and titling
+only ever *raises* a word's leading letter, never lowers what follows it. An
+apostrophe doesn't start a word, so a possessive reads as `John's`, not
+`John'S` — and the `'s` rides the case rather than being read as part of it,
+which is why `QUENBY'S` is one shout and `Quenby's` is ordinary prose.
 
 **Cowork caveat** (the standing rule): the translation and the composer
 warning are generic DOM mechanics and should hold on both surfaces, but the

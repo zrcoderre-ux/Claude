@@ -658,7 +658,7 @@
     }
     tipEl.textContent = "";
     const swap = document.createElement("b");
-    swap.textContent = hit.matched + " → " + P.mirrorCase(hit.matched, hit.fake);
+    swap.textContent = hit.matched + " → " + P.mirrorCase(hit.matched, hit.fake, hit.real);
     const how = document.createElement("span");
     how.className = "cum-pseudo-tip-how";
     how.textContent = "  press → to swap · Esc to keep";
@@ -687,7 +687,7 @@
     ed.focus();
     // The same door composer.js types through — ProseMirror treats it as
     // ordinary input, so undo (Ctrl+Z) brings the real name back if wanted.
-    document.execCommand("insertText", false, P.mirrorCase(hit.matched, hit.fake));
+    document.execCommand("insertText", false, P.mirrorCase(hit.matched, hit.fake, hit.real));
     hideTip();
     return true;
   }
