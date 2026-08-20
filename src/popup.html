@@ -76,6 +76,28 @@
       weekly limit / Get more usage" banners are hidden — this meter is the
       usage reading. Replies that merely mention limits are never touched.</p>
 
+    <div class="card">
+      <div class="row"><span>Pseudonym key</span><b id="pseudo-here">—</b></div>
+      <div class="row sub" id="pseudo-chat">—</div>
+      <select id="pseudo-select" class="pseudo-select" hidden></select>
+      <div class="btn-row">
+        <button id="pseudo-attach" type="button" class="primary" disabled>Attach to this chat</button>
+        <button id="pseudo-detach" type="button" hidden>Detach</button>
+      </div>
+      <div class="btn-row">
+        <button id="pseudo-load" type="button">Load pseudonym_key.xlsx…</button>
+        <button id="pseudo-forget" type="button" hidden>Forget key</button>
+        <input id="pseudo-file" type="file" accept=".xlsx" hidden />
+      </div>
+      <p class="hint">Attach a case's key to a chat (or to a workflow run, from the
+        run's editor) and that conversation shows you the <b>real names</b> while
+        Claude keeps seeing only the fakes — display-only, nothing is sent. Typing
+        a real value into the composer gets a warning naming the fake to use. The
+        key file itself is <b>blocked from being uploaded</b> into any chat unless
+        you expressly override — loading it here attaches it, it never uploads it.</p>
+      <div id="pseudo-status" class="status" hidden></div>
+    </div>
+
     <label class="toggle">
       <input id="run-console-sticky" type="checkbox" />
       <span>Remember the run console's position &amp; size</span>
@@ -183,6 +205,8 @@
 
     <script src="status.js"></script>
     <script src="autodl.js"></script>
+    <script src="xlsxread.js"></script>
+    <script src="pseudo.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

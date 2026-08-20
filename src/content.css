@@ -1592,3 +1592,52 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
     background: #1f1f1e; color: #f0efea; border-color: rgba(255,255,255,0.22);
   }
 }
+
+/* ---- Pseudonym translation (src/pseudo-view.js) -------------------------- */
+
+/* Display-only badge: a key is attached and fakes are being shown as reals. */
+.cum-pseudo-badge {
+  position: fixed; left: 14px; bottom: 14px; z-index: 2147483000;
+  background: #2a2a28; color: #f0efea; border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px; padding: 5px 11px; font: 12px/1.35 system-ui, sans-serif;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); pointer-events: auto; cursor: help;
+  max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* A real value is standing in the draft message. */
+.cum-pseudo-warn {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 96px;
+  z-index: 2147483001; background: #7a1f1f; color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 12px;
+  padding: 9px 14px; font: 13px/1.45 system-ui, sans-serif; max-width: 560px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+.cum-pseudo-warn-head { font-weight: 700; margin-bottom: 3px; }
+.cum-pseudo-warn-line b { font-weight: 700; }
+
+/* The key-upload guard dialog. */
+.cum-pseudo-guard {
+  position: fixed; inset: 0; z-index: 2147483002;
+  background: rgba(0, 0, 0, 0.45); display: flex; align-items: center;
+  justify-content: center;
+}
+.cum-pseudo-guard-box {
+  background: #fff; color: #1a1a18; border-radius: 14px; padding: 18px 20px;
+  max-width: 460px; font: 14px/1.5 system-ui, sans-serif;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+.cum-pseudo-guard-head { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
+.cum-pseudo-guard-row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+.cum-pseudo-guard-row button {
+  font: inherit; border-radius: 9px; padding: 6px 14px; cursor: pointer;
+  border: 1px solid rgba(0, 0, 0, 0.25); background: #f4f3ef;
+}
+.cum-pseudo-guard-keep { font-weight: 700; }
+.cum-pseudo-guard-send { color: #8a1a1a; }
+@media (prefers-color-scheme: dark) {
+  .cum-pseudo-guard-box { background: #2a2a28; color: #f0efea; }
+  .cum-pseudo-guard-row button {
+    background: #1f1f1e; color: #f0efea; border-color: rgba(255, 255, 255, 0.22);
+  }
+  .cum-pseudo-guard-send { color: #ff9f9f; }
+}

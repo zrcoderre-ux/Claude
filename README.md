@@ -85,6 +85,13 @@ bottom-right corner of [claude.ai](https://claude.ai).
   then a final pass. Editable, copyable, deletable, with one pre-built. Each run
   is timed and measured against your usage, and **Usage → Workflows** shows what
   share of your weekly usage they account for. See [Workflows](#workflows).
+- **Pseudonym translation** — load a case's `pseudonym_key.xlsx` (the real↔fake
+  map PDF-Linker writes) into the popup and attach it to a chat, or to a
+  workflow run. That conversation then shows **you** the real names while
+  Claude keeps seeing only the fakes — display-only — a warning fires if you
+  type a **real** value into the composer, and the key file itself is **blocked
+  from being uploaded** into any chat unless you expressly override. See
+  [Pseudonym translation](#pseudonym-translation).
 
 ## Auto-downloading what Claude produces
 
@@ -1639,6 +1646,70 @@ find them:
 The boundary rules live in `src/tentative.js` (no DOM/`chrome` deps) and are
 unit-tested in `test/tentative.test.js`; the button is `src/copy-ruling.js`.
 
+## Pseudonym translation
+
+PDF-Linker scrubs a case's filings and writes `pseudonym_key.xlsx`, the
+real↔fake map; the exports that reach Claude carry only the fakes. This
+feature closes the reading gap: the person who knows the case by its real
+names shouldn't have to keep the key open in Excel to follow a draft.
+
+**Loading a key.** In the popup, **Load pseudonym_key.xlsx…** parses the key
+in the extension (`src/xlsxread.js` reads the workbook, `src/pseudo.js` reads
+the map) and stores only the parsed rows in `chrome.storage.local`. Loading is
+not uploading — the file goes nowhere. The key is read the way
+`DeAnonymize.bas` reads it: columns found by **header name**, never position;
+an operator keep (`no`, `never`, `[bracketed]`, `{braced}`) in the Replacement
+cell is an instruction, not a pseudonym, and is skipped; an **alt spelling**
+row is forward-only (its real still warns, its fake belongs to the canonical
+row); a fake claimed by two canonical reals is **retired from reversal rather
+than guessed at** — the macro's own fail-safe; and the pinned
+"(never in text)" sheet rides along for the warning side, since a pinned
+party's real name is exactly what must not be typed.
+
+**Attaching it.** Two ways, matching where work happens:
+
+- **A chat** — open the conversation, open the popup, **Attach to this chat**.
+- **A run** — the run editor (where the documents field is) has a
+  **Pseudonym key** picker. The key is the matter's, like the papers, so it
+  lives on the run: every conversation the run opens or returns to gets the
+  translation, a re-run keeps it, and starting the template for the next
+  matter clears it. It is *attached*, never uploaded — deliberately not a
+  documents-field entry.
+
+**What an attached key does.**
+
+1. **Shows you the real names.** Every fake in the rendered messages is
+   swapped for its real value — longest first, whole words only,
+   case-insensitively, an ALL-CAPS occurrence mirrored (`INGRID STRANGEWAYS`
+   → `HELEN RASHO`). A badge (bottom-left) names the key and counts the swaps,
+   so what you see is never silently different from what Claude sees.
+   **Display-only, and the boundary is structural**: the swap edits what this
+   tab *renders*; everything that leaves the page — sends, workflow hand-offs,
+   Save chat, Copy ruling — reads claude.ai's own state or API, which still
+   holds the fakes. The one exception is text you **select and copy by hand**
+   out of the translated view: that carries the real names, because it copies
+   what you're looking at. Don't paste it back into a chat — which the next
+   point is watching for anyway.
+2. **Warns before you leak.** The composer is scanned for the key's **real**
+   values (every spelling the key knows, tokens included). Each one found gets
+   a banner naming the value and the fake to use instead. It warns and never
+   rewrites — the composer is yours.
+
+**The key never rides an upload.** Independent of any attachment, on every
+claude.ai page: a file picked, dropped, or pasted into a chat is checked, and
+one that is `pseudonym_key*.xlsx` by name — or **any** `.xlsx` whose sheets
+carry the key's Real Value / Replacement fingerprint, so a renamed copy is
+still caught — is held back behind a dialog that defaults to **Keep it out**.
+Uploading it takes the affirmative **Upload anyway**; other files in the same
+batch pass through untouched. The check reads the file locally and decides
+before claude.ai's own handlers ever see the event.
+
+**Cowork caveat** (the standing rule): the translation and the composer
+warning are generic DOM mechanics and should hold on both surfaces, but the
+upload guard is **confirmed on Chat only** — Cowork's upload traffic runs in a
+worker no page hook sees, so treat the guard there as best-effort until it has
+been seen working.
+
 ## Table of contents
 
 A nine-step run leaves a conversation you'll want to read back through, and a
@@ -2039,6 +2110,9 @@ src/stamps.js          Puts that time under every turn on the page
 src/conv.js            The conversation payload, fetched once and shared
 src/toc-panel.js       The floating table of contents itself
 src/run-panel.js       The workflow's own contents — every step, every chat
+src/xlsxread.js        Minimal .xlsx reader — enough for the pseudonym key (pure)
+src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards (pure)
+src/pseudo-view.js     Shows real names for the fakes, warns, guards the key file
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
 test/estimate.test.js  Unit tests for the tenths-place calibrator
@@ -2051,6 +2125,8 @@ test/incognito.test.js Unit tests for incognito recovery + expiry
 test/autocontinue.test.js  Unit tests for the button-label predicates
 test/autodl.test.js    Unit tests for the auto-download ledger + ceilings
 test/tentative.test.js Unit tests for the ruling's start and end boundaries
+test/xlsxread.test.js  Unit tests for the .xlsx reader (zip + sheet XML)
+test/pseudo.test.js    Unit tests for the pseudonym key logic
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only
 scripts/dl-probe.js    Paste at the DevTools console: what a reply really holds

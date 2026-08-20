@@ -727,6 +727,10 @@
       rerun: rerunDefaults(f.rerun),
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
       docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
+      // Which pseudonym key (popup's stored library, by id) rides this
+      // matter's chats — attached, never uploaded. On the run like the
+      // documents, because a key is a case's, not a template's.
+      pseudoKeyId: f.pseudoKeyId || null,
       steps: (f.steps || []).map((s) => newStep(s, s && s.id)),
       // What its runs have cost, averaged over them — measured, not authored,
       // so it survives an edit rather than being reset by one.
@@ -807,6 +811,7 @@
       docs: (wf.docs || []).map((d) =>
         Object.assign({}, d, { chats: (d.chats || []).map((c) => chatMap[c]).filter(Boolean) })
       ),
+      pseudoKeyId: wf.pseudoKeyId || null,
       steps: (wf.steps || []).map((s) =>
         Object.assign({}, s, { id: mkId(), chatId: chatMap[s.chatId] || null })
       ),
@@ -969,6 +974,8 @@
     return Object.assign({}, wf, {
       name: trimmed(wf.templateName) || wf.name,
       docs: [],
+      // The key was this matter's exactly as the papers were.
+      pseudoKeyId: null,
       // A conversation to start in belonged to that matter too — leaving it
       // behind would silently point the next matter's run at the last one's
       // chat, which is the kind of mistake you'd only notice afterwards.
@@ -1247,6 +1254,11 @@
       // This matter's papers, handed over at Start so the template can be
       // cleared and re-armed while this run is still going.
       docs: (docs || (wf && wf.docs) || []).map((d) => newDoc(d, d && d.id)),
+      // The matter's pseudonym key, attached the way the papers are — every
+      // conversation this run opens shows real names to the reader while
+      // Claude keeps seeing the fakes (see src/pseudo-view.js). Never a
+      // document: the key must not ride an upload.
+      pseudoKeyId: (wf && wf.pseudoKeyId) || null,
       // Every switch the workflow carries is the run's too, and carried the
       // same way: only an explicit "off" is off. A setting that failed to
       // travel would be a run quietly doing something other than what the
@@ -1428,6 +1440,7 @@
         ),
         steps: src.steps || [],
         docs: docs,
+        pseudoKeyId: run.pseudoKeyId,
         bundleText: run.bundleText,
         nameChats: run.nameChats,
         allowRerun: run.allowRerun,
@@ -1722,6 +1735,8 @@
       nameChats: flag("nameChats"),
       allowRerun: flag("allowRerun"),
       ignoreOutage: flag("ignoreOutage"),
+      pseudoKeyId:
+        typeof p.pseudoKeyId !== "undefined" ? p.pseudoKeyId || null : run.pseudoKeyId || null,
       rerun: p.rerun ? rerunDefaults(p.rerun) : run.rerun,
       lastProgressAt: now,
       updatedAt: now,

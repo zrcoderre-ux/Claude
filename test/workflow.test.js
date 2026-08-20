@@ -3330,3 +3330,36 @@ test("a finished run keeps its console — the live failure was a Run button tha
   assert.equal(W.consoleRun([]), null);
   assert.equal(W.consoleRun(null), null);
 });
+
+// ---- the pseudonym key rides the run --------------------------------------
+
+test("a run carries its pseudonym key: start, edit, re-run, and reset", () => {
+  const wf = W.newWorkflow(
+    {
+      name: "Matter",
+      templateName: "Tentative",
+      pseudoKeyId: "pseudonym_key.xlsx",
+      chats: [{ id: "a", name: "A" }],
+      steps: [{ id: "s1", chatId: "a", prompt: "draft" }],
+    },
+    "w1",
+    NOW
+  );
+  assert.equal(wf.pseudoKeyId, "pseudonym_key.xlsx");
+
+  const run = W.newRun(wf, "r1", NOW, { type: "now" }, wf.docs);
+  assert.equal(run.pseudoKeyId, "pseudonym_key.xlsx");
+
+  // An edit that says nothing about the key leaves it; one that names a key
+  // (or none) is applied.
+  assert.equal(W.applyRunEdit(run, { name: "Matter" }, NOW + 1).pseudoKeyId, "pseudonym_key.xlsx");
+  assert.equal(W.applyRunEdit(run, { pseudoKeyId: null }, NOW + 1).pseudoKeyId, null);
+  assert.equal(W.applyRunEdit(run, { pseudoKeyId: "other.xlsx" }, NOW + 1).pseudoKeyId, "other.xlsx");
+
+  // A re-run is the same matter, so the same key.
+  const again = W.rerunOf(run, { stepIndex: 0, freshChats: false }, "r2", NOW + 2);
+  assert.equal(again.pseudoKeyId, "pseudonym_key.xlsx");
+
+  // Back to a blank template: the key was this matter's, like the papers.
+  assert.equal(W.resetToTemplate(wf, NOW + 3).pseudoKeyId, null);
+});
