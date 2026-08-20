@@ -968,6 +968,62 @@ async function ensureOptionsTab(windowId) {
   }
 }
 
+// A run's chats sit together in a TAB GROUP, named and colored for the case
+// (W.tabGroupTitle / tabGroupColor — the color seeds on the run's key, so
+// every run of one case wears the same color). Stateless on purpose: the
+// group is found by looking at where the run's other chats already sit, so a
+// browser restart or a hand-closed group never leaves a stale id behind — the
+// next tab simply starts a fresh group. A tab the operator grouped by hand is
+// respected, a pinned tab (the Options control panel) is never grouped, and
+// any failure is swallowed whole: grouping is a nicety, and a run must never
+// fail over furniture.
+async function groupRunTab(run, tab) {
+  if (!run || !tab || typeof tab.id !== "number" || tab.pinned) return;
+  if (!chrome.tabGroups || !chrome.tabs || !chrome.tabs.group) return;
+  try {
+    if (typeof tab.groupId === "number" && tab.groupId !== -1) return; // already grouped
+    const urls = Object.values(run.chats || {})
+      .map((c) => c && c.url)
+      .filter(Boolean);
+    let groupId = null;
+    for (const t of await tabsInWindow(tab.windowId)) {
+      if (!t || t.id === tab.id || typeof t.groupId !== "number" || t.groupId === -1) continue;
+      if (t.url && urls.some((u) => J.sameConversationUrl(t.url, u))) {
+        groupId = t.groupId;
+        break;
+      }
+    }
+    if (groupId != null) {
+      await chrome.tabs.group({ tabIds: tab.id, groupId });
+      return;
+    }
+    groupId = await chrome.tabs.group({ tabIds: tab.id });
+    const keysRes = await get("cum_pseudo_keys");
+    await chrome.tabGroups.update(groupId, {
+      title: W.tabGroupTitle(run, keysRes.cum_pseudo_keys || {}),
+      color: W.tabGroupColor(run.pseudoKeyId || run.id),
+      collapsed: false,
+    });
+  } catch (e) {
+    /* grouping is a nicety */
+  }
+}
+
+// Every tab in `windowId` holding one of this run's conversations, gathered
+// into the run's group — the catch-up pass Open-chats uses, since it meets
+// tabs that were opened long ago as well as ones it just made.
+async function groupRunChats(run, windowId) {
+  if (!run || windowId == null) return;
+  const urls = Object.values(run.chats || {})
+    .map((c) => c && c.url)
+    .filter(Boolean);
+  if (!urls.length) return;
+  for (const t of await tabsInWindow(windowId)) {
+    if (t && t.url && urls.some((u) => J.sameConversationUrl(t.url, u)))
+      await groupRunTab(run, t);
+  }
+}
+
 // A tab showing `url` inside this run's own window. Deliberately scoped to that
 // window: a conversation the operator happens to have open elsewhere is theirs,
 // and driving a message into the tab they're reading would be a nasty surprise.
@@ -986,12 +1042,15 @@ async function runTab(run, url, canReuse) {
     if (windowId == null) return { tab: null, windowId: null };
     if (canReuse) {
       for (const t of await tabsInWindow(windowId)) {
-        if (t && t.url && J.sameConversationUrl(t.url, url))
+        if (t && t.url && J.sameConversationUrl(t.url, url)) {
+          await groupRunTab(run, t);
           return { tab: t, windowId, created: false };
+        }
       }
     }
     try {
       const tab = await chrome.tabs.create({ url, windowId, active: false });
+      if (tab) await groupRunTab(run, tab);
       return tab ? { tab, windowId, created: true } : { tab: null, windowId };
     } catch (e) {
       return { tab: null, windowId };
@@ -1037,6 +1096,7 @@ async function runTab(run, url, canReuse) {
         await ensureOptionsTab(win.id);
       }
       const tab = win && win.tabs && win.tabs[0];
+      if (tab) await groupRunTab(run, tab);
       return tab ? { tab, windowId: win.id, created: true } : { tab: null, windowId: null };
     } catch (e) {
       return { tab: null, windowId: null };
@@ -1050,10 +1110,14 @@ async function runTab(run, url, canReuse) {
   // request it does make when one isn't goes through keepingFocus.
   await keepingFocus(() => ensureWindowSize(windowId));
   for (const t of await tabsInWindow(windowId)) {
-    if (t && t.url && J.sameConversationUrl(t.url, url)) return { tab: t, windowId, created: false };
+    if (t && t.url && J.sameConversationUrl(t.url, url)) {
+      await groupRunTab(run, t);
+      return { tab: t, windowId, created: false };
+    }
   }
   try {
     const tab = await chrome.tabs.create({ url, windowId, active: false });
+    if (tab) await groupRunTab(run, tab);
     return { tab, windowId, created: true };
   } catch (e) {
     return { tab: null, windowId };
@@ -2388,6 +2452,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           /* ignore */
         }
         await ensureWindowSize(id);
+        // Reopened and already-open alike: the run's chats sit in its group.
+        await groupRunChats(run, id);
         return { ok: true, focused: true, opened: urls.length, missing };
       }
 
@@ -2400,6 +2466,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await sleep(300);
           await ensureWindowSize(win.id);
           await ensureOptionsTab(win.id);
+          await groupRunChats(run, win.id);
         }
         return { ok: true, opened: urls.length, missing };
       } catch (e) {

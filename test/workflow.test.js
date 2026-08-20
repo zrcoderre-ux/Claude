@@ -3595,3 +3595,26 @@ test("a group is named the way its key is: hint, then key name, then a member's 
     ""
   );
 });
+
+test("a run's tab group is named and colored for the case", () => {
+  const keys = { "k#1": { name: "pseudonym_key.xlsx", hint: "Rasho", rows: 187 } };
+  // The key's hint names the group…
+  assert.equal(
+    W.tabGroupTitle({ name: "MSJ 8/12/26", pseudoKeyId: "k#1" }, keys),
+    "Rasho"
+  );
+  // …the matter's own name (date label off) when there's no key…
+  assert.equal(W.tabGroupTitle({ name: "MSJ Rasho 8/12/26" }, keys), "MSJ Rasho");
+  // …the template's when the run is nameless, and never an empty title.
+  assert.equal(W.tabGroupTitle({ name: "", templateName: "Tentative" }, keys), "Tentative");
+  assert.equal(W.tabGroupTitle({}, {}), "run");
+  // Long titles are cut before Chrome mangles them.
+  const long = W.tabGroupTitle({ name: "A Very Long Matter Name That Keeps Going" }, {});
+  assert.ok(long.length <= 24 && long.endsWith("…"));
+
+  // Deterministic color from the seed, always one of Chrome's palette — and
+  // seeding on the KEY means every run of one case wears the same color.
+  const c1 = W.tabGroupColor("k#1");
+  assert.equal(c1, W.tabGroupColor("k#1"));
+  assert.ok(["blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"].includes(c1));
+});
