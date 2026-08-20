@@ -191,7 +191,23 @@
 
         <div class="toolbar">
           <button id="wf-new" class="primary" type="button">New workflow</button>
+          <button
+            id="wf-export"
+            type="button"
+            title="Save every workflow to a file you can carry to another computer"
+          >
+            Export all…
+          </button>
+          <button
+            id="wf-import"
+            type="button"
+            title="Load workflows out of a file exported from another computer"
+          >
+            Import…
+          </button>
+          <input id="wf-import-file" type="file" accept="application/json,.json" hidden />
         </div>
+        <p id="wf-io-note" class="sub" hidden></p>
 
         <div id="wf-form-mount" class="job-form"></div>
 
@@ -280,6 +296,7 @@
     <script src="workflow.js"></script>
     <script src="xlsxread.js"></script>
     <script src="pseudo.js"></script>
+    <script src="wfexport.js"></script>
     <script src="workflowform.js"></script>
     <script src="status.js"></script>
     <script src="options.js"></script>

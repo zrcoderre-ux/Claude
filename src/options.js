@@ -345,6 +345,10 @@
     empty: document.getElementById("wf-empty"),
     mount: document.getElementById("wf-form-mount"),
     newBtn: document.getElementById("wf-new"),
+    exportBtn: document.getElementById("wf-export"),
+    importBtn: document.getElementById("wf-import"),
+    importFile: document.getElementById("wf-import-file"),
+    ioNote: document.getElementById("wf-io-note"),
     runs: document.getElementById("wf-runs"),
     runsEmpty: document.getElementById("wf-runs-empty"),
     runSort: document.getElementById("wf-run-sort"),
@@ -429,6 +433,22 @@
   let workflowsById = {};
 
   wfui.newBtn.addEventListener("click", () => wfForm.create());
+  if (wfui.exportBtn) wfui.exportBtn.addEventListener("click", () => exportWorkflows(null));
+  if (wfui.importBtn)
+    wfui.importBtn.addEventListener("click", () => {
+      ioNote("");
+      wfui.importFile.value = ""; // so picking the same file twice still fires
+      wfui.importFile.click();
+    });
+  if (wfui.importFile)
+    wfui.importFile.addEventListener("change", () => {
+      const file = wfui.importFile.files && wfui.importFile.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => importWorkflows(String(reader.result || ""));
+      reader.onerror = () => alert("Could not read that file.");
+      reader.readAsText(file);
+    });
 
   const RUN_STATUS_LABEL = {
     draft: "Not started",
@@ -521,6 +541,8 @@
           `<button class="job-run wf-create" data-id="${wf.id}" ` +
           `title="Set this workflow up for a matter, down in Runs — nothing starts until you say so">` +
           `Create run</button>` +
+          `<button class="job-edit wf-out" data-id="${wf.id}" ` +
+          `title="Export just this workflow to a file">Export</button>` +
           `<button class="job-del wf-del" data-id="${wf.id}" title="Delete">✕</button>` +
           `</div></div>` +
           `<div class="job-main">` +
@@ -554,6 +576,9 @@
       );
       wfui.list.querySelectorAll(".wf-copy").forEach((b) =>
         b.addEventListener("click", () => copyWorkflow(b.getAttribute("data-id")))
+      );
+      wfui.list.querySelectorAll(".wf-out").forEach((b) =>
+        b.addEventListener("click", () => exportWorkflows([b.getAttribute("data-id")]))
       );
       wfui.list.querySelectorAll(".wf-del").forEach((b) =>
         b.addEventListener("click", () => deleteWorkflow(b.getAttribute("data-id")))
@@ -595,6 +620,140 @@
         renderRuns().then(() => openRunEditor(res.runId));
       }
     );
+  }
+
+  // ---- Workflows out of this browser and into another ---------------------
+  // A workflow is half an hour of writing prompts, and it lived in one profile's
+  // storage. Export writes the bundle; import folds one back in. The decisions —
+  // what travels, what a re-import does to the workflow it came from — are
+  // CUMWfExport's; this is the file dialog and the confirmation around them.
+  const WX = window.CUMWfExport;
+
+  function ioNote(text) {
+    if (!wfui.ioNote) return;
+    wfui.ioNote.textContent = text || "";
+    wfui.ioNote.hidden = !text;
+  }
+
+  function todayStr() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+
+  // A blob and an anchor rather than chrome.downloads: this is a page, the file
+  // is small, and the browser's own Save dialog is what the user expects.
+  function downloadJson(name, obj) {
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  // What a template can't take with it, said plainly at the moment it doesn't:
+  // silence here reads as "everything came along", and the first sign otherwise
+  // would be a run on the other laptop that uploads nothing.
+  function leftBehindNote(list) {
+    let docs = 0;
+    let armed = 0;
+    let keys = 0;
+    for (const wf of list) {
+      const l = WX.leftBehind(wf);
+      docs += l.docs;
+      armed += l.armed;
+      if (l.key) keys++;
+    }
+    const parts = [];
+    if (docs) parts.push(docs === 1 ? "1 document" : docs + " documents");
+    if (keys) parts.push(keys === 1 ? "1 pseudonym key" : keys + " pseudonym keys");
+    if (armed) parts.push(armed === 1 ? "1 armed chat" : armed + " armed chats");
+    if (!parts.length) return "";
+    return (
+      " " +
+      parts.join(", ") +
+      " stayed behind — a template travels, a matter doesn't."
+    );
+  }
+
+  function exportWorkflows(ids) {
+    if (!WX) return;
+    readWorkflows().then((list) => {
+      const want = ids && ids.length ? list.filter((w) => ids.indexOf(w.id) !== -1) : list;
+      if (!want.length) return ioNote("There are no workflows to export yet.");
+      const bundle = WX.buildExport(want, Date.now());
+      downloadJson(WX.fileName(want, todayStr()), bundle);
+      ioNote(
+        "Exported " +
+          (bundle.count === 1
+            ? "“" + (bundle.workflows[0].name || "1 workflow") + "”"
+            : bundle.count + " workflows") +
+          "." +
+          leftBehindNote(want)
+      );
+    });
+  }
+
+  function importSummary(plan) {
+    const lines = [];
+    if (plan.add.length)
+      lines.push("Adds " + plan.add.length + ": " + plan.add.slice(0, 6).join(", ") +
+        (plan.add.length > 6 ? ", …" : ""));
+    if (plan.replace.length) {
+      lines.push(
+        "UPDATES " +
+          plan.replace.length +
+          ": " +
+          plan.replace
+            .slice(0, 6)
+            // The same name on both sides is the ordinary case — the same
+            // workflow, come back edited — and writing it twice reads like
+            // two things when it is one.
+            .map((r) => (r.from === r.to ? "“" + r.from + "”" : "“" + r.from + "” → “" + r.to + "”"))
+            .join(", ") +
+          (plan.replace.length > 6 ? ", …" : "")
+      );
+    }
+    if (plan.sameName.length)
+      lines.push(
+        "Note: " +
+          plan.sameName.join(", ") +
+          " already names a DIFFERENT workflow here, so it comes in as a second row."
+      );
+    return lines.join("\n\n");
+  }
+
+  function importWorkflows(text) {
+    if (!WX) return;
+    const read = WX.parseBundle(text);
+    if (!read.ok) return alert(read.error);
+    readWorkflows().then((list) => {
+      const plan = WX.importPlan(list, read.workflows);
+      const head =
+        plan.total === 1 ? "Import 1 workflow?" : "Import " + plan.total + " workflows?";
+      const skipped = read.skipped
+        ? "\n\n" + read.skipped + " item(s) in the file weren't workflows and are ignored."
+        : "";
+      if (!confirm(head + "\n\n" + importSummary(plan) + skipped)) return;
+      const out = WX.applyImport(list, read.workflows, Date.now(), () => crypto.randomUUID());
+      chrome.storage.local.set({ [WORKFLOWS_KEY]: out.list }, () => {
+        renderWorkflows();
+        const bits = [];
+        if (out.added) bits.push(out.added === 1 ? "1 added" : out.added + " added");
+        if (out.replaced)
+          bits.push(out.replaced === 1 ? "1 updated" : out.replaced + " updated");
+        ioNote(
+          "Imported: " +
+            (bits.join(", ") || "nothing") +
+            ". Documents and pseudonym keys don't travel, and anything already " +
+            "set up here was left as it was."
+        );
+      });
+    });
   }
 
   function copyWorkflow(id) {

@@ -92,7 +92,10 @@ bottom-right corner of [claude.ai](https://claude.ai).
   back and forth**: A drafts, B attacks the draft, A revises, round and round,
   then a final pass. Editable, copyable, deletable, with one pre-built. Each run
   is timed and measured against your usage, and **Usage → Workflows** shows what
-  share of your weekly usage they account for. See [Workflows](#workflows).
+  share of your weekly usage they account for. **Export them to a file** and
+  import them on another computer, so a workflow built once doesn't have to be
+  rebuilt there. See [Workflows](#workflows) and [Carrying workflows to another
+  computer](#carrying-workflows-to-another-computer).
 - **Pseudonym translation** — load a case's `pseudonym_key.xlsx` (the real↔fake
   map PDF-Linker writes) into the popup and attach it to a chat, or to a
   workflow run. That conversation then shows **you** the real names while
@@ -881,6 +884,64 @@ Nothing about a matter ever occupies a workflow's row: a workflow has no trigger
 and no Start of its own. And because the run owns its copy of the papers,
 re-arming the template — or deleting it — can't disturb a run in flight; stored
 files are only discarded once nothing, run or workflow, still points at them.
+
+### Carrying workflows to another computer
+
+A workflow is half an hour of writing prompts and wiring chats together, and it
+lived in one browser profile's storage. **Options → Workflows** has the two
+buttons that get it out: **Export all…** writes every workflow to a JSON file,
+and **Export** on a single row writes just that one. **Import…** reads such a
+file back on the other machine.
+
+**What travels is the template, not the matter.** This is the same rule the rest
+of the section runs on, applied to a file:
+
+| Travels | Stays behind (at both ends) |
+| --- | --- |
+| Chats, their destinations and models | The matter's **documents** |
+| Every step: prompt, chat, hand-off, skill, pause | The attached **pseudonym key** |
+| What it does, and the resting name | The **run date** and the armed name |
+| The switches — bundling, naming, re-run, outage, window | **Start-in-this-chat** links |
+| | What its runs **cost** here |
+
+Documents are the biggest of those and the reason for the rule twice over: they
+belong to the run rather than the template, and a template mailed with a client's
+brief inside it is a leak by file transfer. The pseudonym key is worse — an id
+into *this* browser's key library, which on another machine points at nothing, or
+at a different case. Both are said out loud after each export and import rather
+than left to be discovered by a run that uploads nothing.
+
+**Re-importing updates rather than duplicates.** Ids ride along in the file, so
+export → edit on the laptop → export back → import lands on the workflow it came
+from and leaves one row, not two. The dialog names what it is about to overwrite
+before it does, and a file whose workflow shares only a *name* with one here
+imports as a second row and says so — a different id is a different workflow.
+
+**And the matter waiting here survives it.** The rule that governs the export
+governs the import: an update replaces the *template* parts and leaves alone
+whatever case is already set up on that workflow on this machine — its papers,
+its key, its run date, the name it's armed under, and the conversations it was
+pointed at. Bringing your prompts up to date is not a reason to lose the matter
+you had waiting. (Chats are re-armed by id, so that round-trips exactly when it
+is the same workflow; if the far end changed its chats, the arming is dropped
+rather than guessed at, because a run pointed at the wrong existing conversation
+is worse than one pointed at none.)
+
+The pre-built workflow is the one exception to matching by id, since each browser
+mints its own id for it: an imported pre-built one lands on the pre-built one
+that's already here, rather than leaving a second row badged *Pre-built*.
+
+**A file that isn't one says so.** The bundle carries a format version and is
+refused outright if it was written by a newer build than the one reading it —
+half-reading a shape this build doesn't know is how you get a workflow that looks
+imported and runs wrong. Anything in the file that isn't a workflow is counted
+and ignored, and every workflow that comes in is rebuilt through the same
+constructor a new one is, so a hand-edited file can only carry fields this build
+knows about.
+
+**Runs don't travel.** They're a matter in flight, tied to conversations, files
+and alarms in the browser they started in. Export the template; start the matter
+where you're working.
 
 ### Running one
 
@@ -2339,6 +2400,7 @@ src/split.js           Chat vs Cowork vs Code attribution, incl. gaps (pure)
 src/daily.js           Per-day attribution of weekly-limit usage (pure)
 src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
+src/wfexport.js        Workflow export/import bundles: what travels (pure)
 src/cowork.js          Chat/Cowork surface + approval modes (pure)
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown
