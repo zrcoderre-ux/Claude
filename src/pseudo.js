@@ -287,10 +287,6 @@
     return new RegExp("(?<![A-Za-z0-9_])(?:" + alts + ")(?![A-Za-z0-9_])", "gi");
   }
 
-  function isAllCaps(s) {
-    return /[A-Z]/.test(s) && s === s.toUpperCase();
-  }
-
   /**
    * The shape a name is written in. Four answers, and the fourth is the point:
    *   upper  SHOUTED, the whole thing        (a caption, a heading)
@@ -310,46 +306,93 @@
     return words.every((w) => /^[A-Z][a-z]*$/.test(w)) ? "title" : "mixed";
   }
 
+  // Abbreviations a title pass must not take the capitals off. The test that
+  // does most of the work is mechanical: an all-caps word of four letters or
+  // fewer with no vowel in it (LLC, LLP, LP, PC, LTD, DDS, IBM, CVS) is an
+  // abbreviation, not a shouted word, and one or two letters is an initial.
+  // The short list beside it is for the ones that carry a vowel and would
+  // otherwise come out as words. It can grow; nothing depends on it being
+  // complete, and a miss costs one wrongly-titled abbreviation.
+  const KEEP_UPPER = new Set(
+    (
+      "usa esq dba aka fka hoa ada eeoc inc " +
+      // Agencies and the like, which do turn up as real values in a caption.
+      "irs dmv fbi cia epa doj dhs faa atf dea sec fda fcc ftc osha ssa nlrb ibm aol"
+    ).split(" ")
+  );
+
+  function looksAbbrev(word) {
+    const letters = word.replace(/[^A-Za-z]/g, "");
+    if (!letters) return false;
+    if (letters.length <= 2) return true; // an initial, or PC / NA / JR
+    if (KEEP_UPPER.has(letters.toLowerCase())) return true;
+    return letters.length <= 4 && !/[AEIOUY]/i.test(letters);
+  }
+
+  // A word for casing purposes: letters, with an apostrophe INSIDE the word
+  // rather than ending it — "O'Brien" and "Coderre's" are each one word, so
+  // titling can't produce "O'BRien" or "Coderre'S".
+  const WORD_RE = /[A-Za-z]+(?:['\u2019][A-Za-z]+)*/g;
+
+  // `deliberate` — whether the value this word came out of has lowercase in it
+  // somewhere, which makes every capital in it authored rather than incidental.
+  function titleWord(w, deliberate) {
+    const up = w === w.toUpperCase();
+    const low = w === w.toLowerCase();
+    // Internal capitals — "McDonald", "OneWest", "d'Angelo" — are authored,
+    // and no title pass gets to overwrite them.
+    if (!up && !low) return w;
+    // An ALL-CAPS word standing in a value that is otherwise ordinary —
+    // "Cross River Bank, LLC", "IBM Credit Corp" — was capitalised on purpose
+    // against that backdrop, so it stays whatever it is. Only in a value that
+    // is all-caps THROUGHOUT is there nothing to read, and the guess is made.
+    if (up && (deliberate || looksAbbrev(w))) return w;
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  }
+
   /**
-   * Write `value` in `shape`. Title-casing only ever RAISES a word's leading
-   * letter and never touches the rest, so "LLC" survives it and "McDonald"
-   * survives it; an apostrophe doesn't start a word, so "john's" becomes
-   * "John's" rather than "John'S".
+   * Write `value` in `shape`. Shouting and quieting are the whole string;
+   * titling is per word, and it genuinely re-cases — a name the key stores as
+   * "ZACHARY CODERRE" reads "Zachary Coderre" where the text is in ordinary
+   * prose, which is the point of the whole exercise. What titling leaves alone
+   * is what was deliberate: a word with internal capitals, any capital standing
+   * in a value that is otherwise ordinary text, and — in a value that is
+   * all-caps throughout, where there is nothing to read — an abbreviation.
    */
   function applyCase(shape, value) {
     const v = String(value == null ? "" : value);
     if (shape === "upper") return v.toUpperCase();
     if (shape === "lower") return v.toLowerCase();
-    if (shape === "title") return v.replace(/(^|[^A-Za-z'\u2019])([a-z])/g, (m, pre, c) => pre + c.toUpperCase());
+    if (shape === "title") {
+      const deliberate = v !== v.toUpperCase(); // it has lowercase of its own
+      return v.replace(WORD_RE, (w) => titleWord(w, deliberate));
+    }
     return v;
   }
 
   /**
-   * The replacement in the matched text's own voice. `canonical` is how the
-   * key itself spells the value that matched — the baseline. Text that agrees
-   * with the baseline gets the replacement EXACTLY as the key stores it,
-   * which is the whole reason acronyms and Mc-names come through intact; only
-   * text that departs from it (a caption shouting, a lowercased run) carries
-   * that departure across to the replacement.
+   * The replacement in the matched text's own voice.
+   *
+   * THE TEXT'S CASE WINS. The key's own spelling of the real value is how it
+   * was typed into a spreadsheet, not how it should read here: a caption's
+   * "ZACHARY CODERRE" belongs in a sentence as "Zachary Coderre", and the
+   * fake standing in ordinary prose is what says so. So the shape is read off
+   * the matched text and written onto the replacement, every time.
+   *
+   * The one shape that yields no instruction is `mixed` — text with internal
+   * capitals of its own — and there the value is left exactly as the key
+   * stores it.
    */
-  function mirrorCase(sample, value, canonical) {
-    const shape = caseShape(sample);
-    if (shape === "none" || shape === "mixed") return String(value == null ? "" : value);
-    if (canonical != null && caseShape(canonical) === shape) return String(value);
-    return applyCase(shape, value);
+  function mirrorCase(sample, value) {
+    return applyCase(caseShape(sample), value);
   }
 
-  /**
-   * Reversal matcher: translate() swaps every fake for its real value.
-   * `src` remembers the key's own spelling of each fake, so the replacement
-   * can tell "written as the key writes it" from "written in another case".
-   */
+  /** Reversal matcher: translate() swaps every fake for its real value. */
   function compile(key) {
     const pairs = (key && key.pairs) || [];
     const map = new Map(pairs.map((p) => [fold(p.fake), p.real]));
-    const src = new Map(pairs.map((p) => [fold(p.fake), p.fake]));
     const rx = buildMatcher(pairs.map((p) => p.fake));
-    return { rx: rx, map: map, src: src };
+    return { rx: rx, map: map };
   }
 
   /**
@@ -359,30 +402,37 @@
    */
   function translate(compiled, text) {
     if (!compiled || !compiled.rx || !text) return { text: text, count: 0 };
-    const src = compiled.src || new Map();
     let count = 0;
     const out = text.replace(compiled.rx, (m) => {
-      let key = fold(m);
-      let mapped = compiled.map.get(key);
+      let mapped = compiled.map.get(fold(m));
       let suffix = "";
       if (mapped == null) {
         // A possessive of a bare value: swap the name, keep the 's as typed.
         const mp = m.match(POSS_MATCH_RE);
         if (mp) {
-          key = fold(m.slice(0, -mp[0].length));
-          mapped = compiled.map.get(key);
+          mapped = compiled.map.get(fold(m.slice(0, -mp[0].length)));
           if (mapped != null) suffix = mp[0];
         }
       }
       if (mapped == null) return m;
       count++;
       // The possessive is left off the shape reading — "QUENBY'S" is shouted,
-      // "Quenby's" is ordinary prose — but it rides the case that comes back,
-      // so a shouted caption gets "SMITH'S" and a lowercased line "smith's".
-      const core = suffix ? m.slice(0, -suffix.length) : m;
-      return mirrorCase(core, mapped + suffix, src.get(key));
+      // "Quenby's" is ordinary prose — and it is cased separately from the
+      // name, so a shouted caption gets "CODERRE'S" and a sentence
+      // "Coderre's" rather than "Coderre'S".
+      const shape = caseShape(suffix ? m.slice(0, -suffix.length) : m);
+      return applyCase(shape, mapped) + casedSuffix(shape, suffix);
     });
     return { text: out, count: count };
+  }
+
+  // The 's follows the sentence around it, not the name: shouted with a
+  // shout, quiet with a quiet line, and otherwise exactly as it was typed.
+  function casedSuffix(shape, suffix) {
+    if (!suffix) return "";
+    if (shape === "upper") return suffix.toUpperCase();
+    if (shape === "lower") return suffix.toLowerCase();
+    return suffix;
   }
 
   // Ordinary English that a key row can end up binding (a harvested token, a
@@ -431,14 +481,9 @@
   function compileForward(key) {
     const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
     const map = new Map();
-    const src = new Map();
-    for (const w of warn) {
-      if (map.has(fold(w.real))) continue;
-      map.set(fold(w.real), w.fake);
-      src.set(fold(w.real), w.real); // the key's own spelling: the case baseline
-    }
+    for (const w of warn) if (!map.has(fold(w.real))) map.set(fold(w.real), w.fake);
     const rx = buildMatcher(warn.map((w) => w.real));
-    return { rx: rx, map: map, src: src };
+    return { rx: rx, map: map };
   }
 
   /**

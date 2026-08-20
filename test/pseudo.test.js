@@ -406,13 +406,16 @@ test("a possessive row covers the bare name: Zachary's is John's, so Zachary is 
 const CASE_KEY = {
   name: "case.xlsx",
   pairs: [
-    { real: "Helen Rasho", fake: "Ingrid Strangeways" },
+    // The key stores its real values the way a caption does — shouted. What
+    // reads correctly in a sentence is NOT that, and this is the whole point.
+    { real: "ZACHARY CODERRE", fake: "John Doe" },
+    { real: "HELEN RASHO", fake: "Ingrid Strangeways" },
     { real: "McDonald", fake: "Quenby" },
     { real: "Cross River Bank, LLC", fake: "Zenith Holdings, LLC" },
     { real: "IBM", fake: "Onyx" },
   ],
   warn: [
-    { real: "Helen Rasho", fake: "Ingrid Strangeways" },
+    { real: "ZACHARY CODERRE", fake: "John Doe" },
     { real: "McDonald", fake: "Quenby" },
   ],
 };
@@ -427,71 +430,96 @@ test("caseShape names the four shapes, and mixed is the one nothing is derived f
   assert.equal(P.caseShape("(213) 555-0134"), "none"); // no letters to read
 });
 
-test("applyCase only ever RAISES a leading letter when titling, so LLC and McDonald survive", () => {
-  assert.equal(P.applyCase("title", "cross river bank, llc"), "Cross River Bank, Llc");
-  assert.equal(P.applyCase("title", "Cross River Bank, LLC"), "Cross River Bank, LLC");
-  assert.equal(P.applyCase("title", "McDonald"), "McDonald");
-  assert.equal(P.applyCase("title", "john's"), "John's", "an apostrophe doesn't start a word");
-  assert.equal(P.applyCase("title", "john’s"), "John’s");
-  assert.equal(P.applyCase("upper", "Helen Rasho"), "HELEN RASHO");
-  assert.equal(P.applyCase("lower", "Helen Rasho"), "helen rasho");
-  assert.equal(P.applyCase("mixed", "Helen Rasho"), "Helen Rasho", "no transform to make");
+test("titling a SHOUTED value genuinely re-cases it — the reported bug", () => {
+  // A key that stores "ZACHARY CODERRE" must not put a caption in the middle
+  // of a sentence.
+  assert.equal(P.applyCase("title", "ZACHARY CODERRE"), "Zachary Coderre");
+  assert.equal(P.applyCase("title", "JOHN DOE"), "John Doe");
+  assert.equal(P.applyCase("title", "zachary coderre"), "Zachary Coderre");
 });
 
-test("the real name comes back in the case the fake was written in", () => {
+test("titling leaves alone what was written deliberately", () => {
+  // Internal capitals are authored.
+  assert.equal(P.applyCase("title", "McDonald"), "McDonald");
+  assert.equal(P.applyCase("title", "OneWest Bank"), "OneWest Bank");
+  // A capital standing in a value that is otherwise ordinary text was chosen
+  // against that backdrop — there is nothing to guess about.
+  assert.equal(P.applyCase("title", "Cross River Bank, LLC"), "Cross River Bank, LLC");
+  assert.equal(P.applyCase("title", "IBM Credit Corp"), "IBM Credit Corp");
+  // Only inside an all-caps value is the guess made, and there an initial, a
+  // vowel-less short word, and the listed abbreviations keep their capitals.
+  assert.equal(P.applyCase("title", "JOHN A DOE"), "John A Doe");
+  assert.equal(P.applyCase("title", "CROSS RIVER BANK, LLC"), "Cross River Bank, LLC");
+  assert.equal(P.applyCase("title", "SMITH DDS"), "Smith DDS");
+  assert.equal(P.applyCase("title", "IBM"), "IBM");
+});
+
+test("shouting and quieting are the whole string, and an apostrophe isn't a word", () => {
+  assert.equal(P.applyCase("upper", "Zachary Coderre"), "ZACHARY CODERRE");
+  assert.equal(P.applyCase("lower", "ZACHARY CODERRE"), "zachary coderre");
+  assert.equal(P.applyCase("title", "john's"), "John's");
+  assert.equal(P.applyCase("title", "john\u2019s"), "John\u2019s");
+  assert.equal(P.applyCase("mixed", "ZACHARY CODERRE"), "ZACHARY CODERRE", "nothing to derive");
+});
+
+test("the real name appears in the case the fake was written in", () => {
   const c = P.compile(CASE_KEY);
+  assert.equal(P.translate(c, "John Doe filed a motion.").text, "Zachary Coderre filed a motion.");
+  assert.equal(P.translate(c, "JOHN DOE, Plaintiff,").text, "ZACHARY CODERRE, Plaintiff,");
+  assert.equal(P.translate(c, "john doe").text, "zachary coderre");
   assert.equal(P.translate(c, "Ingrid Strangeways moved.").text, "Helen Rasho moved.");
   assert.equal(P.translate(c, "INGRID STRANGEWAYS moved.").text, "HELEN RASHO moved.");
   assert.equal(P.translate(c, "ingrid strangeways moved.").text, "helen rasho moved.");
 });
 
-test("a fake written as the key spells it gets the real EXACTLY as the key stores it", () => {
-  // This is what protects deliberate case: an acronym and a Mc-name come
-  // through untouched, because nothing about the text asked for a change.
+test("a value with case of its own keeps it, in every direction", () => {
   const c = P.compile(CASE_KEY);
   assert.equal(P.translate(c, "Quenby signed.").text, "McDonald signed.");
+  assert.equal(P.translate(c, "QUENBY signed.").text, "MCDONALD signed.");
+  assert.equal(P.translate(c, "quenby signed.").text, "mcdonald signed.");
   assert.equal(P.translate(c, "Onyx filed it.").text, "IBM filed it.");
+  assert.equal(P.translate(c, "ONYX filed it.").text, "IBM filed it.");
   assert.equal(
     P.translate(c, "Zenith Holdings, LLC answered.").text,
     "Cross River Bank, LLC answered."
   );
-});
-
-test("a shouted caption shouts the acronym too, and a quiet line quiets it", () => {
-  const c = P.compile(CASE_KEY);
-  assert.equal(P.translate(c, "ONYX, Defendant.").text, "IBM, Defendant.");
-  assert.equal(P.translate(c, "onyx").text, "ibm");
-  assert.equal(P.translate(c, "QUENBY").text, "MCDONALD");
-  assert.equal(P.translate(c, "quenby").text, "mcdonald");
+  assert.equal(
+    P.translate(c, "ZENITH HOLDINGS, LLC answered.").text,
+    "CROSS RIVER BANK, LLC answered."
+  );
 });
 
 test("the possessive carries the case without being read as part of it", () => {
   const c = P.compile(CASE_KEY);
-  assert.equal(P.translate(c, "Quenby's motion").text, "McDonald's motion");
-  assert.equal(P.translate(c, "QUENBY'S MOTION").text, "MCDONALD'S MOTION");
-  assert.equal(P.translate(c, "quenby's motion").text, "mcdonald's motion");
+  assert.equal(P.translate(c, "John Doe's motion").text, "Zachary Coderre's motion");
+  assert.equal(P.translate(c, "JOHN DOE'S MOTION").text, "ZACHARY CODERRE'S MOTION");
+  assert.equal(P.translate(c, "john doe's motion").text, "zachary coderre's motion");
+  // The 's is cased with the sentence, never titled into its own word.
+  assert.ok(P.translate(c, "John Doe's motion").text.indexOf("'S") === -1);
 });
 
 test("the caption's shout survives a line wrap in the middle of a name", () => {
   const c = P.compile(CASE_KEY);
-  assert.equal(P.translate(c, "INGRID\n  STRANGEWAYS").text, "HELEN RASHO");
+  assert.equal(P.translate(c, "JOHN\n  DOE").text, "ZACHARY CODERRE");
+  assert.equal(P.translate(c, "John\n  Doe").text, "Zachary Coderre");
 });
 
 test("the cleaner runs the same rule in the other direction", () => {
   const f = P.compileForward(CASE_KEY);
-  assert.equal(P.translate(f, "Helen Rasho moved.").text, "Ingrid Strangeways moved.");
-  assert.equal(P.translate(f, "HELEN RASHO moved.").text, "INGRID STRANGEWAYS moved.");
-  assert.equal(P.translate(f, "helen rasho moved.").text, "ingrid strangeways moved.");
+  // Typed the way the key stores it, and the way a sentence would.
+  assert.equal(P.translate(f, "ZACHARY CODERRE moved.").text, "JOHN DOE moved.");
+  assert.equal(P.translate(f, "Zachary Coderre moved.").text, "John Doe moved.");
+  assert.equal(P.translate(f, "zachary coderre moved.").text, "john doe moved.");
   assert.equal(P.translate(f, "McDonald signed.").text, "Quenby signed.");
   assert.equal(P.translate(f, "MCDONALD signed.").text, "QUENBY signed.");
 });
 
 test("the typeahead swap offers the fake in the case the name was typed in", () => {
   const ahead = P.compileTypeahead(CASE_KEY);
-  const lower = P.endingReal(ahead, "signed by helen rasho");
-  assert.equal(P.mirrorCase(lower.matched, lower.fake, lower.real), "ingrid strangeways");
-  const caps = P.endingReal(ahead, "SIGNED BY HELEN RASHO");
-  assert.equal(P.mirrorCase(caps.matched, caps.fake, caps.real), "INGRID STRANGEWAYS");
-  const plain = P.endingReal(ahead, "signed by Helen Rasho");
-  assert.equal(P.mirrorCase(plain.matched, plain.fake, plain.real), "Ingrid Strangeways");
+  const lower = P.endingReal(ahead, "signed by zachary coderre");
+  assert.equal(P.mirrorCase(lower.matched, lower.fake), "john doe");
+  const caps = P.endingReal(ahead, "SIGNED BY ZACHARY CODERRE");
+  assert.equal(P.mirrorCase(caps.matched, caps.fake), "JOHN DOE");
+  const plain = P.endingReal(ahead, "signed by Zachary Coderre");
+  assert.equal(P.mirrorCase(plain.matched, plain.fake), "John Doe");
 });
