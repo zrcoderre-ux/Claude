@@ -213,6 +213,15 @@
       `<input class="cumwf-name" type="text" placeholder="e.g. Demurrer — Smith v. Jones" />` +
       `<p class="cumwf-hint">This matter, this run. A run keeps the name of the workflow it came from ` +
       `either way — this is what tells one matter from another.</p></div>` +
+
+      // The matter's DATE — optional, typed as mm/dd/yy or picked from the
+      // calendar. It becomes the end of the run's name automatically
+      // (composeRunName), so the name box holds the matter alone.
+      `<div class="cumwf-date-row"><label class="cumwf-label">Run date (optional)</label>` +
+      `<div class="cumwf-row"><input class="cumwf-date" type="text" placeholder="mm/dd/yy" style="width:120px" />` +
+      `<button class="cumwf-btn ghost cumwf-date-pick" type="button" title="Pick from a calendar">📅</button>` +
+      `<input class="cumwf-date-native" type="date" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" tabindex="-1" />` +
+      `<p class="cumwf-hint">Added to the end of the run's name automatically — and the runs list can sort by it.</p></div></div>` +
       `<div class="cumwf-desc-row"><label class="cumwf-label">What it does (optional)</label>` +
       `<input class="cumwf-desc" type="text" placeholder="One line, for the list" /></div>` +
 
@@ -322,6 +331,10 @@
     const q = (c) => el.querySelector(c);
     const ui = {
       name: q(".cumwf-name"),
+      date: q(".cumwf-date"),
+      dateRow: q(".cumwf-date-row"),
+      datePick: q(".cumwf-date-pick"),
+      dateNative: q(".cumwf-date-native"),
       template: q(".cumwf-template"),
       tmplRow: q(".cumwf-tmpl-row"),
       nameRow: q(".cumwf-name-row"),
@@ -569,8 +582,50 @@
       pasteAsDocument(text);
     });
 
+    // A spreadsheet never becomes a run document — the model drops one at
+    // every shaping path and the runner refuses to read one (W.docBarred /
+    // allowedDocs), so admitting it here would only show a row that silently
+    // never uploads. The pseudonym KEY gets a better answer than a refusal:
+    // it is parsed and attached AS the run's key, which is where it was
+    // headed — attached, never uploaded.
+    async function divertSpreadsheet(f) {
+      const P = window.CUMPseudo;
+      const X = window.CUMXlsx;
+      if (P && X && /\.xlsx$/i.test(f.name || "")) {
+        try {
+          const wb = X.parseXlsx ? await X.parseXlsx(await f.arrayBuffer()) : null;
+          if (wb && (P.isKeyFileName(f.name) || P.sheetsLookLikeKey(wb.sheets))) {
+            const key = P.parseKey(wb.sheets, f.name);
+            if (key.rows) {
+              const id = P.fold(f.name);
+              key.savedAt = Date.now();
+              await new Promise((res) =>
+                chrome.storage.local.get("cum_pseudo_keys", (r) => {
+                  const keys = (r && r.cum_pseudo_keys) || {};
+                  keys[id] = key;
+                  chrome.storage.local.set({ cum_pseudo_keys: keys }, res);
+                })
+              );
+              wf.pseudoKeyId = id;
+              loadPseudoKeys();
+              flash(f.name + " is the pseudonym key — attached to this run instead of uploaded.");
+              return;
+            }
+          }
+        } catch (e) {
+          /* unreadable: fall through to the refusal, which still names the file */
+        }
+      }
+      flash("Spreadsheets never ride a run's uploads — " + f.name + " was not added.", true);
+    }
+
     function addFiles(list) {
+      const incoming = [];
       for (const f of list || []) {
+        if (W.docBarred && W.docBarred(f.name)) divertSpreadsheet(f);
+        else incoming.push(f);
+      }
+      for (const f of incoming) {
         const id = uuid();
         pendingFiles.set(id, f);
         // A new document goes to EVERY chat. A chat that has the papers can
@@ -656,6 +711,24 @@
       addFiles(Array.from(ui.fileInput.files || []));
       ui.fileInput.value = "";
     });
+
+    // The date's two doors agree: the calendar seeds from what the box says,
+    // and a pick writes back in the box's own mm/dd/yy spelling.
+    if (ui.datePick && ui.dateNative) {
+      ui.datePick.addEventListener("click", () => {
+        const iso = W.parseRunDate(ui.date.value);
+        if (iso) ui.dateNative.value = iso;
+        try {
+          ui.dateNative.showPicker();
+        } catch (e) {
+          ui.dateNative.click();
+        }
+      });
+      ui.dateNative.addEventListener("change", () => {
+        const iso = W.isoRunDate(ui.dateNative.value);
+        if (iso) ui.date.value = W.runDateLabel(iso);
+      });
+    }
     ui.drop.addEventListener("dragover", (e) => {
       e.preventDefault();
       ui.drop.classList.add("drag");
@@ -1248,8 +1321,9 @@
       // matter's exhibits to the next one.
       if (ui.nameRow) ui.nameRow.hidden = !editingRun;
       if (ui.docsRow) ui.docsRow.hidden = !editingRun;
-      // The key is the matter's, exactly as the papers are.
+      // The key and the date are the matter's, exactly as the papers are.
       if (ui.pseudoRow) ui.pseudoRow.hidden = !editingRun;
+      if (ui.dateRow) ui.dateRow.hidden = !editingRun;
     }
 
     // The popup's stored key library — read fresh each open, so a key loaded a
@@ -1288,8 +1362,15 @@
       ui.template.value = wf.templateName || wf.name || "";
       // Only show a run name when one has actually been set — a template at
       // rest carries its own name in both fields, and echoing it here would
-      // read as "this run is called the same as the template".
-      ui.name.value = wf.name && wf.name !== ui.template.value ? wf.name : "";
+      // read as "this run is called the same as the template". The name box
+      // shows the MATTER alone: the date label lives in its own box, and
+      // echoing it here would double it on save.
+      ui.name.value =
+        wf.name && wf.name !== ui.template.value ? W.runBaseName(wf.name) : "";
+      if (ui.date) {
+        ui.date.value = wf.runDate ? W.runDateLabel(wf.runDate) : "";
+        if (ui.dateNative) ui.dateNative.value = wf.runDate || "";
+      }
       ui.desc.value = wf.description || "";
       applyMode();
       ui.bundle.checked = !!wf.bundleText;
@@ -1406,6 +1487,15 @@
         reuseDocs: ui.rrDocs.checked,
       };
       if (ui.pseudo) wf.pseudoKeyId = ui.pseudo.value || null;
+      // The date box: empty is no date; anything else must BE a date, or the
+      // save says so out loud rather than quietly leaving it off the name.
+      if (ui.date && !ui.dateRow.hidden) {
+        const dateText = ui.date.value.trim();
+        const runDateIso = dateText ? W.parseRunDate(dateText) : null;
+        if (dateText && !runDateIso)
+          return flash("Run date should be mm/dd/yy (e.g. 8/12/26).", true);
+        wf.runDate = runDateIso;
+      }
       const candidate = W.newWorkflow(wf, wf.id, Date.now());
       const problems = W.validate(candidate);
       // An unassigned document is a warning, not a blocker — it just doesn't get
@@ -1507,6 +1597,7 @@
               rerun: run.rerun,
               ignoreOutage: run.ignoreOutage,
               pseudoKeyId: run.pseudoKeyId,
+              runDate: run.runDate,
             },
             run.id,
             Date.now()

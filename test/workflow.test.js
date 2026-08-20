@@ -3363,3 +3363,167 @@ test("a run carries its pseudonym key: start, edit, re-run, and reset", () => {
   // Back to a blank template: the key was this matter's, like the papers.
   assert.equal(W.resetToTemplate(wf, NOW + 3).pseudoKeyId, null);
 });
+
+// ---- run dates -------------------------------------------------------------
+
+test("parseRunDate: mm/dd/yy by hand, ISO from the calendar, garbage is null", () => {
+  assert.equal(W.parseRunDate("8/12/26"), "2026-08-12");
+  assert.equal(W.parseRunDate("08/12/26"), "2026-08-12");
+  assert.equal(W.parseRunDate("12-31-2026"), "2026-12-31");
+  assert.equal(W.parseRunDate("8.12.26"), "2026-08-12");
+  assert.equal(W.parseRunDate("2026-08-12"), "2026-08-12");
+  assert.equal(W.parseRunDate("2/30/26"), null); // the right shape, not a day
+  assert.equal(W.parseRunDate("hearing soon"), null);
+  assert.equal(W.parseRunDate(""), null);
+  assert.equal(W.runDateLabel("2026-08-12"), "8/12/26");
+});
+
+test("composeRunName puts the date at the end, once, and strips it cleanly", () => {
+  assert.equal(W.composeRunName("MSJ Rasho", "2026-08-12"), "MSJ Rasho 8/12/26");
+  // Re-saving does not stack a second label; changing the date replaces it.
+  assert.equal(W.composeRunName("MSJ Rasho 8/12/26", "2026-08-12"), "MSJ Rasho 8/12/26");
+  assert.equal(W.composeRunName("MSJ Rasho 8/12/26", "2026-09-02"), "MSJ Rasho 9/2/26");
+  // Clearing the date really removes it.
+  assert.equal(W.composeRunName("MSJ Rasho 8/12/26", null), "MSJ Rasho");
+  // A re-run's "(Run 2)" stays LAST — matter, date, run number.
+  assert.equal(W.composeRunName("MSJ Rasho 8/12/26 (Run 2)", "2026-08-12"), "MSJ Rasho 8/12/26 (Run 2)");
+  // No name at all: the date IS the name.
+  assert.equal(W.composeRunName("", "2026-08-12"), "8/12/26");
+  assert.equal(W.runBaseName("MSJ Rasho 8/12/26 (Run 2)"), "MSJ Rasho");
+});
+
+test("a run's date rides start, edit, re-run, and reset, and names itself", () => {
+  const wf = W.newWorkflow(
+    {
+      name: "MSJ Rasho",
+      templateName: "Tentative",
+      runDate: "8/12/26", // as typed — normalized on the way in
+      chats: [{ id: "a", name: "A" }],
+      steps: [{ id: "s1", chatId: "a", prompt: "draft" }],
+    },
+    "w1",
+    NOW
+  );
+  assert.equal(wf.runDate, "2026-08-12");
+  const run = W.newRun(wf, "r1", NOW, { type: "now" }, wf.docs);
+  assert.equal(run.name, "MSJ Rasho 8/12/26");
+  assert.equal(run.runDate, "2026-08-12");
+
+  // Editing the name alone keeps the date on the end; editing the date
+  // rewrites the label; clearing it removes it.
+  assert.equal(W.applyRunEdit(run, { name: "MSJ Rasho amended" }, NOW).name, "MSJ Rasho amended 8/12/26");
+  const moved = W.applyRunEdit(run, { runDate: "9/2/26" }, NOW);
+  assert.equal(moved.name, "MSJ Rasho 9/2/26");
+  assert.equal(moved.runDate, "2026-09-02");
+  const cleared = W.applyRunEdit(run, { runDate: null }, NOW);
+  assert.equal(cleared.name, "MSJ Rasho");
+  assert.equal(cleared.runDate, null);
+
+  const again = W.rerunOf(run, { stepIndex: 0, freshChats: false }, "r2", NOW + 1);
+  assert.equal(again.runDate, "2026-08-12");
+  assert.equal(again.name, "MSJ Rasho 8/12/26 (Run 2)");
+
+  assert.equal(W.resetToTemplate(wf, NOW + 2).runDate, null);
+});
+
+// ---- related-run groups ----------------------------------------------------
+
+test("assignGroup moves runs rather than forking them; small groups dissolve", () => {
+  let groups = W.assignGroup([], ["r1", "r2", "r3"], "g1");
+  assert.equal(W.groupOf(groups, "r2"), "g1");
+  // Re-grouping r2+r4 pulls r2 out of g1, which keeps r1+r3.
+  groups = W.assignGroup(groups, ["r2", "r4"], "g2");
+  assert.equal(W.groupOf(groups, "r2"), "g2");
+  assert.equal(W.groupOf(groups, "r1"), "g1");
+  // Pulling r3 out leaves g1 with one member — not a group any more.
+  groups = W.ungroupRuns(groups, ["r3"]);
+  assert.equal(W.groupOf(groups, "r1"), null);
+  assert.equal(W.groupOf(groups, "r2"), "g2");
+  // Fewer than two checked runs makes no group.
+  assert.deepEqual(W.assignGroup([], ["r9"], "gx"), []);
+});
+
+test("pruneGroups drops deleted runs and says whether anything moved", () => {
+  const groups = [{ id: "g1", runIds: ["r1", "r2", "r3"] }];
+  const runs = [{ id: "r1" }, { id: "r2" }];
+  const pruned = W.pruneGroups(groups, runs);
+  assert.deepEqual(pruned.groups, [{ id: "g1", runIds: ["r1", "r2"] }]);
+  assert.equal(pruned.changed, true);
+  assert.equal(W.pruneGroups(pruned.groups, runs).changed, false);
+});
+
+test("a grouped run inherits a group-mate's pseudonym key, earliest mate first", () => {
+  const runs = [
+    { id: "r1", createdAt: 3, pseudoKeyId: "late.xlsx" },
+    { id: "r2", createdAt: 1, pseudoKeyId: "early.xlsx" },
+    { id: "r3", createdAt: 2 },
+    { id: "r4", createdAt: 4 },
+  ];
+  const groups = [{ id: "g1", runIds: ["r1", "r2", "r3"] }];
+  // Its own key always wins.
+  assert.equal(W.runPseudoKey(runs[0], runs, groups), "late.xlsx");
+  // No key of its own: the earliest-created mate that names one.
+  assert.equal(W.runPseudoKey(runs[2], runs, groups), "early.xlsx");
+  // Not in any group: nothing to inherit.
+  assert.equal(W.runPseudoKey(runs[3], runs, groups), null);
+});
+
+// ---- the runs list's three orders -------------------------------------------
+
+function bareRun(id, createdAt, extra) {
+  return Object.assign({ id: id, createdAt: createdAt, status: "done" }, extra || {});
+}
+
+test("sortRuns: created is drafts-first then newest-first", () => {
+  const runs = [
+    bareRun("old", 1),
+    bareRun("new", 3),
+    bareRun("draft", 2, { status: "draft" }),
+  ];
+  assert.deepEqual(W.sortRuns(runs, "created", []).map((r) => r.id), ["draft", "new", "old"]);
+});
+
+test("sortRuns: date puts dated runs first, soonest first; the rest keep creation order", () => {
+  const runs = [
+    bareRun("undated-new", 5),
+    bareRun("sep", 1, { runDate: "2026-09-02" }),
+    bareRun("undated-old", 2),
+    bareRun("aug", 3, { runDate: "2026-08-12" }),
+  ];
+  assert.deepEqual(W.sortRuns(runs, "date", []).map((r) => r.id), [
+    "aug",
+    "sep",
+    "undated-new",
+    "undated-old",
+  ]);
+});
+
+test("sortRuns: group pulls members together where the group first appears", () => {
+  const runs = [bareRun("a", 5), bareRun("b", 4), bareRun("c", 3), bareRun("d", 2)];
+  const groups = [{ id: "g1", runIds: ["a", "d"] }];
+  // Default order is a,b,c,d; the group's first member is a, so d joins it.
+  assert.deepEqual(W.sortRuns(runs, "group", groups).map((r) => r.id), ["a", "d", "b", "c"]);
+});
+
+// ---- a spreadsheet never rides a run's uploads --------------------------------
+
+test("xlsx documents are dropped at every shaping path and at the runner's read", () => {
+  const docs = [
+    { id: "d1", name: "motion.pdf", chats: ["a"] },
+    { id: "d2", name: "pseudonym_key.xlsx", chats: ["a"] },
+    { id: "d3", name: "damages.XLSX", chats: ["a"] },
+  ];
+  const wf = W.newWorkflow(
+    { name: "x", docs: docs, chats: [{ id: "a" }], steps: [{ chatId: "a", prompt: "p" }] },
+    "w",
+    NOW
+  );
+  assert.deepEqual(wf.docs.map((d) => d.name), ["motion.pdf"]);
+  const run = W.newRun(wf, "r", NOW, { type: "now" }, docs);
+  assert.deepEqual(run.docs.map((d) => d.name), ["motion.pdf"]);
+  const edited = W.applyRunEdit(run, { docs: docs }, NOW);
+  assert.deepEqual(edited.docs.map((d) => d.name), ["motion.pdf"]);
+  // A run stored BEFORE the bar existed still cannot upload one.
+  assert.deepEqual(W.allDocs({ docs: docs }).map((d) => d.name), ["motion.pdf"]);
+  assert.ok(W.docBarred("Key (1).xlsx") && W.docBarred("book.xlsm") && !W.docBarred("brief.docx"));
+});
