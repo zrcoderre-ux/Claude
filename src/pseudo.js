@@ -74,6 +74,13 @@
 
   const ALT_STATUS = "alt spelling"; // forward-only: fake belongs to the canonical row
 
+  // A POSSESSIVE is the party's own name, not a second party — PDF-Linker's
+  // own rule (its registry draws on the affix-stripped core). Both marks,
+  // because the spreadsheet exports the straight one and Word writes the
+  // typographic one.
+  const POSS_TAIL_RE = /['’]s$/i;
+  const POSS_MATCH_RE = /['’][sS]$/;
+
   /**
    * Key workbook → the map. `sheets` is what CUMXlsx.parseXlsx returns; every
    * sheet carrying the header fingerprint is read, which takes the pinned
@@ -116,6 +123,24 @@
         });
       }
     }
+
+    // A row bound in the POSSESSIVE binds the bare name too: "Zachary's ->
+    // John's" means Zachary IS John, so a derived base row is added unless
+    // the key already carries one. (The other direction — a bare row meeting
+    // a possessive in text — needs no extra row: the matchers accept an
+    // optional trailing 's and carry it across, so "Zachary -> John" already
+    // turns "Zachary's" into "John's".)
+    const haveReal = new Set(entries.map((e) => fold(e.real)));
+    const derived = [];
+    for (const e of entries) {
+      if (!POSS_TAIL_RE.test(e.real)) continue;
+      const baseReal = e.real.replace(POSS_TAIL_RE, "");
+      const baseFake = e.fake.replace(POSS_TAIL_RE, "");
+      if (!baseReal || !baseFake || haveReal.has(fold(baseReal))) continue;
+      haveReal.add(fold(baseReal));
+      derived.push({ real: baseReal, fake: baseFake, alt: e.alt, occ: 0 });
+    }
+    for (const d of derived) entries.push(d);
 
     // Reversal: exactly one row may own each fake. Alt-spelling rows never
     // own; two CANONICAL rows claiming one fake is ambiguous and the mapping
@@ -251,7 +276,14 @@
       .slice()
       .sort((a, b) => b.length - a.length);
     if (!sorted.length) return null;
-    const alts = sorted.map((v) => escapeRe(v).replace(/ /g, "\\s+")).join("|");
+    // A value not already possessive also matches its own possessive —
+    // "John" matches "John's" — and the lookup carries the suffix across.
+    const alts = sorted
+      .map(
+        (v) =>
+          escapeRe(v).replace(/ /g, "\\s+") + (POSS_TAIL_RE.test(v) ? "" : "(?:['’][sS])?")
+      )
+      .join("|");
     return new RegExp("(?<![A-Za-z0-9_])(?:" + alts + ")(?![A-Za-z0-9_])", "gi");
   }
 
@@ -281,10 +313,19 @@
     if (!compiled || !compiled.rx || !text) return { text: text, count: 0 };
     let count = 0;
     const out = text.replace(compiled.rx, (m) => {
-      const real = compiled.map.get(fold(m));
-      if (real == null) return m;
+      let mapped = compiled.map.get(fold(m));
+      let suffix = "";
+      if (mapped == null) {
+        // A possessive of a bare value: swap the name, keep the 's as typed.
+        const mp = m.match(POSS_MATCH_RE);
+        if (mp) {
+          mapped = compiled.map.get(fold(m.slice(0, -mp[0].length)));
+          if (mapped != null) suffix = mp[0];
+        }
+      }
+      if (mapped == null) return m;
       count++;
-      return isAllCaps(m) ? real.toUpperCase() : real;
+      return isAllCaps(m) ? (mapped + suffix).toUpperCase() : mapped + suffix;
     });
     return { text: out, count: count };
   }
@@ -352,7 +393,11 @@
     compiledReals.rx.lastIndex = 0;
     let m;
     while ((m = compiledReals.rx.exec(text))) {
-      const w = compiledReals.map.get(fold(m[0]));
+      let w = compiledReals.map.get(fold(m[0]));
+      if (!w) {
+        const mp = m[0].match(POSS_MATCH_RE);
+        if (mp) w = compiledReals.map.get(fold(m[0].slice(0, -mp[0].length)));
+      }
       if (w && !seen.has(fold(w.real))) {
         seen.add(fold(w.real));
         out.push(w);
@@ -377,7 +422,10 @@
         real: w.real,
         fake: w.fake,
         rx: new RegExp(
-          "(?<![A-Za-z0-9_])" + escapeRe(w.real).replace(/ /g, "\\s+") + "$",
+          "(?<![A-Za-z0-9_])" +
+            escapeRe(w.real).replace(/ /g, "\\s+") +
+            (POSS_TAIL_RE.test(w.real) ? "" : "(?:['’][sS])?") +
+            "$",
           "i"
         ),
       }));
@@ -396,7 +444,14 @@
     for (const e of ahead || []) {
       const tail = t.slice(-(e.real.length * 2 + 8));
       const m = e.rx.exec(tail);
-      if (m) return { real: e.real, fake: e.fake, matched: m[0] };
+      if (m) {
+        // "Zachary's" typed against a bare "Zachary" row offers "John's" —
+        // the possessive rides the swap rather than being lost by it.
+        let fake = e.fake;
+        const mp = m[0].match(POSS_MATCH_RE);
+        if (mp && !POSS_TAIL_RE.test(e.real)) fake = e.fake + mp[0];
+        return { real: e.real, fake: fake, matched: m[0] };
+      }
     }
     return null;
   }
