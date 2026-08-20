@@ -494,6 +494,7 @@
     background: rgba(255, 255, 255, 0.08);
   }
   #cum-ctx-pill,
+  #cum-usage-pill,
   #cum-status-pill {
     background: #2a2a28;
     border-color: rgba(255, 255, 255, 0.22);
@@ -502,6 +503,10 @@
   }
   #cum-ctx-pill .cum-ctx-cap {
     color: #a5a29a;
+  }
+  #cum-usage-pill.cum-usage-danger,
+  #cum-p-today.cum-over-share {
+    color: #ff9d90;
   }
   /* The light-mode outage text darkens for contrast on white; on dark it has to
      lighten instead, or the warning is the least readable thing on screen. */
@@ -554,8 +559,9 @@
   flex-direction: column-reverse;
 }
 
-/* Both pills share one shape. */
+/* All three pills share one shape. */
 #cum-ctx-pill,
+#cum-usage-pill,
 #cum-status-pill {
   white-space: nowrap;
   display: flex;
@@ -599,6 +605,52 @@
 }
 #cum-ctx-pill.cum-ctx-danger .cum-ctx-dot {
   background: #d23f31;
+}
+
+/* Usage-pace warning pill — a day past its share of the weekly limit, or the
+   week past 50/75/90%. Amber for a warning, red once the week is 90% gone. Like
+   the context pill it's an indicator only: it never takes a click, and it goes
+   away again unless the week is far enough along to be worth standing there. */
+#cum-usage-pill {
+  font-weight: 600;
+  max-width: 260px;
+}
+#cum-usage-pill b {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#cum-usage-pill .cum-usage-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d99b1f;
+  flex: 0 0 auto;
+}
+#cum-usage-pill.cum-usage-warn {
+  border-color: #d99b1f;
+}
+#cum-usage-pill.cum-usage-warn .cum-usage-dot {
+  background: #d99b1f;
+}
+#cum-usage-pill.cum-usage-danger {
+  border-color: #d23f31;
+  color: #a8291d;
+}
+#cum-usage-pill.cum-usage-danger .cum-usage-dot {
+  background: #d23f31;
+}
+#cum-usage-pill.cum-usage-alarm {
+  animation: cum-ctx-alarm-kf 1.6s ease;
+}
+#cum-usage-pill.cum-usage-alarm.cum-usage-danger {
+  animation-name: cum-ctx-alarm-danger-kf;
+}
+
+/* The panel's "today / share" figure goes amber once the day is over its
+   share — the same fact the pill flashes, in the place you go to check it. */
+#cum-p-today.cum-over-share {
+  color: #a8291d;
 }
 
 /* Service-status warning pill. Unlike the context pill this one is a link, so it
@@ -1595,14 +1647,20 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 
 /* ---- Pseudonym translation (src/pseudo-view.js) -------------------------- */
 
-/* Display-only badge: a key is attached and fakes are being shown as reals. */
+/* Display-only badge: a key is attached and fakes are being shown as reals.
+   Draggable, like the usage meter's pill — same reason, same cursor: it's a
+   fixed thing sitting over someone else's page, and sooner or later it's over
+   the part of it you wanted. `touch-action: none` so a pointer drag on a
+   touchscreen moves the badge instead of scrolling the page under it. */
 .cum-pseudo-badge {
   position: fixed; left: 14px; bottom: 14px; z-index: 2147483000;
   background: #2a2a28; color: #f0efea; border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px; padding: 5px 11px; font: 12px/1.35 system-ui, sans-serif;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); pointer-events: auto; cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); pointer-events: auto; cursor: grab;
   max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  user-select: none; touch-action: none;
 }
+.cum-pseudo-badge:active { cursor: grabbing; }
 
 /* A real value is standing in the draft message. */
 .cum-pseudo-warn {

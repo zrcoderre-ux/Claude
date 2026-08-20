@@ -47,6 +47,14 @@ bottom-right corner of [claude.ai](https://claude.ai).
   outage** instead of firing into it — unless the outage is confined to models
   it isn't using, or you tell it to press on. See
   [Outage detection](#outage-detection).
+- **Usage-pace warnings** — a warning pill (and a desktop notification) each time
+  a day crosses **its share of the weekly limit**, and once each as the week
+  passes **50%, 75% and 90%**. On by default, with its own switch and an
+  adjustable daily share in the popup. See
+  [Usage-pace warnings](#usage-pace-warnings).
+- **Where your usage goes** (Options) — a pie of your weekly usage across
+  **Chat**, **Cowork** and **Claude Code**. See
+  [Where your usage goes](#where-your-usage-goes-chat-cowork-code).
 - **Usage log + CSV** (Options) — records when you hit 100% and the usage % at
   each 5-hour reset; export to a spreadsheet.
 - **Scheduled sends** — queue files (pick individually or **a whole folder**) +
@@ -1774,7 +1782,10 @@ at a glance.
    swapped for its real value — longest first, whole words only,
    case-insensitively, an ALL-CAPS occurrence mirrored (`INGRID STRANGEWAYS`
    → `HELEN RASHO`). A badge (bottom-left) names the key and counts the swaps,
-   so what you see is never silently different from what Claude sees.
+   so what you see is never silently different from what Claude sees. **Drag it
+   anywhere** — like the usage pill, where you put it is where it stays, in
+   every tab and across reloads, and the cleaner below opens off it wherever it
+   has been put.
    **Display-only, and the boundary is structural**: the swap edits what this
    tab *renders*; everything that leaves the page — sends, workflow hand-offs,
    Save chat, Copy ruling — reads claude.ai's own state or API, which still
@@ -2002,6 +2013,89 @@ failing even that they float at the bottom left. Never loose at the top right:
 that's where Share lives, and a Save button covering Share is worse than no Save
 button at all.
 
+## Where your usage goes: Chat, Cowork, Code
+
+**Options → Chat vs Cowork vs Claude Code** is a pie of which surface your weekly
+usage was spent on. Three buckets, because Cowork is a surface of its own and not
+a flavour of chat — a Cowork session costs what it costs, and folding it into
+Home hid that.
+
+**Live readings are attributed to the surface you're on**, which the tab can read
+directly. Code is the one an address settles (`/code`). Cowork mostly isn't:
+a session lands on `/cowork/cse_<id>`, but the composer home stays `/new`
+whichever surface it's set to, and the setting is sticky across tabs — so the URL
+answers where it can, and where it can't the page's own **Chat/Cowork toggle**
+does (one of the few pieces confirmed to work on both surfaces). A `/chat/`
+conversation is Chat whatever the account-wide toggle was last left on.
+
+**A gap is where the evidence runs out.** When usage rises with no tab watching
+— your phone, another browser, a tab that was closed — the extension asks
+`chat_conversations_v2` which Home chats were touched during the gap, and how
+much content they grew by, and gives the chats their measured share. Neither a
+Cowork session nor a Code session appears in that listing (a Cowork session lives
+under `/conversations`), so **what's left over is Cowork-or-Code with nothing to
+tell them apart**.
+
+That remainder is divided in the proportion those two have been seen **live** —
+readings where the surface was read off the page rather than inferred. Two
+properties matter about that rule:
+
+- It **never invents Cowork out of nothing**. An account that has never had a
+  Cowork reading gets the whole remainder as Code, which is exactly what this did
+  before Cowork was a bucket.
+- The evidence counters are fed **only by live readings**, never by a gap's own
+  attribution, so the division can't drift off feeding on its own guesses.
+
+## Usage-pace warnings
+
+The meter tells you where you are; this tells you when where you are is a
+problem. Two warnings, both **on by default** and both switched off together by
+**Warn me when I'm outpacing my usage** in the popup:
+
+- **A day past its share of the weekly limit.** The weekly limit is a week's
+  worth of usage, so spent evenly it's **an even seventh a day — 14.3%** of the
+  weekly meter. The first time a day's own consumption crosses that, you're
+  told. If it's a heavy day you're told again at each further whole multiple
+  (2×, 3×, …), because a day that spends triple its share is worth hearing about
+  more than once; a single day can warn at most **10 times**, which is the guard
+  against a hand-set share small enough to fire on every reading.
+- **The week at 50%, 75% and 90%.** Once each per weekly window. Crossing two at
+  once — a big reading after a gap — says the higher one and spends both, rather
+  than stacking notifications.
+
+**A day's usage is the per-day figure the Options page already charts**: the rise
+in the weekly meter since the last reading, attributed to the calendar day it
+happened on (`src/daily.js`). So both halves of this are in one unit throughout —
+percentage points **of the weekly limit** — and the panel prints today's against
+the share (`today / share · 16.2% / 14.3%`) so a warning always has a number on
+screen to check it against.
+
+**The share is adjustable.** An even seventh is the default, not a claim about
+how you work; if your week is really five days, set the share to 20% in the
+popup and the warnings move with it. A value outside 0–100 is refused rather than
+stored, and anything under 1% is treated as 1% for the multiples.
+
+**The pill behaves like the context alarm, not like the outage warning.** At 75%
+of the week and above it stays up, because that's the stretch where every message
+costs you something. Below that — a 50% crossing, or a day past its share — it
+appears for twenty seconds, flashes, and gets out of the way. It's an indicator
+only: it never takes a click, and it rides in the same stack as the outage and
+context pills, between them, so an outage warning never moves out from under your
+cursor when this one appears.
+
+**One warning, not one per tab.** The decision is made in the background worker,
+not in the page: every open claude.ai tab reports its reading, and the worker —
+which owns the fired-state (`cum_warn`) — answers only the first one across a
+threshold. Three tabs crossing 90% together produce one notification. A tab that
+opens onto an already-crossed threshold is told nothing: the warning was given
+when it happened.
+
+**Re-arming.** The weekly marks re-arm when the weekly window rolls — either
+because the reset time changed, or because the meter itself has fallen well below
+a mark it had crossed, which is a window that rolled without our having read its
+new reset yet. The daily one re-arms on the date, which is what "every time I
+cross my daily share" means: at minimum once a day, however the week is going.
+
 ## Outage detection
 
 The background worker polls
@@ -2203,6 +2297,9 @@ manifest.json          MV3 manifest
 src/harvest.js         Pure usage-parsing logic (shared by ext + tests)
 src/estimate.js        Pure tenths-place calibrator (shared by ext + tests)
 src/status.js          Pure status.claude.com model + the scheduled-send gate
+src/usagewarn.js       Daily-share + weekly-milestone warnings (pure)
+src/split.js           Chat vs Cowork vs Code attribution, incl. gaps (pure)
+src/daily.js           Per-day attribution of weekly-limit usage (pure)
 src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/cowork.js          Chat/Cowork surface + approval modes (pure)
@@ -2240,6 +2337,8 @@ src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
 test/estimate.test.js  Unit tests for the tenths-place calibrator
 test/status.test.js    Unit tests for the status model + hold decisions
+test/usagewarn.test.js Unit tests for the pace warnings + their re-arming
+test/split.test.js     Unit tests for surface attribution and gap splitting
 test/workflow.test.js  Unit tests for the workflow model + run transitions
 test/toc.test.js       Unit tests for the table-of-contents labelling
 test/stamp.test.js     Unit tests for turn times and the gaps between them

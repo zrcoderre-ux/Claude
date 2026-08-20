@@ -40,6 +40,7 @@
 
   const KEYS_KEY = "cum_pseudo_keys"; // id -> parsed key (see popup.js)
   const CHATS_KEY = "cum_pseudo_chats"; // conversation key -> key id
+  const POS_KEY = "cum_pseudo_pos"; // where the user dragged the badge { left, top }
 
   const MSG_SEL =
     '[data-testid="user-message"],[data-testid="assistant-message"],' +
@@ -151,15 +152,27 @@
   }
 
   async function loadState() {
-    const res = await storageGet([KEYS_KEY, CHATS_KEY]);
+    const res = await storageGet([KEYS_KEY, CHATS_KEY, POS_KEY]);
     keys = res[KEYS_KEY] || {};
     chatMap = res[CHATS_KEY] || {};
+    const p = res[POS_KEY];
+    if (p && typeof p.left === "number" && typeof p.top === "number") badgePos = p;
     await resolveActive(true);
   }
 
   try {
     chrome.storage.onChanged.addListener((ch, area) => {
       if (area !== "local") return;
+      if (ch[POS_KEY]) {
+        // Dragged in another tab: the badge is one control in as many tabs as
+        // are open, and having to move it in each of them would be worse than
+        // it moving under you here.
+        const np = ch[POS_KEY].newValue;
+        if (np && typeof np.left === "number" && typeof np.top === "number") {
+          badgePos = np;
+          placeBadge(false);
+        }
+      }
       if (ch[KEYS_KEY] || ch[CHATS_KEY]) loadState();
       else if (
         ch.cum_run_groups ||
@@ -266,6 +279,114 @@
 
   let badge = null;
   let warnBox = null;
+  let badgePos = null; // { left, top } once dragged; null = its default corner
+  let badgeDragged = false; // set through a drag so the click that ends it isn't a tap
+
+  // ---- dragging the badge ---------------------------------------------------
+  // The same contract as the usage meter's own pill, because it's the same kind
+  // of object: a small fixed thing sitting over someone else's page, which is
+  // going to be over the wrong part of it sooner or later. Position is clamped
+  // to the viewport, remembered across tabs and reloads, and a drag never counts
+  // as the click that opens the cleaner.
+
+  function clampBadge(left, top) {
+    const r = badge.getBoundingClientRect();
+    return {
+      left: Math.min(Math.max(0, left), Math.max(0, window.innerWidth - r.width)),
+      top: Math.min(Math.max(0, top), Math.max(0, window.innerHeight - r.height)),
+    };
+  }
+
+  // Switch the badge from its default left/bottom corner to explicit left/top.
+  // Called on every render and on resize, so a window narrowed since the drag
+  // brings the badge back on screen instead of stranding it past the edge.
+  function placeBadge(persist) {
+    if (!badge || !badgePos) return;
+    const c = clampBadge(badgePos.left, badgePos.top);
+    badge.style.left = c.left + "px";
+    badge.style.top = c.top + "px";
+    badge.style.right = "auto";
+    badge.style.bottom = "auto";
+    badgePos = c;
+    placeCleaner();
+    if (persist) {
+      try {
+        chrome.storage?.local.set({ [POS_KEY]: c });
+      } catch (e) {
+        /* a position we couldn't store is still the position on screen */
+      }
+    }
+  }
+
+  // The cleaner opens off the badge, so it goes wherever the badge went — above
+  // it where there's room for it, below it where there isn't.
+  function placeCleaner() {
+    if (!cleaner || !badge) return;
+    if (!badgePos) {
+      cleaner.style.left = "";
+      cleaner.style.top = "";
+      cleaner.style.bottom = "";
+      return;
+    }
+    const b = badge.getBoundingClientRect();
+    const h = cleaner.offsetHeight || 260;
+    const w = cleaner.offsetWidth || 420;
+    const above = b.top - 8 - h;
+    const top = above >= 8 ? above : Math.min(b.bottom + 8, Math.max(8, window.innerHeight - h - 8));
+    cleaner.style.left = Math.max(8, Math.min(b.left, window.innerWidth - w - 8)) + "px";
+    cleaner.style.top = top + "px";
+    cleaner.style.bottom = "auto";
+  }
+
+  function setupBadgeDrag(el) {
+    let startX = 0, startY = 0, originLeft = 0, originTop = 0, moved = false, dragging = false;
+
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      const r = el.getBoundingClientRect();
+      originLeft = r.left;
+      originTop = r.top;
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch (err) {
+        /* ignore */
+      }
+    });
+
+    el.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < 4) return; // ignore tiny jitters
+      moved = true;
+      badgePos = { left: originLeft + dx, top: originTop + dy };
+      placeBadge(false);
+    });
+
+    function end(e) {
+      if (!dragging) return;
+      dragging = false;
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch (err) {
+        /* ignore */
+      }
+      if (moved) {
+        badgeDragged = true; // the click that follows this drag is not a tap
+        placeBadge(true);
+      }
+    }
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
+
+  window.addEventListener("resize", () => {
+    placeBadge(false);
+  });
 
   function render() {
     if (!active) {
@@ -288,9 +409,18 @@
         "Display only: this tab swaps the pseudonyms back to the real names for YOU. " +
         "Claude still holds — and only ever sees — the fakes. Sends, copies and " +
         "exports read claude.ai's own data, not this view. " +
-        "Click to open the cleaner: type text with real names, copy out the fakes.";
-      badge.addEventListener("click", toggleCleaner);
+        "Click to open the cleaner: type text with real names, copy out the fakes. " +
+        "Drag it anywhere — where you put it is where it stays.";
+      badge.addEventListener("click", () => {
+        if (badgeDragged) {
+          badgeDragged = false;
+          return;
+        }
+        toggleCleaner();
+      });
+      setupBadgeDrag(badge);
       document.documentElement.appendChild(badge);
+      placeBadge(false); // a position from an earlier visit, applied on arrival
     }
     // Led by the case hint: with two cases open in two tabs, every key file
     // is named pseudonym_key.xlsx and the badge has to say WHICH case this
@@ -405,6 +535,7 @@
 
     cleaner.append(head, input, out, foot);
     document.documentElement.appendChild(cleaner);
+    placeCleaner(); // it opens off the badge, wherever the badge has been put
     input.focus();
   }
 

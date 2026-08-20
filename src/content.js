@@ -20,13 +20,15 @@
   const LOG_KEY = "cum_log"; // journal of hit-100 / window-reset events
   const PREDICT_KEY = "cum_predict"; // session↔weekly correlation model
   const DAILY_KEY = "cum_daily"; // per-day weekly-usage attribution
-  const SPLIT_KEY = "cum_split"; // chat vs Claude Code usage split
+  const SPLIT_KEY = "cum_split"; // chat vs Cowork vs Claude Code usage split
   const JOBS_KEY = "cum_jobs"; // scheduled sends (read only, for the held count)
   const STATUS_KEY = "cum_status"; // status.claude.com snapshot (background polls)
   const STATUS_CFG_KEY = "cum_status_cfg"; // { warn, holdSends } — both default on
+  const WARN_CFG_KEY = "cum_warn_cfg"; // { enabled, dailyShare } — enabled defaults on
   const POLL_MS = 5 * 60 * 1000; // refresh the baseline every 5 minutes
 
   const S = window.CUMStatus || null; // service-status model (pure)
+  const UW = window.CUMUsageWarn || null; // usage-pace warning model (pure)
   const STATUS_URL = (S && S.STATUS_PAGE_URL) || "https://status.claude.com/";
 
   const EMPTY = {
@@ -70,6 +72,11 @@
   let statusSnap = null;
   let statusWarn = true; // opt-out via the popup toggle
   let heldSends = 0; // scheduled sends an outage is currently holding back
+  // Usage-pace warnings: how much of the weekly limit TODAY has spent (from the
+  // per-day model), and the config behind the daily share. The decision itself
+  // is the worker's — see the "Usage-pace warnings" section below.
+  let todayPct = null; // weekly %-points attributed to the current local date
+  let warnCfg = { enabled: true, dailyShare: null };
 
   // ---- Persistence -------------------------------------------------------
   function save() {
@@ -98,6 +105,8 @@
               PREDICT_KEY,
               STATUS_KEY,
               STATUS_CFG_KEY,
+              WARN_CFG_KEY,
+              DAILY_KEY,
               JOBS_KEY,
             ],
             (res) => {
@@ -113,6 +122,8 @@
               if (res && res[STATUS_KEY]) statusSnap = res[STATUS_KEY];
               // Defaults ON, so only an explicit false turns the warning off.
               statusWarn = (((res && res[STATUS_CFG_KEY]) || {}).warn !== false);
+              readWarnCfg(res && res[WARN_CFG_KEY]);
+              todayPct = todayFrom(res && res[DAILY_KEY]);
               heldSends = countHeld(res && res[JOBS_KEY]);
               resolve();
             }
@@ -201,6 +212,7 @@
             (res && res[DAILY_KEY]) || window.CUMDaily.EMPTY,
             { weeklyPct, weeklyResetAt: state.weeklyResetAt, dateStr }
           );
+          todayPct = todayFrom(writes[DAILY_KEY], dateStr);
         }
         if (Object.keys(writes).length) {
           try {
@@ -209,6 +221,7 @@
             /* ignore */
           }
         }
+        reportUsagePace();
         render();
       });
     } catch (e) {
@@ -218,12 +231,15 @@
     updateSplit(weeklyPct);
   }
 
-  // ---- Home (chat) vs Code usage split -----------------------------------
-  // Live increments are attributed to the tab you're in. But a weekly jump that
-  // follows a gap (reopen, mobile, or a long pause) may have come from anywhere,
-  // so we check whether a Home chat was touched during the gap: Home chats all
-  // carry an updated_at in chat_conversations_v2, and Code sessions don't — so a
-  // gap with no fresh Home activity was Code.
+  // ---- Chat vs Cowork vs Code usage split --------------------------------
+  // Live increments are attributed to the tab you're in — three surfaces, not
+  // two: Chat, Cowork and Code. But a weekly jump that follows a gap (reopen,
+  // mobile, or a long pause) may have come from anywhere, so we check whether a
+  // Home CHAT was touched during the gap: those all carry an updated_at in
+  // chat_conversations_v2. Neither a Code session nor a Cowork one does — a
+  // Cowork session lives under /conversations — so a gap with no fresh chat
+  // activity is Cowork-or-Code, and src/split.js divides it by what those two
+  // have been seen doing live rather than handing it all to Code on a guess.
   const SPLIT_GAP_MS = 10 * 60 * 1000; // "gap" = this long since the last reading
   const SPLIT_GAP_PCT = 0.3; // ...and at least this many weekly %-points
   let lastHomeActivityAt = null; // max Home-chat updated_at we've seen (ms)
@@ -235,7 +251,28 @@
   let lastCtxLearn = { key: null, tokens: null };
 
   function currentSurface() {
-    return /^\/code(\/|$)/.test(location.pathname) ? "code" : "chat";
+    if (/^\/code(\/|$)/.test(location.pathname)) return "code";
+    return isCoworkSurface() ? "cowork" : "chat";
+  }
+
+  // Cowork is not an address. A session settles on /cowork/cse_<id>, but the
+  // composer home stays /new whichever surface it's set to, and the setting is
+  // sticky across tabs — so the URL answers where it can, and where it can't the
+  // page's own Chat/Cowork toggle does. That toggle is one of the few pieces
+  // CONFIRMED working on both surfaces, and composer.js already reads it every
+  // way the markup has been seen marking the live half.
+  function isCoworkSurface() {
+    try {
+      const K = window.CUMCowork;
+      if (K && K.isCoworkUrl && K.isCoworkUrl(location.href)) return true;
+      // An open conversation carries no toggle, so a stale account-wide setting
+      // must never speak for it: a /chat/ page is Chat, full stop.
+      if (/^\/chat(\/|$)/.test(location.pathname)) return false;
+      const C = window.CUMComposer;
+      return !!(C && C.currentSurface && C.currentSurface() === "cowork");
+    } catch (e) {
+      return false; // an unreadable page is the surface it has always been
+    }
   }
 
   function convKey() {
@@ -310,6 +347,8 @@
   // learn the conversion rate. Returns 0 when we can't measure it cleanly (new
   // conversation, no context estimate, or context shrank).
   function liveLearnTokens() {
+    // Chat only: the rate is measured against content read out of
+    // chat_conversations_v2, and neither Cowork nor Code appears there.
     if (currentSurface() !== "chat") {
       lastCtxLearn = { key: null, tokens: null };
       return 0;
@@ -350,8 +389,8 @@
         const gapMs = model.lastAt != null ? Date.now() - model.lastAt : Infinity;
         const now = Date.now();
         if (gapDelta > SPLIT_GAP_PCT && gapMs > SPLIT_GAP_MS) {
-          // Gap — decide Home vs Code from fresh Home-conversation activity, and
-          // when both were used, split by how much Home content was added.
+          // Gap — decide chat vs the rest from fresh Home-chat activity, and
+          // when both were used, split by how much chat content was added.
           splitBusy = true;
           const boundaryAt = model.lastAt || 0;
           lastHomeWeighted = null;
@@ -378,7 +417,8 @@
                   );
                   writeSplit(m2, {
                     weeklyPct: currentWeekly, weeklyResetAt: state.weeklyResetAt,
-                    chatDelta: parts.chatDelta, codeDelta: parts.codeDelta, at: now,
+                    chatDelta: parts.chatDelta, coworkDelta: parts.coworkDelta,
+                    codeDelta: parts.codeDelta, at: now,
                   });
                 }
                 splitBusy = false;
@@ -386,7 +426,7 @@
             }
           }, 500);
         } else {
-          // Live — attribute to the tab we're in, and (on Home) learn the
+          // Live — attribute to the surface we're on, and (in Chat) learn the
           // weekly-%-per-token rate from how much this conversation grew.
           writeSplit(model, {
             weeklyPct: currentWeekly, weeklyResetAt: state.weeklyResetAt,
@@ -787,6 +827,10 @@
           <div class="cum-panel-bar"><i id="cum-p-weekly-bar"></i></div>
           <div class="cum-panel-bar cum-elapsed" title="How far through the 7-day week you are."><i id="cum-p-weekly-elapsed"></i></div>
           <div class="cum-panel-row cum-panel-meta"><span>resets in</span><b id="cum-p-weekly-reset">—</b></div>
+          <div class="cum-panel-row cum-panel-meta cum-today-row" id="cum-today-row" hidden
+               title="How much of the weekly limit today has spent, against your daily share of it.">
+            <span>today / share</span><b id="cum-p-today">—</b>
+          </div>
           <div class="cum-panel-row cum-panel-meta cum-sessions-row" id="cum-sessions-row" hidden>
             <span>maxed 5-hr sessions left <span class="cum-est">est.</span></span>
             <b id="cum-p-sessions">—</b>
@@ -852,6 +896,8 @@
       dlNowNote: root.querySelector("#cum-dl-now-note"),
       scheduleBtn: root.querySelector("#cum-schedule-btn"),
       optionsBtn: root.querySelector("#cum-options-btn"),
+      todayRow: root.querySelector("#cum-today-row"),
+      pToday: root.querySelector("#cum-p-today"),
       statusGroup: root.querySelector("#cum-status-group"),
       pStatus: root.querySelector("#cum-p-status"),
       pStatusText: root.querySelector("#cum-p-status-text"),
@@ -863,6 +909,8 @@
     // ride along when you drag the meter:
     //   - a SERVICE-STATUS warning (outer), shown only while Claude is degraded
     //     or down — clickable, it opens status.claude.com; and
+    //   - a USAGE-PACE warning (middle), for a day past its share of the week
+    //     or a week past 50/75/90% — permanent from 75% on, brief below it; and
     //   - the CONTEXT-usage alarm, which flashes each time context crosses
     //     another 5%, appears only briefly on the first 5%, and becomes
     //     permanent once context reaches 10% (then keeps updating).
@@ -872,6 +920,9 @@
       `<a id="cum-status-pill" hidden target="_blank" rel="noreferrer noopener">` +
       `<span class="cum-status-dot"></span>` +
       `<b id="cum-status-text">—</b></a>` +
+      `<div id="cum-usage-pill" hidden>` +
+      `<span class="cum-usage-dot"></span>` +
+      `<b id="cum-usage-text">—</b></div>` +
       `<div id="cum-ctx-pill" hidden>` +
       `<span class="cum-ctx-dot"></span>` +
       `<span class="cum-ctx-cap">Context</span>` +
@@ -880,6 +931,8 @@
     els.pills = pills;
     els.statusPill = pills.querySelector("#cum-status-pill");
     els.statusText = pills.querySelector("#cum-status-text");
+    els.usagePill = pills.querySelector("#cum-usage-pill");
+    els.usageText = pills.querySelector("#cum-usage-text");
     els.ctxPill = pills.querySelector("#cum-ctx-pill");
     els.ctxPillPct = pills.querySelector("#cum-ctx-pct");
     els.statusPill.href = STATUS_URL;
@@ -1527,6 +1580,119 @@
     }
   }
 
+  // ---- Usage-pace warnings -----------------------------------------------
+  // Two things worth being told about: a DAY that has spent more than its share
+  // of the weekly limit (an even seventh of it, unless configured otherwise),
+  // and the WEEK passing 50%, 75% and 90%. The rules live in src/usagewarn.js;
+  // the fired-state and the desktop notification live with the background
+  // worker, because that state is shared — three open tabs crossing 90% at the
+  // same moment must produce one notification, not three. This end owns the
+  // pill: what it says, and how long it stays.
+  const WARN_FLASH_MS = 20000; // how long a non-sticky warning holds the pill
+  let todayKey = null; // the date todayPct belongs to
+  let warnFlashUntil = 0;
+  let warnPillLevel = null;
+  let warnAlarmTimer = null;
+  let warnPillShown = false;
+
+  function readWarnCfg(raw) {
+    const c = raw || {};
+    // Default ON, like the outage warning: this one only ever tells you
+    // something about your own usage, and telling you late is the failure mode.
+    warnCfg = {
+      enabled: c.enabled !== false,
+      dailyShare: typeof c.dailyShare === "number" ? c.dailyShare : null,
+    };
+  }
+
+  // Weekly %-points the per-day model has attributed to `dateStr` (today by
+  // default). Null when there's no model yet — which is not the same as zero.
+  function todayFrom(model, dateStr) {
+    const key = dateStr || localDateStr(Date.now());
+    todayKey = key;
+    const days = (model && model.days) || null;
+    if (!days) return null;
+    return days[key] > 0 ? days[key] : 0;
+  }
+
+  // The reading both the warnings and the pill are computed from. Null until we
+  // have a weekly figure, which is what everything here is a fraction of.
+  function paceReading() {
+    if (!UW || state.weeklyPercent == null) return null;
+    const dateStr = localDateStr(Date.now());
+    return {
+      weeklyPct: state.weeklyPercent * 100,
+      // A tab open across midnight would otherwise keep yesterday's total as
+      // "today" until the next reading lands.
+      todayPct: todayKey === dateStr ? todayPct : null,
+      dateStr: dateStr,
+      weeklyResetAt: state.weeklyResetAt,
+      resetText:
+        state.weeklyResetAt != null && state.weeklyResetAt > Date.now()
+          ? fmtCountdown(state.weeklyResetAt - Date.now())
+          : null,
+    };
+  }
+
+  // Hand the reading to the worker and let it say what (if anything) this
+  // crossing earned. A tab that arrives at an already-crossed threshold is told
+  // nothing — the warning was given when it happened.
+  function reportUsagePace() {
+    const reading = paceReading();
+    if (!reading || !warnCfg.enabled) return;
+    try {
+      chrome.runtime?.sendMessage({ type: "cum-usage-warn", reading: reading }, (res) => {
+        void chrome.runtime.lastError;
+        if (!res || !res.fire || !res.fire.length) return;
+        warnFlashUntil = Date.now() + WARN_FLASH_MS;
+        updateUsagePill();
+        flashUsagePill();
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function flashUsagePill() {
+    const pill = els && els.usagePill;
+    if (!pill || pill.hidden) return;
+    pill.classList.remove("cum-usage-alarm");
+    void pill.offsetWidth; // reflow so the animation restarts
+    pill.classList.add("cum-usage-alarm");
+    clearTimeout(warnAlarmTimer);
+    warnAlarmTimer = setTimeout(() => {
+      if (els && els.usagePill) els.usagePill.classList.remove("cum-usage-alarm");
+    }, 1700);
+  }
+
+  // The pill shows the loudest condition currently true. Past 75% of the week
+  // it stays up — that is the part of the week where every message costs you
+  // something. Below that it appears for WARN_FLASH_MS when a threshold is
+  // crossed and then gets out of the way, the way the context alarm does.
+  function updateUsagePill() {
+    if (!els || !els.usagePill) return;
+    const st = warnCfg.enabled && UW ? UW.standing(paceReading(), warnCfg) : null;
+    const show = !!(st && (st.sticky || Date.now() < warnFlashUntil));
+    els.usagePill.hidden = !show;
+    const shownChanged = show !== warnPillShown;
+    warnPillShown = show;
+    if (!show) {
+      warnPillLevel = null;
+      if (shownChanged) placePills();
+      return;
+    }
+    els.usageText.textContent = st.label;
+    els.usagePill.classList.toggle("cum-usage-warn", st.level === "warn");
+    els.usagePill.classList.toggle("cum-usage-danger", st.level === "danger");
+    els.usagePill.title = st.detail;
+    if (st.level !== warnPillLevel) {
+      warnPillLevel = st.level;
+      placePills();
+    } else if (shownChanged) {
+      placePills();
+    }
+  }
+
   function render() {
     if (!els) return;
 
@@ -1656,9 +1822,26 @@
     // Only surface the hint while we genuinely have nothing yet.
     els.pHint.hidden = state.updatedAt != null;
 
+    renderTodayRow();
     updateContextPill();
+    updateUsagePill();
     updateStatusPill();
     updateStatusPanel();
+  }
+
+  // "today / share" under the weekly meter — the number the daily warning is
+  // about, so the warning is checkable rather than something you take on faith.
+  function renderTodayRow() {
+    if (!els || !els.todayRow) return;
+    const dateStr = localDateStr(Date.now());
+    const t = todayKey === dateStr ? todayPct : null;
+    if (!UW || t == null || state.weeklyPercent == null) {
+      els.todayRow.hidden = true;
+      return;
+    }
+    els.todayRow.hidden = false;
+    els.pToday.textContent = UW.fmtPts(t) + " / " + UW.fmtPts(UW.shareOf(warnCfg));
+    els.pToday.classList.toggle("cum-over-share", t >= UW.shareOf(warnCfg));
   }
 
   function fmtTokens(n) {
@@ -1831,6 +2014,15 @@
       if (changes[PREDICT_KEY]) {
         // Another tab folded in a reading — keep our estimate in sync.
         predictModel = changes[PREDICT_KEY].newValue || predictModel;
+        render();
+      }
+      if (changes[DAILY_KEY]) {
+        // Another tab folded in a reading — today's total is shared.
+        todayPct = todayFrom(changes[DAILY_KEY].newValue);
+        render();
+      }
+      if (changes[WARN_CFG_KEY]) {
+        readWarnCfg(changes[WARN_CFG_KEY].newValue);
         render();
       }
       if (changes[STATUS_KEY]) {

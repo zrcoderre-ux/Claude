@@ -1678,7 +1678,9 @@
   // Daily usage (weekday profile of weekly-limit consumption)
   // ======================================================================
   const DAILY_KEY = "cum_daily";
+  const WARN_CFG_KEY = "cum_warn_cfg";
   const D = window.CUMDaily;
+  const UW = window.CUMUsageWarn;
   // Weeks start Tuesday (the 5-hour/weekly usage resets Tue 9am PT), so the
   // chart leads with Tuesday.
   const WEEK_ORDER = [2, 3, 4, 5, 6, 0, 1]; // Tue → Mon
@@ -1719,8 +1721,9 @@
   }
 
   function renderDaily() {
-    chrome.storage.local.get(DAILY_KEY, (res) => {
+    chrome.storage.local.get([DAILY_KEY, WARN_CFG_KEY], (res) => {
       const model = (res && res[DAILY_KEY]) || null;
+      const warnCfg = (res && res[WARN_CFG_KEY]) || null;
       const sum = D ? D.summary(model) : { totalDays: 0, avg: [], counts: [], avgTotal: 0 };
       const wk = D ? D.weekActual(model, localDateStr(new Date()), 2) : { actual: [], present: [], total: 0 };
       if (!sum.totalDays && !wk.total) {
@@ -1762,15 +1765,20 @@
       dl.chart.innerHTML = html;
 
       dl.note.hidden = false;
+      // The share is the line the daily warning fires on, so the chart that
+      // shows the days names it too — otherwise the warning arrives with no
+      // number on screen to check it against.
+      const share = UW ? UW.shareOf(warnCfg) : 100 / 7;
       dl.note.textContent =
         `Based on ${sum.totalDays} day${sum.totalDays === 1 ? "" : "s"} of history` +
         ` · by this point in the week you've typically used ~${fmtPts(avgToDate)}; this week: ${fmtPts(wk.total)}` +
-        ` (a full week averages ~${fmtPts(sum.avgTotal)}).`;
+        ` (a full week averages ~${fmtPts(sum.avgTotal)}).` +
+        ` Your daily share of the weekly limit is ${UW ? UW.fmtPts(share) : fmtPts(share)} — a day past it warns.`;
     });
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[DAILY_KEY]) renderDaily();
+    if (area === "local" && (changes[DAILY_KEY] || changes[WARN_CFG_KEY])) renderDaily();
   });
 
   renderDaily();
@@ -1782,6 +1790,7 @@
   const SPLIT_KEY = "cum_split";
   const S = window.CUMSplit;
   const CHAT_COLOR = "#c96442";
+  const COWORK_COLOR = "#7a5bbd";
   const CODE_COLOR = "#4a7ebb";
 
   const sp = {
@@ -1795,7 +1804,7 @@
 
   if (sp.reset) {
     sp.reset.addEventListener("click", () => {
-      if (!confirm("Reset the Chat vs Code chart? This clears its tracked data and starts fresh.")) return;
+      if (!confirm("Reset the Chat vs Cowork vs Code chart? This clears its tracked data and starts fresh.")) return;
       chrome.storage.local.remove("cum_split", renderSplit);
     });
   }
@@ -1803,7 +1812,7 @@
   function renderSplit() {
     chrome.storage.local.get(SPLIT_KEY, (res) => {
       const model = (res && res[SPLIT_KEY]) || null;
-      const s = S ? S.share(model) : { total: 0, chatPct: 0, codePct: 0 };
+      const s = S ? S.share(model) : { total: 0, chatPct: 0, coworkPct: 0, codePct: 0 };
       if (!s.total) {
         sp.wrap.hidden = true;
         if (sp.tools) sp.tools.hidden = true;
@@ -1813,15 +1822,23 @@
       sp.empty.hidden = true;
       sp.wrap.hidden = false;
       if (sp.tools) sp.tools.hidden = false;
+      // Whole numbers that still add to 100: Chat and Cowork round, and Code
+      // takes whatever is left, so the legend never reads 99%.
       const chat = Math.round(s.chatPct);
-      const code = 100 - chat;
+      const cowork = Math.round(s.coworkPct);
+      const code = Math.max(0, 100 - chat - cowork);
+      const stop = s.chatPct + s.coworkPct;
       sp.pie.style.background =
-        `conic-gradient(${CHAT_COLOR} 0 ${s.chatPct}%, ${CODE_COLOR} ${s.chatPct}% 100%)`;
+        `conic-gradient(${CHAT_COLOR} 0 ${s.chatPct}%, ` +
+        `${COWORK_COLOR} ${s.chatPct}% ${stop}%, ` +
+        `${CODE_COLOR} ${stop}% 100%)`;
       const key = (color, label, val) =>
         `<div class="split-key"><span class="split-sw" style="background:${color}"></span>` +
         `${label} <b>${val}%</b></div>`;
       sp.legend.innerHTML =
-        key(CHAT_COLOR, "Home (chat)", chat) + key(CODE_COLOR, "Code", code);
+        key(CHAT_COLOR, "Chat", chat) +
+        key(COWORK_COLOR, "Cowork", cowork) +
+        key(CODE_COLOR, "Code", code);
     });
   }
 
