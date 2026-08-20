@@ -862,19 +862,31 @@
     if (!wf || !trimmed(wf.name)) problems.push("Give the workflow a name.");
     if (!wf || !(wf.chats || []).length) problems.push("A workflow needs at least one chat.");
     if (!wf || !(wf.steps || []).length) problems.push("Add at least one step.");
+    // A PAUSE is exempt, and has to be: a pause has no prompt by definition —
+    // it is a gate between steps, not something anybody says to a chat — so a
+    // rule that read it as an unfinished step made adding one to a run look
+    // like an error and blocked the save.
     for (const s of (wf && wf.steps) || []) {
-      if (!trimmed(s.prompt)) {
+      if (!isPauseStep(s) && !trimmed(s.prompt)) {
         problems.push("Every step needs a prompt.");
         break;
       }
     }
+    // ...and a run that is nothing but gates has nothing to gate.
+    if (wf && (wf.steps || []).length && (wf.steps || []).every(isPauseStep))
+      problems.push("A pause waits between steps — add a step for it to wait between.");
     // Steps that run at the same time cannot share a conversation: they would
     // be posting into it at once, and each would read the other's answer as its
     // own. Two chats is what makes them parallel rather than a queue.
     const labels = stepLabels((wf && wf.steps) || []);
     for (const w of stepWaves((wf && wf.steps) || [])) {
       if (w.members.length < 2) continue;
-      const chats = w.members.map((i) => (wf.steps[i] || {}).chatId);
+      // Pauses carry no chat, so two of them in one wave are not two steps
+      // posting into one conversation — which is the only thing this is about.
+      const chats = w.members
+        .map((i) => wf.steps[i] || {})
+        .filter((s) => !isPauseStep(s))
+        .map((s) => s.chatId);
       const clash = chats.find((c, i) => chats.indexOf(c) !== i);
       if (clash) {
         const which = w.members.filter((i) => wf.steps[i].chatId === clash).map((i) => labels[i]);

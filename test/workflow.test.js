@@ -311,6 +311,63 @@ test("validate flags the things that make a run pointless", () => {
   assert.deepEqual(W.validate(twoChatWorkflow()), []);
 });
 
+test("a pause is not a step missing its prompt", () => {
+  // The bug: adding a pause to a run put "Every step needs a prompt." on the
+  // editor and blocked the save. A pause HAS no prompt — it is a gate between
+  // steps, not something anybody says to a chat.
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "A" }, { id: "b", name: "B" }],
+      steps: [
+        { chatId: "a", prompt: "draft" },
+        { kind: "pause", pauseMinutes: 0 },
+        { chatId: "b", prompt: "attack" },
+      ],
+    },
+    "w",
+    NOW
+  );
+  assert.deepEqual(W.validate(wf), []);
+  // A real step with no prompt is still an error, pause or no pause.
+  wf.steps[2].prompt = "  ";
+  assert.deepEqual(W.validate(wf), ["Every step needs a prompt."]);
+});
+
+test("a run of nothing but pauses has nothing to wait between", () => {
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "A" }],
+      steps: [{ kind: "pause", pauseMinutes: 30 }],
+    },
+    "w",
+    NOW
+  );
+  assert.deepEqual(W.validate(wf), [
+    "A pause waits between steps — add a step for it to wait between.",
+  ]);
+});
+
+test("two pauses in one wave are not two steps sharing a chat", () => {
+  // Neither carries a chat, so the parallel-chat rule has nothing to say about
+  // them — it exists to stop two steps posting into one conversation at once.
+  const wf = W.newWorkflow(
+    {
+      name: "x",
+      chats: [{ id: "a", name: "A" }],
+      steps: [
+        { chatId: "a", prompt: "draft" },
+        { kind: "pause", pauseMinutes: 0, group: "g" },
+        { kind: "pause", pauseMinutes: 5, group: "g" },
+      ],
+    },
+    "w",
+    NOW
+  );
+  assert.deepEqual(W.validate(wf), []);
+});
+
 test("cloneWorkflow re-ids chats and steps but keeps document bytes shared", () => {
   const wf = twoChatWorkflow();
   const copy = W.cloneWorkflow(wf, "w2", NOW + 1, idgen("c"));
