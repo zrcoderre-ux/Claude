@@ -118,6 +118,23 @@ function notify(title, message) {
   }
 }
 
+// ==== Usage-pace warnings ================================================
+// The pill reports a reading; this decides what it has just earned. Serialized
+// through warnQueue so the read-modify-write can't interleave with another
+// tab's — see the message handler.
+let warnQueue = Promise.resolve();
+
+async function usageWarnFor(reading) {
+  if (!UW) return [];
+  const r = await get([WARN_KEY, WARN_CFG_KEY]);
+  const cfg = r[WARN_CFG_KEY] || {};
+  if (cfg.enabled === false) return []; // opted out; don't bank state either
+  const out = UW.due(r[WARN_KEY] || UW.EMPTY, reading, cfg);
+  await set({ [WARN_KEY]: out.state });
+  for (const w of out.fire) notify(w.title, w.message);
+  return out.fire;
+}
+
 // ==== Auto-continue keepalive ===========================================
 // Any of the auto-clickers being on is reason to keep nudging: a backgrounded
 // tab's own timers throttle, and each clicker has its own toggle — Allow-once
@@ -2571,19 +2588,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // made here, once, because the fired-state has to be shared — three claude.ai
   // tabs crossing 75% together is one notification, not three. The reply tells
   // the asking tab what (if anything) fired, so it can flash its pill.
+  //
+  // One at a time, through warnQueue. Read-modify-write against storage is what
+  // makes this decision, and two tabs reporting at the same moment would both
+  // read the state before either wrote it — which is the exact duplicate this
+  // handler exists to prevent, arriving by the back door.
   if (msg && msg.type === "cum-usage-warn") {
-    (async () => {
-      if (!UW) return [];
-      const r = await get([WARN_KEY, WARN_CFG_KEY]);
-      const cfg = r[WARN_CFG_KEY] || {};
-      if (cfg.enabled === false) return []; // opted out; don't bank state either
-      const out = UW.due(r[WARN_KEY] || UW.EMPTY, msg.reading, cfg);
-      await set({ [WARN_KEY]: out.state });
-      for (const w of out.fire) notify(w.title, w.message);
-      return out.fire;
-    })()
-      .then((fire) => sendResponse({ fire: fire }))
-      .catch(() => sendResponse({ fire: [] }));
+    warnQueue = warnQueue.then(() => usageWarnFor(msg.reading)).catch(() => []);
+    warnQueue.then((fire) => sendResponse({ fire: fire || [] }));
     return true;
   }
   // The pill, popup and options page all read cum_status from storage; this is
