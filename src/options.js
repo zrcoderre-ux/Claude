@@ -1269,7 +1269,10 @@
     return Promise.all([
       readRuns(),
       new Promise((r) => chrome.storage.local.get(WORKFLOWS_KEY, (x) => r((x && x[WORKFLOWS_KEY]) || []))),
-    ]).then(([runs, workflows]) => {
+      // The key library, read fresh: group badges are labelled the way keys
+      // are — by the case, not by a number.
+      new Promise((r) => chrome.storage.local.get("cum_pseudo_keys", (x) => r((x && x.cum_pseudo_keys) || {}))),
+    ]).then(([runs, workflows, pseudoKeys]) => {
       lastRuns = runs;
       lastWorkflows = workflows;
       // A deleted run must not haunt its group; prune before sorting so the
@@ -1364,7 +1367,16 @@
           `<button class="job-del wf-run-del" data-id="${run.id}" title="Remove from the list">✕</button>`;
 
         const gid = WF.groupOf(runGroups, run.id);
-        const groupNo = gid ? runGroups.findIndex((g) => g.id === gid) + 1 : 0;
+        // The badge names the CASE, the way the key library does — the key's
+        // hint, else the earliest member's matter — with the number only as
+        // the last resort for a keyless, nameless group.
+        let groupBadge = "";
+        if (gid) {
+          const g = runGroups.find((x) => x && x.id === gid);
+          groupBadge =
+            WF.groupLabel(g, runs, pseudoKeys) ||
+            "group " + (runGroups.findIndex((x) => x && x.id === gid) + 1);
+        }
         row.innerHTML =
           `<div class="job-head">` +
           // Checking off related runs: the box leads the row while picking.
@@ -1383,9 +1395,9 @@
           // second copy of the workflows list tells you nothing about which
           // matter is which.
           (label.template ? `<span class="job-badge">${escapeHtml(label.template)}</span>` : "") +
-          // Which set of related runs this one belongs to — numbered by group,
-          // so two groups read apart even when sorted another way.
-          (groupNo ? `<span class="job-badge wf-group-badge">⛓ group ${groupNo}</span>` : "") +
+          // Which set of related runs this one belongs to — named for its
+          // case, so two groups read apart even when sorted another way.
+          (groupBadge ? `<span class="job-badge wf-group-badge">⛓ ${escapeHtml(groupBadge)}</span>` : "") +
           `<span class="job-badge">${RUN_STATUS_LABEL[run.status] || run.status}</span></div>` +
           `<div class="job-btns">${btns}</div></div>` +
           `<div class="job-main">` +

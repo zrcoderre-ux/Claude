@@ -989,9 +989,12 @@ and the label goes. (The date lives in its own box, so a name deliberately
 **Related runs** are grouped from the list itself: **Group related runs…**,
 check off the runs that belong together, **Save group**. A run belongs to at
 most one group — checking it into a new set moves it — and a group that falls
-under two members dissolves. Members wear a `⛓ group N` badge; **Ungroup
-checked** takes runs back out. Grouping also switches the sort to Related
-runs, since that's what saving a group is asking to see.
+under two members dissolves. Members wear a `⛓` badge **named for the case,
+the way the key library names it**: the group's key's hint (`⛓ Rasho`), else
+the key's file name, else the earliest member's own matter name — a number
+only as the last resort for a keyless, nameless group. **Ungroup checked**
+takes runs back out. Grouping also switches the sort to Related runs, since
+that's what saving a group is asking to see.
 
 **Updating the key anywhere updates it everywhere the case lives.** Two
 kinds of update, both covered. *Refreshing the key's content* (re-loading

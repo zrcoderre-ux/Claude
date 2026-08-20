@@ -1926,6 +1926,27 @@
   }
 
   /**
+   * What a group is CALLED: the same way the key library labels a case — the
+   * key's hint (the real name that case's exports used most), else the key
+   * file's name, else the earliest-created member's own matter name. Empty
+   * means the caller falls back to a numbered label; a group is one case,
+   * so whichever member names the key names the group.
+   */
+  function groupLabel(group, runs, keys) {
+    const byId = new Map((runs || []).map((r) => [r && r.id, r]));
+    const members = ((group && group.runIds) || [])
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    for (const m of members) {
+      const key = m.pseudoKeyId && keys ? keys[m.pseudoKeyId] : null;
+      if (key) return trimmed(key.hint) || trimmed(key.name);
+    }
+    for (const m of members) if (trimmed(m.name)) return runBaseName(m.name);
+    return "";
+  }
+
+  /**
    * Updating the CASE's key from anywhere updates it everywhere the case
    * lives. Given the conversation the change was made in (or a run id), the
    * plan names every run to rewrite — the run(s) that own the conversation
@@ -3509,6 +3530,7 @@
   const api = {
     distinctPseudoKeys,
     rekeyPlan,
+    groupLabel,
     parseRunDate,
     isoRunDate,
     runDateLabel,
