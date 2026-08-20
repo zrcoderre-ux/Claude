@@ -258,7 +258,13 @@
       badge.addEventListener("click", toggleCleaner);
       document.documentElement.appendChild(badge);
     }
-    const name = active.key.name || "pseudonym key";
+    // Led by the case hint: with two cases open in two tabs, every key file
+    // is named pseudonym_key.xlsx and the badge has to say WHICH case this
+    // tab is translating. (The tab already shows the real names — the hint
+    // reveals nothing the translation doesn't.)
+    const name =
+      (active.key.hint ? active.key.hint + " · " : "") +
+      (active.key.name || "pseudonym key");
     badge.textContent =
       "🔑 " + name + (shown ? " — " + shown + " name" + (shown === 1 ? "" : "s") + " restored" : "");
   }
