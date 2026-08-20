@@ -1782,7 +1782,10 @@ at a glance.
    swapped for its real value — longest first, whole words only,
    case-insensitively, an ALL-CAPS occurrence mirrored (`INGRID STRANGEWAYS`
    → `HELEN RASHO`). A badge (bottom-left) names the key and counts the swaps,
-   so what you see is never silently different from what Claude sees.
+   so what you see is never silently different from what Claude sees. **Drag it
+   anywhere** — like the usage pill, where you put it is where it stays, in
+   every tab and across reloads, and the cleaner below opens off it wherever it
+   has been put.
    **Display-only, and the boundary is structural**: the swap edits what this
    tab *renders*; everything that leaves the page — sends, workflow hand-offs,
    Save chat, Copy ruling — reads claude.ai's own state or API, which still
