@@ -1841,10 +1841,10 @@ at a glance.
 
 1. **Shows you the real names.** Every fake in the rendered messages is
    swapped for its real value — longest first, whole words only,
-   case-insensitively, **and in the case it was written in**: `INGRID
-   STRANGEWAYS` → `HELEN RASHO`, `ingrid strangeways` → `helen rasho`,
-   `Ingrid Strangeways` → `Helen Rasho`. See [Case comes across with the
-   name](#case-comes-across-with-the-name). A badge (bottom-left) names the key and counts the swaps,
+   case-insensitively, **and in the case the fake was written in** rather than
+   the case the key happens to store: `John Doe` → `Zachary Coderre`,
+   `JOHN DOE` → `ZACHARY CODERRE`, `john doe` → `zachary coderre`. See [Case
+   comes across with the name](#case-comes-across-with-the-name). A badge (bottom-left) names the key and counts the swaps,
    so what you see is never silently different from what Claude sees. **Drag it
    anywhere** — like the usage pill, where you put it is where it stays, in
    every tab and across reloads, and the cleaner below opens off it wherever it
@@ -1903,31 +1903,50 @@ before claude.ai's own handlers ever see the event.
 
 ### Case comes across with the name
 
-A fake Claude writes in a caption is shouted, in a slug it's lowercased, and in
-a sentence it's ordinary. The real name comes back written the same way, in both
-directions — the display swap and the cleaner's real→fake pass run the same
-rule.
+A key stores its real values the way they were typed into a spreadsheet — often
+shouted, because that is how a caption reads: `ZACHARY CODERRE`. That is not how
+the name should read in the middle of a sentence, and the fake standing there is
+what says so. **The case of the text wins**, every time: the shape is read off
+the fake as it appears and written onto the real name that replaces it.
 
-The baseline is **the key's own spelling**. A fake written exactly as the key
-spells it gets the real value exactly as the key stores it; only a *departure*
-from that spelling is carried across:
-
-| In the text | The key spells it | You see |
+| In the chat | The key holds | You see |
 | --- | --- | --- |
-| `Onyx filed it.` | `Onyx` | `IBM filed it.` |
-| `ONYX, Defendant.` | `Onyx` | `IBM, Defendant.` |
-| `onyx` | `Onyx` | `ibm` |
-| `Quenby's motion` | `Quenby` | `McDonald's motion` |
-| `QUENBY'S MOTION` | `Quenby` | `MCDONALD'S MOTION` |
+| `John Doe filed a motion.` | `ZACHARY CODERRE` | `Zachary Coderre filed a motion.` |
+| `JOHN DOE, Plaintiff,` | `ZACHARY CODERRE` | `ZACHARY CODERRE, Plaintiff,` |
+| `john doe` | `ZACHARY CODERRE` | `zachary coderre` |
+| `John Doe's motion` | `ZACHARY CODERRE` | `Zachary Coderre's motion` |
+| `JOHN DOE'S MOTION` | `ZACHARY CODERRE` | `ZACHARY CODERRE'S MOTION` |
 
-That baseline is the whole reason `IBM` doesn't come back as `Ibm` and
-`McDonald` doesn't come back as `Mcdonald`. **Deliberate case inside a value —
-`McDonald`, `LLC`, `OneWest` — is a shape no transform can be derived from**, so
-text carrying it is left exactly as written rather than guessed at, and titling
-only ever *raises* a word's leading letter, never lowers what follows it. An
-apostrophe doesn't start a word, so a possessive reads as `John's`, not
-`John'S` — and the `'s` rides the case rather than being read as part of it,
-which is why `QUENBY'S` is one shout and `Quenby's` is ordinary prose.
+Both directions run the same rule — the display swap and the cleaner's real→fake
+pass are one engine — so typing `ZACHARY CODERRE` into the composer offers
+`JOHN DOE`, and typing it in a sentence offers `John Doe`.
+
+**What titling leaves alone is what was written deliberately.** Shouting and
+quieting a name are unambiguous; putting one back into ordinary prose is where
+capitals can be destroyed, so three things survive it:
+
+- **Internal capitals** — `McDonald`, `OneWest`, `d'Angelo`. Authored, and no
+  title pass overwrites them.
+- **A capital standing in a value that is otherwise ordinary text** —
+  `Cross River Bank, LLC`, `IBM Credit Corp`. It was chosen against that
+  backdrop, so there is nothing to guess about.
+- **Abbreviations inside a value that is all-caps throughout**, which is the only
+  place there's nothing to read: one- and two-letter words (an initial, `JR`,
+  `PC`), short words with no vowel in them (`LLC`, `LLP`, `LTD`, `DDS`), and a
+  short list of the ones that carry a vowel and would otherwise come out as
+  words (`USA`, `INC`, `ESQ`, `IRS`, `FBI`, `IBM`…). So
+  `JOHN A DOE, DDS` reads `John A Doe, DDS` and `CROSS RIVER BANK, LLC` reads
+  `Cross River Bank, LLC`.
+
+The list is the one soft edge: a real value that is a **bare acronym with a vowel
+in it and isn't on the list** — stored all-caps, standing alone — comes back
+title-cased. Adding it to `KEEP_UPPER` in `src/pseudo.js` fixes it for good, and
+so does storing it in the key with any lowercase beside it (`Acme AOL Group`),
+which makes its capitals deliberate.
+
+The `'s` is cased with the sentence rather than read as part of the name, which
+is why `JOHN DOE'S` is one shout and `John Doe's` is ordinary prose — never
+`John Doe'S`.
 
 **Cowork caveat** (the standing rule): the translation and the composer
 warning are generic DOM mechanics and should hold on both surfaces, but the
