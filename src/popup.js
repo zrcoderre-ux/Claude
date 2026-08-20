@@ -458,8 +458,13 @@
       }, 2600);
     }
 
+    // Every case's key file is named pseudonym_key.xlsx, so the label leans
+    // on the case HINT (the real name its exports used most) to tell them
+    // apart. Local UI only — the same names the translated chat shows anyway.
     function keyLabel(k) {
-      return (k.name || "key") + " · " + k.rows + " rows";
+      return (
+        (k.hint ? k.hint + " — " : "") + (k.name || "key") + " · " + k.rows + " rows"
+      );
     }
 
     function renderPseudo() {
@@ -474,7 +479,12 @@
       }
       ui.forget.hidden = !ids.length;
       const attachedId = tabConv ? chats[tabConv] : null;
-      ui.here.textContent = attachedId && keys[attachedId] ? keys[attachedId].name : ids.length ? "loaded, not attached here" : "none loaded";
+      ui.here.textContent =
+        attachedId && keys[attachedId]
+          ? keyLabel(keys[attachedId])
+          : ids.length
+          ? "loaded, not attached here"
+          : "none loaded";
       ui.chat.textContent = tabConv
         ? (attachedId ? "attached to: " : "this chat: ") + (tabTitle || tabConv)
         : "open a claude.ai conversation to attach";
@@ -520,15 +530,19 @@
           say("The key parsed but holds no usable rows.");
           return;
         }
-        const id = P.fold(f.name);
+        // Content decides identity, never the filename — every case's key is
+        // named pseudonym_key.xlsx. The same case's refreshed key lands on
+        // its existing entry (attachments follow onto the new rows); a
+        // different case's key gets its own entry beside it.
+        const where = P.libraryIdFor(keys, key);
         key.savedAt = Date.now();
-        keys[id] = key;
+        keys[where.id] = key;
         chrome.storage.local.set({ [KEYS_KEY]: keys }, () => {
           renderPseudo();
-          ui.select.value = id;
+          ui.select.value = where.id;
           const d = key.dropped || {};
           say(
-            "Loaded " + keyLabel(key) +
+            (where.refreshed ? "Refreshed " : "Loaded ") + keyLabel(key) +
               (d.keeps ? " · " + d.keeps + " keep rows skipped" : "") +
               (d.ambiguous ? " · " + d.ambiguous + " ambiguous fakes retired" : "")
           );

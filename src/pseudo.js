@@ -97,6 +97,7 @@
       const realCol = heads.indexOf("real value");
       const fakeCol = heads.indexOf("replacement");
       const statusCol = heads.indexOf("status");
+      const occCol = heads.indexOf("occurrences");
       for (let i = hi + 1; i < rows.length; i++) {
         const row = rows[i] || [];
         const real = String(row[realCol] == null ? "" : row[realCol]).trim();
@@ -106,10 +107,12 @@
           keeps++;
           continue;
         }
+        const occ = occCol !== -1 ? parseInt(row[occCol], 10) : 0;
         entries.push({
           real: real,
           fake: fake,
           alt: statusCol !== -1 && fold(row[statusCol]) === ALT_STATUS,
+          occ: isFinite(occ) && occ > 0 ? occ : 0,
         });
       }
     }
@@ -150,13 +153,84 @@
       warn.push({ real: e.real, fake: e.fake });
     }
 
+    // Which CASE this key belongs to, said in one value: the real name the
+    // exports used most. Every key is named pseudonym_key.xlsx, so the
+    // filename can't tell two cases apart in a list — the lead party can.
+    let hint = "";
+    let hintOcc = -1;
+    for (const e of entries) {
+      if (!e.alt && !isCommonReal(e.real) && e.occ > hintOcc) {
+        hint = e.real;
+        hintOcc = e.occ;
+      }
+    }
+
     return {
       name: name || "",
       rows: entries.length,
       pairs: pairs,
       warn: warn,
+      hint: hint,
       dropped: { keeps: keeps, ambiguous: ambiguous },
     };
+  }
+
+  // ---- the key library's identity ------------------------------------------
+  //
+  // Keys are CASE-specific, and every case's key file is named
+  // pseudonym_key.xlsx — so a filename can never be the library id, or
+  // loading the second case's key would silently replace the first and every
+  // chat attached to it would translate with the wrong case. Identity comes
+  // from CONTENT instead.
+
+  function pairSet(key) {
+    return ((key && key.pairs) || []).map((p) => fold(p.real) + ">" + fold(p.fake));
+  }
+
+  /** A short content signature over the reversal pairs (FNV-1a, order-free). */
+  function keySignature(key) {
+    const pairs = pairSet(key).sort();
+    let h = 2166136261;
+    for (const s of pairs) {
+      for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      h ^= 10;
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16);
+  }
+
+  /**
+   * Are these the SAME CASE's key — one perhaps refreshed by a re-run that
+   * added rows? A re-run only ever grows a key and never moves a binding, so
+   * the older key's pairs survive into the newer one nearly whole; two
+   * different cases share at most incidental bindings (a common attorney).
+   * Same case = most of the smaller key's bindings appear in the other, with
+   * a floor so two tiny keys can't coincide their way in.
+   */
+  function sameCaseKey(a, b) {
+    const A = new Set(pairSet(a));
+    const B = pairSet(b);
+    if (!A.size || !B.length) return false;
+    let shared = 0;
+    for (const s of B) if (A.has(s)) shared++;
+    return shared >= Math.max(3, Math.ceil(Math.min(A.size, B.length) * 0.6));
+  }
+
+  /**
+   * Where a freshly parsed key goes in the stored library: onto the entry
+   * that is the same case's key (a refresh — the id survives, so every chat
+   * and run attached to it follows onto the new rows), else under a new id
+   * of its own, filename + content signature, so two cases' identically
+   * named files never collide.
+   */
+  function libraryIdFor(keys, key) {
+    for (const id of Object.keys(keys || {})) {
+      if (sameCaseKey(keys[id], key)) return { id: id, refreshed: true };
+    }
+    return { id: fold(key && key.name) + "#" + keySignature(key), refreshed: false };
   }
 
   // ---- matching -------------------------------------------------------------
@@ -315,6 +389,9 @@
     headerIndex,
     isKeepCell,
     parseKey,
+    keySignature,
+    sameCaseKey,
+    libraryIdFor,
     compile,
     translate,
     compileReals,

@@ -247,3 +247,86 @@ test("common English is never flagged and never rewritten", () => {
   const cleaned = P.translate(P.compileForward(key), "As it was, Rasho and I left.");
   assert.strictEqual(cleaned.text, "As it was, Strangeways and I left.");
 });
+
+// ---- multiple cases in the library at once ----------------------------------
+
+test("the library id comes from content, never the filename", () => {
+  // Two different cases, both named pseudonym_key.xlsx — as they always are.
+  const caseA = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 12],
+    ["person-token", "Rasho", "Strangeways", "", "", "", 30],
+    ["person-token", "Helen", "Ingrid", "", "", "", 20],
+    ["case_number", "24STCV01234", "87NNCV55555", "", "", "", 4],
+  ]);
+  const caseB = keyOf([
+    ["person", "Deng Xiaoxia", "Marta Ingersoll", "", "", "", 8],
+    ["person-token", "Deng", "Ingersoll", "", "", "", 40],
+    ["person-token", "Xiaoxia", "Marta", "", "", "", 22],
+    ["case_number", "25STCV99887", "61NNCV12121", "", "", "", 2],
+  ]);
+  const lib = {};
+  const a = P.libraryIdFor(lib, caseA);
+  assert.strictEqual(a.refreshed, false);
+  lib[a.id] = caseA;
+  // Loading case B must NOT land on case A's entry.
+  const b = P.libraryIdFor(lib, caseB);
+  assert.strictEqual(b.refreshed, false);
+  assert.notStrictEqual(b.id, a.id);
+  lib[b.id] = caseB;
+  assert.strictEqual(Object.keys(lib).length, 2);
+});
+
+test("the same case's refreshed key lands on its own entry", () => {
+  const original = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 12],
+    ["person-token", "Rasho", "Strangeways", "", "", "", 30],
+    ["person-token", "Helen", "Ingrid", "", "", "", 20],
+    ["case_number", "24STCV01234", "87NNCV55555", "", "", "", 4],
+  ]);
+  // The re-run's key: everything the old one had, plus the forgotten filing's
+  // new declarant — a key only ever grows.
+  const refreshed = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 14],
+    ["person-token", "Rasho", "Strangeways", "", "", "", 41],
+    ["person-token", "Helen", "Ingrid", "", "", "", 22],
+    ["case_number", "24STCV01234", "87NNCV55555", "", "", "", 5],
+    ["person", "Justin Carpenter", "Rafe Ellery", "", "", "", 6],
+  ]);
+  const lib = {};
+  const a = P.libraryIdFor(lib, original);
+  lib[a.id] = original;
+  const again = P.libraryIdFor(lib, refreshed);
+  assert.strictEqual(again.refreshed, true);
+  assert.strictEqual(again.id, a.id); // attachments follow onto the new rows
+  assert.ok(P.sameCaseKey(original, refreshed));
+});
+
+test("two tiny keys cannot coincide their way into one case", () => {
+  const a = keyOf([["person", "Ann Doe", "Marlow", "", "", "", 1]]);
+  const b = keyOf([["person", "Ann Doe", "Marlow", "", "", "", 1]]);
+  // Identical single binding — under the shared floor of 3, still two entries.
+  assert.ok(!P.sameCaseKey(a, b));
+});
+
+test("keySignature: same pairs same signature, any row order; different pairs differ", () => {
+  const a = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 12],
+    ["person-token", "Rasho", "Strangeways", "", "", "", 30],
+  ]);
+  const b = keyOf([
+    ["person-token", "Rasho", "Strangeways", "", "", "", 99],
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 1],
+  ]);
+  assert.strictEqual(P.keySignature(a), P.keySignature(b));
+  const c = keyOf([["person", "Deng Xiaoxia", "Marta Ingersoll", "", "", "", 8]]);
+  assert.notStrictEqual(P.keySignature(a), P.keySignature(c));
+});
+
+test("the case hint is the real name the exports used most", () => {
+  const key = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 12],
+    ["person-token", "Rasho", "Strangeways", "", "", "", 30],
+    ["person", "Sarra", "Keswick", "", "alt spelling", "", 99], // never a hint
+  ]);
+  assert.strictEqual(key.hint, "Rasho");
+});

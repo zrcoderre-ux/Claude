@@ -597,11 +597,15 @@
           if (wb && (P.isKeyFileName(f.name) || P.sheetsLookLikeKey(wb.sheets))) {
             const key = P.parseKey(wb.sheets, f.name);
             if (key.rows) {
-              const id = P.fold(f.name);
+              // Content decides the library id (P.libraryIdFor): the same
+              // case's refreshed key lands on its entry, another case's key
+              // sits beside it — the filename is always pseudonym_key.xlsx.
+              let id = null;
               key.savedAt = Date.now();
               await new Promise((res) =>
                 chrome.storage.local.get("cum_pseudo_keys", (r) => {
                   const keys = (r && r.cum_pseudo_keys) || {};
+                  id = P.libraryIdFor(keys, key).id;
                   keys[id] = key;
                   chrome.storage.local.set({ cum_pseudo_keys: keys }, res);
                 })
@@ -1341,7 +1345,11 @@
           for (const id of Object.keys(keys)) {
             const opt = document.createElement("option");
             opt.value = id;
-            opt.textContent = (keys[id].name || id) + " · " + (keys[id].rows || 0) + " rows";
+            // The case hint leads: every key file is named pseudonym_key.xlsx,
+            // and a list of that name three times over says nothing.
+            opt.textContent =
+              (keys[id].hint ? keys[id].hint + " — " : "") +
+              (keys[id].name || id) + " · " + (keys[id].rows || 0) + " rows";
             ui.pseudo.appendChild(opt);
           }
           ui.pseudo.value = (wf && wf.pseudoKeyId) || "";

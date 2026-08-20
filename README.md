@@ -1706,6 +1706,19 @@ than guessed at** — the macro's own fail-safe; and the pinned
 "(never in text)" sheet rides along for the warning side, since a pinned
 party's real name is exactly what must not be typed.
 
+**Keys are case-specific, and several live side by side.** Every attachment
+is per-conversation, and every tab resolves its own chat's key — so two chats
+(or two tabs) can run two different cases' keys at once, each translating,
+warning, and cleaning with its own map. Because every case's key file is
+named `pseudonym_key.xlsx`, the library's identity comes from **content, not
+filename**: loading a second case's key creates its own entry beside the
+first, while re-loading the *same* case's key after a re-run (a key only ever
+grows) lands on its existing entry, so every chat and run attached to it
+follows onto the new rows. Each key carries a **case hint** — the real name
+its exports used most — which leads its label in the popup, the run editor's
+picker, and the badge, so "which case is this tab translating?" is answered
+at a glance.
+
 **Attaching it.** Two ways, matching where work happens:
 
 - **A chat** — open the conversation, open the popup, **Attach to this chat**.
