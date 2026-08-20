@@ -72,27 +72,34 @@
   }
 
   // A run carries its key the way it carries its documents — on the run. Any
-  // run whose recorded chats include this conversation, and which names a
-  // pseudonym key, attaches that key here without the popup being involved.
+  // run whose recorded chats include this conversation attaches its key here
+  // without the popup being involved — and a run with no key of its own
+  // answers to its GROUP's: related runs are one matter, and one matter has
+  // one key (W.runPseudoKey settles whose wins).
   async function runKeyFor(conv) {
     const W = window.CUMWorkflow;
     if (!W || !W.RUN_IDS_KEY) return null;
     if (Date.now() - runsCache.at > 20000) {
-      const idsRes = await storageGet(W.RUN_IDS_KEY);
+      const idsRes = await storageGet([W.RUN_IDS_KEY, "cum_run_groups"]);
       const ids = idsRes[W.RUN_IDS_KEY] || [];
       const runs = [];
       if (ids.length) {
         const res = await storageGet(ids.map((id) => W.RUN_PREFIX + id));
         for (const id of ids) if (res[W.RUN_PREFIX + id]) runs.push(res[W.RUN_PREFIX + id]);
       }
-      runsCache = { at: Date.now(), runs: runs };
+      runsCache = { at: Date.now(), runs: runs, groups: idsRes.cum_run_groups || [] };
     }
     for (const run of runsCache.runs) {
-      if (!run || !run.pseudoKeyId) continue;
+      if (!run) continue;
       const chats = run.chats || {};
       for (const cid of Object.keys(chats)) {
         const url = chats[cid] && chats[cid].url;
-        if (url && P.conversationKeyFromUrl(url) === conv) return run.pseudoKeyId;
+        if (url && P.conversationKeyFromUrl(url) === conv) {
+          const id = W.runPseudoKey
+            ? W.runPseudoKey(run, runsCache.runs, runsCache.groups || [])
+            : run.pseudoKeyId;
+          if (id) return id;
+        }
       }
     }
     return null;
@@ -146,7 +153,10 @@
     chrome.storage.onChanged.addListener((ch, area) => {
       if (area !== "local") return;
       if (ch[KEYS_KEY] || ch[CHATS_KEY]) loadState();
-      else if (Object.keys(ch).some((k) => k.indexOf("cum_wf_run") === 0)) {
+      else if (
+        ch.cum_run_groups ||
+        Object.keys(ch).some((k) => k.indexOf("cum_wf_run") === 0)
+      ) {
         runsCache.at = 0;
         resolveActive(true);
       }
@@ -269,7 +279,11 @@
       (C && C.findEditor && C.findEditor()) ||
       document.querySelector('div[contenteditable="true"]');
     const text = ed ? ed.innerText || ed.textContent || "" : "";
-    const hits = text ? P.findReals(active.compiledReals, text) : [];
+    // A draft opening with the PINCITE CHECK header is the operator pasting
+    // official-reporter pincites out of Lexis — published citations, declared
+    // safe. The warning stands down for that draft (P.isPincitePaste).
+    const hits =
+      text && !P.isPincitePaste(text) ? P.findReals(active.compiledReals, text) : [];
     if (!hits.length) {
       if (warnBox) warnBox.hidden = true;
       return;

@@ -196,3 +196,14 @@ test("an empty or headerless workbook parses to an empty key", () => {
   assert.strictEqual(P.translate(c, "anything").text, "anything");
   assert.deepStrictEqual(P.findReals(P.compileReals(key), "anything"), []);
 });
+
+test("a pincite paste declares itself and stands the warning down", () => {
+  assert.ok(P.isPincitePaste("PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS\nRasho v. Smith, 47 Cal.2d 469, 471"));
+  // Tolerant of the dash and spacing a copy-paste mangles…
+  assert.ok(P.isPincitePaste("  pincite check - official reporter page breaks\n…"));
+  assert.ok(P.isPincitePaste("PINCITE CHECK -- OFFICIAL REPORTER PAGE BREAKS"));
+  // …but only at the START, and only these words.
+  assert.ok(!P.isPincitePaste("Re: PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS"));
+  assert.ok(!P.isPincitePaste("PINCITE CHECK for Rasho"));
+  assert.ok(!P.isPincitePaste(""));
+});

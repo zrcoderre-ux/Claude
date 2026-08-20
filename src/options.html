@@ -199,7 +199,23 @@
           No workflows yet. <b>New workflow</b> starts one from scratch.
         </p>
 
-        <p class="sub" style="margin-top: 22px">Runs</p>
+        <div class="runs-head">
+          <p class="sub" style="margin-top: 22px">Runs</p>
+          <span class="runs-tools">
+            <label for="wf-run-sort" class="runs-tools-label">Sort</label>
+            <select id="wf-run-sort">
+              <option value="created">Creation order</option>
+              <option value="date">Run date</option>
+              <option value="group">Related runs</option>
+            </select>
+            <button id="wf-run-group" type="button">Group related runs…</button>
+            <span id="wf-run-group-tools" hidden>
+              <button id="wf-run-group-save" type="button" class="primary">Save group</button>
+              <button id="wf-run-group-un" type="button">Ungroup checked</button>
+              <button id="wf-run-group-cancel" type="button">Cancel</button>
+            </span>
+          </span>
+        </div>
         <div id="wf-runs" class="job-list"></div>
         <p id="wf-runs-empty" class="empty" hidden>
           No runs yet. Start one from a workflow above — it opens its own Chrome
@@ -260,6 +276,8 @@
     <script src="jobstore.js"></script>
     <script src="jobform.js"></script>
     <script src="workflow.js"></script>
+    <script src="xlsxread.js"></script>
+    <script src="pseudo.js"></script>
     <script src="workflowform.js"></script>
     <script src="status.js"></script>
     <script src="options.js"></script>

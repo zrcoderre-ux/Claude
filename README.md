@@ -967,6 +967,46 @@ A reply also has to differ from what was on screen before the step's message wen
 out — the transcript can hold just the newest turn in the DOM, so counting
 rendered messages is not on its own enough to know a new answer arrived.
 
+### Related runs, run dates, and the list's order
+
+The runs list on the Options page can be read three ways, from the **Sort**
+control beside its heading (the choice is remembered):
+
+- **Creation order** — the default, and what the list always did: runs still
+  being set up first, then newest first.
+- **Run date** — dated runs first, soonest date first (a docket reads
+  forward); runs without a date follow in creation order.
+- **Related runs** — each group's members pulled together, at the spot where
+  the group's first member would have appeared.
+
+**The run date** is a box in the run's editor, beside its name: type it as
+`mm/dd/yy` or pick it from the calendar button. A run that has one gets the
+date written onto the **end of its name automatically** — `MSJ Rasho 8/12/26`
+— after whatever you typed; change the date and the label follows, clear it
+and the label goes. (The date lives in its own box, so a name deliberately
+*ending* in a bare date-shaped token now belongs there.)
+
+**Related runs** are grouped from the list itself: **Group related runs…**,
+check off the runs that belong together, **Save group**. A run belongs to at
+most one group — checking it into a new set moves it — and a group that falls
+under two members dissolves. Members wear a `⛓ group N` badge; **Ungroup
+checked** takes runs back out. Grouping also switches the sort to Related
+runs, since that's what saving a group is asking to see.
+
+**A group shares its pseudonym key.** A grouped run with no key of its own
+answers to the key a related run carries (the earliest-created member that
+names one) — related runs are one matter, and one matter has one key. Only
+the run's *own* picker overrides it.
+
+**A spreadsheet never rides a run's uploads.** The bar is structural, not a
+warning: every path that shapes a run's documents drops an Excel file
+(`.xlsx`/`.xlsm`/`.xltx`/`.xls`), and the runner's own read of the papers
+refuses one, so even a run stored before the rule existed cannot upload it.
+Dropping a **pseudonym key** into the documents field gets a better answer
+than a refusal: it is parsed and attached **as the run's key** — which is
+where it was headed — and never becomes an upload. Any other spreadsheet is
+refused by name, out loud.
+
 ### Watching one from inside the chat
 
 A conversation a run is driving carries a small pill saying which run, which step
@@ -1674,7 +1714,11 @@ party's real name is exactly what must not be typed.
   lives on the run: every conversation the run opens or returns to gets the
   translation, a re-run keeps it, and starting the template for the next
   matter clears it. It is *attached*, never uploaded — deliberately not a
-  documents-field entry.
+  documents-field entry. Dropping the key file into the documents field
+  **diverts** it here instead of refusing it (see
+  [Related runs, run dates, and the list's order](#related-runs-run-dates-and-the-lists-order)
+  — a spreadsheet can't be a run document at all). And a run in a
+  **related-runs group** with no key of its own inherits a group-mate's.
 
 **What an attached key does.**
 
@@ -1693,7 +1737,10 @@ party's real name is exactly what must not be typed.
 2. **Warns before you leak.** The composer is scanned for the key's **real**
    values (every spelling the key knows, tokens included). Each one found gets
    a banner naming the value and the fake to use instead. It warns and never
-   rewrites — the composer is yours.
+   rewrites — the composer is yours. One declared exception: a draft that
+   **begins** `PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS` is the operator
+   pasting pincites out of Lexis — published citations, always safe — and the
+   warning stands down for that draft.
 
 **The key never rides an upload.** Independent of any attachment, on every
 claude.ai page: a file picked, dropped, or pasted into a chat is checked, and

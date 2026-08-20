@@ -1214,3 +1214,21 @@ td .approx {
    it is drawn quieter than the work on either side of it. */
 .wf-step-row.wf-step-pause .wf-step-meta { font-style: italic; color: #8a8a8a; }
 .wf-step-row.wf-step-pause { border-style: dashed; }
+
+/* Runs list tools: sort + related-run grouping */
+.runs-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.runs-tools { display: inline-flex; align-items: center; gap: 8px; }
+.runs-tools-label { font-size: 12px; color: #8a8a8a; }
+.runs-tools select { font: inherit; font-size: 12.5px; padding: 4px 6px; border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.2); background: #fff; color: inherit; }
+.runs-tools button { font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.2); background: #f5f4f0; cursor: pointer; }
+.runs-tools button.primary { background: #c96442; border-color: #c96442; color: #fff; }
+.wf-run-pick { width: 16px; height: 16px; margin: 2px 8px 0 0; flex: 0 0 auto; accent-color: #c96442; }
+.wf-group-badge { background: rgba(201, 100, 66, 0.14); }
+@media (prefers-color-scheme: dark) {
+  .runs-tools select, .runs-tools button {
+    background: #1f1f1e; color: #f0efea; border-color: rgba(255, 255, 255, 0.22);
+  }
+  .runs-tools button.primary { background: #c96442; border-color: #c96442; color: #fff; }
+}

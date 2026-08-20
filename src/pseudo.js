@@ -241,6 +241,18 @@
     return out;
   }
 
+  // A draft that opens with this header is the operator pasting pincites out
+  // of Lexis — published citations, so the party-name collisions with the
+  // key's reals are authorities, not leaks (the same reason the scrubber
+  // never touches a citation). The whole draft's warning stands down; the
+  // header is the operator's own declaration, exactly like a keep. Tolerant
+  // of the dash and spacing a copy-paste mangles, not of different words.
+  const PINCITE_RE = /^\s*PINCITE\s+CHECK\s*[—–-]+\s*OFFICIAL\s+REPORTER\s+PAGE\s+BREAKS/i;
+
+  function isPincitePaste(text) {
+    return PINCITE_RE.test(String(text || ""));
+  }
+
   // Which conversation a claude.ai URL is — the same identity content.js and
   // the workflow model use, restated here so the popup (which loads neither)
   // agrees with them exactly.
@@ -265,6 +277,7 @@
     translate,
     compileReals,
     findReals,
+    isPincitePaste,
     buildMatcher,
     conversationKeyFromUrl,
     fold,

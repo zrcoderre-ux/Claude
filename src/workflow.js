@@ -356,7 +356,9 @@
   // them for its whole life, which is what lets the template be reused (or
   // re-armed for the next matter) while a run is still going.
   function allDocs(wf, extra) {
-    return ((wf && wf.docs) || []).concat(extra || []);
+    // The runner's own read of the papers refuses a spreadsheet even from a
+    // run stored before the bar existed — see allowedDocs.
+    return allowedDocs(((wf && wf.docs) || []).concat(extra || []));
   }
 
   // Can this document be folded into a combined text upload? Only things that
@@ -726,11 +728,14 @@
       newWindow: !!f.newWindow,
       rerun: rerunDefaults(f.rerun),
       chats: (f.chats || []).map((c, i) => newChatSlot(c, c && c.id, i)),
-      docs: (f.docs || []).map((d) => newDoc(d, d && d.id)),
+      docs: allowedDocs(f.docs).map((d) => newDoc(d, d && d.id)),
       // Which pseudonym key (popup's stored library, by id) rides this
       // matter's chats — attached, never uploaded. On the run like the
       // documents, because a key is a case's, not a template's.
       pseudoKeyId: f.pseudoKeyId || null,
+      // The matter's date, canonically "YYYY-MM-DD". Written into the run's
+      // name at the end by newRun/applyRunEdit (composeRunName).
+      runDate: isoRunDate(f.runDate),
       steps: (f.steps || []).map((s) => newStep(s, s && s.id)),
       // What its runs have cost, averaged over them — measured, not authored,
       // so it survives an edit rather than being reset by one.
@@ -974,8 +979,9 @@
     return Object.assign({}, wf, {
       name: trimmed(wf.templateName) || wf.name,
       docs: [],
-      // The key was this matter's exactly as the papers were.
+      // The key and the date were this matter's exactly as the papers were.
       pseudoKeyId: null,
+      runDate: null,
       // A conversation to start in belonged to that matter too — leaving it
       // behind would silently point the next matter's run at the last one's
       // chat, which is the kind of mistake you'd only notice afterwards.
@@ -1246,14 +1252,20 @@
       // devil's advocate" and then sit in the list pretending to be a template.
       // (A workflow armed the older way, by typing the matter's name onto it,
       // still hands that name over — that name IS the matter.)
-      name: wf && trimmed(wf.name) !== trimmed(wf.templateName) ? wf.name : "",
+      name: composeRunName(
+        wf && trimmed(wf.name) !== trimmed(wf.templateName) ? wf.name : "",
+        wf && wf.runDate
+      ),
       // Where it came from, kept whatever later happens to the template: renamed
       // for another matter, rewritten, or deleted outright. A run always knows
       // which workflow it is a run OF.
       templateName: wf ? trimmed(wf.templateName) || trimmed(wf.name) : "",
       // This matter's papers, handed over at Start so the template can be
       // cleared and re-armed while this run is still going.
-      docs: (docs || (wf && wf.docs) || []).map((d) => newDoc(d, d && d.id)),
+      docs: allowedDocs(docs || (wf && wf.docs) || []).map((d) => newDoc(d, d && d.id)),
+      // The matter's date — already written into the name above, kept as a
+      // field so the runs list can sort by it and the editor can show it.
+      runDate: isoRunDate(wf && wf.runDate),
       // The matter's pseudonym key, attached the way the papers are — every
       // conversation this run opens shows real names to the reader while
       // Claude keeps seeing the fakes (see src/pseudo-view.js). Never a
@@ -1441,6 +1453,7 @@
         steps: src.steps || [],
         docs: docs,
         pseudoKeyId: run.pseudoKeyId,
+        runDate: run.runDate,
         bundleText: run.bundleText,
         nameChats: run.nameChats,
         allowRerun: run.allowRerun,
@@ -1712,7 +1725,7 @@
         newChatSlot(c, c && c.id, i)
       ),
       steps: (Array.isArray(p.steps) ? p.steps : src.steps).map((s) => newStep(s, s && s.id)),
-      docs: (Array.isArray(p.docs) ? p.docs : src.docs).map((d) => {
+      docs: allowedDocs(Array.isArray(p.docs) ? p.docs : src.docs).map((d) => {
         const doc = newDoc(d, d && d.id);
         // Stamped with where the run has reached, so it rides the next step in
         // each of its chats rather than an opening message that may already have
@@ -1726,8 +1739,14 @@
     // shows them on a run, and until they were carried here it showed them
     // doing nothing.
     const flag = (k) => (typeof p[k] === "boolean" ? p[k] : run[k]);
+    // The date first, because the name is composed FROM it: the matter as
+    // typed (or as it stood), with the current date label on the end — never
+    // two labels, and clearing the date really clears it.
+    const runDate =
+      typeof p.runDate !== "undefined" ? isoRunDate(p.runDate) : isoRunDate(run.runDate);
     return Object.assign({}, run, {
-      name: trimmed(p.name) || run.name,
+      name: composeRunName(trimmed(p.name) || run.name, runDate),
+      runDate: runDate,
       plan: { chats: shaped.chats, steps: shaped.steps },
       docs: shaped.docs,
       totalSteps: shaped.steps.length,
@@ -1741,6 +1760,219 @@
       lastProgressAt: now,
       updatedAt: now,
     });
+  }
+
+  // ---- run dates, related-run groups, and the runs list's orders -----------
+
+  // A run's optional DATE — the hearing or due date the matter is known by.
+  // Stored canonically as "YYYY-MM-DD" (what a calendar input yields), entered
+  // by hand as mm/dd/yy, and shown — including inside the run's name — as
+  // m/d/yy.
+  const RUN_DATE_ISO_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+  const RUN_DATE_TAIL_RE = /\s*\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2}(?:\d{2})?$/;
+
+  // A run's name comes apart into three pieces: the matter, the date label
+  // the date box wrote onto the end, and the "(Run N)" suffix a re-run wears.
+  // One splitter, so composing and stripping can never disagree about where
+  // the date sits — after the matter, before the run number.
+  function splitRunName(name) {
+    let s = trimmed(str(name));
+    const sufM = s.match(RUN_SUFFIX_RE);
+    const suffix = sufM ? trimmed(sufM[0]) : "";
+    if (sufM) s = trimmed(s.slice(0, sufM.index));
+    const dateM = s.match(RUN_DATE_TAIL_RE);
+    const date = dateM ? trimmed(dateM[0]) : "";
+    if (dateM) s = trimmed(s.slice(0, dateM.index));
+    return { base: s, date: date, suffix: suffix };
+  }
+
+  // What the editor's name box shows: the matter alone. The date lives in its
+  // own box, so the name field must not echo it back — retyping would double
+  // it, and clearing the date box could never remove it.
+  function runBaseName(name) {
+    return splitRunName(name).base;
+  }
+
+  /** mm/dd/yy (also m/d/yyyy, dots or dashes, and ISO) → "YYYY-MM-DD" or null. */
+  function parseRunDate(text) {
+    const s = trimmed(str(text));
+    if (!s) return null;
+    let y, m, d;
+    let match = s.match(RUN_DATE_ISO_RE);
+    if (match) {
+      y = +match[1];
+      m = +match[2];
+      d = +match[3];
+    } else {
+      match = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}(?:\d{2})?)$/);
+      if (!match) return null;
+      m = +match[1];
+      d = +match[2];
+      y = +match[3] + (match[3].length === 2 ? 2000 : 0);
+    }
+    // A real calendar day, not merely the right shape — 2/30 must not become
+    // a run's name.
+    const dt = new Date(y, m - 1, d);
+    if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+    const p2 = (n) => String(n).padStart(2, "0");
+    return y + "-" + p2(m) + "-" + p2(d);
+  }
+
+  // A stored value however it arrived: ISO passes through, anything else gets
+  // one chance to parse, and garbage is null rather than a lie in a name.
+  function isoRunDate(v) {
+    const s = trimmed(str(v));
+    if (!s) return null;
+    return RUN_DATE_ISO_RE.test(s) ? s : parseRunDate(s);
+  }
+
+  function runDateLabel(iso) {
+    const m = str(iso).match(RUN_DATE_ISO_RE);
+    if (!m) return "";
+    return +m[2] + "/" + +m[3] + "/" + String(+m[1] % 100).padStart(2, "0");
+  }
+
+  // The run's display name with its date written in: matter, date, run
+  // number, in that order. Composing strips any date label already on the
+  // end first, so re-saving never stacks a second one and clearing the date
+  // box really removes it. (The cost, stated: a name deliberately ENDING in a
+  // bare date-shaped token now belongs to the date box.)
+  function composeRunName(name, iso) {
+    const parts = splitRunName(name);
+    const label = runDateLabel(isoRunDate(iso));
+    return trimmed(
+      parts.base + (label ? " " + label : "") + (parts.suffix ? " " + parts.suffix : "")
+    );
+  }
+
+  // Related runs: one matter across several runs. A group is a set of run ids
+  // in cum_run_groups; a run belongs to at most one group, which is what lets
+  // "check some runs off and save" MOVE a run rather than fork it. A group
+  // that falls under two members isn't a group and dissolves.
+  function groupOf(groups, runId) {
+    for (const g of groups || []) {
+      if (g && Array.isArray(g.runIds) && g.runIds.indexOf(runId) !== -1) return g.id;
+    }
+    return null;
+  }
+
+  function assignGroup(groups, ids, newId) {
+    const pick = new Set((ids || []).filter(Boolean));
+    const out = [];
+    for (const g of groups || []) {
+      const left = (g && g.runIds ? g.runIds : []).filter((id) => !pick.has(id));
+      if (left.length >= 2) out.push({ id: g.id, runIds: left });
+    }
+    if (pick.size >= 2) out.push({ id: newId, runIds: Array.from(pick) });
+    return out;
+  }
+
+  // Taking runs OUT is the same removal assigning them elsewhere starts with.
+  function ungroupRuns(groups, ids) {
+    const gone = new Set((ids || []).filter(Boolean));
+    const out = [];
+    for (const g of groups || []) {
+      const left = (g && g.runIds ? g.runIds : []).filter((id) => !gone.has(id));
+      if (left.length >= 2) out.push({ id: g.id, runIds: left });
+    }
+    return out;
+  }
+
+  // Deleted runs must not haunt their groups.
+  function pruneGroups(groups, runs) {
+    const alive = new Set((runs || []).map((r) => r && r.id).filter(Boolean));
+    const out = [];
+    let changed = false;
+    for (const g of groups || []) {
+      const left = (g && g.runIds ? g.runIds : []).filter((id) => alive.has(id));
+      if (left.length >= 2) {
+        if (left.length !== (g.runIds || []).length) changed = true;
+        out.push({ id: g.id, runIds: left });
+      } else changed = true;
+    }
+    return { groups: out, changed: changed };
+  }
+
+  // The pseudonym key a run answers to: its own, else the one a related run
+  // carries — a group is one matter, and one matter has one key. When several
+  // mates name keys, the earliest-created one wins, so the answer never
+  // flickers with edit order.
+  function runPseudoKey(run, runs, groups) {
+    if (!run) return null;
+    if (run.pseudoKeyId) return run.pseudoKeyId;
+    const gid = groupOf(groups, run.id);
+    if (!gid) return null;
+    const mates = (runs || []).filter(
+      (r) => r && r.id !== run.id && r.pseudoKeyId && groupOf(groups, r.id) === gid
+    );
+    mates.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    return mates.length ? mates[0].pseudoKeyId : null;
+  }
+
+  // The runs list's default order: runs still being set up first (they're the
+  // ones waiting on you), then newest first. The other two orders build on it.
+  function createdOrder(a, b) {
+    return (
+      (isDraft(b) ? 1 : 0) - (isDraft(a) ? 1 : 0) || ((b && b.createdAt) || 0) - ((a && a.createdAt) || 0)
+    );
+  }
+
+  /**
+   * The runs list in one of its three orders:
+   *   "created" — the default above.
+   *   "date"    — dated runs first, soonest run date first (a docket reads
+   *               forward); runs without a date follow in the default order.
+   *   "group"   — the default order, with each group's members pulled
+   *               together at the position of the group's first-appearing
+   *               member, members in default order among themselves.
+   */
+  function sortRuns(runs, mode, groups) {
+    const list = (runs || []).filter(Boolean).slice();
+    if (mode === "date") {
+      return list.sort((a, b) => {
+        const da = (a && a.runDate) || "";
+        const db = (b && b.runDate) || "";
+        if (da && db && da !== db) return da < db ? -1 : 1;
+        if (!da !== !db) return da ? -1 : 1;
+        return createdOrder(a, b);
+      });
+    }
+    if (mode === "group") {
+      const order = list.sort(createdOrder);
+      const out = [];
+      const done = new Set();
+      for (const r of order) {
+        if (done.has(r.id)) continue;
+        const gid = groupOf(groups, r.id);
+        if (!gid) {
+          out.push(r);
+          done.add(r.id);
+          continue;
+        }
+        for (const m of order) {
+          if (!done.has(m.id) && groupOf(groups, m.id) === gid) {
+            out.push(m);
+            done.add(m.id);
+          }
+        }
+      }
+      return out;
+    }
+    return list.sort(createdOrder);
+  }
+
+  // A SPREADSHEET never rides a run's uploads — the pseudonym key is an
+  // .xlsx, and "the key picked up with the exhibits" is exactly the accident
+  // that must be impossible rather than unlikely. The bar is structural:
+  // every path that shapes a run's documents filters through this, and the
+  // runner's own document read (allDocs) refuses them too, so a run stored
+  // before the rule existed still cannot upload one.
+  const DOC_BARRED_RE = /\.(xlsx|xlsm|xltx|xls)$/i;
+  function docBarred(name) {
+    return DOC_BARRED_RE.test(trimmed(name));
+  }
+  function allowedDocs(list) {
+    return (list || []).filter((d) => d && !docBarred(d.name));
   }
 
   // Runs whose trigger has fired and are waiting only on the runner.
@@ -3214,6 +3446,20 @@
   }
 
   const api = {
+    parseRunDate,
+    isoRunDate,
+    runDateLabel,
+    composeRunName,
+    runBaseName,
+    splitRunName,
+    sortRuns,
+    groupOf,
+    assignGroup,
+    ungroupRuns,
+    pruneGroups,
+    runPseudoKey,
+    docBarred,
+    allowedDocs,
     WORKFLOWS_KEY,
     RUNS_KEY,
     RUN_IDS_KEY,

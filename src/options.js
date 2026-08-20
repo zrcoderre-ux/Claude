@@ -347,7 +347,70 @@
     newBtn: document.getElementById("wf-new"),
     runs: document.getElementById("wf-runs"),
     runsEmpty: document.getElementById("wf-runs-empty"),
+    runSort: document.getElementById("wf-run-sort"),
+    runGroupBtn: document.getElementById("wf-run-group"),
+    runGroupTools: document.getElementById("wf-run-group-tools"),
+    runGroupSave: document.getElementById("wf-run-group-save"),
+    runGroupUn: document.getElementById("wf-run-group-un"),
+    runGroupCancel: document.getElementById("wf-run-group-cancel"),
   };
+
+  // ---- related-run groups & the runs list's order --------------------------
+  // The decisions (who's in a group, what each order means) are WF's —
+  // sortRuns/assignGroup/ungroupRuns/pruneGroups — this is only the checkboxes.
+  const RUN_GROUPS_KEY = "cum_run_groups";
+  const RUN_SORT_KEY = "cum_run_sort";
+  let runGroups = [];
+  let runSortMode = "created";
+  let groupPicking = false; // the "check off related runs" mode
+  const groupPicked = new Set();
+
+  chrome.storage.local.get([RUN_GROUPS_KEY, RUN_SORT_KEY], (res) => {
+    runGroups = (res && res[RUN_GROUPS_KEY]) || [];
+    runSortMode = (res && res[RUN_SORT_KEY]) || "created";
+    if (wfui.runSort) wfui.runSort.value = runSortMode;
+    renderRuns();
+  });
+
+  function saveRunGroups() {
+    chrome.storage.local.set({ [RUN_GROUPS_KEY]: runGroups });
+  }
+
+  function setGroupPicking(on) {
+    groupPicking = on;
+    groupPicked.clear();
+    if (wfui.runGroupBtn) wfui.runGroupBtn.hidden = on;
+    if (wfui.runGroupTools) wfui.runGroupTools.hidden = !on;
+    renderRuns();
+  }
+
+  if (wfui.runSort)
+    wfui.runSort.addEventListener("change", () => {
+      runSortMode = wfui.runSort.value || "created";
+      chrome.storage.local.set({ [RUN_SORT_KEY]: runSortMode });
+      renderRuns();
+    });
+  if (wfui.runGroupBtn) wfui.runGroupBtn.addEventListener("click", () => setGroupPicking(true));
+  if (wfui.runGroupCancel)
+    wfui.runGroupCancel.addEventListener("click", () => setGroupPicking(false));
+  if (wfui.runGroupSave)
+    wfui.runGroupSave.addEventListener("click", () => {
+      if (groupPicked.size < 2) return alert("Check at least two related runs, then Save group.");
+      runGroups = WF.assignGroup(runGroups, Array.from(groupPicked), crypto.randomUUID());
+      saveRunGroups();
+      // Grouping is a statement about how the list should read — show it.
+      runSortMode = "group";
+      if (wfui.runSort) wfui.runSort.value = "group";
+      chrome.storage.local.set({ [RUN_SORT_KEY]: "group" });
+      setGroupPicking(false);
+    });
+  if (wfui.runGroupUn)
+    wfui.runGroupUn.addEventListener("click", () => {
+      if (!groupPicked.size) return alert("Check the runs to take out of their groups.");
+      runGroups = WF.ungroupRuns(runGroups, Array.from(groupPicked));
+      saveRunGroups();
+      setGroupPicking(false);
+    });
 
   const wfForm = window.CUMWorkflowForm.create(wfui.mount, {
     onSaved: renderWorkflows,
@@ -1142,6 +1205,7 @@
             allowRerun: !!edited.allowRerun,
             ignoreOutage: !!edited.ignoreOutage,
             pseudoKeyId: edited.pseudoKeyId || null,
+            runDate: edited.runDate || null,
           },
         },
         (res) => {
@@ -1189,16 +1253,17 @@
     ]).then(([runs, workflows]) => {
       lastRuns = runs;
       lastWorkflows = workflows;
-      // Runs still being set up sit at the top: they're the ones waiting on you,
-      // and a matter you're preparing shouldn't be below yesterday's finished
-      // one. Everything else stays newest-first.
-      const sorted = runs
-        .slice()
-        .sort(
-          (a, b) =>
-            (WF.isDraft(b) ? 1 : 0) - (WF.isDraft(a) ? 1 : 0) ||
-            (b.createdAt || 0) - (a.createdAt || 0)
-        );
+      // A deleted run must not haunt its group; prune before sorting so the
+      // group order never reads through a ghost.
+      const pruned = WF.pruneGroups(runGroups, runs);
+      if (pruned.changed) {
+        runGroups = pruned.groups;
+        saveRunGroups();
+      }
+      // The list's three orders live in WF.sortRuns: "created" (drafts first,
+      // then newest first), "date" (soonest run date first, undated after in
+      // creation order), "group" (related runs pulled together).
+      const sorted = WF.sortRuns(runs, runSortMode, runGroups);
       wfui.runs.innerHTML = "";
       for (const run of sorted) {
         const wf = WF.getWorkflow(workflows, run.workflowId);
@@ -1279,8 +1344,16 @@
             : "") +
           `<button class="job-del wf-run-del" data-id="${run.id}" title="Remove from the list">✕</button>`;
 
+        const gid = WF.groupOf(runGroups, run.id);
+        const groupNo = gid ? runGroups.findIndex((g) => g.id === gid) + 1 : 0;
         row.innerHTML =
           `<div class="job-head">` +
+          // Checking off related runs: the box leads the row while picking.
+          (groupPicking
+            ? `<input type="checkbox" class="wf-run-pick" data-id="${run.id}"${
+                groupPicked.has(run.id) ? " checked" : ""
+              } title="Check the runs that belong together" />`
+            : "") +
           `<div class="job-title">${
             label.named
               ? escapeHtml(label.title)
@@ -1291,6 +1364,9 @@
           // second copy of the workflows list tells you nothing about which
           // matter is which.
           (label.template ? `<span class="job-badge">${escapeHtml(label.template)}</span>` : "") +
+          // Which set of related runs this one belongs to — numbered by group,
+          // so two groups read apart even when sorted another way.
+          (groupNo ? `<span class="job-badge wf-group-badge">⛓ group ${groupNo}</span>` : "") +
           `<span class="job-badge">${RUN_STATUS_LABEL[run.status] || run.status}</span></div>` +
           `<div class="job-btns">${btns}</div></div>` +
           `<div class="job-main">` +
@@ -1329,6 +1405,14 @@
         wfui.runs.appendChild(row);
       }
       wfui.runsEmpty.hidden = runs.length !== 0;
+
+      wfui.runs.querySelectorAll(".wf-run-pick").forEach((cb) =>
+        cb.addEventListener("change", () => {
+          const id = cb.getAttribute("data-id");
+          if (cb.checked) groupPicked.add(id);
+          else groupPicked.delete(id);
+        })
+      );
 
       wfui.runs.querySelectorAll(".wf-run-cancel").forEach((b) =>
         b.addEventListener("click", () => {
