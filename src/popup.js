@@ -11,6 +11,7 @@
   const AUTODOWNLOAD_SEEN_KEY = "cum_autodownload_last";
   const STATUS_KEY = "cum_status";
   const STATUS_CFG_KEY = "cum_status_cfg";
+  const WARN_CFG_KEY = "cum_warn_cfg";
 
   const S = window.CUMStatus;
 
@@ -40,6 +41,8 @@
     svcStatus: document.getElementById("svc-status"),
     svcDetail: document.getElementById("svc-detail"),
     statusWarn: document.getElementById("status-warn"),
+    usageWarn: document.getElementById("usage-warn"),
+    usageShare: document.getElementById("usage-share"),
     statusHold: document.getElementById("status-hold"),
     statusModel: document.getElementById("status-model"),
     dlProbe: document.getElementById("dl-probe"),
@@ -138,6 +141,11 @@
   let acCfg = { enabled: false, max: 50, allowOnce: false };
   let dlCfg = { enabled: false, max: 20, catchUp: false, lookbackMin: 10 };
   let statusCfg = { warn: true, holdSends: true, defaultModel: "" };
+  let warnCfg = { enabled: true, dailyShare: null };
+
+  function saveWarnCfg(msg) {
+    chrome.storage.local.set({ [WARN_CFG_KEY]: warnCfg }, () => msg && flash(msg));
+  }
 
   chrome.storage.local.get(
     [
@@ -152,6 +160,7 @@
       AUTODOWNLOAD_SEEN_KEY,
       STATUS_KEY,
       STATUS_CFG_KEY,
+      WARN_CFG_KEY,
     ],
     (res) => {
       render(res && res[STORAGE_KEY]);
@@ -183,6 +192,15 @@
       el.statusWarn.checked = statusCfg.warn;
       el.statusHold.checked = statusCfg.holdSends;
       el.statusModel.value = statusCfg.defaultModel;
+      // On by default, like the outage warning — only an explicit false is off.
+      const wc = (res && res[WARN_CFG_KEY]) || {};
+      warnCfg = {
+        enabled: wc.enabled !== false,
+        dailyShare: typeof wc.dailyShare === "number" ? wc.dailyShare : null,
+      };
+      el.usageWarn.checked = warnCfg.enabled;
+      // Blank means the even seventh, which the placeholder already names.
+      el.usageShare.value = warnCfg.dailyShare == null ? "" : String(warnCfg.dailyShare);
       renderStatus((res && res[STATUS_KEY]) || null);
       askStatus(false); // and refresh it if the worker's reading has gone stale
     }
@@ -191,6 +209,24 @@
   el.statusWarn.addEventListener("change", () => {
     statusCfg.warn = el.statusWarn.checked;
     saveStatusCfg(statusCfg, statusCfg.warn ? "Outage warnings on" : "Outage warnings off");
+  });
+
+  el.usageWarn.addEventListener("change", () => {
+    warnCfg.enabled = el.usageWarn.checked;
+    saveWarnCfg(warnCfg.enabled ? "Usage-pace warnings on" : "Usage-pace warnings off");
+  });
+
+  el.usageShare.addEventListener("change", () => {
+    const raw = el.usageShare.value.trim().replace(/%$/, "");
+    const v = raw === "" ? null : Number(raw);
+    if (v != null && (!isFinite(v) || !(v > 0) || v > 100)) {
+      // A share the warnings would ignore anyway isn't stored: say so and put
+      // the field back, rather than leaving a number on screen that does nothing.
+      el.usageShare.value = warnCfg.dailyShare == null ? "" : String(warnCfg.dailyShare);
+      return flash("A daily share is between 0 and 100%");
+    }
+    warnCfg.dailyShare = v;
+    saveWarnCfg(v == null ? "Back to an even seventh a day" : "Daily share: " + v + "%");
   });
 
   el.statusHold.addEventListener("change", () => {

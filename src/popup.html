@@ -62,6 +62,17 @@
         autocomplete="off" spellcheck="false" />.</p>
 
     <label class="toggle">
+      <input id="usage-warn" type="checkbox" />
+      <span>Warn me when I'm outpacing my usage</span>
+    </label>
+    <p class="hint">On by default. A warning pill above the meter (and a desktop
+      notification) each time a day crosses <b>its share of the weekly limit</b>,
+      and once each as the week passes <b>50%, 75% and 90%</b>. A day's share is
+      an even seventh of the week — <b>14.3%</b> — unless you'd rather it were
+      <input id="usage-share" type="text" class="inline-text" placeholder="14.3"
+        autocomplete="off" spellcheck="false" inputmode="decimal" />% a day.</p>
+
+    <label class="toggle">
       <input id="show-overage" type="checkbox" />
       <span>Show extra-usage spend ($)</span>
     </label>

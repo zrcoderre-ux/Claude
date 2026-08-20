@@ -1678,7 +1678,9 @@
   // Daily usage (weekday profile of weekly-limit consumption)
   // ======================================================================
   const DAILY_KEY = "cum_daily";
+  const WARN_CFG_KEY = "cum_warn_cfg";
   const D = window.CUMDaily;
+  const UW = window.CUMUsageWarn;
   // Weeks start Tuesday (the 5-hour/weekly usage resets Tue 9am PT), so the
   // chart leads with Tuesday.
   const WEEK_ORDER = [2, 3, 4, 5, 6, 0, 1]; // Tue → Mon
@@ -1719,8 +1721,9 @@
   }
 
   function renderDaily() {
-    chrome.storage.local.get(DAILY_KEY, (res) => {
+    chrome.storage.local.get([DAILY_KEY, WARN_CFG_KEY], (res) => {
       const model = (res && res[DAILY_KEY]) || null;
+      const warnCfg = (res && res[WARN_CFG_KEY]) || null;
       const sum = D ? D.summary(model) : { totalDays: 0, avg: [], counts: [], avgTotal: 0 };
       const wk = D ? D.weekActual(model, localDateStr(new Date()), 2) : { actual: [], present: [], total: 0 };
       if (!sum.totalDays && !wk.total) {
@@ -1762,15 +1765,20 @@
       dl.chart.innerHTML = html;
 
       dl.note.hidden = false;
+      // The share is the line the daily warning fires on, so the chart that
+      // shows the days names it too — otherwise the warning arrives with no
+      // number on screen to check it against.
+      const share = UW ? UW.shareOf(warnCfg) : 100 / 7;
       dl.note.textContent =
         `Based on ${sum.totalDays} day${sum.totalDays === 1 ? "" : "s"} of history` +
         ` · by this point in the week you've typically used ~${fmtPts(avgToDate)}; this week: ${fmtPts(wk.total)}` +
-        ` (a full week averages ~${fmtPts(sum.avgTotal)}).`;
+        ` (a full week averages ~${fmtPts(sum.avgTotal)}).` +
+        ` Your daily share of the weekly limit is ${UW ? UW.fmtPts(share) : fmtPts(share)} — a day past it warns.`;
     });
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[DAILY_KEY]) renderDaily();
+    if (area === "local" && (changes[DAILY_KEY] || changes[WARN_CFG_KEY])) renderDaily();
   });
 
   renderDaily();

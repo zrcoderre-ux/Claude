@@ -47,6 +47,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
   outage** instead of firing into it — unless the outage is confined to models
   it isn't using, or you tell it to press on. See
   [Outage detection](#outage-detection).
+- **Usage-pace warnings** — a warning pill (and a desktop notification) each time
+  a day crosses **its share of the weekly limit**, and once each as the week
+  passes **50%, 75% and 90%**. On by default, with its own switch and an
+  adjustable daily share in the popup. See
+  [Usage-pace warnings](#usage-pace-warnings).
 - **Usage log + CSV** (Options) — records when you hit 100% and the usage % at
   each 5-hour reset; export to a spreadsheet.
 - **Scheduled sends** — queue files (pick individually or **a whole folder**) +
@@ -2002,6 +2007,56 @@ failing even that they float at the bottom left. Never loose at the top right:
 that's where Share lives, and a Save button covering Share is worse than no Save
 button at all.
 
+## Usage-pace warnings
+
+The meter tells you where you are; this tells you when where you are is a
+problem. Two warnings, both **on by default** and both switched off together by
+**Warn me when I'm outpacing my usage** in the popup:
+
+- **A day past its share of the weekly limit.** The weekly limit is a week's
+  worth of usage, so spent evenly it's **an even seventh a day — 14.3%** of the
+  weekly meter. The first time a day's own consumption crosses that, you're
+  told. If it's a heavy day you're told again at each further whole multiple
+  (2×, 3×, …), because a day that spends triple its share is worth hearing about
+  more than once; a single day can warn at most **10 times**, which is the guard
+  against a hand-set share small enough to fire on every reading.
+- **The week at 50%, 75% and 90%.** Once each per weekly window. Crossing two at
+  once — a big reading after a gap — says the higher one and spends both, rather
+  than stacking notifications.
+
+**A day's usage is the per-day figure the Options page already charts**: the rise
+in the weekly meter since the last reading, attributed to the calendar day it
+happened on (`src/daily.js`). So both halves of this are in one unit throughout —
+percentage points **of the weekly limit** — and the panel prints today's against
+the share (`today / share · 16.2% / 14.3%`) so a warning always has a number on
+screen to check it against.
+
+**The share is adjustable.** An even seventh is the default, not a claim about
+how you work; if your week is really five days, set the share to 20% in the
+popup and the warnings move with it. A value outside 0–100 is refused rather than
+stored, and anything under 1% is treated as 1% for the multiples.
+
+**The pill behaves like the context alarm, not like the outage warning.** At 75%
+of the week and above it stays up, because that's the stretch where every message
+costs you something. Below that — a 50% crossing, or a day past its share — it
+appears for twenty seconds, flashes, and gets out of the way. It's an indicator
+only: it never takes a click, and it rides in the same stack as the outage and
+context pills, between them, so an outage warning never moves out from under your
+cursor when this one appears.
+
+**One warning, not one per tab.** The decision is made in the background worker,
+not in the page: every open claude.ai tab reports its reading, and the worker —
+which owns the fired-state (`cum_warn`) — answers only the first one across a
+threshold. Three tabs crossing 90% together produce one notification. A tab that
+opens onto an already-crossed threshold is told nothing: the warning was given
+when it happened.
+
+**Re-arming.** The weekly marks re-arm when the weekly window rolls — either
+because the reset time changed, or because the meter itself has fallen well below
+a mark it had crossed, which is a window that rolled without our having read its
+new reset yet. The daily one re-arms on the date, which is what "every time I
+cross my daily share" means: at minimum once a day, however the week is going.
+
 ## Outage detection
 
 The background worker polls
@@ -2203,6 +2258,7 @@ manifest.json          MV3 manifest
 src/harvest.js         Pure usage-parsing logic (shared by ext + tests)
 src/estimate.js        Pure tenths-place calibrator (shared by ext + tests)
 src/status.js          Pure status.claude.com model + the scheduled-send gate
+src/usagewarn.js       Daily-share + weekly-milestone warnings (pure)
 src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/cowork.js          Chat/Cowork surface + approval modes (pure)
@@ -2240,6 +2296,7 @@ src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
 test/estimate.test.js  Unit tests for the tenths-place calibrator
 test/status.test.js    Unit tests for the status model + hold decisions
+test/usagewarn.test.js Unit tests for the pace warnings + their re-arming
 test/workflow.test.js  Unit tests for the workflow model + run transitions
 test/toc.test.js       Unit tests for the table-of-contents labelling
 test/stamp.test.js     Unit tests for turn times and the gaps between them

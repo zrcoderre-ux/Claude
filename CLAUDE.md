@@ -37,7 +37,7 @@ changing behaviour.
 
 The layout that matters for testing: logic with no DOM/`chrome` dependency lives
 in its own module under `src/` and is `require`-able from `test/`
-(`harvest.js`, `estimate.js`, `log.js`, `predict.js`, `daily.js`, `weights.js`,
+(`harvest.js`, `estimate.js`, `log.js`, `predict.js`, `daily.js`, `usagewarn.js`, `weights.js`,
 `split.js`, `jobstore.js`, `status.js`, `workflow.js`, `wfusage.js`, `toc.js`, `mdexport.js`, `incognito.js`, `cowork.js`, `xlsxread.js`, `pseudo.js`). Everything
 else — `content.js`,
 `background.js`, `inject.js`, `options.js`, `popup.js` — is wiring around them.

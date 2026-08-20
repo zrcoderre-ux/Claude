@@ -14,8 +14,16 @@
  *
  * MV3 workers are short-lived, so a chrome.alarm keeps things ticking.
  */
-// self.CUMJobs / CUMStatus / CUMWorkflow / CUMWfUsage
-importScripts("jobstore.js", "status.js", "workflow.js", "wfusage.js", "incognito.js", "cowork.js");
+// self.CUMJobs / CUMStatus / CUMWorkflow / CUMWfUsage / CUMUsageWarn
+importScripts(
+  "jobstore.js",
+  "status.js",
+  "workflow.js",
+  "wfusage.js",
+  "incognito.js",
+  "cowork.js",
+  "usagewarn.js"
+);
 
 const CFG_KEY = "cum_autocontinue";
 const DL_CFG_KEY = "cum_autodownload"; // { enabled, max } — the file saver
@@ -27,6 +35,8 @@ const WF_USAGE_KEY = "cum_wf_usage"; // workflow-attributed usage, by date
 const STATE_KEY = "cum_state";
 const STATUS_KEY = "cum_status"; // last status.claude.com snapshot
 const STATUS_CFG_KEY = "cum_status_cfg"; // { warn, holdSends } — both default on
+const WARN_KEY = "cum_warn"; // usage-pace warnings already fired (see usagewarn.js)
+const WARN_CFG_KEY = "cum_warn_cfg"; // { enabled, dailyShare } — enabled defaults on
 const KEEPALIVE = "cum-ac-keepalive";
 const TIME_ALARM = "cum-job-time";
 const RESET_ALARM = "cum-job-reset";
@@ -55,6 +65,7 @@ const S = self.CUMStatus;
 const W = self.CUMWorkflow;
 const U = self.CUMWfUsage;
 const G = self.CUMIncognito;
+const UW = self.CUMUsageWarn;
 
 // ---- storage helpers ----------------------------------------------------
 function get(keys) {
@@ -2554,6 +2565,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // empty list, which would read as "you have none of these".
       sendResponse({ ok: false, error: String((e && e.message) || e) });
     }
+    return true;
+  }
+  // Usage-pace warnings. Every open tab reports its reading; the DECISION is
+  // made here, once, because the fired-state has to be shared — three claude.ai
+  // tabs crossing 75% together is one notification, not three. The reply tells
+  // the asking tab what (if anything) fired, so it can flash its pill.
+  if (msg && msg.type === "cum-usage-warn") {
+    (async () => {
+      if (!UW) return [];
+      const r = await get([WARN_KEY, WARN_CFG_KEY]);
+      const cfg = r[WARN_CFG_KEY] || {};
+      if (cfg.enabled === false) return []; // opted out; don't bank state either
+      const out = UW.due(r[WARN_KEY] || UW.EMPTY, msg.reading, cfg);
+      await set({ [WARN_KEY]: out.state });
+      for (const w of out.fire) notify(w.title, w.message);
+      return out.fire;
+    })()
+      .then((fire) => sendResponse({ fire: fire }))
+      .catch(() => sendResponse({ fire: [] }));
     return true;
   }
   // The pill, popup and options page all read cum_status from storage; this is
