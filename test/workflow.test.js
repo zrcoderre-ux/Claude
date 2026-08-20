@@ -3569,3 +3569,29 @@ test("rekeyPlan: a key changed in one chat reaches the run, its group, and their
   // A conversation no run owns: empty plan — the caller attaches chat-level.
   assert.deepEqual(W.rekeyPlan(runs, groups, { conv: "not-owned" }), { runIds: [], convs: [] });
 });
+
+test("a group is named the way its key is: hint, then key name, then a member's matter", () => {
+  const keys = {
+    "pseudonym_key.xlsx#a1": { name: "pseudonym_key.xlsx", hint: "Rasho", rows: 187 },
+    "pseudonym_key.xlsx#b2": { name: "pseudonym_key.xlsx", hint: "", rows: 12 },
+  };
+  const runs = [
+    { id: "r1", createdAt: 2, name: "MSJ 8/12/26", pseudoKeyId: "pseudonym_key.xlsx#a1" },
+    { id: "r2", createdAt: 1, name: "" },
+    { id: "r3", createdAt: 3, name: "Demurrer Deng 9/2/26" },
+    { id: "r4", createdAt: 4, name: "", pseudoKeyId: "pseudonym_key.xlsx#b2" },
+  ];
+  // The key's hint names the group, whichever member carries the key.
+  assert.equal(W.groupLabel({ id: "g", runIds: ["r2", "r1"] }, runs, keys), "Rasho");
+  // A key with no hint falls back to its file name.
+  assert.equal(W.groupLabel({ id: "g", runIds: ["r4", "r2"] }, runs, keys), "pseudonym_key.xlsx");
+  // No key anywhere: the earliest named member's matter, date label stripped.
+  assert.equal(W.groupLabel({ id: "g", runIds: ["r2", "r3"] }, runs, keys), "Demurrer Deng");
+  // Keyless and nameless: empty — the caller's numbered fallback.
+  assert.equal(W.groupLabel({ id: "g", runIds: ["r2"] }, runs, keys), "");
+  // A stored key id that no longer resolves is not a label.
+  assert.equal(
+    W.groupLabel({ id: "g", runIds: ["r2"] }, [{ id: "r2", createdAt: 1, name: "", pseudoKeyId: "gone" }], keys),
+    ""
+  );
+});
