@@ -396,6 +396,16 @@
   if (wfui.runGroupSave)
     wfui.runGroupSave.addEventListener("click", () => {
       if (groupPicked.size < 2) return alert("Check at least two related runs, then Save group.");
+      // Runs are per CASE, so a group is one case — and one case has ONE
+      // pseudonym key. Two different keys among the checked runs means this
+      // isn't one case (or one run's key is wrong); refusing out loud beats
+      // silently translating someone's chats with the wrong case's map.
+      const keyIds = WF.distinctPseudoKeys(lastRuns, Array.from(groupPicked));
+      if (keyIds.length > 1)
+        return alert(
+          "These runs carry " + keyIds.length + " different pseudonym keys, and a group " +
+            "is one case with one key. Fix the odd run's key first (Edit run), then group."
+        );
       runGroups = WF.assignGroup(runGroups, Array.from(groupPicked), crypto.randomUUID());
       saveRunGroups();
       // Grouping is a statement about how the list should read — show it.

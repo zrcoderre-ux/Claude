@@ -993,10 +993,13 @@ under two members dissolves. Members wear a `⛓ group N` badge; **Ungroup
 checked** takes runs back out. Grouping also switches the sort to Related
 runs, since that's what saving a group is asking to see.
 
-**A group shares its pseudonym key.** A grouped run with no key of its own
-answers to the key a related run carries (the earliest-created member that
-names one) — related runs are one matter, and one matter has one key. Only
-the run's *own* picker overrides it.
+**A group has one pseudonym key, because runs are per case.** A group of
+related runs is one case, and one case has one key — so setting the key on
+any member covers the whole group, and a member never needs (or gets) a
+second one. **Save group refuses a mix**: checking off runs that already
+carry two different keys is either two cases in one group or one run keyed
+wrong, and it says so instead of quietly translating chats with the wrong
+case's map. Fix the odd run's key (Edit run), then group.
 
 **A spreadsheet never rides a run's uploads.** The bar is structural, not a
 warning: every path that shapes a run's documents drops an Excel file

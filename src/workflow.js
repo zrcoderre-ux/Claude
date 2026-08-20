@@ -1893,10 +1893,26 @@
     return { groups: out, changed: changed };
   }
 
+  // Which distinct pseudonym keys a set of runs names. Runs are per CASE, so
+  // a group of related runs is one case and never legitimately names more
+  // than one key — this is what the group-save guard asks before letting a
+  // grouping stand, so the mixed state is refused at the door rather than
+  // reconciled after the fact.
+  function distinctPseudoKeys(runs, ids) {
+    const pick = new Set((ids || []).filter(Boolean));
+    const out = [];
+    for (const r of runs || []) {
+      if (!r || !pick.has(r.id) || !r.pseudoKeyId) continue;
+      if (out.indexOf(r.pseudoKeyId) === -1) out.push(r.pseudoKeyId);
+    }
+    return out;
+  }
+
   // The pseudonym key a run answers to: its own, else the one a related run
-  // carries — a group is one matter, and one matter has one key. When several
-  // mates name keys, the earliest-created one wins, so the answer never
-  // flickers with edit order.
+  // carries — a group is one matter, and one matter has one key. The guard
+  // above keeps a group from ever naming two; the earliest-created-mate
+  // order below only decides a legacy or hand-edited mixed state, so the
+  // answer never flickers with edit order even then.
   function runPseudoKey(run, runs, groups) {
     if (!run) return null;
     if (run.pseudoKeyId) return run.pseudoKeyId;
@@ -3446,6 +3462,7 @@
   }
 
   const api = {
+    distinctPseudoKeys,
     parseRunDate,
     isoRunDate,
     runDateLabel,
