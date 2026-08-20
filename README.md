@@ -2070,6 +2070,13 @@ percentage points **of the weekly limit** — and the panel prints today's again
 the share (`today / share · 16.2% / 14.3%`) so a warning always has a number on
 screen to check it against.
 
+**On the day the week resets** (Tuesday morning) a date's usage spans two weekly
+windows, because the per-day tally counts calendar days and the limit doesn't.
+The daily warning reads that whole day, which is the right answer to "am I
+spending faster than a seventh of a week a day" and an overstatement of what this
+week's budget has taken — the milestones above are the figure to go by that
+morning.
+
 **The share is adjustable.** An even seventh is the default, not a claim about
 how you work; if your week is really five days, set the share to 20% in the
 popup and the warnings move with it. A value outside 0–100 is refused rather than

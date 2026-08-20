@@ -345,6 +345,10 @@
       if (e.button !== 0) return;
       dragging = true;
       moved = false;
+      // Cleared here rather than in the click handler: a drag that ends in a
+      // pointercancel produces no click to consume the flag, and a stale one
+      // would swallow the next real press.
+      badgeDragged = false;
       startX = e.clientX;
       startY = e.clientY;
       const r = el.getBoundingClientRect();
@@ -412,10 +416,7 @@
         "Click to open the cleaner: type text with real names, copy out the fakes. " +
         "Drag it anywhere — where you put it is where it stays.";
       badge.addEventListener("click", () => {
-        if (badgeDragged) {
-          badgeDragged = false;
-          return;
-        }
+        if (badgeDragged) return; // this click is the end of a drag, not a tap
         toggleCleaner();
       });
       setupBadgeDrag(badge);
