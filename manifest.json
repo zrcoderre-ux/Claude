@@ -59,6 +59,7 @@
         "src/weights.js",
         "src/split.js",
         "src/jobstore.js",
+        "src/dropdir.js",
         "src/jobform.js",
         "src/status.js",
         "src/workflow.js",

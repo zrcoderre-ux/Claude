@@ -415,7 +415,9 @@ Set up from **Options** or the **＋ Schedule a send** button in the pill's
 detail panel (which opens the same form as a modal — a shared module,
 `src/jobform.js`). Add files by **dragging them (or a whole folder) onto the
 drop zone**, or via the Choose files / Choose folder buttons; selections show as
-removable chips and are snapshotted at queue time. Pick a **target**: a new
+removable chips and are snapshotted at queue time. A folder hands over the files
+inside it and not the folder — see [Dropping a folder](#dropping-a-folder) for
+what the walk skips and where it stops. Pick a **target**: a new
 chat, a Project, or — when opened from the pill while viewing a conversation —
 **this chat**. Pick a **surface** — Chat or Cowork — and, in Cowork, how much
 Claude may do unattended; see [Cowork](#cowork). Each job stores your files inside the extension
@@ -558,7 +560,9 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
 - **Documents** — **on the run, not on the workflow.** Papers are a matter's, and
   a template that held them would hand the last matter's exhibits to the next
   one; so the workflow editor has no documents field at all, and a run's does.
-  Dropped in, or **pasted**: text pasted anywhere in the run's editor
+  Dropped in — **including a whole folder**, see [Dropping a
+  folder](#dropping-a-folder) — picked with **Choose files…** or
+  **Choose folder…**, or **pasted**: text pasted anywhere in the run's editor
   that isn't a box you were typing in becomes a `.txt` document, the way
   claude.ai turns a large paste into an attachment. It's named from its own first
   line — `Opposition to Motion to Compel.txt` tells you what it is in the list
@@ -779,6 +783,36 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   to migrate and nothing to re-create. (A workflow that predates the step-level
   switch had the marker on the *chat*; that one moved onto every step of that
   chat when it was migrated, which is what the chat-level setting meant.)
+
+### Dropping a folder
+
+Drag a folder onto a run's documents area and the files
+*inside* it are added — never the folder itself, which as a "document" would
+be a row that uploads nothing. So a matter's papers and the
+`pseudonym_key.xlsx` sitting beside them go in **one gesture**: select both,
+drop them together, the folder is walked and the key is
+[recognised on its way past](#pseudonym-translation) and attached rather than
+uploaded. **Choose folder…** does the same through a picker. Four things the
+walk decides, in `src/dropdir.js`:
+
+- **Subfolders are descended**, and files come in the order the folder reads
+  in, numbers sorted as numbers — `exhibit-2` before `exhibit-10` — because
+  that's the order they upload in and, when they're text, are combined in.
+- **What nobody meant to upload is left out**: every dotfile (`.DS_Store`
+  beside every Mac folder, and `.env`, which really shouldn't ride along) plus
+  `Thumbs.db` and `desktop.ini`. Each would otherwise cost an attachment slot
+  and tell Claude nothing.
+- **A file already in the list isn't added twice** — same name and same size —
+  so dropping the folder again after adding one more paper doesn't double it.
+- **The caps are said out loud.** 300 files and eight levels deep; a folder
+  bigger than that is taken as far as the cap and the editor says the rest
+  were left out, because a truncation nobody mentions is the failure worth
+  designing against.
+
+A folder over 100 files comes back **whole**, which is worth stating because
+the browser API hands folder contents back a hundred at a time and expects to
+be asked again — read once, a folder of 140 papers silently becomes 100. The
+scheduled-send form's drop zone runs the same module and the same rules.
 
 ### Steps that run at the same time
 
@@ -2420,6 +2454,7 @@ src/daily.js           Per-day attribution of weekly-limit usage (pure)
 src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/wfexport.js        Workflow export/import bundles: what travels (pure)
+src/dropdir.js         A dropped folder, taken apart: walk, skips, caps (pure)
 src/cowork.js          Chat/Cowork surface + approval modes (pure)
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown

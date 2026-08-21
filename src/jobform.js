@@ -119,6 +119,7 @@
   function create(container, opts) {
     opts = opts || {};
     const J = root.CUMJobs;
+    const DD = root.CUMDropDir; // a dropped folder, taken apart
     const doc = container.ownerDocument || document;
     injectStyles(doc);
 
@@ -227,20 +228,14 @@
         ui.summary.hidden = false;
       }
     }
-    function walk(entry, out) {
-      return new Promise((resolve) => {
-        if (!entry) return resolve();
-        if (entry.isFile) entry.file((f) => (out.push(f), resolve()), () => resolve());
-        else if (entry.isDirectory) {
-          const rd = entry.createReader();
-          const batch = () => rd.readEntries(async (es) => {
-            if (!es.length) return resolve();
-            for (const e of es) await walk(e, out);
-            batch();
-          }, () => resolve());
-          batch();
-        } else resolve();
-      });
+    // A folder's files, once CUMDropDir has taken it apart: the files inside,
+    // in the folder's own order, without the .DS_Store and without the folder
+    // itself. What the walk left out is said rather than left to be noticed.
+    function takeFolder(res) {
+      if (!res) return;
+      addFiles(res.files.map((x) => x.file));
+      const said = DD ? DD.summarize(res) : "";
+      if (said) flash(said);
     }
     ui.drop.addEventListener("dragover", (e) => (e.preventDefault(), ui.drop.classList.add("drag")));
     ui.drop.addEventListener("dragleave", () => ui.drop.classList.remove("drag"));
@@ -248,18 +243,23 @@
       e.preventDefault();
       ui.drop.classList.remove("drag");
       const dt = e.dataTransfer;
-      const entries = dt && dt.items
+      if (!dt) return;
+      // Collected synchronously — the items list is emptied the moment this
+      // handler returns — and walked afterwards. Only an entry tells a folder
+      // from a file; dt.files calls a dropped folder a zero-byte file.
+      const entries = dt.items
         ? Array.from(dt.items).map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null)).filter(Boolean)
         : [];
-      if (entries.length) {
-        const out = [];
-        Promise.all(entries.map((en) => walk(en, out))).then(() => addFiles(out));
-      } else if (dt && dt.files) addFiles(Array.from(dt.files));
+      if (entries.length && DD) DD.walk(entries).then(takeFolder);
+      else if (dt.files) addFiles(Array.from(dt.files));
     });
     ui.pickFiles.addEventListener("click", () => ui.files.click());
     ui.pickFolder.addEventListener("click", () => ui.folder.click());
     ui.files.addEventListener("change", () => (addFiles(Array.from(ui.files.files || [])), (ui.files.value = "")));
-    ui.folder.addEventListener("change", () => (addFiles(Array.from(ui.folder.files || [])), (ui.folder.value = "")));
+    ui.folder.addEventListener("change", () => {
+      takeFolder(DD ? DD.fromPicked(Array.from(ui.folder.files || [])) : null);
+      ui.folder.value = "";
+    });
 
     // ---- target (New chat / This chat / projects) ----
     function fillTarget(projects) {
