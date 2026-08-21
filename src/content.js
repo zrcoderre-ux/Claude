@@ -854,7 +854,7 @@
         </div>
         <div class="cum-panel-row cum-panel-sub" id="cum-p-updated">Not observed yet</div>
         <div class="cum-panel-hint" id="cum-p-hint" hidden>Reading your usage — this updates automatically.</div>
-        <button id="cum-dl-now-btn" type="button">Download the newest file</button>
+        <button id="cum-dl-now-btn" type="button">Download the newest reply's files</button>
         <div id="cum-dl-now-note" hidden></div>
         <button id="cum-schedule-btn" type="button">＋ Schedule a send</button>
         <button id="cum-options-btn" type="button">Open options →</button>
@@ -946,11 +946,14 @@
       if (!els.panel.hidden) placePanel();
     });
 
-    // Download the newest file, by hand. The same walk the automatic path
-    // makes — CUMAutoDownload.tryNow — with every gate off, because you
-    // pressing this is not the backlog those gates exist to refuse. It reports
-    // which reply it looked at, what it found on it, and what it pressed, which
-    // is how the Chat/Cowork toggle and the rename were both settled.
+    // Download the newest reply's files, by hand — ALL of them, not the first:
+    // a reply that hands back a set of documents is one act. The same walk the
+    // automatic path makes — CUMAutoDownload.tryNow — with every gate off,
+    // because you pressing this is not the backlog those gates exist to refuse.
+    // It reports which reply it looked at, what it found on it, and what it
+    // pressed, which is how the Chat/Cowork toggle and the rename were both
+    // settled. The files are saved one at a time and the note is rewritten with
+    // the tally when the last one has settled.
     if (els.dlNowBtn)
       els.dlNowBtn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -958,7 +961,7 @@
         if (!D || !D.tryNow) return sayDlNow("the auto-download module isn't loaded");
         let text;
         try {
-          text = D.tryNow();
+          text = D.tryNow(sayDlNow); // called again with the batch's tally
         } catch (err) {
           text = "threw: " + String((err && err.message) || err);
         }

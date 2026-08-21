@@ -825,3 +825,73 @@ test("the clock's slack is a second, not a licence", () => {
   assert.equal(A.arrivalOf([{ name: "a.docx", at: 4200 }], "a.docx", 5000).arrived, true);
   assert.equal(A.arrivalOf([{ name: "a.docx", at: 3000 }], "a.docx", 5000).arrived, false);
 });
+
+// ---- the manual button takes the whole reply ------------------------------
+
+test("the batch is every file the reply offers, in the order it offers them", () => {
+  const offers = [
+    { key: "t1|ruling.docx", name: "ruling.docx" },
+    { key: "t1|exhibit-a.pdf", name: "exhibit-a.pdf" },
+    { key: "t1|exhibit-b.pdf", name: "exhibit-b.pdf" },
+  ];
+  const r = A.batchPlan(offers);
+  assert.deepEqual(r.take.map((o) => o.name), ["ruling.docx", "exhibit-a.pdf", "exhibit-b.pdf"]);
+  assert.deepEqual(r.notReady, []);
+  assert.equal(r.capped, 0);
+  assert.match(A.batchSummary(r), /Saving all 3 files from this reply, one at a time\./);
+});
+
+test("one file is still a batch, and reads like one file", () => {
+  const r = A.batchPlan([{ key: "t1|only.docx", name: "only.docx" }]);
+  assert.equal(r.take.length, 1);
+  assert.equal(A.batchSummary(r), "Saving 1 file from this reply.");
+});
+
+test("what has already been pressed is left out and SAID, not silently skipped", () => {
+  const r = A.batchPlan([
+    { key: "t1|a.docx", name: "a.docx", ready: false },
+    { key: "t1|b.docx", name: "b.docx" },
+  ]);
+  assert.deepEqual(r.take.map((o) => o.name), ["b.docx"]);
+  assert.deepEqual(r.notReady.map((o) => o.name), ["a.docx"]);
+  assert.match(A.batchSummary(r), /1 was already pressed/);
+});
+
+test("the batch has a ceiling, and says what it left out", () => {
+  const many = [];
+  for (let i = 1; i <= A.MAX_PER_TURN + 3; i++) many.push({ key: "t1|f" + i, name: "f" + i });
+  const r = A.batchPlan(many);
+  assert.equal(r.take.length, A.MAX_PER_TURN);
+  assert.equal(r.capped, 3);
+  assert.match(A.batchSummary(r), /3 left out by the \d+-file ceiling/);
+});
+
+test("a smaller ceiling can be asked for", () => {
+  const r = A.batchPlan([{ key: "a" }, { key: "b" }, { key: "c" }], { max: 2 });
+  assert.equal(r.take.length, 2);
+  assert.equal(r.capped, 1);
+});
+
+test("the same file offered twice is pressed once", () => {
+  // Two paths can find one control — a[download] and the card scan — and
+  // pressing it twice is a second copy on your disk.
+  const r = A.batchPlan([
+    { key: "t1|a.docx", name: "a.docx" },
+    { key: "t1|a.docx", name: "a.docx" },
+    { key: "t1|b.docx", name: "b.docx" },
+  ]);
+  assert.deepEqual(r.take.map((o) => o.name), ["a.docx", "b.docx"]);
+});
+
+test("nothing pressable is an answer rather than an empty batch", () => {
+  const r = A.batchPlan([{ key: "t1|a.docx", name: "a.docx", ready: false }]);
+  assert.deepEqual(r.take, []);
+  assert.equal(A.batchSummary(r), "Nothing here can be pressed.");
+  assert.equal(A.batchSummary(A.batchPlan([])), "Nothing here can be pressed.");
+  assert.equal(A.batchSummary(null), "");
+});
+
+test("junk in the list doesn't break the batch", () => {
+  const r = A.batchPlan([null, { key: "t1|a.docx", name: "a.docx" }, undefined]);
+  assert.deepEqual(r.take.map((o) => o.name), ["a.docx"]);
+});

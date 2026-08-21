@@ -322,6 +322,25 @@
     }
   }
 
+  // The saver writes its finished tally to storage when the last file of a
+  // batch has settled — after the message it answered has already been replied
+  // to. Without this the popup would show "saving 3 files" and never what
+  // became of them.
+  const PROBE_KEY = "cum_autodownload_probe";
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local" || !changes[PROBE_KEY] || !el.dlProbeOut) return;
+      const text = ((changes[PROBE_KEY].newValue || {}).text || "").trim();
+      if (!text) return;
+      probeText = text;
+      el.dlProbeOut.textContent = text;
+      el.dlProbeOut.hidden = false;
+      if (el.dlCopy) el.dlCopy.hidden = false;
+    });
+  } catch (e) {
+    /* ignore */
+  }
+
   if (el.dlProbe) el.dlProbe.addEventListener("click", () => runProbe("see"));
   if (el.dlTry) el.dlTry.addEventListener("click", () => runProbe("try"));
   if (el.dlCopy)
