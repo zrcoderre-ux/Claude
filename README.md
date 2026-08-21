@@ -361,13 +361,31 @@ says which, under the toggle — `1 offered · saving · 1 reply watched`, or
 `0 offered · nothing new · 0 replies watched · census open`. It's written only
 when the reading changes, so an idle tab writes nothing.
 
-**Save it now**, in the popup, presses the download on the file in the
-conversation you're looking at, this second, with **every gate off** — no
-census, no live rule, no waiting for a turn to land. It searches the **whole
-conversation**, newest answer first, rather than only the last one or two: the
-file you want is often several replies back, under whatever was said after it. Those gates exist so a chat's backlog is never saved
-unasked; you asking for this file, on this reply, in front of you, is not
-unasked. It runs the *same* finding and clicking the automatic path runs, which
+**Save this reply's files** — in the popup, and **Download the newest reply's
+files** in the pill's panel — presses the download on **every file the reply
+offers**, in the conversation you're looking at, this second, with **every gate
+off**: no census, no live rule, no waiting for a turn to land. It searches the
+**whole conversation**, newest answer first, rather than only the last one or
+two: the file you want is often several replies back, under whatever was said
+after it. Those gates exist so a chat's backlog is never saved unasked; you
+asking for these files, on this reply, in front of you, is not unasked.
+
+**The whole reply, not the first file on it.** A reply that hands back a set of
+documents — a ruling and its exhibits, a pseudonymised bundle, a run's output —
+is one act, and collecting it a button-press at a time is a chance to lose one
+each time. The batch saves **one file at a time**, in the order the reply offers
+them, each waiting for the one before it to settle; the report says what it is
+about to take, each file toasts as it lands, and the tally is written back when
+the last one has finished. A reply with a single file on it behaves exactly as
+it always did.
+
+**"The same reply" is a different question on each surface, so it is asked
+twice.** On Chat the cards are *inside* the message, so the batch is what that
+message contains. On Cowork a turn's files sit **outside** it, in artifact
+blocks that follow the reply and precede the next one — so there the batch is a
+question of position, and the newest reply that produced any files is the one
+taken. (The standing rule: Cowork is not Chat with a different address.) Both
+paths were driven end to end against a page of several files, on each surface. It runs the *same* finding and clicking the automatic path runs, which
 is what makes it a diagnosis as well as a button: if it saves the file, the
 finding and the clicking work and a gate was what held it; if it doesn't, it
 names the step that failed — no card found, a card with no control on it,

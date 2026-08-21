@@ -578,6 +578,44 @@
     return out;
   }
 
+  /**
+   * Cowork's artifact blocks, grouped by the reply they belong to — newest
+   * group first, and only the newest non-empty one returned.
+   *
+   * On Chat "the files in this reply" is a containment question: the cards are
+   * inside the message. On Cowork the blocks sit OUTSIDE it, so the same
+   * question is a positional one — a turn's blocks follow its reply and
+   * precede the next one. Same batch, read a different way, which is the
+   * standing rule about not assuming Chat's plumbing works here.
+   *
+   * Walks backwards so a newest reply that produced no files doesn't stop the
+   * search: the batch you mean is the newest one that HAS files.
+   */
+  function artifactBatch() {
+    const all = artifactOffers(false);
+    if (!all.length) return [];
+    const msgs = assistantMessages();
+    if (!msgs.length) return all.slice(-1); // no replies to group by: newest block
+    // Where each block sits relative to each reply, asked once per pair.
+    const after = (node, mark) => {
+      try {
+        return !!(mark.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
+      } catch (e) {
+        return false;
+      }
+    };
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const next = msgs[i + 1] || null;
+      const group = all.filter(
+        (o) => o.node && after(o.node, msgs[i]) && (!next || !after(o.node, next))
+      );
+      if (group.length) return group;
+    }
+    // Every block sits ABOVE the first reply — a shape nothing here expects.
+    // The newest block alone is the honest answer rather than the whole page.
+    return all.slice(-1);
+  }
+
   // What's already in Downloads, asked of the worker — chrome.downloads is not
   // exposed to content scripts. Refreshed on a slow cadence: it changes when a
   // file is saved, and it is only ever used to hold one back.
@@ -860,13 +898,50 @@
   let saving = false;
 
   async function save(offer) {
-    if (saving) return; // belt: tick() holds off too
+    if (saving) return { ok: false, name: offer && offer.name, why: "a save was already running" };
     saving = true;
     try {
-      await saveOne(offer);
+      return await saveOne(offer);
     } finally {
       saving = false;
     }
+  }
+
+  /**
+   * A reply's whole batch, one file at a time.
+   *
+   * Sequential on purpose and not merely by habit: see the note on `saving`.
+   * Each save is awaited, so the next one starts on a page with no menu open
+   * and no Escape pending, and each one's arrival check has only its own
+   * press outstanding to explain.
+   */
+  async function saveAll(list, bank) {
+    const done = [];
+    for (const offer of list || []) {
+      if (bank) bank(offer);
+      let r;
+      try {
+        r = await save(offer);
+      } catch (e) {
+        r = { ok: false, name: offer.name, why: String((e && e.message) || e) };
+      }
+      done.push(r || { ok: false, name: offer.name, why: "no answer" });
+    }
+    return done;
+  }
+
+  // The batch's own report, written when the last file has settled.
+  function batchReport(results) {
+    const ok = results.filter((r) => r && r.ok);
+    const lines = [
+      ok.length === results.length
+        ? "Saved all " + results.length + (results.length === 1 ? " file." : " files.")
+        : "Saved " + ok.length + " of " + results.length + ".",
+    ];
+    for (const r of results)
+      lines.push("  " + (r.ok ? "saved" : "not saved") + " · " +
+        JSON.stringify(r.name || "(unnamed)") + (r.why ? " — " + r.why : ""));
+    return lines.join("\n");
   }
 
   async function saveOne(offer) {
@@ -894,7 +969,7 @@
       offer.node.click();
     } catch (e) {
       toast("Couldn't press " + (offer.name || "that file") + " — nothing was saved");
-      return;
+      return { ok: false, name: offer.name, why: "the control wouldn't take a click" };
     }
     // Repeatedly, and for several seconds. A menu draws in a frame, a preview
     // panel takes rather longer, and Cowork's opener draws a whole file view —
@@ -1002,7 +1077,7 @@
           ? `Saved ${named} (${count} / ${cap}) — you already had one of that name, so this is a second copy`
           : `Saved ${named} (${count} / ${cap})`
       );
-      return;
+      return { ok: true, name: named, why: collides ? "a second copy of a name you had" : "" };
     }
     // Not saved, and said so. Which half failed is the useful part: a Download
     // that was never found is a different problem from one that was pressed and
@@ -1026,13 +1101,18 @@
     }
     if (arrived === null) {
       toast(`Pressed ${offer.name || "that file"} — couldn't check your downloads to confirm it saved`);
-      return;
+      return { ok: false, name: offer.name, why: "couldn't check your downloads" };
     }
     toast(
       chased
         ? `Pressed Download for ${offer.name || "that file"} but nothing reached your downloads`
         : `Pressed ${offer.name || "that file"} but found no Download in what opened — nothing saved`
     );
+    return {
+      ok: false,
+      name: offer.name,
+      why: chased ? "pressed Download, nothing arrived" : "found no Download in what opened",
+    };
   }
 
   function tick() {
@@ -1391,7 +1471,7 @@
    * file, the finding and the clicking work and the gates are what held it; if
    * it doesn't, it says which step failed and there is nothing left to guess at.
    */
-  function tryNow() {
+  function tryNow(onDone) {
     const out = [];
     const say = (s) => out.push(s);
     try {
@@ -1432,14 +1512,17 @@
       // the manual button sees the whole page, newest block first.
       let artifact = false;
       if (!offers.length) {
-        const arts = artifactOffers(false);
+        // The newest reply's blocks, not every block on the page: Cowork keeps
+        // a turn's files outside the message, so "the same reply" is answered
+        // by position there (artifactBatch).
+        const arts = artifactBatch();
         if (arts.length) {
           artifact = true;
-          offers = arts.slice().reverse();
+          offers = arts;
           say(
             arts.length +
-              (arts.length === 1 ? " artifact file on the page" : " artifact files on the page") +
-              " — Cowork presents files outside the reply"
+              (arts.length === 1 ? " artifact file" : " artifact files") +
+              " in the newest reply that produced any — Cowork presents files outside the reply"
           );
         }
       }
@@ -1454,36 +1537,54 @@
         return finishProbe(out);
       }
 
-      const take = offers.filter((o) => o.ready);
-      say(offers.length + " offered, " + take.length + " ready to press");
+      // Keys first, for every offer — the ledger's, so the automatic path
+      // doesn't come back and press the same file again, and carried ON the
+      // offer so a chase that fails can hand its key back rather than locking
+      // the file until the page reloads. An artifact offer arrives keyed by
+      // its own name already.
+      if (!artifact) {
+        const keys = A.offerKeys(A.turnSignature(msg.textContent), offers.map((o) => o.name));
+        offers.forEach((o, i) => (o.key = keys[i] || null));
+      }
+
+      // THE WHOLE REPLY'S FILES, not the first one. A reply that hands back a
+      // set of documents is one act, and collecting it a button-press at a
+      // time is a chance to lose one each time.
+      const batch = A.batchPlan(offers);
+      say(offers.length + " offered, " + batch.take.length + " ready to press");
       for (const o of offers)
         say("  " + JSON.stringify(o.name || "(unnamed)") + " — " + label(o.node) +
-          (o.ready ? "" : " — already pressed this page load") +
+          (o.ready === false ? " — already pressed this page load" : "") +
           (o.opener ? " — an opener, so Download gets chased into whatever it opens" : ""));
-      if (!take.length) return finishProbe(out.concat(["Nothing left to press — reload the page to start over."]));
-      // One save at a time. Pressing now would be refused by save()'s own
-      // guard AFTER the key had been banked as pressed, which would lock the
-      // file out for the rest of the page load without saving it.
+      if (!batch.take.length)
+        return finishProbe(out.concat(["Nothing left to press — reload the page to start over."]));
+      // One save at a time, and that includes the first of a batch. Pressing
+      // now would be refused by save()'s own guard AFTER the key had been
+      // banked as pressed, which would lock the file out for the rest of the
+      // page load without saving it.
       if (saving)
         return finishProbe(
           out.concat(["A save is already in flight — give it a few seconds and press again."])
         );
 
-      // Remembered, so the automatic path doesn't come back and press it again
-      // — and carried ON the offer, so a chase that fails can hand the key
-      // back rather than locking the file until the page reloads. An artifact
-      // offer arrives already keyed by its own name.
-      if (artifact) {
-        if (take[0].key && seen.indexOf(take[0].key) === -1) seen.push(take[0].key);
-      } else {
-        const keys = A.offerKeys(A.turnSignature(msg.textContent), offers.map((o) => o.name));
-        offers.forEach((o, i) => {
-          o.key = keys[i] || null;
-          if (o === take[0] && keys[i] && seen.indexOf(keys[i]) === -1) seen.push(keys[i]);
-        });
-      }
-      say("Pressing it now. If a panel opens, Download is looked for inside it and pressed too.");
-      save(take[0]);
+      say(A.batchSummary(batch));
+      say("If a panel opens for one, Download is looked for inside it and pressed too.");
+      const bank = (o) => {
+        if (o.key && seen.indexOf(o.key) === -1) seen.push(o.key);
+      };
+      // Async from here: the report says what is about to happen, each file
+      // toasts as it lands, and the finished tally is written back — to the
+      // stored report the popup reads, and to whoever asked (the pill's note).
+      saveAll(batch.take, bank).then((results) => {
+        const text = finishProbe(out.concat([""], [batchReport(results)]));
+        if (typeof onDone === "function") {
+          try {
+            onDone(text);
+          } catch (e) {
+            /* the caller's note is not this function's problem */
+          }
+        }
+      });
     } catch (e) {
       say("threw: " + String((e && e.message) || e));
     }

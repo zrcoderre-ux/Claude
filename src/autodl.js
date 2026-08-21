@@ -323,6 +323,69 @@
     return Object.assign({}, none, { hold: held });
   }
 
+  /**
+   * The batch a manual press should take: every file the SAME REPLY is
+   * offering, not just the first one.
+   *
+   * A reply that hands back a set of documents — a pseudonymised bundle, a
+   * run's output, a ruling and its exhibits — is one act, and pressing a
+   * button four times to collect it is four chances to lose one. The
+   * automatic path already walks a reply file by file; this is the same thing
+   * asked for deliberately.
+   *
+   * `offers` are one reply's, in the order the reply presents them. Ordering
+   * and grouping are the caller's — it is the caller that knows where a reply
+   * begins and ends, and on Cowork the files sit outside it.
+   *
+   * → { take, notReady, capped, total }
+   *   take      what to press, in order, duplicates by key removed
+   *   notReady  what can't be pressed (already saved this page load, disabled)
+   *   capped    how many were left out by the ceiling — never silently
+   */
+  function batchPlan(offers, opts) {
+    const o = opts || {};
+    const max = o.max > 0 ? o.max : MAX_PER_TURN;
+    const list = Array.isArray(offers) ? offers : [];
+    const take = [];
+    const notReady = [];
+    const seen = Object.create(null);
+    let capped = 0;
+    for (const x of list) {
+      if (!x) continue;
+      const k = x.key || "";
+      if (k && seen[k]) continue;
+      if (k) seen[k] = true;
+      if (x.ready === false) {
+        notReady.push(x);
+        continue;
+      }
+      if (take.length >= max) {
+        capped++;
+        continue;
+      }
+      take.push(x);
+    }
+    return { take: take, notReady: notReady, capped: capped, total: list.length };
+  }
+
+  /** What the batch is about to do, as a line for the report. */
+  function batchSummary(res) {
+    if (!res) return "";
+    const n = res.take.length;
+    if (!n) return "Nothing here can be pressed.";
+    const head =
+      n === 1
+        ? "Saving 1 file from this reply"
+        : "Saving all " + n + " files from this reply, one at a time";
+    const notes = [];
+    if (res.notReady.length)
+      notes.push(
+        res.notReady.length + (res.notReady.length === 1 ? " was" : " were") + " already pressed"
+      );
+    if (res.capped) notes.push(res.capped + " left out by the " + MAX_PER_TURN + "-file ceiling");
+    return head + (notes.length ? " (" + notes.join("; ") + ")" : "") + ".";
+  }
+
   // How a file is recognised as one you already have.
   //
   // Matched on the NAME, because that is the only thing a card on the page and
@@ -626,6 +689,8 @@
     downloadKey,
     downloadIndex,
     arrivalOf,
+    batchPlan,
+    batchSummary,
     fileName,
     turnSignature,
     offerKeys,
