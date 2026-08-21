@@ -2546,13 +2546,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // failed to find a Download in, and the toast said "Saved" all the same.
   if (msg && msg.type === "cum-dl-newest") {
     try {
-      chrome.downloads.search({ limit: 1, orderBy: ["-startTime"] }, (items) => {
+      // The recent few rather than only the newest. One file's check used to
+      // read "is the newest download newer than my press", which cannot tell
+      // two files saved seconds apart from each other — each check could see
+      // the other's file and claim it. A short list lets the asker match on the
+      // NAME it pressed for (src/autodl.js, arrivalOf).
+      chrome.downloads.search({ limit: 10, orderBy: ["-startTime"] }, (items) => {
         void chrome.runtime.lastError;
-        const it = (items || [])[0];
-        const at = it && it.startTime ? Date.parse(it.startTime) : 0;
-        const full = (it && it.filename) || "";
-        const cut = Math.max(full.lastIndexOf("/"), full.lastIndexOf("\\"));
-        sendResponse({ ok: true, at: isFinite(at) ? at : 0, name: full.slice(cut + 1) });
+        const list = [];
+        for (const it of items || []) {
+          const full = (it && it.filename) || "";
+          if (!full) continue;
+          const at = it.startTime ? Date.parse(it.startTime) : 0;
+          const cut = Math.max(full.lastIndexOf("/"), full.lastIndexOf("\\"));
+          list.push({ name: full.slice(cut + 1), at: isFinite(at) ? at : 0 });
+        }
+        const top = list[0] || { name: "", at: 0 };
+        sendResponse({ ok: true, at: top.at, name: top.name, items: list });
       });
     } catch (e) {
       // Unknown is not "nothing arrived": the saver treats an unanswered

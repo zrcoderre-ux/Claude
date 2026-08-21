@@ -72,6 +72,7 @@
   let baselined = false;
   let where = ""; // the conversation this ledger belongs to
   let toldCap = false;
+  let toldTurnCap = false;
   let followed = ""; // the last file whose Download had to be chased into a panel
   // What the last press actually came to. The toast says it once and is gone;
   // this is here so the probe can say it again, which is the difference
@@ -805,6 +806,17 @@
     return null;
   }
 
+  let escapeTimer = null;
+
+  // Make sure this save's Escape has happened before the save ends, so it can
+  // never land inside the next one.
+  function settleEscape() {
+    if (!escapeTimer) return;
+    clearTimeout(escapeTimer);
+    escapeTimer = null;
+    escape();
+  }
+
   function escape() {
     try {
       document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -813,9 +825,11 @@
     }
   }
 
-  // The newest download the browser knows about, by start time. Asked of the
-  // worker, since chrome.downloads is not exposed to a content script.
-  function newestDownload() {
+  // The recent downloads the browser knows about, newest first. Asked of the
+  // worker, since chrome.downloads is not exposed to a content script. A LIST
+  // rather than just the newest, so a save can recognise its own file by name
+  // when several are saving in a row.
+  function recentDownloads() {
     return new Promise((resolve) => {
       try {
         chrome.runtime?.sendMessage({ type: "cum-dl-newest" }, (res) => {
@@ -828,7 +842,34 @@
     });
   }
 
+  // One save at a time, always.
+  //
+  // save() runs for as long as ten seconds — a menu to chase, a panel to wait
+  // for, then several rounds of asking the worker whether anything reached the
+  // disk — while tick() comes round every two. With one file on offer that is
+  // invisible. With several it was the bug: the second save pressed its card
+  // while the first was still chasing, so the first's deferred Escape shut the
+  // second's menu, each save's census saw the other's open menu as "new", and
+  // each one's arrival check could see the other's download and call it its
+  // own. A file that had genuinely saved reported failure, was un-marked as
+  // handled, and got pressed again.
+  //
+  // The cooldown in plan() never covered this: it is measured from the START of
+  // a save, and 1.2 seconds of it had long expired by the time the next tick
+  // came round on a save still eight seconds from finishing.
+  let saving = false;
+
   async function save(offer) {
+    if (saving) return; // belt: tick() holds off too
+    saving = true;
+    try {
+      await saveOne(offer);
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function saveOne(offer) {
     lastAt = Date.now();
     count++;
     followed = ""; // this save's own story, not the last one's
@@ -870,7 +911,13 @@
             /* ignore */
           }
           followed = offer.name || "a file";
-          setTimeout(escape, ESCAPE_MS); // shut whatever is left of what opened
+          // Shut whatever is left of what opened — and tracked, so this save
+          // owns its own Escape. An Escape still pending when the next save
+          // starts would shut THAT one's menu instead.
+          escapeTimer = setTimeout(() => {
+            escapeTimer = null;
+            escape();
+          }, ESCAPE_MS);
           return resolve(true);
         }
         if (attempt < CHASE_TRIES) return setTimeout(() => resolve(chase(attempt + 1)), PANEL_MS);
@@ -914,22 +961,25 @@
     let landedName = "";
     for (let i = 0; i < 10; i++) {
       await new Promise((r) => setTimeout(r, 500));
-      const now = await newestDownload();
+      const now = await recentDownloads();
       // Unanswered is UNKNOWN, and stays unknown. It is not evidence of a
       // save, and it is not evidence against one either.
       if (!now) {
         arrived = null;
         continue;
       }
-      // A second of slack, because the download's start time and this clock are
-      // the same clock but not the same instant.
-      if ((now.at || 0) >= pressedAt - 1000) {
+      // Matched on the NAME we pressed for where there is one — see
+      // A.arrivalOf. "The newest download is newer than my press" is a fine
+      // answer for one file and a coin toss for several.
+      const got = A.arrivalOf(now.items, offer.name, pressedAt);
+      if (got.arrived === true) {
         arrived = true;
-        landedName = now.name || "";
+        landedName = got.name || "";
         break;
       }
-      arrived = false;
+      arrived = got.arrived;
     }
+    settleEscape(); // this save's Escape, before the next save can start
 
     const key = offer.name ? A.downloadKey(offer.name) : "";
     const collides = !!(key && downloaded && downloaded[key]);
@@ -1046,6 +1096,11 @@
       live = A.rememberLive(live, newest);
     }
 
+    // A save is in flight: track the page's state, touch nothing else. collect()
+    // hovers cards to reveal their controls, and dispatching pointer events
+    // over a menu the save just opened is its own way of breaking one.
+    if (saving) return;
+
     const offers = collect();
     // Cowork's artifact blocks run alongside the reply scan — and only on
     // Cowork: on Chat a block drawn inside the reply would be found by both
@@ -1081,6 +1136,15 @@
       if ((res.hold === "cap" || ares.hold === "cap") && !toldCap) {
         toldCap = true;
         toast(`Auto-download paused — saved ${count}. Reload to save more.`);
+      }
+      // The per-reply ceiling, said out loud. It used to just stop: a reply
+      // offering more files than one reply may have saved the first few and
+      // went quiet, which reads exactly like the feature failing on a batch.
+      if (res.hold === "reply cap" && !toldTurnCap) {
+        toldTurnCap = true;
+        toast(
+          `That reply offered more than ${A.MAX_PER_TURN} files — the rest are yours to save by hand.`
+        );
       }
       return;
     }
@@ -1397,6 +1461,13 @@
           (o.ready ? "" : " — already pressed this page load") +
           (o.opener ? " — an opener, so Download gets chased into whatever it opens" : ""));
       if (!take.length) return finishProbe(out.concat(["Nothing left to press — reload the page to start over."]));
+      // One save at a time. Pressing now would be refused by save()'s own
+      // guard AFTER the key had been banked as pressed, which would lock the
+      // file out for the rest of the page load without saving it.
+      if (saving)
+        return finishProbe(
+          out.concat(["A save is already in flight — give it a few seconds and press again."])
+        );
 
       // Remembered, so the automatic path doesn't come back and press it again
       // — and carried ON the offer, so a chase that fails can hand the key

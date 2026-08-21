@@ -37,7 +37,13 @@
   "use strict";
 
   const MAX_PER_PAGE = 20; // files saved per page load, across all replies
-  const MAX_PER_TURN = 6; // ...and within any one reply
+  // ...and within any one reply. A reply that hands back a set of documents —
+  // a pseudonymised bundle, a run's output — is the ordinary case rather than
+  // the pathological one, and six was low enough to cut a normal batch off in
+  // the middle. The page ceiling above is the one that stops a runaway; this
+  // one only has to be above what a reply plausibly offers, and where it does
+  // bind the caller says so out loud rather than just stopping.
+  const MAX_PER_TURN = 12;
   const COOLDOWN_MS = 1200; // never two saves closer together than this
   const TURN_SIG = 120; // chars of a reply that identify it
 
@@ -343,6 +349,46 @@
     return s.toLowerCase();
   }
 
+  /**
+   * Did the file we just pressed for actually arrive?
+   *
+   * `items` is the recent download history, newest first, as
+   * [{ name, at }] — or null/undefined for "the question wasn't answered",
+   * which stays UNKNOWN rather than becoming a no.
+   *
+   * Matched BY NAME first, and that is the whole point of this function. The
+   * old rule was "is the newest download newer than my press", which is a fine
+   * answer for one file and a coin toss for several: save two files a couple of
+   * seconds apart and each one's check can see the other's download and call
+   * it its own — reporting a save that didn't happen, and reporting it under
+   * the wrong name. A name that matches is evidence about THIS file.
+   *
+   * Falling back to "something arrived since I pressed" is still right when the
+   * offer had no name to match, or when the file reached disk under a name the
+   * page never showed — and it is only safe because saves are serialised: one
+   * press is outstanding at a time, so a download that started after it is that
+   * press's or nobody's.
+   *
+   * → { arrived: true | false | null, name, byName }
+   */
+  function arrivalOf(items, name, pressedAt, slackMs) {
+    if (!Array.isArray(items)) return { arrived: null, name: "", byName: false };
+    // The download's start time and this clock are the same clock but not the
+    // same instant, so a second of slack.
+    const slack = slackMs == null ? 1000 : slackMs;
+    const floor = (typeof pressedAt === "number" ? pressedAt : 0) - slack;
+    const since = (it) => it && typeof it.at === "number" && it.at >= floor;
+    const key = downloadKey(name);
+    if (key) {
+      for (const it of items)
+        if (since(it) && downloadKey(it.name) === key)
+          return { arrived: true, name: str(it.name), byName: true };
+    }
+    for (const it of items)
+      if (since(it)) return { arrived: true, name: str(it.name), byName: false };
+    return { arrived: false, name: "", byName: false };
+  }
+
   // Every name you already have, as a lookup.
   function downloadIndex(names) {
     const out = Object.create(null);
@@ -579,6 +625,7 @@
     isTypeChip,
     downloadKey,
     downloadIndex,
+    arrivalOf,
     fileName,
     turnSignature,
     offerKeys,
