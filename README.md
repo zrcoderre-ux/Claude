@@ -139,12 +139,20 @@ What it will and won't do besides:
   panel is not one of these: that control lives outside the message, behind a
   menu, and reaching into it is a different feature with different ways to go
   wrong.
-- **A save is announced only once a file has arrived.** The toast used to fire
-  the instant something was pressed, which is a claim the code was in no
-  position to make — the control may have opened a menu it then failed to find a
-  Download in, and it said *"Saved"* regardless. It now asks the worker what the
-  newest download was before pressing and again afterwards, and says which of
-  three things happened: it saved, it pressed a Download and nothing arrived, or
+- **Several files in one reply save one at a time, in the order offered.** A
+  save runs for as long as ten seconds — a menu to chase, a panel to wait for,
+  then several rounds of asking whether anything reached the disk — and a
+  second one starting in the middle of that used to break both: the first
+  save's deferred *Escape* shut the second's menu, and each one's arrival check
+  could see the other's download and claim it. One press is outstanding at a
+  time now, and the page isn't touched at all while it is.
+- **A save is announced only once a file has arrived, matched by name.** The
+  toast used to fire the instant something was pressed, which is a claim the
+  code was in no position to make — the control may have opened a menu it then
+  failed to find a Download in, and it said *"Saved"* regardless. It now asks
+  the worker for the recent downloads and looks for **the name it pressed
+  for** (Chrome's own `ruling (1).docx` de-duplication folded back first), and
+  says which of three things happened: it saved, it pressed a Download and nothing arrived, or
   it found no Download in what opened. A save that didn't happen doesn't count
   against the per-page ceiling either. Where your downloads can't be read at all
   the answer is *"couldn't check"* — never *"saved"*.
@@ -158,6 +166,12 @@ What it will and won't do besides:
 - **Only once the turn has finished.** A file card can appear while Claude is
   still writing, and a save dialog landing mid-answer is exactly the
   interruption this exists to spare you.
+- **A dozen files per reply, twenty per page load.** The page ceiling is the one
+  that stops a runaway; the per-reply one only has to sit above what a reply
+  plausibly hands over, and a reply handing back a set of documents is the
+  ordinary case rather than the pathological one. Where either binds it **says
+  so** — a batch that quietly saved the first few and went silent reads exactly
+  like the feature failing.
 - **A census as well.** Whatever is on the page when the watcher starts — when
   you open a conversation, or turn the toggle on while reading one — is recorded
   as already handled without being clicked. That is belt to the braces above:
@@ -320,8 +334,8 @@ Two things it refuses on principle:
   `download history unread`.
 
 It looks back about a dozen replies rather than the whole chat, keeps every
-other ceiling (six per reply, twenty per page load, the cooldown, wait for the
-turn to end), and does **not** change the census for anything it wouldn't take:
+other ceiling (a dozen per reply, twenty per page load, one save at a time, wait
+for the turn to end), and does **not** change the census for anything it wouldn't take:
 a file you already have is still adopted as handled, exactly as before.
 
 It's its own switch rather than folded into the first because the two carry

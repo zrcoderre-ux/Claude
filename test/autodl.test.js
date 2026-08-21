@@ -209,7 +209,8 @@ test("a page-load ceiling stops a runaway", () => {
 
 test("a single pathological reply can't fill the folder either", () => {
   const many = [];
-  for (let i = 0; i < 10; i++) many.push({ key: "t1|f" + i });
+  // More than one reply's share, whatever that share is set to.
+  for (let i = 0; i < A.MAX_PER_TURN + 4; i++) many.push({ key: "t1|f" + i });
   const seen = many.slice(0, A.MAX_PER_TURN).map((o) => o.key);
   const r = A.plan(many, ctx({ seen }));
   assert.equal(r.take, null);
@@ -739,4 +740,88 @@ test("the census does not close over a Cowork turn still in flight", () => {
   const held = A.artifactPlan(offers, { enabled: true, baselined: false, generating: true });
   assert.equal(held.hold, "settling");
   assert.deepEqual(held.adopt, [], "nothing adopted while the answer is still arriving");
+});
+
+// ---- Several files at once -----------------------------------------------
+
+test("a reply's whole batch of documents saves, one at a time", () => {
+  // Eight files in one reply: the shape that was being cut off at six, and
+  // the shape the caller walks through a call at a time.
+  const offers = [];
+  for (let i = 1; i <= 8; i++) offers.push({ key: "t1|doc-" + i + ".docx", name: "doc-" + i + ".docx" });
+  const seen = [];
+  const taken = [];
+  for (let i = 0; i < 8; i++) {
+    const r = A.plan(offers, ctx({ seen: seen.slice() }));
+    assert.ok(r.take, "call " + (i + 1) + " should still have one to take");
+    taken.push(r.take.key);
+    seen.push.apply(seen, r.adopt);
+  }
+  assert.equal(taken.length, 8);
+  assert.equal(new Set(taken).size, 8, "each call takes a different file");
+  assert.deepEqual(taken, offers.map((o) => o.key), "and in the order the reply presents them");
+  // And then it stops, rather than coming back round for a second copy.
+  assert.equal(A.plan(offers, ctx({ seen })).take, null);
+});
+
+test("one reply's share is more than a batch of documents", () => {
+  assert.ok(A.MAX_PER_TURN >= 10, "a set of papers is the ordinary case, not the pathological one");
+  assert.ok(A.MAX_PER_TURN <= A.MAX_PER_PAGE, "the page ceiling is still the outer one");
+});
+
+test("arrivalOf matches the file we pressed for BY NAME", () => {
+  // Two saves seconds apart: b landed first, then a. a's check must find a,
+  // not "the newest download, which is newer than my press".
+  const items = [
+    { name: "a.docx", at: 5000 },
+    { name: "b.docx", at: 3000 },
+  ];
+  const got = A.arrivalOf(items, "a.docx", 4000);
+  assert.deepEqual(got, { arrived: true, name: "a.docx", byName: true });
+  // b's own check, made while only b had landed, is equally about b.
+  assert.deepEqual(A.arrivalOf([items[1]], "b.docx", 2500), {
+    arrived: true,
+    name: "b.docx",
+    byName: true,
+  });
+});
+
+test("a file that hasn't arrived isn't credited to its neighbour's download", () => {
+  // The old rule — newest download newer than my press — said yes here, and
+  // named the wrong file while doing it.
+  const items = [{ name: "b.docx", at: 5000 }];
+  const got = A.arrivalOf(items, "a.docx", 4000);
+  assert.equal(got.arrived, true, "something did arrive, so this is not a no");
+  assert.equal(got.byName, false, "but it is not evidence about a.docx by name");
+  assert.equal(got.name, "b.docx", "and it says which file it actually saw");
+});
+
+test("Chrome's own de-duplication still counts as the file arriving", () => {
+  const items = [{ name: "ruling (1).docx", at: 5000 }];
+  assert.deepEqual(A.arrivalOf(items, "ruling.docx", 4000), {
+    arrived: true,
+    name: "ruling (1).docx",
+    byName: true,
+  });
+});
+
+test("nothing since the press is a no; an unanswered question stays unknown", () => {
+  const items = [{ name: "old.docx", at: 1000 }];
+  assert.equal(A.arrivalOf(items, "a.docx", 9000).arrived, false);
+  assert.equal(A.arrivalOf([], "a.docx", 9000).arrived, false, "an empty folder is an answer");
+  assert.equal(A.arrivalOf(null, "a.docx", 9000).arrived, null, "no answer is not a no");
+  assert.equal(A.arrivalOf(undefined, "a.docx", 9000).arrived, null);
+});
+
+test("an unnamed offer falls back to what arrived since the press", () => {
+  const items = [{ name: "whatever.pdf", at: 5000 }];
+  const got = A.arrivalOf(items, "", 4000);
+  assert.equal(got.arrived, true);
+  assert.equal(got.byName, false);
+  assert.equal(got.name, "whatever.pdf");
+});
+
+test("the clock's slack is a second, not a licence", () => {
+  assert.equal(A.arrivalOf([{ name: "a.docx", at: 4200 }], "a.docx", 5000).arrived, true);
+  assert.equal(A.arrivalOf([{ name: "a.docx", at: 3000 }], "a.docx", 5000).arrived, false);
 });
