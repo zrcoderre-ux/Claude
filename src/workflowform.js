@@ -185,6 +185,7 @@
     const W = root.CUMWorkflow;
     const J = root.CUMJobs;
     const K = root.CUMCowork;
+    const DD = root.CUMDropDir; // a dropped folder, taken apart
 
     // A <select>'s markup from one of cowork.js's option lists. The unset entry
     // carries its own wording per control, since "Leave as-is" beside three
@@ -235,9 +236,12 @@
       // papers is a template that quietly sends the last matter's exhibits to
       // the next one.
       `<div class="cumwf-docs-row"><label class="cumwf-label">Documents</label>` +
-      `<div class="cumwf-drop" tabindex="0"><p class="cumwf-dz-text">Drag files here, paste text, or</p>` +
-      `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-pick" type="button">Choose files…</button></div></div>` +
+      `<div class="cumwf-drop" tabindex="0"><p class="cumwf-dz-text">Drag files or a folder here, paste text, or</p>` +
+      `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-pick" type="button">Choose files…</button>` +
+      `<button class="cumwf-btn ghost cumwf-pick-folder" type="button" ` +
+      `title="Take every file inside a folder — the folder itself isn't a document">Choose folder…</button></div></div>` +
       `<input class="cumwf-file-input" type="file" multiple hidden />` +
+      `<input class="cumwf-folder-input" type="file" webkitdirectory hidden />` +
       `<p class="cumwf-hint">Tick the chats that should receive each document — it goes up with that chat's first message. ` +
       `Text pasted anywhere here that isn't a box becomes a .txt document, named from its first line.</p>` +
       `<div class="cumwf-docs cumwf-list"></div></div>` +
@@ -356,6 +360,8 @@
       rrCarry: q(".cumwf-rr-carry"),
       rrDocs: q(".cumwf-rr-docs"),
       fileInput: q(".cumwf-file-input"),
+      pickFolder: q(".cumwf-pick-folder"),
+      folderInput: q(".cumwf-folder-input"),
       docs: q(".cumwf-docs"),
       docsRow: q(".cumwf-docs-row"),
       pseudo: q(".cumwf-pseudo"),
@@ -625,12 +631,41 @@
       flash("Spreadsheets never ride a run's uploads — " + f.name + " was not added.", true);
     }
 
+    // A folder's files, once the walk has taken it apart. The folder itself is
+    // never among them — that is the whole point — and what the walk left out
+    // is said rather than left to be noticed.
+    function takeFolder(res) {
+      if (!res) return;
+      addFiles(res.files.map((x) => x.file));
+      const said = DD ? DD.summarize(res) : "";
+      if (said) flash(said);
+    }
+
+    // Same name AND same size as one already here: a second drop of the same
+    // folder, or the file picked twice. Two genuinely different papers that
+    // agree on both is a coincidence worth losing to the far commoner case of
+    // forty duplicated exhibits.
+    function docKey(f) {
+      return String(f.name || "") + ":" + (f.size || 0);
+    }
+
     function addFiles(list) {
       const incoming = [];
+      const have = new Set((wf.docs || []).map(docKey));
+      let dupes = 0;
       for (const f of list || []) {
-        if (W.docBarred && W.docBarred(f.name)) divertSpreadsheet(f);
-        else incoming.push(f);
+        if (W.docBarred && W.docBarred(f.name)) {
+          divertSpreadsheet(f);
+          continue;
+        }
+        if (have.has(docKey(f))) {
+          dupes++;
+          continue;
+        }
+        have.add(docKey(f));
+        incoming.push(f);
       }
+      if (dupes) flash(dupes === 1 ? "1 file was already here." : dupes + " files were already here.");
       for (const f of incoming) {
         const id = uuid();
         pendingFiles.set(id, f);
@@ -717,6 +752,12 @@
       addFiles(Array.from(ui.fileInput.files || []));
       ui.fileInput.value = "";
     });
+    if (ui.pickFolder) ui.pickFolder.addEventListener("click", () => ui.folderInput.click());
+    if (ui.folderInput)
+      ui.folderInput.addEventListener("change", () => {
+        takeFolder(DD ? DD.fromPicked(Array.from(ui.folderInput.files || [])) : null);
+        ui.folderInput.value = "";
+      });
 
     // The date's two doors agree: the calendar seeds from what the box says,
     // and a pick writes back in the box's own mm/dd/yy spelling.
@@ -743,7 +784,20 @@
     ui.drop.addEventListener("drop", (e) => {
       e.preventDefault();
       ui.drop.classList.remove("drag");
-      if (e.dataTransfer && e.dataTransfer.files) addFiles(Array.from(e.dataTransfer.files));
+      const dt = e.dataTransfer;
+      if (!dt) return;
+      // webkitGetAsEntry has to be called NOW: the items list is emptied the
+      // moment this handler returns, so the entries are collected first and
+      // walked afterwards. An entry is what tells a folder from a file —
+      // dt.files reports a dropped folder as a zero-byte file, which is how a
+      // folder used to end up in the list as a document that uploads nothing.
+      const entries = dt.items
+        ? Array.from(dt.items)
+            .map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null))
+            .filter(Boolean)
+        : [];
+      if (entries.length && DD) DD.walk(entries).then(takeFolder);
+      else if (dt.files) addFiles(Array.from(dt.files));
     });
 
     // A pause: the run stops here so what it has produced can be read. No chat,
