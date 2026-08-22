@@ -593,8 +593,8 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   a template that held them would hand the last matter's exhibits to the next
   one; so the workflow editor has no documents field at all, and a run's does.
   Dropped in — **including a whole folder**, see [Dropping a
-  folder](#dropping-a-folder) — picked with **Choose files…** or
-  **Choose folder…**, or **pasted**: text pasted anywhere in the run's editor
+  folder](#dropping-a-folder) — picked with the one **Choose files…** button,
+  or **pasted**: text pasted anywhere in the run's editor
   that isn't a box you were typing in becomes a `.txt` document, the way
   claude.ai turns a large paste into an attachment. It's named from its own first
   line — `Opposition to Motion to Compel.txt` tells you what it is in the list
@@ -824,8 +824,18 @@ be a row that uploads nothing. So a matter's papers and the
 `pseudonym_key.xlsx` sitting beside them go in **one gesture**: select both,
 drop them together, the folder is walked and the key is
 [recognised on its way past](#pseudonym-translation) and attached rather than
-uploaded. **Choose folder…** does the same through a picker. Four things the
-walk decides, in `src/dropdir.js`:
+uploaded.
+
+A run's documents field has **one door, not two**: files and folders go to the
+same **Choose files…** button and the same drop zone, and what arrives is sorted
+out afterwards rather than chosen between beforehand. Dropping is the way to
+take both at once — the OS file dialog will not select a folder, so
+**⌥/Alt-click Choose files…** opens a folder picker when there is nothing to
+drag. Every route lands in the same walk, so the rules below hold whichever one
+you used, and a `pseudonym_key.xlsx` among the files is
+[recognised and attached](#pseudonym-translation) whether it came in loose, in
+the folder, or in the same gesture as one. Four things the walk decides, in
+`src/dropdir.js`:
 
 - **Subfolders are descended**, and files come in the order the folder reads
   in, numbers sorted as numbers — `exhibit-2` before `exhibit-10` — because
