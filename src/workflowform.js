@@ -237,11 +237,15 @@
       // the next one.
       `<div class="cumwf-docs-row"><label class="cumwf-label">Documents</label>` +
       `<div class="cumwf-drop" tabindex="0"><p class="cumwf-dz-text">Drag files or a folder here, paste text, or</p>` +
-      `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-pick" type="button">Choose files…</button>` +
-      `<button class="cumwf-btn ghost cumwf-pick-folder" type="button" ` +
-      `title="Take every file inside a folder — the folder itself isn't a document">Choose folder…</button></div></div>` +
+      `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-pick" type="button" ` +
+      `title="Files and folders alike — drop a folder on this box, or ⌥/Alt-click here to pick one. ` +
+      `A folder hands over the files inside it; the folder itself isn't a document.">Choose files…</button></div></div>` +
       `<input class="cumwf-file-input" type="file" multiple hidden />` +
       `<input class="cumwf-folder-input" type="file" webkitdirectory hidden />` +
+      `<p class="cumwf-hint">One door for every paper. A folder hands over the files inside it and never itself, ` +
+      `so a matter's folder and the pseudonym_key.xlsx beside it can arrive together — the text files become ` +
+      `documents, the key is attached below. Drop them on the box in one gesture; the file dialog can't select ` +
+      `a folder, so ⌥/Alt-click Choose files to pick one.</p>` +
       `<p class="cumwf-hint">Tick the chats that should receive each document — it goes up with that chat's first message. ` +
       `Text pasted anywhere here that isn't a box becomes a .txt document, named from its first line.</p>` +
       `<div class="cumwf-docs cumwf-list"></div></div>` +
@@ -360,7 +364,6 @@
       rrCarry: q(".cumwf-rr-carry"),
       rrDocs: q(".cumwf-rr-docs"),
       fileInput: q(".cumwf-file-input"),
-      pickFolder: q(".cumwf-pick-folder"),
       folderInput: q(".cumwf-folder-input"),
       docs: q(".cumwf-docs"),
       docsRow: q(".cumwf-docs-row"),
@@ -747,15 +750,30 @@
         ui.docs.appendChild(row);
       }
     }
-    ui.pick.addEventListener("click", () => ui.fileInput.click());
+    // Every pick — a handful of files, a whole folder, or a folder and the key
+    // sitting beside it — goes through the same door and the same rules, so
+    // there is nothing to decide before choosing. A folder is flattened to the
+    // files inside it, junk is dropped and the order is the folder's own.
+    // Without the walker loaded, files are still files: never lose a pick.
+    function takePicked(list) {
+      if (!DD) return addFiles(list);
+      takeFolder(DD.fromPicked(list));
+    }
+    // The browser's file dialog will not select a folder — that is the OS
+    // panel, not a choice this form makes — so the folder door is this same
+    // button held down with a modifier, and the drop zone, which takes files
+    // and folders together in one gesture.
+    ui.pick.addEventListener("click", (e) => {
+      if (ui.folderInput && e.altKey) ui.folderInput.click();
+      else ui.fileInput.click();
+    });
     ui.fileInput.addEventListener("change", () => {
-      addFiles(Array.from(ui.fileInput.files || []));
+      takePicked(Array.from(ui.fileInput.files || []));
       ui.fileInput.value = "";
     });
-    if (ui.pickFolder) ui.pickFolder.addEventListener("click", () => ui.folderInput.click());
     if (ui.folderInput)
       ui.folderInput.addEventListener("change", () => {
-        takeFolder(DD ? DD.fromPicked(Array.from(ui.folderInput.files || [])) : null);
+        takePicked(Array.from(ui.folderInput.files || []));
         ui.folderInput.value = "";
       });
 
@@ -1477,11 +1495,23 @@
       if (typeof opts.onClosed === "function") opts.onClosed();
     }
 
+    // One gesture can be worth two sentences — a folder's files landed AND the
+    // key sitting beside them was recognised, which arrives a moment later
+    // because the spreadsheet has to be parsed first. The later line used to
+    // overwrite the earlier one, so the folder went unreported in exactly the
+    // drop it was written for. While a line is still up, a line of the same
+    // kind JOINS it; an error still replaces a success outright.
     function flash(text, err) {
-      ui.status.textContent = text;
+      const live = !ui.status.hidden && !!ui.status.textContent;
+      const joins = live && ui.status.classList.contains("err") === !!err;
+      const both = joins ? ui.status.textContent + " " + text : text;
+      ui.status.textContent = both.length > 300 ? text : both;
       ui.status.hidden = false;
       ui.status.classList.toggle("err", !!err);
-      setTimeout(() => (ui.status.hidden = true), 2600);
+      // On the function so it hoists with it — flash is called from handlers
+      // wired above the place it is written.
+      if (flash.timer) clearTimeout(flash.timer);
+      flash.timer = setTimeout(() => (ui.status.hidden = true), joins ? 4200 : 2600);
     }
 
     function showProblems(list) {

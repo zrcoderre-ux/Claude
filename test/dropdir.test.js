@@ -177,6 +177,39 @@ test("a folder PICKED rather than dropped follows the same rules", () => {
   assert.equal(res.folders, 2);
 });
 
+test("one pick, files and a folder's contents together, folder itself never a row", () => {
+  // The run editor has a single Choose files door, and a single drop zone, so
+  // a matter's folder and the key sitting beside it arrive in one gesture.
+  const res = D.fromPicked([
+    { name: "pseudonym_key.xlsx", webkitRelativePath: "", size: 4 },
+    { name: "cover.pdf", size: 3 },
+    { name: "exhibit-10.txt", webkitRelativePath: "papers/exhibit-10.txt", size: 1 },
+    { name: "exhibit-2.txt", webkitRelativePath: "papers/exhibit-2.txt", size: 1 },
+    { name: ".DS_Store", webkitRelativePath: "papers/.DS_Store", size: 1 },
+  ]);
+  assert.deepEqual(res.files.map((f) => f.file.name), [
+    "cover.pdf",
+    "exhibit-2.txt",
+    "exhibit-10.txt",
+    "pseudonym_key.xlsx",
+  ]);
+  assert.equal(res.folders, 1, "only the folder that files actually came from");
+  assert.equal(res.junk, 1);
+  assert.ok(
+    res.files.every((f) => f.file.name !== "papers"),
+    "the folder is not among the files"
+  );
+});
+
+test("a plain multi-file pick down the same door says nothing at all", () => {
+  const res = D.fromPicked([
+    { name: "a.txt", size: 1 },
+    { name: "b.txt", size: 1 },
+  ]);
+  assert.equal(res.folders, 0);
+  assert.equal(D.summarize(res), "", "nothing about folders when no folder was picked");
+});
+
 test("a picked folder is capped and says so, like a dropped one", () => {
   const list = [];
   for (let i = 1; i <= 30; i++)
