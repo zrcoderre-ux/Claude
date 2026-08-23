@@ -523,3 +523,128 @@ test("the typeahead swap offers the fake in the case the name was typed in", () 
   const plain = P.endingReal(ahead, "signed by Zachary Coderre");
   assert.equal(P.mirrorCase(plain.matched, plain.fake), "John Doe");
 });
+
+// ---- a run in flight holds the display translation -------------------------
+//
+// The run's hand-off can fall back to the RENDERED message, and the rendered
+// message is what the translation rewrites — so while a run is moving, the
+// chats it can reach show the fakes. Everything else about the rule follows
+// from that one sentence: it holds only while the run moves, it reaches the
+// run's own chats and its matter's, and it can't outlive a driver that stopped.
+
+const CONV_A = "11111111-2222-3333-4444-555555555555";
+const CONV_B = "99999999-8888-7777-6666-555555555555";
+const NOW = 1700000000000;
+
+function run(over) {
+  return Object.assign(
+    {
+      id: "r1",
+      name: "Rasho — tentative",
+      status: "running",
+      lastProgressAt: NOW - 5000,
+      pseudoKeyId: "key-rasho",
+      chats: { c1: { url: "https://claude.ai/chat/" + CONV_A } },
+    },
+    over || {}
+  );
+}
+
+function held(runs, opts) {
+  return P.runTranslationHold(runs, Object.assign({ now: NOW }, opts || {}));
+}
+
+test("a moving run holds the translation in the chat it is driving", () => {
+  const h = held([run()], { conv: CONV_A, keyId: "key-rasho" });
+  assert.ok(h);
+  assert.equal(h.runId, "r1");
+  assert.equal(h.via, "chat");
+  assert.equal(h.name, "Rasho — tentative");
+});
+
+test("it holds every chat on the run's matter, recorded or not", () => {
+  // The chat a run opened a beat ago isn't in run.chats yet — the key is what
+  // says it belongs to the matter under automation.
+  const h = held([run()], { conv: CONV_B, keyId: "key-rasho" });
+  assert.ok(h);
+  assert.equal(h.via, "key");
+});
+
+test("another matter's chat is left alone", () => {
+  assert.equal(held([run()], { conv: CONV_B, keyId: "key-other" }), null);
+  assert.equal(held([run()], { conv: CONV_B, keyId: null }), null);
+});
+
+test("a group-mate's key holds too, through keyIdFor", () => {
+  // Runs are per matter and a matter has one key: a run with no key of its own
+  // answers to its group's (W.runPseudoKey), and the hold follows that answer.
+  const r = run({ pseudoKeyId: null, chats: {} });
+  const h = held([r], {
+    conv: CONV_B,
+    keyId: "key-rasho",
+    keyIdFor: () => "key-rasho",
+  });
+  assert.ok(h);
+  assert.equal(h.via, "key");
+});
+
+test("a pause, a hold, a failure or an ending puts the real names back", () => {
+  for (const status of ["paused", "waiting", "error", "canceled", "done", "pending", "draft"]) {
+    assert.equal(
+      held([run({ status: status })], { conv: CONV_A, keyId: "key-rasho" }),
+      null,
+      status + " must not hold the translation"
+    );
+  }
+});
+
+test("a run whose driver has gone quiet holds nothing", () => {
+  const dead = run({ lastProgressAt: NOW - 6 * 60 * 1000 });
+  assert.equal(held([dead], { conv: CONV_A, keyId: "key-rasho" }), null);
+  // Its heartbeat is the other half of the signal: a step waiting an hour for a
+  // long answer is alive, and says so every 20 seconds.
+  const beating = held([dead], {
+    conv: CONV_A,
+    keyId: "key-rasho",
+    beats: { r1: NOW - 10000 },
+  });
+  assert.ok(beating);
+  assert.equal(beating.via, "chat");
+});
+
+test("a run that has never said anything at all holds nothing", () => {
+  const mute = run({ lastProgressAt: null });
+  assert.equal(held([mute], { conv: CONV_A, keyId: "key-rasho" }), null);
+});
+
+test("the ceiling is the caller's to set", () => {
+  const r = run({ lastProgressAt: NOW - 90 * 1000 });
+  assert.ok(held([r], { conv: CONV_A, keyId: "key-rasho" }));
+  assert.equal(held([r], { conv: CONV_A, keyId: "key-rasho", staleMs: 60 * 1000 }), null);
+});
+
+test("one moving run among many is enough", () => {
+  const runs = [
+    run({ id: "old", status: "done" }),
+    run({ id: "other", status: "running", pseudoKeyId: "key-other", chats: {} }),
+    run({ id: "live" }),
+  ];
+  const h = held(runs, { conv: CONV_A, keyId: "key-rasho" });
+  assert.ok(h);
+  assert.equal(h.runId, "live");
+});
+
+test("no runs, no chat, no key: nothing held", () => {
+  assert.equal(held([], { conv: CONV_A, keyId: "key-rasho" }), null);
+  assert.equal(held(null, { conv: CONV_A, keyId: "key-rasho" }), null);
+  assert.equal(held([run()], {}), null);
+});
+
+test("a run naming this chat holds it even with no key of its own", () => {
+  // The key can be attached to the CHAT through the popup while the run carries
+  // none — the danger is the run driving this conversation, not where the key
+  // came from.
+  const h = held([run({ pseudoKeyId: null })], { conv: CONV_A, keyId: "key-rasho" });
+  assert.ok(h);
+  assert.equal(h.via, "chat");
+});

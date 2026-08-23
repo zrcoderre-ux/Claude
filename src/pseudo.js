@@ -23,6 +23,13 @@
  *                 the "you're about to type a real name" warning.
  *   - isKeyFileName / sheetsLookLikeKey:  is this file the key itself — the
  *                 one file that must never ride an upload into a chat.
+ *   - runTranslationHold:  whether a workflow run is MOVING through this chat
+ *                 (or this chat's matter), in which case the display stands
+ *                 down and shows the fakes — a run's hand-off can fall back to
+ *                 the rendered message, and the rendered message is what the
+ *                 display rewrites. Derived from the run's own status, so a
+ *                 pause, a hold, a failure or a dead driver puts the real
+ *                 names straight back.
  */
 (function (root) {
   "use strict";
@@ -587,6 +594,82 @@
     }
   }
 
+  // ---- a run in flight holds the translation ---------------------------------
+  //
+  // A workflow run drives a conversation by machine: it sends, waits for the
+  // answer, takes the reply and pastes it into the NEXT chat. It takes that
+  // reply from claude.ai's own copy control where it can — but its fallback is
+  // the RENDERED message (src/workflow-run.js, harvestReply, via "dom"), and the
+  // rendered message is precisely what the display translation rewrites. Real
+  // names would ride the hand-off into the next chat, which is the one thing
+  // the pseudonymization exists to prevent.
+  //
+  // So while a run is MOVING, the conversations it can reach show the fakes,
+  // exactly as claude.ai wrote them. Two arms, because a run reaches further
+  // than the URLs it has written down so far:
+  //
+  //   - "chat": a conversation the run names among its own.
+  //   - "key":  any conversation on the run's KEY. A run is a MATTER and a
+  //             matter has one key, so this covers the chat the run opened a
+  //             beat ago and hasn't recorded yet — the window where the first
+  //             arm is still blind.
+  //
+  // MOVING is the whole test, and the hold is DERIVED rather than stored: it is
+  // only ever a reading of the run's own status, so a run that pauses, is held
+  // out for an outage, fails, is canceled or finishes brings the real names
+  // back by itself. Nothing has to remember to switch anything on again — the
+  // state that could be left behind doesn't exist.
+  //
+  // And a hold can never outlive the automation that asked for it. A run still
+  // claiming "running" whose driver has gone quiet — tab closed, worker died
+  // mid-step — is a failure, and a failure turns the translation back on: past
+  // the ceiling, a silent run holds nothing. The run's heartbeat is the signal
+  // (workflow.js writes it every 20 seconds from the page that holds the step),
+  // with lastProgressAt beside it, and the ceiling is deliberately looser than
+  // the watchdog's own STALE_MS so a worker handover doesn't flicker the badge.
+  const HOLD_STALE_MS = 5 * 60 * 1000;
+
+  function runNamesConv(run, conv) {
+    if (!conv) return false;
+    const chats = (run && run.chats) || {};
+    for (const id of Object.keys(chats)) {
+      const url = chats[id] && chats[id].url;
+      if (url && conversationKeyFromUrl(url) === conv) return true;
+    }
+    return false;
+  }
+
+  // runs: every run in the store. opts: { conv, keyId, now, beats, staleMs,
+  // keyIdFor }. `keyIdFor` resolves a run's key the way the rest of the feature
+  // does — a run with none of its own answers to its GROUP's (W.runPseudoKey) —
+  // and defaults to the run's own id so the decision is testable on its own.
+  function runTranslationHold(runs, opts) {
+    const o = opts || {};
+    const now = typeof o.now === "number" ? o.now : Date.now();
+    const staleMs = typeof o.staleMs === "number" ? o.staleMs : HOLD_STALE_MS;
+    const beats = o.beats || {};
+    const keyIdFor =
+      typeof o.keyIdFor === "function" ? o.keyIdFor : (r) => (r && r.pseudoKeyId) || null;
+    for (const run of runs || []) {
+      // Every other status is a run that is not going to paste anything: draft,
+      // queued, held, paused, failed, canceled, done.
+      if (!run || run.status !== "running") continue;
+      const beat = typeof beats[run.id] === "number" ? beats[run.id] : 0;
+      const at = Math.max(
+        typeof run.lastProgressAt === "number" ? run.lastProgressAt : 0,
+        beat
+      );
+      if (!(at > 0) || now - at > staleMs) continue; // nothing alive is driving it
+      const via = runNamesConv(run, o.conv)
+        ? "chat"
+        : o.keyId && keyIdFor(run) === o.keyId
+        ? "key"
+        : null;
+      if (via) return { runId: run.id, name: String(run.name || "").trim(), via: via };
+    }
+    return null;
+  }
+
   const api = {
     isKeyFileName,
     sheetsLookLikeKey,
@@ -610,6 +693,8 @@
     isPincitePaste,
     buildMatcher,
     conversationKeyFromUrl,
+    runTranslationHold,
+    HOLD_STALE_MS,
     fold,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

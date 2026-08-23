@@ -1747,4 +1747,9 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   flex: 0 0 auto;
 }
 .cum-pseudo-clean-toggle:hover { background: #34332f; }
+.cum-pseudo-clean-toggle:disabled { cursor: not-allowed; opacity: 0.6; }
+.cum-pseudo-clean-toggle:disabled:hover { background: #1f1f1e; }
 .cum-pseudo-badge.cum-pseudo-paused { background: #4a4a45; font-style: italic; }
+/* Held by a run in flight — not the same thing as a peek, and it says so:
+   the display is standing down for safety, not because anyone asked it to. */
+.cum-pseudo-badge.cum-pseudo-held { background: #6b4a1f; font-style: normal; }

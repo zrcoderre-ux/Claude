@@ -1911,7 +1911,10 @@ at a glance.
   **diverts** it here instead of refusing it (see
   [Related runs, run dates, and the list's order](#related-runs-run-dates-and-the-lists-order)
   — a spreadsheet can't be a run document at all). And a run in a
-  **related-runs group** with no key of its own inherits a group-mate's.
+  **related-runs group** with no key of its own inherits a group-mate's. While
+  that run is actually moving, its chats show the fakes rather than the real
+  names — see [While a run is working, the fakes
+  show](#while-a-run-is-working-the-fakes-show).
 
 **What an attached key does.**
 
@@ -1976,6 +1979,45 @@ still caught — is held back behind a dialog that defaults to **Keep it out**.
 Uploading it takes the affirmative **Upload anyway**; other files in the same
 batch pass through untouched. The check reads the file locally and decides
 before claude.ai's own handlers ever see the event.
+
+### While a run is working, the fakes show
+
+A workflow run drives a conversation by machine: it sends, waits for the answer,
+takes the reply and pastes it into the next chat. It takes that reply from
+claude.ai's own copy control wherever it can — but where the copy control gives
+nothing usable, its fallback is **the rendered message**, and the rendered
+message is exactly what the translation above rewrites. Left on, the run's
+hand-off could carry a real name into the next chat, which is the one thing the
+pseudonymization exists to prevent.
+
+So the translation stands down by itself while a run is **moving**, and the chat
+shows the fakes exactly as claude.ai wrote them. Two things are held, because a
+run reaches further than the URLs it has written down so far:
+
+- **The chats the run names** — the conversations it is driving.
+- **Every chat on the run's key** — a run is a *matter* and a matter has one
+  key, so the chat a run opened a beat ago and hasn't recorded yet is held too.
+  Another matter's chat, in the next tab, keeps its real names.
+
+**A pause or a failure brings them straight back**, without anything being
+switched on again: whether the display translates is only ever a *reading* of
+the run's own status, so a run that you pause, that an outage holds, that fails,
+that is canceled, or that finishes, is a run showing you the real names again a
+moment later. There is no stored "off" that could be left behind — and if the
+run starts moving again, the fakes come back with it.
+
+**And the hold can't outlive the automation that asked for it.** A run still
+claiming to be running whose driver has gone quiet — tab closed, worker died
+mid-step — is a failure like any other: past **five minutes** with no heartbeat
+and no progress, the real names return. A run genuinely waiting an hour for a
+long answer keeps beating every twenty seconds, so it keeps its hold.
+
+The badge says which state it is in (`⏸ a run is working · showing the fakes`),
+and while a run holds the display the **peek toggle** is disabled and says why —
+pausing the run is one click, and pausing the run is exactly what this rule is
+waiting for. Everything that is *safety* rather than display stays on
+throughout: the composer warning, the typeahead swap, the upload guard, and the
+cleaner box.
 
 ### Case comes across with the name
 
@@ -2526,7 +2568,7 @@ src/conv.js            The conversation payload, fetched once and shared
 src/toc-panel.js       The floating table of contents itself
 src/run-panel.js       The workflow's own contents — every step, every chat
 src/xlsxread.js        Minimal .xlsx reader — enough for the pseudonym key (pure)
-src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards (pure)
+src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards, run hold (pure)
 src/pseudo-view.js     Shows real names for the fakes, warns, guards the key file
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
