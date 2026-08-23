@@ -50,7 +50,8 @@
 
   let keys = {}; // the stored key library
   let chatMap = {}; // conversation -> key id
-  let runsCache = { at: 0, runs: [] };
+  let runsCache = { at: 0, runs: [], groups: [], beats: {} };
+  const RUNS_TTL_MS = 20000;
 
   let active = null; // { id, key, compiled, compiledReals, via }
   let lastConv = null;
@@ -72,6 +73,36 @@
     });
   }
 
+  // The runs, their groups, and the heartbeats of the ones claiming to be
+  // moving — the hold below reads its ceiling off those. Beats are fetched only
+  // for running runs: the key is rewritten every 20 seconds, and carrying it for
+  // runs that finished last week would be a read per tab for nothing.
+  async function refreshRuns(force) {
+    const W = window.CUMWorkflow;
+    if (!W || !W.RUN_IDS_KEY) return runsCache;
+    if (!force && Date.now() - runsCache.at < RUNS_TTL_MS) return runsCache;
+    const idsRes = await storageGet([W.RUN_IDS_KEY, "cum_run_groups"]);
+    const ids = idsRes[W.RUN_IDS_KEY] || [];
+    const runs = [];
+    if (ids.length) {
+      const res = await storageGet(ids.map((id) => W.RUN_PREFIX + id));
+      for (const id of ids) if (res[W.RUN_PREFIX + id]) runs.push(res[W.RUN_PREFIX + id]);
+    }
+    const beats = {};
+    const live = runs.filter((r) => r && r.status === "running");
+    if (live.length && W.beatKey) {
+      const res = await storageGet(live.map((r) => W.beatKey(r.id)));
+      for (const r of live) beats[r.id] = res[W.beatKey(r.id)] || 0;
+    }
+    runsCache = {
+      at: Date.now(),
+      runs: runs,
+      groups: idsRes.cum_run_groups || [],
+      beats: beats,
+    };
+    return runsCache;
+  }
+
   // A run carries its key the way it carries its documents — on the run. Any
   // run whose recorded chats include this conversation attaches its key here
   // without the popup being involved — and a run with no key of its own
@@ -80,16 +111,7 @@
   async function runKeyFor(conv) {
     const W = window.CUMWorkflow;
     if (!W || !W.RUN_IDS_KEY) return null;
-    if (Date.now() - runsCache.at > 20000) {
-      const idsRes = await storageGet([W.RUN_IDS_KEY, "cum_run_groups"]);
-      const ids = idsRes[W.RUN_IDS_KEY] || [];
-      const runs = [];
-      if (ids.length) {
-        const res = await storageGet(ids.map((id) => W.RUN_PREFIX + id));
-        for (const id of ids) if (res[W.RUN_PREFIX + id]) runs.push(res[W.RUN_PREFIX + id]);
-      }
-      runsCache = { at: Date.now(), runs: runs, groups: idsRes.cum_run_groups || [] };
-    }
+    await refreshRuns(false);
     for (const run of runsCache.runs) {
       if (!run) continue;
       const chats = run.chats || {};
@@ -122,6 +144,7 @@
     if (!key) {
       if (active) {
         active = null;
+        setHold(null);
         render();
       }
       return;
@@ -149,6 +172,9 @@
     closeCleaner();
     render();
     sweepSoon();
+    // The hold belongs to the RUN rather than to the tab, so a chat arrived at
+    // mid-run is held from the first sweep — not from the next run write.
+    refreshHold(true);
   }
 
   async function loadState() {
@@ -178,8 +204,12 @@
         ch.cum_run_groups ||
         Object.keys(ch).some((k) => k.indexOf("cum_wf_run") === 0)
       ) {
+        // Every run write lands here — including the one that starts a run and
+        // the one that pauses, fails or finishes it. This is what makes the
+        // hold immediate in both directions rather than something a poll
+        // catches up with a step later.
         runsCache.at = 0;
-        resolveActive(true);
+        resolveActive(true).then(() => refreshHold(true));
       }
     });
   } catch (e) {
@@ -208,30 +238,86 @@
   // and the upload guard stay on: they are safety, not display.
   let paused = false;
 
-  function setPaused(on) {
-    paused = !!on;
-    if (paused) {
-      for (const turn of document.querySelectorAll(MSG_SEL)) {
-        const walker = document.createTreeWalker(turn, NodeFilter.SHOW_TEXT);
-        let node;
-        while ((node = walker.nextNode())) {
-          const p = swapped.get(node);
-          if (p && p.count > 0 && node.nodeValue === p.text) {
-            node.nodeValue = p.orig;
-            swapped.delete(node);
-          }
+  // The other way the display stands down, and this one is not the user's
+  // choice: while a workflow run is MOVING through this chat (or through this
+  // chat's matter), the fakes show, because a run's hand-off can fall back to
+  // the rendered message and the rendered message is what we rewrite — see
+  // P.runTranslationHold, which owns the decision. Held is a reading of the
+  // run's status rather than a switch: pause the run, or let it fail, hold or
+  // finish, and the real names come back on their own.
+  let hold = null; // { runId, name, via } or null
+
+  function translationOff() {
+    return paused || !!hold;
+  }
+
+  // Put back the fakes exactly as claude.ai rendered them.
+  function restoreFakes() {
+    for (const turn of document.querySelectorAll(MSG_SEL)) {
+      const walker = document.createTreeWalker(turn, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        const p = swapped.get(node);
+        if (p && p.count > 0 && node.nodeValue === p.text) {
+          node.nodeValue = p.orig;
+          swapped.delete(node);
         }
       }
-      shown = 0;
-    } else {
-      sweepSoon();
     }
+    shown = 0;
+  }
+
+  function applyTranslationState() {
+    if (translationOff()) restoreFakes();
+    else sweepSoon();
     render();
+  }
+
+  function setPaused(on) {
+    // A peek is a choice about the display; the run's hold is not one to make.
+    if (hold) return;
+    paused = !!on;
+    applyTranslationState();
+  }
+
+  function setHold(next) {
+    const before = hold ? hold.runId + "|" + hold.via : "";
+    const after = next ? next.runId + "|" + next.via : "";
+    if (before === after) return;
+    hold = next || null;
+    applyTranslationState();
+  }
+
+  // Recomputed from the runs themselves — on every run write (the storage
+  // listener), and on a timer WHILE HELD so the ceiling can end a hold whose
+  // driver died without one.
+  async function refreshHold(force) {
+    const mine = active;
+    if (!mine) return setHold(null);
+    const W = window.CUMWorkflow;
+    if (!W || !W.RUN_IDS_KEY) return setHold(null);
+    // The TTL does the pacing while held — forcing a re-read on every tick
+    // would be a storage read a second, per tab, for a ceiling measured in
+    // minutes.
+    await refreshRuns(!!force);
+    // Navigated (or the key changed) while we were reading: this answer is
+    // about a chat that isn't on screen any more, and applying it would hold
+    // the wrong one.
+    if (active !== mine) return;
+    setHold(
+      P.runTranslationHold(runsCache.runs, {
+        conv: mine.conv,
+        keyId: mine.id,
+        beats: runsCache.beats,
+        keyIdFor: (r) =>
+          W.runPseudoKey ? W.runPseudoKey(r, runsCache.runs, runsCache.groups || []) : r.pseudoKeyId,
+      })
+    );
   }
 
   function sweep() {
     sweepTimer = null;
-    if (!active || paused || !active.compiled.rx) return;
+    if (!active || translationOff() || !active.compiled.rx) return;
     let total = 0;
     for (const turn of document.querySelectorAll(MSG_SEL)) {
       const walker = document.createTreeWalker(turn, NodeFilter.SHOW_TEXT);
@@ -414,7 +500,10 @@
         "Claude still holds — and only ever sees — the fakes. Sends, copies and " +
         "exports read claude.ai's own data, not this view. " +
         "Click to open the cleaner: type text with real names, copy out the fakes. " +
-        "Drag it anywhere — where you put it is where it stays.";
+        "Drag it anywhere — where you put it is where it stays. " +
+        "While a workflow run is working this matter the translation stands down " +
+        "on its own and the fakes show, so nothing a run carries to the next chat " +
+        "can be a real name; a run that pauses, fails or finishes brings them back.";
       badge.addEventListener("click", () => {
         if (badgeDragged) return; // this click is the end of a drag, not a tap
         toggleCleaner();
@@ -430,12 +519,40 @@
     const name =
       (active.key.hint ? active.key.hint + " · " : "") +
       (active.key.name || "pseudonym key");
-    badge.textContent = paused
+    badge.textContent = hold
+      ? "🔑 " + name + " — ⏸ a run is working · showing the fakes"
+      : paused
       ? "🔑 " + name + " — ⏸ showing the fakes"
       : "🔑 " + name + (shown ? " — " + shown + " name" + (shown === 1 ? "" : "s") + " restored" : "");
-    badge.classList.toggle("cum-pseudo-paused", paused);
+    badge.classList.toggle("cum-pseudo-paused", translationOff());
+    badge.classList.toggle("cum-pseudo-held", !!hold);
     const tog = cleaner && cleaner.querySelector(".cum-pseudo-clean-toggle");
-    if (tog) tog.textContent = paused ? "▶ Show real names" : "⏸ Show the fakes";
+    if (tog) styleToggle(tog);
+  }
+
+  // What the peek toggle says and whether it can be pressed at all. A run
+  // moving through this chat owns the display until it stops, and the button
+  // says which run and how to get the names back — pausing the run is one
+  // click, and pausing the run is exactly what the rule is waiting for.
+  function styleToggle(tog) {
+    if (hold) {
+      tog.textContent = "⏸ Held while a run works";
+      tog.disabled = true;
+      tog.title =
+        "This chat's translation is off while " +
+        (hold.name ? "“" + hold.name + "”" : "a run") +
+        " is running" +
+        (hold.via === "key" ? " on this matter" : "") +
+        ". A run's hand-off can fall back to the text on screen, so real names " +
+        "on screen could reach the next chat. Pause the run — or let it finish, " +
+        "hold or fail — and the real names come back by themselves.";
+      return;
+    }
+    tog.textContent = paused ? "▶ Show real names" : "⏸ Show the fakes";
+    tog.disabled = false;
+    tog.title =
+      "Pause or resume this chat's translation. Paused shows the conversation exactly " +
+      "as claude.ai renders it — the fakes. This tab only, and never remembered.";
   }
 
   // ---- the cleaner: type real names, paste out fakes -------------------------
@@ -500,10 +617,7 @@
     // claude.ai is showing (the fakes), then bring the real names back.
     const toggle = document.createElement("button");
     toggle.className = "cum-pseudo-clean-toggle";
-    toggle.textContent = paused ? "▶ Show real names" : "⏸ Show the fakes";
-    toggle.title =
-      "Pause or resume this chat's translation. Paused shows the conversation exactly " +
-      "as claude.ai renders it — the fakes. This tab only, and never remembered.";
+    styleToggle(toggle);
     toggle.addEventListener("click", () => setPaused(!paused));
     const note = document.createElement("span");
     note.className = "cum-pseudo-clean-note";
@@ -902,6 +1016,10 @@
     setInterval(() => {
       resolveActive(false); // SPA navigation
       checkComposer();
+      // Only while held, and rate-limited inside refreshRuns: a run write of
+      // any kind wakes the listener above, so the one thing left to poll for is
+      // a hold whose run stopped saying anything at all.
+      if (hold) refreshHold(false);
     }, 900);
   });
 })();
