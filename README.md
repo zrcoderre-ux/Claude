@@ -593,8 +593,10 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   a template that held them would hand the last matter's exhibits to the next
   one; so the workflow editor has no documents field at all, and a run's does.
   Dropped in — **including a whole folder**, see [Dropping a
-  folder](#dropping-a-folder) — picked with the one **Choose files…** button,
-  or **pasted**: text pasted anywhere in the run's editor
+  folder](#dropping-a-folder) — picked with **Choose files…** or **Choose
+  folder…** (a folder whose name carries a case number hands over only its
+  `Text Files` and its key, see [A case folder is taken apart, not
+  uploaded](#a-case-folder-is-taken-apart-not-uploaded)), or **pasted**: text pasted anywhere in the run's editor
   that isn't a box you were typing in becomes a `.txt` document, the way
   claude.ai turns a large paste into an attachment. It's named from its own first
   line — `Opposition to Motion to Compel.txt` tells you what it is in the list
@@ -828,13 +830,12 @@ drop them together, the folder is walked and the key is
 [recognised on its way past](#pseudonym-translation) and attached rather than
 uploaded.
 
-A run's documents field has **one door, not two**: files and folders go to the
-same **Choose files…** button and the same drop zone, and what arrives is sorted
-out afterwards rather than chosen between beforehand. Dropping is the way to
-take both at once — the OS file dialog will not select a folder, so
-**⌥/Alt-click Choose files…** opens a folder picker when there is nothing to
-drag. Every route lands in the same walk, so the rules below hold whichever one
-you used, and a `pseudonym_key.xlsx` among the files is
+A run's documents field has **two buttons and a drop zone**: **Choose files…**
+for the papers themselves, **Choose folder…** for a whole folder, and the drop
+zone, which takes files and folders together in one gesture. (⌥/Alt-clicking
+Choose files… still opens the folder picker, as it did when there was one
+button.) Everything lands in the same walk, so the rules below hold whichever
+route you used, and a `pseudonym_key.xlsx` among the files is
 [recognised and attached](#pseudonym-translation) whether it came in loose, in
 the folder, or in the same gesture as one. Four things the walk decides, in
 `src/dropdir.js`:
@@ -852,6 +853,47 @@ the folder, or in the same gesture as one. Four things the walk decides, in
   bigger than that is taken as far as the cap and the editor says the rest
   were left out, because a truncation nobody mentions is the failure worth
   designing against.
+
+#### A case folder is taken apart, not uploaded
+
+A matter's folder is not a folder of documents. It holds the **originals** — the
+filings as they were served, the exhibits, the correspondence — every one of
+them in the real names. What is safe to send sits in one subfolder,
+**`Text Files`**, holding the pseudonymized text, with the
+`pseudonym_key.xlsx` beside it. Handing that whole folder to an uploader sends
+the originals, which is the one mistake this feature exists to make impossible.
+
+So a folder whose **name carries a case number** —
+`23STCV12345 Smith v. Jones`, `BC123456 Rasho` — is taken apart rather than
+walked:
+
+- **Only what is under `Text Files` becomes a document.** Any depth under it,
+  in the folder's own order. Typed `Text Files`, `text files`, `Text_Files` or
+  `TextFiles`, it is the same folder; `Texts` and `Text Files Old` are not.
+- **The pseudonym key is attached, not uploaded** — the same diversion a
+  loose key gets, so it lands in the **Pseudonym key** picker below and never
+  in a chat. Any spreadsheet in the pick is read as a candidate, wherever it
+  sits: inside the case folder, in a subfolder of it, or dropped loose beside
+  it in the same gesture.
+- **Everything else is left where it is**, and the count is said out loud —
+  *"Left 143 other files in the case folder alone."* No folder is uploaded and
+  no original is.
+- **The run takes the folder's name**, since the folder is the matter — unless
+  you have already typed a run name, which always wins.
+- **A case folder with no `Text Files` in it adds nothing** and says so. It is
+  still a case folder, which is exactly why the rest of it does not go instead.
+
+This is **gated on the name and only on the name**. A folder whose name carries
+no case number is handed over whole, exactly as it always was — the rules in
+this section, nothing removed. And the gate is the same reader the
+[case-number gate](#a-case-number-stops-the-run) uses, so a folder taken apart
+this way names a run that will be held to having a key covering that number
+before it goes anywhere.
+
+The scan behind it is deliberately much bigger than the upload cap: `Text Files`
+has to be *reached*, and 300 files into a matter's originals is not far enough
+in. Up to 2000 files are looked at; the 300-file cap then applies to what is
+actually taken.
 
 A folder over 100 files comes back **whole**, which is worth stating because
 the browser API hands folder contents back a hundred at a time and expects to
@@ -2624,7 +2666,7 @@ src/daily.js           Per-day attribution of weekly-limit usage (pure)
 src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/wfexport.js        Workflow export/import bundles: what travels (pure)
-src/dropdir.js         A dropped folder, taken apart: walk, skips, caps (pure)
+src/dropdir.js         A dropped folder, taken apart: walk, skips, caps, case folders (pure)
 src/cowork.js          Chat/Cowork surface + approval modes (pure)
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown

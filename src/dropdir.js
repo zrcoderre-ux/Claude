@@ -211,6 +211,139 @@
     return "Added " + files + " from " + from + " — the folder itself isn't a document." + skipped;
   }
 
+  // ---- a CASE folder is not a folder of documents ---------------------------
+  //
+  // A matter's folder holds the originals: the filings as they were served, the
+  // exhibits, correspondence — every one of them in the real names. Beside them
+  // sits one subfolder, "Text Files", holding the pseudonymized text that is
+  // what actually goes to Claude, and the pseudonym_key.xlsx that maps it back.
+  // Handing that whole folder to an uploader sends the originals.
+  //
+  // So a folder whose NAME carries a case number is taken apart rather than
+  // walked: the files under its Text Files become the documents, any
+  // spreadsheet found is offered as the matter's key (attached, never
+  // uploaded), and everything else is left exactly where it is. No folder is
+  // uploaded and no original is.
+  //
+  // Gated on the name, and only on the name: a folder that isn't a case folder
+  // goes through the ordinary walk above, unchanged. `isCaseName` is the
+  // caller's to supply (P.caseNumbers over the folder's own name) — this module
+  // knows about paths, not about case numbers.
+  const TEXT_DIR = "textfiles";
+
+  // "Text Files", "text files", "Text_Files" and "TextFiles" are one folder;
+  // nothing else is. Punctuation and case are how a folder gets typed twice,
+  // not what tells two folders apart.
+  function normSeg(s) {
+    return String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]+/g, "");
+  }
+
+  function isTextFilesDir(seg) {
+    return normSeg(seg) === TEXT_DIR;
+  }
+
+  function isSpreadsheetName(name) {
+    return /\.xlsx$/i.test(String(name == null ? "" : name));
+  }
+
+  // Scanning a case folder is not uploading it: the walk has to reach the Text
+  // Files subfolder wherever it sorts, so the ordinary 300-file cap can't be
+  // what stops it. This is the "that is not a folder, that is a disk" cap.
+  const MAX_SCAN = 2000;
+
+  /**
+   * Split a picked or dropped folder into { docs, keys } when it is a CASE
+   * folder, or say it isn't one.
+   *
+   * `files` are [{file, path}] as walk() and fromPicked() produce them — path
+   * including the picked folder's own name. Answers:
+   *
+   *   { ok:false, why:"not-case" }  no picked folder's name carries a case
+   *                                 number: not this rule's business.
+   *   { ok:true, root, docs, keys, left, capped }
+   *                                 docs are the files under Text Files, keys
+   *                                 every spreadsheet in the pick (the caller
+   *                                 decides which is really the key by reading
+   *                                 it), left is what was deliberately not
+   *                                 taken. `docs` empty means the folder has no
+   *                                 Text Files in it — a thing to SAY, never a
+   *                                 reason to fall back to uploading the rest.
+   */
+  function splitCaseFolder(files, opts) {
+    const o = opts || {};
+    const isCaseName = typeof o.isCaseName === "function" ? o.isCaseName : () => false;
+    const maxFiles = o.maxFiles == null ? MAX_FILES : o.maxFiles;
+    const list = files || [];
+    const none = {
+      ok: false,
+      why: "not-case",
+      root: "",
+      docs: [],
+      keys: [],
+      left: 0,
+      capped: false,
+    };
+    let root = "";
+    for (const f of list) {
+      const segs = String((f && f.path) || "").split("/");
+      if (segs.length > 1 && isCaseName(segs[0])) {
+        root = segs[0];
+        break;
+      }
+    }
+    if (!root) return none;
+
+    const docs = [];
+    const keys = [];
+    let left = 0;
+    for (const f of list) {
+      const segs = String((f && f.path) || "").split("/");
+      const name = segs[segs.length - 1];
+      // Every spreadsheet in the pick is a key CANDIDATE, wherever it sits —
+      // inside the case folder or dropped loose beside it. A spreadsheet is
+      // never a document in any case (W.docBarred), so nothing is lost by
+      // taking them all and letting the reader decide.
+      if (isSpreadsheetName(name)) {
+        keys.push(f);
+        continue;
+      }
+      if (segs[0] === root && segs.slice(1, -1).some(isTextFilesDir)) docs.push(f);
+      else left++;
+    }
+    const sorted = sortByPath(docs);
+    return {
+      ok: true,
+      why: "",
+      root: root,
+      docs: sorted.slice(0, maxFiles),
+      keys: sortByPath(keys),
+      left: left,
+      capped: sorted.length > maxFiles,
+    };
+  }
+
+  /**
+   * What the split did, in one sentence. Every part of it is a thing the
+   * operator would otherwise have to count for themselves: what went, what was
+   * deliberately left, and whether anything was cut off.
+   */
+  function summarizeCase(res) {
+    if (!res || !res.ok) return "";
+    const n = res.docs.length;
+    const head = n
+      ? "Added " + (n === 1 ? "1 file" : n + " files") + " from " + res.root + "/Text Files."
+      : "No Text Files folder in " + res.root + " — no documents were added.";
+    const rest = res.left
+      ? " Left " +
+        (res.left === 1 ? "1 other file" : res.left + " other files") +
+        " in the case folder alone — a matter's originals never upload."
+      : "";
+    const cap = res.capped
+      ? " Took the first " + n + " — that Text Files folder holds more, and the rest were left out."
+      : "";
+    return head + rest + cap;
+  }
+
   const api = {
     JUNK,
     isJunkName,
@@ -222,6 +355,12 @@
     walk,
     fromPicked,
     summarize,
+    MAX_SCAN,
+    normSeg,
+    isTextFilesDir,
+    isSpreadsheetName,
+    splitCaseFolder,
+    summarizeCase,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMDropDir = api;
