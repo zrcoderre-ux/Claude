@@ -594,6 +594,120 @@
     }
   }
 
+  // ---- case numbers: the one value that must never go out unswapped --------
+  //
+  // A party's name in a chat title is a leak; a CASE NUMBER is the whole case.
+  // It is unique, public, and searchable — one number turns a pseudonymized
+  // draft back into the matter it came from, whatever the names were changed
+  // to. So a run whose name carries one does not go out at all unless its
+  // pseudonym key replaces that number (see the gate below).
+  //
+  // Modern LASC numbers are one shape: two digits of filing year, a two-
+  // character court location code, a two-letter case type code and a five-digit
+  // sequential number — 23STCV12345, 22SMCV01234, 24STLC00987. The pattern
+  // takes the two letter groups together, since the parts are only meaningful
+  // to a person: what matters here is that the whole token is a case number.
+  //
+  // The pre-2018 numbers the court still carries are two letters and six digits
+  // — BC123456, EC098765 — and those are as real as the modern ones, so they
+  // count too. Both are anchored on word boundaries and both are long and
+  // shaped unlike anything a matter name is otherwise made of, which is what
+  // keeps a gate this strict from firing on ordinary text.
+  const CASE_NO_RES = [
+    /\b\d{2}[A-Za-z]{4}\d{5}\b/g, // 23STCV12345
+    /\b[A-Za-z]{2}\d{6}\b/g, // BC123456 (pre-2018)
+  ];
+
+  // Every case number in the text, in the order they appear, one entry per
+  // number however many times it is written.
+  function caseNumbers(text) {
+    const s = String(text == null ? "" : text);
+    const found = [];
+    const seen = new Set();
+    for (const re of CASE_NO_RES) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(s))) {
+        const k = fold(m[0]);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        found.push({ at: m.index, text: m[0] });
+      }
+    }
+    return found.sort((a, b) => a.at - b.at).map((f) => f.text);
+  }
+
+  // Which of the case numbers in these strings the key would NOT swap. The test
+  // is the swap itself rather than a lookup in the rows: a key row reading
+  // "Case No. 23STCV12345" doesn't replace the bare number, and the title
+  // cleaner wouldn't replace it either — so "does the cleaner change it" is the
+  // only question worth asking, and it is the same question the title asks.
+  function uncoveredCaseNumbers(key, texts) {
+    const list = Array.isArray(texts) ? texts : [texts];
+    const fwd = key ? compileForward(key) : null;
+    const out = [];
+    const seen = new Set();
+    for (const t of list) {
+      for (const n of caseNumbers(t)) {
+        const k = fold(n);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const swapped = fwd && fwd.rx ? translate(fwd, n).text : n;
+        if (fold(swapped) === k) out.push(n);
+      }
+    }
+    return out;
+  }
+
+  function listNumbers(nums) {
+    return nums.length === 1 ? nums[0] : nums.slice(0, -1).join(", ") + " and " + nums[nums.length - 1];
+  }
+
+  // May this run go out? `names` are the strings it can write into a chat title
+  // (W.titleNames), `key` is the matter's parsed key and `looked` says the key
+  // library answered at all.
+  //
+  // A name with no case number in it passes — this gate is about one value, not
+  // about names in general, which the title cleaner handles. A name WITH one
+  // passes only when the key actually replaces it. Everything else stops the
+  // run, including "couldn't tell": a key library that wouldn't read is not a
+  // key that carries the number.
+  //
+  // It is a refusal, not a hold — it never sits waiting for a condition to
+  // change, and `why` carries both remedies (load a key that carries the
+  // number, or take it out of the name), so the run says what to do rather than
+  // parking silently.
+  function caseNumberGate(state) {
+    const s = state || {};
+    const names = (s.names || []).filter(Boolean);
+    const all = [];
+    for (const n of names) for (const c of caseNumbers(n)) if (all.indexOf(c) === -1) all.push(c);
+    if (!all.length) return { ok: true, numbers: [], why: "" };
+    if (!s.looked)
+      return {
+        ok: false,
+        numbers: all,
+        why:
+          "this run's name carries the case number " + listNumbers(all) +
+          " and the pseudonym key library would not read, so nothing can say the number " +
+          "would be replaced — a run whose name carries a real case number does not go out",
+      };
+    const missing = uncoveredCaseNumbers(s.key, names);
+    if (!missing.length) return { ok: true, numbers: all, why: "" };
+    return {
+      ok: false,
+      numbers: missing,
+      why:
+        "this run's name carries the case number " + listNumbers(missing) +
+        ", and " +
+        (s.key
+          ? "this matter's pseudonym key does not replace it"
+          : "no pseudonym key is attached to this matter") +
+        " — a run whose name carries a real case number does not go out. Load a key that " +
+        "carries that number, or take it out of the run's name.",
+    };
+  }
+
   // ---- names that LEAVE this browser ----------------------------------------
   //
   // A chat's title is not display: claude.ai stores it, shows it in the sidebar
@@ -747,6 +861,9 @@
     isPincitePaste,
     buildMatcher,
     conversationKeyFromUrl,
+    caseNumbers,
+    uncoveredCaseNumbers,
+    caseNumberGate,
     nameCleaner,
     titlePlan,
     runTranslationHold,
