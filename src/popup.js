@@ -513,13 +513,13 @@
       }, 2600);
     }
 
-    // Every case's key file is named pseudonym_key.xlsx, so the label leans
-    // on the case HINT (the real name its exports used most) to tell them
-    // apart. Local UI only — the same names the translated chat shows anyway.
+    // Every case's key file is named pseudonym_key.xlsx, so the label is the
+    // case FOLDER it was picked from where there is one, and the case HINT
+    // (the real value its exports used most) where there isn't — P.keyLabel
+    // owns that order, so the popup, the run editor's picker and the badge in
+    // the chat all call a key the same thing. Local UI only.
     function keyLabel(k) {
-      return (
-        (k.hint ? k.hint + " — " : "") + (k.name || "key") + " · " + k.rows + " rows"
-      );
+      return P.keyLabel ? P.keyLabel(k) : (k.name || "key") + " · " + k.rows + " rows";
     }
 
     function renderPseudo() {
@@ -591,7 +591,9 @@
         // different case's key gets its own entry beside it.
         const where = P.libraryIdFor(keys, key);
         key.savedAt = Date.now();
-        keys[where.id] = key;
+        // The file cannot know which case FOLDER named this key, so a refresh
+        // from here keeps what the entry already learned (P.keepKeyFacts).
+        keys[where.id] = P.keepKeyFacts ? P.keepKeyFacts(keys[where.id], key) : key;
         chrome.storage.local.set({ [KEYS_KEY]: keys }, () => {
           renderPseudo();
           ui.select.value = where.id;

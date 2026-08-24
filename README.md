@@ -880,6 +880,9 @@ walked:
   no original is.
 - **The run takes the folder's name**, since the folder is the matter — unless
   you have already typed a run name, which always wins.
+- **So does the key.** The key it attaches is called by the folder's name from
+  then on, wherever keys are listed — so the picker, the runs list, the tab
+  group and the badge in the chat all say the same matter.
 - **A case folder with no `Text Files` in it adds nothing** and says so. It is
   still a case folder, which is exactly why the rest of it does not go instead.
 
@@ -1563,7 +1566,8 @@ that matter alone.
 **A run's chats sit in a tab group**, whichever window they open in — at run
 start, as each step opens its conversation, and again when **Open chats**
 brings them back. The group is named and colored **for the case**, the way
-everything else is now: the key's hint titles it (`Rasho`), the color seeds on
+everything else is now: the key's own label titles it — the case folder it was
+picked from, else its hint (`Rasho`) — the color seeds on
 the run's key so **every run of one case wears the same color** (a keyless run
 seeds on its own id), and a keyless run titles by its matter name. The
 grouping is stateless — the run's next tab joins wherever its other chats
@@ -1938,10 +1942,24 @@ named `pseudonym_key.xlsx`, the library's identity comes from **content, not
 filename**: loading a second case's key creates its own entry beside the
 first, while re-loading the *same* case's key after a re-run (a key only ever
 grows) lands on its existing entry, so every chat and run attached to it
-follows onto the new rows. Each key carries a **case hint** — the real name
-its exports used most — which leads its label in the popup, the run editor's
-picker, and the badge, so "which case is this tab translating?" is answered
-at a glance.
+follows onto the new rows.
+
+**What a key is called** is the same answer everywhere it appears — the popup,
+the run editor's picker, the badge in the chat, the tab group, the runs list:
+
+1. **The case folder it came out of** — `23STCV12345 Smith v. Jones` — when it
+   was picked as part of one ([A case folder is taken apart, not
+   uploaded](#a-case-folder-is-taken-apart-not-uploaded)). That is the matter's
+   own name in your own filing, and it is what the **run** is named after too,
+   so the key in the picker reads as the same thing as the run in the list.
+2. **The case hint** — the real value its exports used most — where no folder
+   named it, which is what told two `pseudonym_key.xlsx` files apart before.
+
+A key **keeps** the folder that named it: re-loading the same case's key from
+the popup a week later refreshes the rows and leaves the name alone, because
+the file itself has no way of knowing which folder it came out of. Picking it
+out of a different case folder renames it to that one. All of it is local UI —
+none of these labels is ever sent.
 
 **Attaching it.** Two ways, matching where work happens:
 

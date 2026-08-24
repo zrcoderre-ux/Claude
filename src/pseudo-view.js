@@ -512,13 +512,12 @@
       document.documentElement.appendChild(badge);
       placeBadge(false); // a position from an earlier visit, applied on arrival
     }
-    // Led by the case hint: with two cases open in two tabs, every key file
-    // is named pseudonym_key.xlsx and the badge has to say WHICH case this
-    // tab is translating. (The tab already shows the real names — the hint
-    // reveals nothing the translation doesn't.)
-    const name =
-      (active.key.hint ? active.key.hint + " · " : "") +
-      (active.key.name || "pseudonym key");
+    // What this key is CALLED (P.keyTitle): the case folder it was picked from
+    // where there is one, the case hint where there isn't. With two cases open
+    // in two tabs, every key file is named pseudonym_key.xlsx and the badge has
+    // to say WHICH case this tab is translating. (The tab already shows the
+    // real names — the label reveals nothing the translation doesn't.)
+    const name = P.keyTitle ? P.keyTitle(active.key) : active.key.name || "pseudonym key";
     badge.textContent = hold
       ? "🔑 " + name + " — ⏸ a run is working · showing the fakes"
       : paused
