@@ -2065,6 +2065,49 @@ test("an untitled run's chats are titled by its creation date and time", () => {
   );
 });
 
+test("a matter with a pseudonym key is titled in the FAKE name", () => {
+  // The title is the one thing a run sends that the pseudonymization never
+  // scrubbed: claude.ai stores it, shows it in the sidebar and syncs it. The
+  // cleaner comes from the run's key (P.nameCleaner); here it stands in for it.
+  const clean = (t) => String(t).replace(/Rasho/g, "Strangeways");
+  assert.equal(
+    W.chatTitle({ name: "8.11.26 Rasho MSJ" }, "Drafting (A)", clean),
+    "8.11.26 Strangeways MSJ: Drafting (A)"
+  );
+  // The chat's own name goes through it too — a step named for a party is as
+  // much of a leak as the matter is.
+  assert.equal(
+    W.chatTitle({ name: "8.11.26 MSJ" }, "Rasho depo (B)", clean),
+    "8.11.26 MSJ: Strangeways depo (B)"
+  );
+  // No cleaner passed is the old behaviour exactly — a matter with no key.
+  assert.equal(
+    W.chatTitle({ name: "8.11.26 Rasho MSJ" }, "Drafting (A)"),
+    "8.11.26 Rasho MSJ: Drafting (A)"
+  );
+  // And an unnamed run's stamp-and-template fallback is cleaned as well: the
+  // template's resting name is the operator's to type, party name and all.
+  const afternoon = new Date(2026, 7, 18, 15, 42).getTime();
+  assert.equal(
+    W.chatTitle({ name: "", templateName: "Rasho tentative", createdAt: afternoon }, "Drafting (A)", clean),
+    "8.18.26 3:42 PM Strangeways tentative: Drafting (A)"
+  );
+});
+
+test("the title is cleaned BEFORE it is cut to fit", () => {
+  // The fakes are a different length from the reals, so a title trimmed to fit
+  // the real name fits the fake one badly — and a cut made first can leave half
+  // a real name standing where the swap can no longer find it.
+  const chat = "Devil's advocate (B)";
+  const long = "8.11.26 Rasho " + "Motion to Compel Arbitration and to Stay Proceedings ".repeat(3);
+  const clean = (t) => String(t).replace(/Rasho/g, "Strangeways");
+  const title = W.chatTitle({ name: long }, chat, clean);
+  assert.ok(title.length <= 100, "fits: " + title.length);
+  assert.ok(!/Rasho/.test(title), "no part of the real name survives: " + title);
+  assert.ok(title.startsWith("8.11.26 Strangeways Motion to Compel"), title);
+  assert.ok(title.endsWith(": " + chat), "the chat's own name still survives whole");
+});
+
 test("a long matter is shortened, never the chat's own name", () => {
   const chat = "Devil's advocate (B)";
   const long = "8.11.26 " + "Motion to Compel Arbitration and to Stay Proceedings ".repeat(3);

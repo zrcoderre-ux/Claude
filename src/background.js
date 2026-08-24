@@ -14,7 +14,7 @@
  *
  * MV3 workers are short-lived, so a chrome.alarm keeps things ticking.
  */
-// self.CUMJobs / CUMStatus / CUMWorkflow / CUMWfUsage / CUMUsageWarn
+// self.CUMJobs / CUMStatus / CUMWorkflow / CUMWfUsage / CUMUsageWarn / CUMPseudo
 importScripts(
   "jobstore.js",
   "status.js",
@@ -22,7 +22,10 @@ importScripts(
   "wfusage.js",
   "incognito.js",
   "cowork.js",
-  "usagewarn.js"
+  "usagewarn.js",
+  // The worker names conversations, and a chat's title is the one thing a run
+  // SENDS that the pseudonymization never scrubbed — see chatTitleFor.
+  "pseudo.js"
 );
 
 const CFG_KEY = "cum_autocontinue";
@@ -591,6 +594,55 @@ async function readRun(id) {
   const k = W.runKey(id);
   return (await get(k))[k] || null;
 }
+// What a run's conversation is called, with the matter's real names swapped for
+// the key's fakes on the way out. Answers { title, held }: the title to send,
+// or null with `held` saying why nothing is being sent.
+//
+// A run is named for its matter, because that is what makes one run's chats
+// findable among a year of them — and claude.ai's sidebar is not this browser.
+// Titling a conversation "8.11.26 Rasho MSJ" would hand Claude the real case
+// name in the very run whose every uploaded paper was scrubbed of it, and it
+// would stay handed over: a title is stored, synced and searchable.
+//
+// The key is the run's own, or its GROUP's (a group is one matter and a matter
+// has one key — W.runPseudoKey settles it), which is the same key the papers
+// were scrubbed with. Only the values the key knows are swapped, so the promise
+// is exactly the key's own reach.
+//
+// Where the matter has NO key, the run's name goes as typed: there are no fakes
+// to use, and there is nothing here to protect. Where it HAS one and the swap
+// can't be made — the key library wouldn't read, the module isn't there — the
+// chat is left unnamed and the run SAYS SO. A title that quietly went out with
+// the real name in it is the one outcome this must never have.
+async function chatTitleFor(run, chatName) {
+  const P = self.CUMPseudo;
+  const unnamed = (why) => ({
+    title: null,
+    held: "left this chat unnamed: " + why + " — the real name is not going into a chat title",
+  });
+  // Same importScripts as everything else here, so a worker missing it is a
+  // worker that is broken — and a broken worker must not be how a real name
+  // reaches a chat title.
+  if (!P) return unnamed("the pseudonym module is not loaded");
+  let keyId = run && run.pseudoKeyId ? run.pseudoKeyId : null;
+  let key = null;
+  let looked = false;
+  try {
+    const res = await get(["cum_pseudo_keys", "cum_run_groups"]);
+    if (!keyId && run) keyId = W.runPseudoKey(run, await readRuns(), res.cum_run_groups || []);
+    key = keyId ? (res.cum_pseudo_keys || {})[keyId] : null;
+    looked = true;
+  } catch (e) {
+    /* couldn't find out — which is not the same as "no key" */
+  }
+  const plan = P.titlePlan({ looked: looked, keyId: keyId, key: !!key });
+  if (plan.mode === "hold") return unnamed(plan.why);
+  return {
+    title: W.chatTitle(run, chatName, plan.mode === "clean" ? P.nameCleaner(key) : null),
+    held: null,
+  };
+}
+
 async function saveRun(run) {
   await set({ [W.runKey(run.id)]: run });
   const ids = await readRunIds();
@@ -1451,6 +1503,11 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
     .filter((d) => m.docIds.indexOf(d.id) !== -1)
     .map((d) => ({ id: d.id, name: d.name, type: d.type, bundled: d.bundled || 0 }));
   const awaitOnly = !!(had && had.sent);
+  // Cleaned of the matter's real names before it is sent — see chatTitleFor.
+  const naming =
+    run.nameChats !== false && m.firstInChat && W.ownsChatName(saved)
+      ? await chatTitleFor(run, m.chatName)
+      : { title: null, held: null };
   const payload = {
     type: "cum-wf-step",
     runId: runId,
@@ -1474,10 +1531,8 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
     // catch up a rename the send-time pass never made. ownsChatName tells a
     // run-opened chat from one the operator pasted in.
     firstInChat: m.firstInChat && W.ownsChatName(saved),
-    title:
-      run.nameChats !== false && m.firstInChat && W.ownsChatName(saved)
-        ? W.chatTitle(run, m.chatName)
-        : null,
+    title: naming.title,
+    titleHeld: naming.held,
     codeRepo: m.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
     // Only on the way in. Once a conversation exists the toggle isn't on the
     // page any more, and the project menu is the composer home's.
@@ -1740,6 +1795,11 @@ async function driveRun(runId, opts) {
         .filter((d) => step.docIds.indexOf(d.id) !== -1)
         .map((d) => ({ id: d.id, name: d.name, type: d.type, bundled: d.bundled || 0 }));
 
+      // Cleaned of the matter's real names before it is sent — see chatTitleFor.
+      const naming =
+        run.nameChats !== false && step.firstInChat && W.ownsChatName(saved)
+          ? await chatTitleFor(run, step.chatName)
+          : { title: null, held: null };
       const payload = {
         type: "cum-wf-step",
         runId: runId,
@@ -1769,10 +1829,8 @@ async function driveRun(runId, opts) {
         // stays the run's to name even on a resume, so a step re-attached after
         // a worker restart can catch up a rename the send-time pass never made.
         firstInChat: step.firstInChat && W.ownsChatName(saved),
-        title:
-          run.nameChats !== false && step.firstInChat && W.ownsChatName(saved)
-            ? W.chatTitle(run, step.chatName)
-            : null,
+        title: naming.title,
+        titleHeld: naming.held,
         codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
         // Only on the way in — see the wave payload for why.
         surface: !saved.url ? step.surface || null : null,

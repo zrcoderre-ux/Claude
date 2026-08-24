@@ -594,6 +594,60 @@
     }
   }
 
+  // ---- names that LEAVE this browser ----------------------------------------
+  //
+  // A chat's title is not display: claude.ai stores it, shows it in the sidebar
+  // and syncs it everywhere that account is signed in. So a run named for the
+  // matter — which is how a run IS named, "8.11.26 Rasho MSJ" — would write the
+  // real case name into Claude the moment it titled its first conversation,
+  // with every paper that reached the chat carrying nothing but fakes. The
+  // title is the leak the pseudonymization can't see.
+  //
+  // This is the cleaner's own direction (real → fake), compiled once for a
+  // caller that has several strings to clean, and the identity function where
+  // there is no key — a matter with no key attached is a matter with no fakes
+  // to use, and inventing one would be worse than the real name.
+  //
+  // What it can promise is exactly what the cleaner promises: every value THE
+  // KEY KNOWS is swapped. A name the key has never heard of passes through, so
+  // the guarantee is only ever as complete as the key is.
+  // Whether a chat's title can go out at all, and under what name. The caller
+  // does the storage reading and hands over what it found: `looked` (the key
+  // library answered at all), `keyId` (the key this matter names — its own or
+  // its group's) and `key` (that key, actually in the library).
+  //
+  //   "plain"  no key on this matter: the run's name goes as typed. There are
+  //            no fakes to use and nothing here to protect.
+  //   "clean"  the key is here: real → fake, then send.
+  //   "hold"   the matter HAS a key and the swap cannot be made. Then NO title
+  //            goes — not the real name as a fallback — and `why` is what the
+  //            run says out loud about the chat it left unnamed.
+  //
+  // The hold is the whole reason this is a decision rather than an `if`: every
+  // path that can't produce a fake has to end in silence, and "couldn't tell"
+  // is one of them. A library that wouldn't read is not a matter without a key.
+  function titlePlan(state) {
+    const s = state || {};
+    if (!s.looked)
+      return {
+        mode: "hold",
+        why: "the pseudonym key library would not read, so the run's name could not be checked against it",
+      };
+    if (!s.keyId) return { mode: "plain", why: "" };
+    if (!s.key)
+      return {
+        mode: "hold",
+        why: "this matter's pseudonym key is not in the key library any more, so the run's name could not be pseudonymized",
+      };
+    return { mode: "clean", why: "" };
+  }
+
+  function nameCleaner(key) {
+    const fwd = key ? compileForward(key) : null;
+    if (!fwd || !fwd.rx) return (s) => String(s == null ? "" : s);
+    return (s) => translate(fwd, String(s == null ? "" : s)).text;
+  }
+
   // ---- a run in flight holds the translation ---------------------------------
   //
   // A workflow run drives a conversation by machine: it sends, waits for the
@@ -693,6 +747,8 @@
     isPincitePaste,
     buildMatcher,
     conversationKeyFromUrl,
+    nameCleaner,
+    titlePlan,
     runTranslationHold,
     HOLD_STALE_MS,
     fold,

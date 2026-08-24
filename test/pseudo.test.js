@@ -648,3 +648,85 @@ test("a run naming this chat holds it even with no key of its own", () => {
   assert.ok(h);
   assert.equal(h.via, "chat");
 });
+
+// ---- names that leave this browser -----------------------------------------
+//
+// A chat's title is not display: claude.ai stores it, shows it in the sidebar
+// and syncs it. A run is named for its matter, so the title is where the real
+// case name would walk into Claude past every scrubbed paper.
+
+const TITLE_KEY = {
+  name: "pseudonym_key.xlsx",
+  warn: [
+    { real: "RASHO", fake: "STRANGEWAYS" },
+    { real: "Helen Rasho", fake: "Ingrid Strangeways" },
+    { real: "Cross River Bank, LLC", fake: "Zenith Holdings, LLC" },
+  ],
+};
+
+test("nameCleaner swaps the matter's real name for the key's fake", () => {
+  const clean = P.nameCleaner(TITLE_KEY);
+  assert.equal(clean("8.11.26 Rasho MSJ"), "8.11.26 Strangeways MSJ");
+  assert.equal(clean("Helen Rasho — tentative"), "Ingrid Strangeways — tentative");
+  assert.equal(
+    clean("Cross River Bank, LLC demurrer"),
+    "Zenith Holdings, LLC demurrer"
+  );
+});
+
+test("nameCleaner writes the fake in the case the name was typed in", () => {
+  // A matter typed the way a caption reads must not put a caption in a title,
+  // and one typed in a sentence must not shout.
+  const clean = P.nameCleaner(TITLE_KEY);
+  assert.equal(clean("8.11.26 RASHO MSJ"), "8.11.26 STRANGEWAYS MSJ");
+  assert.equal(clean("8.11.26 rasho msj"), "8.11.26 strangeways msj");
+  assert.equal(clean("Rasho's motion"), "Strangeways's motion");
+});
+
+test("nameCleaner leaves alone what the key never heard of", () => {
+  // The promise is the key's own reach, and no more: a party the key doesn't
+  // carry passes through, which is why the wiring says so out loud.
+  const clean = P.nameCleaner(TITLE_KEY);
+  assert.equal(clean("8.11.26 Fairbanks MSJ"), "8.11.26 Fairbanks MSJ");
+  assert.equal(clean("Motion to Compel Arbitration"), "Motion to Compel Arbitration");
+});
+
+test("no key, no swap — and nothing thrown", () => {
+  assert.equal(P.nameCleaner(null)("8.11.26 Rasho MSJ"), "8.11.26 Rasho MSJ");
+  assert.equal(P.nameCleaner({ warn: [] })("8.11.26 Rasho MSJ"), "8.11.26 Rasho MSJ");
+  assert.equal(P.nameCleaner(null)(null), "");
+  assert.equal(P.nameCleaner(TITLE_KEY)(undefined), "");
+});
+
+test("titlePlan: no key on the matter, and the name goes as typed", () => {
+  const p = P.titlePlan({ looked: true, keyId: null, key: false });
+  assert.equal(p.mode, "plain");
+});
+
+test("titlePlan: the key is here, so the title is cleaned", () => {
+  const p = P.titlePlan({ looked: true, keyId: "k1", key: true });
+  assert.equal(p.mode, "clean");
+});
+
+test("titlePlan: a keyed matter whose key has gone sends NO title", () => {
+  // Never the real name as a fallback. The chat is left unnamed and the run
+  // says which way it failed.
+  const p = P.titlePlan({ looked: true, keyId: "k1", key: false });
+  assert.equal(p.mode, "hold");
+  assert.match(p.why, /not in the key library/);
+});
+
+test("titlePlan: 'couldn't tell' is not 'no key'", () => {
+  // A library that wouldn't read says nothing about whether this matter has a
+  // key — so the title waits rather than guessing the safe-looking way.
+  for (const state of [
+    { looked: false, keyId: null, key: false },
+    { looked: false, keyId: "k1", key: false },
+    {},
+    null,
+  ]) {
+    const p = P.titlePlan(state);
+    assert.equal(p.mode, "hold", JSON.stringify(state));
+    assert.match(p.why, /would not read/);
+  }
+});

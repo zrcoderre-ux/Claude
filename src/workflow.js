@@ -2524,7 +2524,15 @@
     );
   }
 
-  function chatTitle(run, name) {
+  // `clean` (optional) is P.nameCleaner for the run's pseudonym key: the matter
+  // and the chat's own name go through it before anything is composed, so what
+  // reaches claude.ai's sidebar is the case's FAKE name. A title is not display
+  // — claude.ai stores it and syncs it — so a run named for the matter would
+  // otherwise hand over the one thing every paper it uploads has had scrubbed
+  // out of it. Cleaned before the length trim, never after: the fakes are a
+  // different length from the reals, and a title trimmed to fit the real name
+  // would fit the fake one badly.
+  function chatTitle(run, name, clean) {
     // The run's own names, not runLabel's — "Untitled run" is a placeholder for
     // a row on the Options page, and writing it into your sidebar would be
     // taking a gap in the UI for a fact about the matter.
@@ -2540,12 +2548,14 @@
     // repeat — "MSJ: Drafting (A)" then "MSJ: Drafting (A) (Run 2)" — rather
     // than the number splitting the matter from the chat it names.
     const r = run || {};
+    const wash = typeof clean === "function" ? (s) => trimmed(clean(s)) : (s) => s;
     const named = baseRunName(r.name);
     const stamp = named ? "" : runStamp(r);
     const template = baseRunName(r.templateName);
-    const matter =
-      named || (stamp && template ? stamp + " " + template : stamp || template);
-    const chat = trimmed(name);
+    const matter = wash(
+      named || (stamp && template ? stamp + " " + template : stamp || template)
+    );
+    const chat = wash(trimmed(name));
     const n = runNumber(r);
     const tail = (chat ? chat : "") + (n > 1 ? " (Run " + n + ")" : "");
     if (!chat) return matter ? matter + (n > 1 ? " (Run " + n + ")" : "") : "";
