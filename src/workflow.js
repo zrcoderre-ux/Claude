@@ -1952,15 +1952,19 @@
       .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     for (const m of members) {
       const key = m.pseudoKeyId && keys ? keys[m.pseudoKeyId] : null;
-      if (key) return trimmed(key.hint) || trimmed(key.name);
+      // The order P.keyTitle uses, restated here because this module has no
+      // dependencies: the case FOLDER the key was picked from, then the case
+      // hint, then the file's own name.
+      if (key) return trimmed(key.folder) || trimmed(key.hint) || trimmed(key.name);
     }
     for (const m of members) if (trimmed(m.name)) return runBaseName(m.name);
     return "";
   }
 
   // What a run's TAB GROUP is called and colored. Named like everything else
-  // now is — for the case: the key's hint first, then the matter's own name,
-  // then the template's. Chrome truncates long group titles ungracefully, so
+  // now is — for the case: the key's own label first (the case folder it was
+  // picked from, else its hint), then the matter's own name, then the
+  // template's. Chrome truncates long group titles ungracefully, so
   // this cuts them itself. The color seed is the run's KEY where it has one,
   // so every run of a case — and every run in its group, which shares the
   // key — wears the same color; a keyless run falls back to its own id.
@@ -1969,7 +1973,7 @@
   function tabGroupTitle(run, keys) {
     const key = run && run.pseudoKeyId && keys ? keys[run.pseudoKeyId] : null;
     const name =
-      (key && trimmed(key.hint)) ||
+      (key && (trimmed(key.folder) || trimmed(key.hint))) ||
       runBaseName(run && run.name) ||
       trimmed(run && run.templateName) ||
       "run";

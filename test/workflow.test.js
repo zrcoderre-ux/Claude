@@ -2065,6 +2065,21 @@ test("an untitled run's chats are titled by its creation date and time", () => {
   );
 });
 
+test("a run's tab group and its group label are named for the case folder", () => {
+  // The same order P.keyTitle uses. A key picked out of a case folder carries
+  // that folder's name, and it is what the run is named after too — so the tab
+  // group, the runs list and the key picker all read as one matter.
+  const keys = {
+    k1: { folder: "23STCV12345 Smith", hint: "SMITH", name: "pseudonym_key.xlsx" },
+    k2: { hint: "RASHO", name: "pseudonym_key.xlsx" },
+  };
+  assert.equal(W.tabGroupTitle({ pseudoKeyId: "k1", name: "8.11.26 MSJ" }, keys), "23STCV12345 Smith");
+  assert.equal(W.tabGroupTitle({ pseudoKeyId: "k2", name: "8.11.26 MSJ" }, keys), "RASHO");
+  assert.equal(W.tabGroupTitle({ name: "8.11.26 MSJ" }, keys), "8.11.26 MSJ");
+  const runs = [{ id: "r1", pseudoKeyId: "k1", name: "8.11.26 MSJ", createdAt: 1 }];
+  assert.equal(W.groupLabel({ runIds: ["r1"] }, runs, keys), "23STCV12345 Smith");
+});
+
 test("titleNames is every name that can reach a chat title", () => {
   // What the case-number gate reads: the matter's own name, the template's
   // (which stands in for the matter on a run nobody named) and each chat's.

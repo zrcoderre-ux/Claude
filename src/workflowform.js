@@ -607,7 +607,7 @@
     // uploaded. Answers true when it did, and is quiet either way, because one
     // caller is OFFERING candidates (the case-folder split hands over every
     // .xlsx it saw) and a refusal per spreadsheet would be noise there.
-    async function attachKeyFile(f) {
+    async function attachKeyFile(f, folder) {
       const P = window.CUMPseudo;
       const X = window.CUMXlsx;
       if (P && X && /\.xlsx$/i.test(f.name || "")) {
@@ -621,17 +621,25 @@
               // sits beside it — the filename is always pseudonym_key.xlsx.
               let id = null;
               key.savedAt = Date.now();
+              // The case folder is what this key is CALLED from here on — the
+              // same name the run takes, so the picker and the runs list read
+              // as the same matter. A key picked loose keeps whatever the
+              // entry already learned (P.keepKeyFacts).
+              if (folder) key.folder = folder;
               await new Promise((res) =>
                 chrome.storage.local.get("cum_pseudo_keys", (r) => {
                   const keys = (r && r.cum_pseudo_keys) || {};
                   id = P.libraryIdFor(keys, key).id;
-                  keys[id] = key;
+                  keys[id] = P.keepKeyFacts ? P.keepKeyFacts(keys[id], key) : key;
                   chrome.storage.local.set({ cum_pseudo_keys: keys }, res);
                 })
               );
               wf.pseudoKeyId = id;
               loadPseudoKeys();
-              flash(f.name + " is the pseudonym key — attached to this run instead of uploaded.");
+              flash(
+                (folder ? folder : f.name) +
+                  " is the pseudonym key — attached to this run instead of uploaded."
+              );
               return true;
             }
           }
@@ -691,7 +699,7 @@
       // one; a folder with no key in it is said out loud, because a run whose
       // name carries a case number needs one before it will go anywhere.
       (async () => {
-        for (const k of split.keys) if (await attachKeyFile(k.file)) return;
+        for (const k of split.keys) if (await attachKeyFile(k.file, split.root)) return;
         if (ui.pseudo && ui.pseudo.value) return; // one was already attached
         flash(
           "No pseudonym key in " + split.root + " — attach one below, or this run won't go out: " +
@@ -1495,11 +1503,15 @@
           for (const id of Object.keys(keys)) {
             const opt = document.createElement("option");
             opt.value = id;
-            // The case hint leads: every key file is named pseudonym_key.xlsx,
+            // Called what the popup and the in-chat badge call it: the case
+            // FOLDER it was picked from where there is one, the case hint
+            // where there isn't. Every key file is named pseudonym_key.xlsx,
             // and a list of that name three times over says nothing.
+            const P = window.CUMPseudo;
             opt.textContent =
-              (keys[id].hint ? keys[id].hint + " — " : "") +
-              (keys[id].name || id) + " · " + (keys[id].rows || 0) + " rows";
+              P && P.keyLabel
+                ? P.keyLabel(keys[id])
+                : (keys[id].name || id) + " · " + (keys[id].rows || 0) + " rows";
             ui.pseudo.appendChild(opt);
           }
           ui.pseudo.value = (wf && wf.pseudoKeyId) || "";

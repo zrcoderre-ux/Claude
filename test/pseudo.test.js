@@ -863,3 +863,59 @@ test("no names at all is not a reason to stop", () => {
   assert.equal(P.caseNumberGate({}).ok, true);
   assert.equal(P.caseNumberGate(null).ok, true);
 });
+
+// ---- what a key is called --------------------------------------------------
+//
+// Every case's key file is named pseudonym_key.xlsx, so the filename can never
+// be the label. The case FOLDER it was picked from is the best answer — it is
+// the matter's own name in the operator's own filing, and it is what the run is
+// named after too — and the case hint is the answer where no folder named it.
+
+test("keyTitle leads with the case folder where there is one", () => {
+  assert.equal(
+    P.keyTitle({ folder: "23STCV12345 Smith v. Jones", hint: "SMITH", name: "pseudonym_key.xlsx" }),
+    "23STCV12345 Smith v. Jones",
+    "the folder is the matter's own name — it beats both"
+  );
+});
+
+test("keyTitle falls back the way the popup always did", () => {
+  assert.equal(
+    P.keyTitle({ hint: "ZACHARY CODERRE", name: "pseudonym_key.xlsx" }),
+    "ZACHARY CODERRE — pseudonym_key.xlsx"
+  );
+  assert.equal(P.keyTitle({ hint: "ZACHARY CODERRE" }), "ZACHARY CODERRE");
+  assert.equal(P.keyTitle({ name: "pseudonym_key.xlsx" }), "pseudonym_key.xlsx");
+  assert.equal(P.keyTitle({}), "pseudonym key");
+  assert.equal(P.keyTitle(null), "pseudonym key");
+  assert.equal(P.keyTitle({ folder: "   " }), "pseudonym key", "blank is not a name");
+});
+
+test("keyLabel adds the size, and counts one row as one", () => {
+  assert.equal(P.keyLabel({ folder: "23STCV12345 Smith", rows: 214 }), "23STCV12345 Smith · 214 rows");
+  assert.equal(P.keyLabel({ folder: "A", rows: 1 }), "A · 1 row");
+  assert.equal(P.keyLabel({ folder: "A" }), "A · 0 rows");
+});
+
+test("a refreshed key keeps the folder that named it", () => {
+  // A key only ever grows, and it is re-loaded from the popup all the time —
+  // where the file cannot say which case folder it came out of.
+  const prev = { folder: "23STCV12345 Smith v. Jones", rows: 200 };
+  const next = { rows: 214 };
+  const merged = P.keepKeyFacts(prev, next);
+  assert.equal(merged.folder, "23STCV12345 Smith v. Jones");
+  assert.equal(merged.rows, 214, "the rows are the new file's");
+  assert.notEqual(merged, next, "and the caller's object isn't mutated");
+});
+
+test("the same key picked from a different folder takes the new one", () => {
+  const merged = P.keepKeyFacts({ folder: "old name" }, { folder: "23STCV12345 Smith", rows: 3 });
+  assert.equal(merged.folder, "23STCV12345 Smith");
+});
+
+test("with no folder anywhere, nothing is invented", () => {
+  const next = { rows: 5, hint: "SMITH" };
+  assert.equal(P.keepKeyFacts(null, next), next);
+  assert.equal(P.keepKeyFacts({ hint: "SMITH" }, next), next);
+  assert.equal(P.keepKeyFacts({}, null), null);
+});

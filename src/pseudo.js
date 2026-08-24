@@ -207,6 +207,55 @@
     };
   }
 
+  // ---- what a key is CALLED -------------------------------------------------
+  //
+  // Every case's key file is named pseudonym_key.xlsx, so the filename can
+  // never be the label: a picker listing it three times says nothing. Two
+  // better answers, in order.
+  //
+  //   folder  the CASE FOLDER it was picked from — "23STCV12345 Smith v.
+  //           Jones". This is the matter's own name, in the operator's own
+  //           filing, and it is what the run is named after too (the case
+  //           folder split sets both), so the key in the picker reads as the
+  //           same thing as the run in the list. Set only where it is known.
+  //   hint    the real value the case's exports used most, which is what tells
+  //           two keys apart when nothing named the folder.
+  //
+  // All of it is local UI — a picker, a badge, a tab group — and none of it is
+  // ever sent. The badge already shows the real names on the page it labels.
+  function trim(s) {
+    return String(s == null ? "" : s).trim();
+  }
+
+  function keyTitle(key) {
+    const k = key || {};
+    const folder = trim(k.folder);
+    if (folder) return folder;
+    const hint = trim(k.hint);
+    const name = trim(k.name);
+    if (hint && name) return hint + " — " + name;
+    return hint || name || "pseudonym key";
+  }
+
+  // The same, with the size that tells a full key from a half-loaded one.
+  function keyLabel(key) {
+    const k = key || {};
+    const rows = typeof k.rows === "number" ? k.rows : 0;
+    return keyTitle(k) + " · " + rows + " row" + (rows === 1 ? "" : "s");
+  }
+
+  // Storing a key over the entry it refreshes. The ROWS are the new file's —
+  // a key only ever grows — but what the FILE cannot know stays with the
+  // entry: a key re-loaded from the popup a week later must not lose the case
+  // folder that named it, and the same key picked from a different folder
+  // takes the new one.
+  function keepKeyFacts(prev, next) {
+    if (!next) return next;
+    const folder = trim(next.folder) || (prev && trim(prev.folder)) || "";
+    if (!folder) return next;
+    return Object.assign({}, next, { folder: folder });
+  }
+
   // ---- the key library's identity ------------------------------------------
   //
   // Keys are CASE-specific, and every case's key file is named
@@ -847,6 +896,9 @@
     keySignature,
     sameCaseKey,
     libraryIdFor,
+    keyTitle,
+    keyLabel,
+    keepKeyFacts,
     compile,
     translate,
     compileReals,
