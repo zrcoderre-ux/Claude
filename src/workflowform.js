@@ -238,14 +238,22 @@
       `<div class="cumwf-docs-row"><label class="cumwf-label">Documents</label>` +
       `<div class="cumwf-drop" tabindex="0"><p class="cumwf-dz-text">Drag files or a folder here, paste text, or</p>` +
       `<div class="cumwf-row"><button class="cumwf-btn ghost cumwf-pick" type="button" ` +
-      `title="Files and folders alike — drop a folder on this box, or ⌥/Alt-click here to pick one. ` +
-      `A folder hands over the files inside it; the folder itself isn't a document.">Choose files…</button></div></div>` +
+      `title="The papers themselves. A folder hands over the files inside it; the folder itself isn't a document." ` +
+      `>Choose files…</button>` +
+      `<button class="cumwf-btn ghost cumwf-folder-pick" type="button" ` +
+      `title="A whole folder. A CASE folder — one whose name carries a case number — hands over only the files ` +
+      `in its Text Files subfolder, plus the pseudonym key, which is attached rather than uploaded. Everything ` +
+      `else in it stays where it is.">Choose folder…</button></div></div>` +
       `<input class="cumwf-file-input" type="file" multiple hidden />` +
       `<input class="cumwf-folder-input" type="file" webkitdirectory hidden />` +
       `<p class="cumwf-hint">One door for every paper. A folder hands over the files inside it and never itself, ` +
       `so a matter's folder and the pseudonym_key.xlsx beside it can arrive together — the text files become ` +
-      `documents, the key is attached below. Drop them on the box in one gesture; the file dialog can't select ` +
-      `a folder, so ⌥/Alt-click Choose files to pick one.</p>` +
+      `documents, the key is attached below.</p>` +
+      `<p class="cumwf-hint"><b>A case folder is taken apart, not uploaded.</b> Choose folder (or a drop) on a ` +
+      `folder whose name carries a case number — <code>23STCV12345 Smith</code> — adds only what is under its ` +
+      `<b>Text Files</b> subfolder and attaches the <b>pseudonym key</b> it finds. The originals beside them, in ` +
+      `the real names, are left where they are, and the run takes the folder's name unless you have typed one. ` +
+      `Any other folder is handed over whole, as it always was.</p>` +
       `<p class="cumwf-hint">Tick the chats that should receive each document — it goes up with that chat's first message. ` +
       `Text pasted anywhere here that isn't a box becomes a .txt document, named from its first line.</p>` +
       `<div class="cumwf-docs cumwf-list"></div></div>` +
@@ -365,6 +373,7 @@
       rrDocs: q(".cumwf-rr-docs"),
       fileInput: q(".cumwf-file-input"),
       folderInput: q(".cumwf-folder-input"),
+      folderPick: q(".cumwf-folder-pick"),
       docs: q(".cumwf-docs"),
       docsRow: q(".cumwf-docs-row"),
       pseudo: q(".cumwf-pseudo"),
@@ -593,13 +602,12 @@
       pasteAsDocument(text);
     });
 
-    // A spreadsheet never becomes a run document — the model drops one at
-    // every shaping path and the runner refuses to read one (W.docBarred /
-    // allowedDocs), so admitting it here would only show a row that silently
-    // never uploads. The pseudonym KEY gets a better answer than a refusal:
-    // it is parsed and attached AS the run's key, which is where it was
-    // headed — attached, never uploaded.
-    async function divertSpreadsheet(f) {
+    // Is this spreadsheet the matter's KEY, and if so attach it — parsed and
+    // stored as the run's key, which is where it was headed: attached, never
+    // uploaded. Answers true when it did, and is quiet either way, because one
+    // caller is OFFERING candidates (the case-folder split hands over every
+    // .xlsx it saw) and a refusal per spreadsheet would be noise there.
+    async function attachKeyFile(f) {
       const P = window.CUMPseudo;
       const X = window.CUMXlsx;
       if (P && X && /\.xlsx$/i.test(f.name || "")) {
@@ -624,13 +632,23 @@
               wf.pseudoKeyId = id;
               loadPseudoKeys();
               flash(f.name + " is the pseudonym key — attached to this run instead of uploaded.");
-              return;
+              return true;
             }
           }
         } catch (e) {
-          /* unreadable: fall through to the refusal, which still names the file */
+          /* unreadable: not a key, and the caller decides what to say */
         }
       }
+      return false;
+    }
+
+    // A spreadsheet never becomes a run document — the model drops one at every
+    // shaping path and the runner refuses to read one (W.docBarred /
+    // allowedDocs), so admitting it here would only show a row that silently
+    // never uploads. The pseudonym key gets the better answer above; everything
+    // else gets told, by name, that it wasn't added.
+    async function divertSpreadsheet(f) {
+      if (await attachKeyFile(f)) return;
       flash("Spreadsheets never ride a run's uploads — " + f.name + " was not added.", true);
     }
 
@@ -642,6 +660,46 @@
       addFiles(res.files.map((x) => x.file));
       const said = DD ? DD.summarize(res) : "";
       if (said) flash(said);
+    }
+
+    // Does this folder's name carry a case number? The whole case-folder rule
+    // is gated on that one question, and P.caseNumbers is the same reader the
+    // run gate uses — so a folder this takes apart is a folder whose run will
+    // be held to having a key that covers the number.
+    function isCaseFolderName(name) {
+      const P = window.CUMPseudo;
+      return !!(P && P.caseNumbers && P.caseNumbers(name).length);
+    }
+
+    // A case folder, taken apart: only what is under Text Files becomes a
+    // document, the key is attached, and the originals beside them are left
+    // alone. Answers false when this wasn't a case folder at all, so the caller
+    // can hand it to the ordinary walk instead.
+    function takeCaseFolder(files) {
+      if (!DD || !DD.splitCaseFolder) return false;
+      const split = DD.splitCaseFolder(files, { isCaseName: isCaseFolderName });
+      if (!split.ok) return false;
+      addFiles(split.docs.map((x) => x.file));
+      flash(DD.summarizeCase(split));
+      // The matter's name, from the folder that IS the matter — but never over
+      // a name already typed: what you wrote about this run beats what the
+      // folder happens to be called.
+      if (ui.name && !ui.name.value.trim()) ui.name.value = split.root;
+      // The key rides the run ATTACHED, so it goes to the key slot rather than
+      // into the documents — which is the whole reason a case folder is worth
+      // taking apart in one gesture. Read in order and stop at the first real
+      // one; a folder with no key in it is said out loud, because a run whose
+      // name carries a case number needs one before it will go anywhere.
+      (async () => {
+        for (const k of split.keys) if (await attachKeyFile(k.file)) return;
+        if (ui.pseudo && ui.pseudo.value) return; // one was already attached
+        flash(
+          "No pseudonym key in " + split.root + " — attach one below, or this run won't go out: " +
+            "its name carries a case number.",
+          true
+        );
+      })();
+      return true;
     }
 
     // Same name AND same size as one already here: a second drop of the same
@@ -757,6 +815,11 @@
     // Without the walker loaded, files are still files: never lose a pick.
     function takePicked(list) {
       if (!DD) return addFiles(list);
+      // Scanned without the ordinary cap first: a case folder's Text Files
+      // subfolder has to be REACHED, and 300 files into a matter's originals is
+      // not far enough in. Only what the split hands back is capped.
+      const scan = DD.fromPicked(list, { maxFiles: DD.MAX_SCAN });
+      if (takeCaseFolder(scan.files)) return;
       takeFolder(DD.fromPicked(list));
     }
     // The browser's file dialog will not select a folder — that is the OS
@@ -767,6 +830,11 @@
       if (ui.folderInput && e.altKey) ui.folderInput.click();
       else ui.fileInput.click();
     });
+    // Its own door again, rather than a modifier on the other one: picking a
+    // folder is what the case rule is for, and a feature you have to know a
+    // keystroke to reach is a feature that gets used by accident instead.
+    if (ui.folderPick && ui.folderInput)
+      ui.folderPick.addEventListener("click", () => ui.folderInput.click());
     ui.fileInput.addEventListener("change", () => {
       takePicked(Array.from(ui.fileInput.files || []));
       ui.fileInput.value = "";
@@ -814,7 +882,15 @@
             .map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null))
             .filter(Boolean)
         : [];
-      if (entries.length && DD) DD.walk(entries).then(takeFolder);
+      // A dropped CASE folder is the same folder as a picked one, so it is
+      // taken apart the same way — and its name is readable before the walk,
+      // which is what lets the scan cap be raised only where it has to be.
+      const caseDrop = entries.some((en) => en && en.isDirectory && isCaseFolderName(en.name));
+      if (entries.length && DD)
+        DD.walk(entries, caseDrop ? { maxFiles: DD.MAX_SCAN } : null).then((res) => {
+          if (caseDrop && takeCaseFolder(res.files)) return;
+          takeFolder(res);
+        });
       else if (dt.files) addFiles(Array.from(dt.files));
     });
 
