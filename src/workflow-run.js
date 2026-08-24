@@ -363,7 +363,15 @@
   // run's note says what the chat ended up called rather than narrating the
   // attempts.
   async function nameThisChat(msg, notes, onlyIfUnnamed) {
-    if (!msg.title || !msg.firstInChat) return;
+    if (!msg.title) {
+      // Held rather than absent: the worker had a name for this chat and would
+      // not send it, because it could not be pseudonymized (see chatTitleFor).
+      // A chat quietly left under claude.ai's own auto-title would look like
+      // the naming switch being off.
+      if (msg.titleHeld && notes) notes.push(msg.titleHeld);
+      return;
+    }
+    if (!msg.firstInChat) return;
     const uuid = conversationUuid();
     // A Cowork SESSION has no rename API — renaming one by hand makes no HTTP
     // request at all, watched for on a page that renames a regular chat with a

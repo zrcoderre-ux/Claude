@@ -670,7 +670,9 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   failed step. It is applied **twice** — once the conversation exists, so it has a
   name even if that step then fails, and again once the reply is in, because
   claude.ai titles a new conversation itself a moment after the first answer
-  lands and would otherwise write over it.
+  lands and would otherwise write over it. **With a pseudonym key on the run,
+  the title goes over in the fake name** — see [The title goes over
+  pseudonymized](#the-title-goes-over-pseudonymized).
 
 - **Files a reply produces** are no longer a workflow's business. A run used to
   have its own switch for clicking whatever a reply offered for download; that is
@@ -1914,7 +1916,9 @@ at a glance.
   **related-runs group** with no key of its own inherits a group-mate's. While
   that run is actually moving, its chats show the fakes rather than the real
   names — see [While a run is working, the fakes
-  show](#while-a-run-is-working-the-fakes-show).
+  show](#while-a-run-is-working-the-fakes-show) — and the **titles** it gives
+  those chats go over in the fake name too ([The title goes over
+  pseudonymized](#the-title-goes-over-pseudonymized)).
 
 **What an attached key does.**
 
@@ -2018,6 +2022,44 @@ pausing the run is one click, and pausing the run is exactly what this rule is
 waiting for. Everything that is *safety* rather than display stays on
 throughout: the composer warning, the typeahead swap, the upload guard, and the
 cleaner box.
+
+### The title goes over pseudonymized
+
+A run is named for its matter, because that is what tells one run's chats from a
+year of others' — and a matter is named for the case, in the real names. A chat's
+title is **not** display: claude.ai stores it, shows it in the sidebar, syncs it
+to every device that account is signed in on, and searches it. So a run that
+titled its first conversation `8.11.26 Rasho MSJ` would have handed Claude the
+real case name in the very run whose every uploaded paper was scrubbed of it.
+
+So where the run has a [pseudonym key](#pseudonym-translation) — its own, or its
+related-runs group's, a group being one matter and one matter having one key —
+**the title is run through that key before it is sent**, in the cleaner's own
+direction (real → fake), and the case comes across in the case it was typed in:
+
+| The run is called | The chat is titled |
+| --- | --- |
+| `8.11.26 Rasho MSJ` | `8.11.26 Strangeways MSJ: Drafting (A)` |
+| `8.11.26 RASHO MSJ` | `8.11.26 STRANGEWAYS MSJ: Drafting (A)` |
+| `Cross River Bank, LLC demurrer` | `Zenith Holdings, LLC demurrer: Drafting (A)` |
+
+The chat's own name goes through it too — a step called `Rasho depo (B)` is as
+much of a leak as the matter is — and the swap happens **before** the title is
+cut to fit, since the fakes are a different length from the reals and a title
+trimmed around a real name would fit the fake one badly.
+
+**Only what the key knows is swapped**, which is the same promise the cleaner
+box makes: a party the key has never heard of passes through as typed. And where
+the matter has **no** key, nothing is swapped — there are no fakes to use, and
+there is nothing there to protect.
+
+**Where it can't be done, the chat is left unnamed and the run says so.** If the
+matter has a key but the swap can't be made — the key library wouldn't read, the
+key isn't in it any more — the run does not fall back to the real name. It sends
+no title at all and writes the reason into its notes, so a conversation sitting
+under claude.ai's own auto-title is never mistaken for the naming switch being
+off. A title that quietly went over with the real name in it is the one outcome
+this must not have.
 
 ### Case comes across with the name
 
@@ -2568,7 +2610,7 @@ src/conv.js            The conversation payload, fetched once and shared
 src/toc-panel.js       The floating table of contents itself
 src/run-panel.js       The workflow's own contents — every step, every chat
 src/xlsxread.js        Minimal .xlsx reader — enough for the pseudonym key (pure)
-src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards, run hold (pure)
+src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards, run hold, chat titles (pure)
 src/pseudo-view.js     Shows real names for the fakes, warns, guards the key file
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
