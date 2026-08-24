@@ -2065,6 +2065,22 @@ test("an untitled run's chats are titled by its creation date and time", () => {
   );
 });
 
+test("titleNames is every name that can reach a chat title", () => {
+  // What the case-number gate reads: the matter's own name, the template's
+  // (which stands in for the matter on a run nobody named) and each chat's.
+  const run = { name: "8.11.26 MSJ", templateName: "Tentative ruling" };
+  const src = { chats: [{ name: "Drafting" }, { name: "Devil's advocate" }, { name: "Drafting" }] };
+  assert.deepEqual(W.titleNames(run, src), [
+    "8.11.26 MSJ",
+    "Tentative ruling",
+    "Drafting",
+    "Devil's advocate",
+  ]);
+  // Blanks and duplicates say nothing, so they aren't there.
+  assert.deepEqual(W.titleNames({ name: "  ", templateName: "T" }, { chats: [{ name: "T" }] }), ["T"]);
+  assert.deepEqual(W.titleNames(null, null), []);
+});
+
 test("a matter with a pseudonym key is titled in the FAKE name", () => {
   // The title is the one thing a run sends that the pseudonymization never
   // scrubbed: claude.ai stores it, shows it in the sidebar and syncs it. The

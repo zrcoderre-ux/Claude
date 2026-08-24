@@ -730,3 +730,136 @@ test("titlePlan: 'couldn't tell' is not 'no key'", () => {
     assert.match(p.why, /would not read/);
   }
 });
+
+// ---- the case number: the one value that stops a run ------------------------
+//
+// A party's name reaching claude.ai is a leak. A case number is the whole case:
+// unique, public and searchable, so one of them turns a pseudonymized draft
+// back into the matter it came from whatever the names were changed to.
+
+const CASE_NO_KEY = {
+  name: "pseudonym_key.xlsx",
+  warn: [
+    { real: "23STCV12345", fake: "26ABCD00000" },
+    { real: "RASHO", fake: "STRANGEWAYS" },
+  ],
+};
+
+test("caseNumbers reads the modern LASC shape", () => {
+  // Two digits of filing year, the location and case-type codes, five digits.
+  assert.deepEqual(P.caseNumbers("8.11.26 Rasho MSJ 23STCV12345"), ["23STCV12345"]);
+  assert.deepEqual(P.caseNumbers("22SMCV01234 demurrer"), ["22SMCV01234"]);
+  assert.deepEqual(P.caseNumbers("24STLC00987, 21GDCV00042"), ["24STLC00987", "21GDCV00042"]);
+  assert.deepEqual(P.caseNumbers("23stcv12345"), ["23stcv12345"], "typed in lower case, still one");
+});
+
+test("caseNumbers reads the pre-2018 shape too", () => {
+  // The court still carries them, and they are as real as the modern ones.
+  assert.deepEqual(P.caseNumbers("BC123456 tentative"), ["BC123456"]);
+  assert.deepEqual(P.caseNumbers("8.11.26 MSJ (EC098765)"), ["EC098765"]);
+});
+
+test("caseNumbers is quiet about everything else a matter name is made of", () => {
+  for (const name of [
+    "8.11.26 Motion to Compel Arbitration",
+    "Rasho v. Strangeways — MSJ",
+    "no numbers here 2023 STCV 12345",
+    "Tentative ruling — 3× devil's advocate",
+    "8.18.26 3:42 PM",
+  ]) {
+    assert.deepEqual(P.caseNumbers(name), [], name);
+  }
+  // Not a case number as written: the token is longer than one.
+  assert.deepEqual(P.caseNumbers("123STCV123456"), []);
+  assert.deepEqual(P.caseNumbers("A23STCV12345"), []);
+});
+
+test("the same number twice is one number", () => {
+  assert.deepEqual(P.caseNumbers("23STCV12345 and again 23stcv12345"), ["23STCV12345"]);
+});
+
+test("covered means the key would actually SWAP it", () => {
+  // Not "the rows mention it somewhere": a row reading "Case No. 23STCV12345"
+  // doesn't replace the bare number, and the title cleaner wouldn't either.
+  assert.deepEqual(P.uncoveredCaseNumbers(CASE_NO_KEY, ["8.11.26 MSJ 23STCV12345"]), []);
+  assert.deepEqual(P.uncoveredCaseNumbers(CASE_NO_KEY, ["8.11.26 MSJ 23stcv12345"]), []);
+  assert.deepEqual(P.uncoveredCaseNumbers(CASE_NO_KEY, ["8.11.26 MSJ 24STCV99999"]), [
+    "24STCV99999",
+  ]);
+  assert.deepEqual(P.uncoveredCaseNumbers(null, ["8.11.26 MSJ 23STCV12345"]), ["23STCV12345"]);
+  const wrapped = { warn: [{ real: "Case No. 23STCV12345", fake: "Case No. 26ABCD00000" }] };
+  assert.deepEqual(P.uncoveredCaseNumbers(wrapped, ["8.11.26 MSJ 23STCV12345"]), [
+    "23STCV12345",
+  ]);
+});
+
+test("a name with no case number in it goes out", () => {
+  const g = P.caseNumberGate({ names: ["8.11.26 Rasho MSJ", "Drafting"], key: null, looked: true });
+  assert.equal(g.ok, true);
+  assert.deepEqual(g.numbers, []);
+});
+
+test("a case number the key replaces goes out", () => {
+  const g = P.caseNumberGate({
+    names: ["8.11.26 Rasho MSJ 23STCV12345"],
+    key: CASE_NO_KEY,
+    looked: true,
+  });
+  assert.equal(g.ok, true);
+});
+
+test("a case number with no key, or a key that doesn't carry it, stops the run", () => {
+  const none = P.caseNumberGate({ names: ["23STCV12345 MSJ"], key: null, looked: true });
+  assert.equal(none.ok, false);
+  assert.deepEqual(none.numbers, ["23STCV12345"]);
+  assert.match(none.why, /no pseudonym key is attached/);
+  assert.match(none.why, /23STCV12345/);
+  // Both remedies are in the message: the run says what to do about it.
+  assert.match(none.why, /Load a key that carries that number, or take it out/);
+
+  const wrong = P.caseNumberGate({ names: ["24STCV99999 MSJ"], key: CASE_NO_KEY, looked: true });
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.why, /does not replace it/);
+});
+
+test("only the numbers the key MISSES are named", () => {
+  const g = P.caseNumberGate({
+    names: ["23STCV12345 and 24STCV99999"],
+    key: CASE_NO_KEY,
+    looked: true,
+  });
+  assert.equal(g.ok, false);
+  assert.deepEqual(g.numbers, ["24STCV99999"], "the covered one isn't the problem");
+  assert.ok(!/23STCV12345/.test(g.why), g.why);
+});
+
+test("two missing numbers read as a sentence", () => {
+  const g = P.caseNumberGate({ names: ["23STCV11111 / 23STCV22222"], key: null, looked: true });
+  assert.match(g.why, /23STCV11111 and 23STCV22222/);
+});
+
+test("a key library that wouldn't read stops the run too", () => {
+  // "Couldn't tell" is not "the key carries it" — the whole point of the gate
+  // is that nothing goes out on an assumption.
+  const g = P.caseNumberGate({ names: ["23STCV12345 MSJ"], key: null, looked: false });
+  assert.equal(g.ok, false);
+  assert.match(g.why, /would not read/);
+  // And with no case number to protect, an unreadable library stops nothing.
+  assert.equal(P.caseNumberGate({ names: ["8.11.26 MSJ"], key: null, looked: false }).ok, true);
+});
+
+test("the gate reads every name that can reach a title, not just the run's", () => {
+  const g = P.caseNumberGate({
+    names: ["8.11.26 MSJ", "Tentative ruling", "23STCV12345 depo (B)"],
+    key: null,
+    looked: true,
+  });
+  assert.equal(g.ok, false);
+  assert.deepEqual(g.numbers, ["23STCV12345"]);
+});
+
+test("no names at all is not a reason to stop", () => {
+  assert.equal(P.caseNumberGate({ names: [], key: null, looked: true }).ok, true);
+  assert.equal(P.caseNumberGate({}).ok, true);
+  assert.equal(P.caseNumberGate(null).ok, true);
+});

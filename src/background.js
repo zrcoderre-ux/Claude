@@ -614,6 +614,51 @@ async function readRun(id) {
 // can't be made — the key library wouldn't read, the module isn't there — the
 // chat is left unnamed and the run SAYS SO. A title that quietly went out with
 // the real name in it is the one outcome this must never have.
+// The matter's pseudonym key: its own, or its GROUP's (a group is one matter
+// and a matter has one key — W.runPseudoKey settles it). `looked` says the key
+// library answered at all, which is not the same as "no key": everything that
+// reads this treats "couldn't tell" as a reason to stop, never as a clear run.
+async function runKeyRecord(run) {
+  let keyId = run && run.pseudoKeyId ? run.pseudoKeyId : null;
+  try {
+    const res = await get(["cum_pseudo_keys", "cum_run_groups"]);
+    if (!keyId && run) keyId = W.runPseudoKey(run, await readRuns(), res.cum_run_groups || []);
+    return { keyId: keyId, key: keyId ? (res.cum_pseudo_keys || {})[keyId] || null : null, looked: true };
+  } catch (e) {
+    return { keyId: keyId, key: null, looked: false };
+  }
+}
+
+// The case-number gate: may this run go out at all?
+//
+// A party's name reaching claude.ai is a leak; the CASE NUMBER is the whole
+// case — unique, public and searchable, so one of them turns a pseudonymized
+// draft back into the matter it came from whatever the names were changed to.
+// So a run whose name carries one goes nowhere unless the matter's key
+// replaces it. P.caseNumberGate owns the decision and the words; this reads the
+// key and hands over the names the run could write into a chat title.
+//
+// A refusal, not a hold: it never waits for anything, and what it answers is
+// said out loud where the run is (an error on the run, a notification) with
+// both remedies in it — load a key carrying the number, or take the number out
+// of the run's name. Nothing here can sit quietly stuck, which is the reason
+// the other gates in this file need ceilings and this one does not.
+async function caseNumberBlock(run, src) {
+  const P = self.CUMPseudo;
+  if (!P)
+    return (
+      "the pseudonym module is not loaded, so this run's name could not be checked for a " +
+      "case number — a run whose name carries a real case number does not go out"
+    );
+  const rec = await runKeyRecord(run);
+  const gate = P.caseNumberGate({
+    names: W.titleNames(run, src),
+    key: rec.key,
+    looked: rec.looked,
+  });
+  return gate.ok ? null : gate.why;
+}
+
 async function chatTitleFor(run, chatName) {
   const P = self.CUMPseudo;
   const unnamed = (why) => ({
@@ -624,21 +669,11 @@ async function chatTitleFor(run, chatName) {
   // worker that is broken — and a broken worker must not be how a real name
   // reaches a chat title.
   if (!P) return unnamed("the pseudonym module is not loaded");
-  let keyId = run && run.pseudoKeyId ? run.pseudoKeyId : null;
-  let key = null;
-  let looked = false;
-  try {
-    const res = await get(["cum_pseudo_keys", "cum_run_groups"]);
-    if (!keyId && run) keyId = W.runPseudoKey(run, await readRuns(), res.cum_run_groups || []);
-    key = keyId ? (res.cum_pseudo_keys || {})[keyId] : null;
-    looked = true;
-  } catch (e) {
-    /* couldn't find out — which is not the same as "no key" */
-  }
-  const plan = P.titlePlan({ looked: looked, keyId: keyId, key: !!key });
+  const rec = await runKeyRecord(run);
+  const plan = P.titlePlan({ looked: rec.looked, keyId: rec.keyId, key: !!rec.key });
   if (plan.mode === "hold") return unnamed(plan.why);
   return {
-    title: W.chatTitle(run, chatName, plan.mode === "clean" ? P.nameCleaner(key) : null),
+    title: W.chatTitle(run, chatName, plan.mode === "clean" ? P.nameCleaner(rec.key) : null),
     held: null,
   };
 }
@@ -1631,6 +1666,16 @@ async function driveRun(runId, opts) {
       // is opened. A no-op once it's been done, so it costs a scan per step.
       run = (await materialiseBundles(run)) || run;
       const src = W.runSource(run, wf);
+      // Before anything is planned, sent or even opened: a run whose name
+      // carries a real case number does not go out. Checked every step rather
+      // than once at the start — a run's name can be edited mid-flight, and the
+      // step after the edit is as much of a send as the first one was.
+      const blocked = await caseNumberBlock(run, src);
+      if (blocked) {
+        await saveRun(W.markError(run, blocked, Date.now()));
+        notify("Workflow stopped", W.runLabel(run).title + " — " + blocked);
+        return;
+      }
       const plan = W.planRun(src);
       const step = plan[run.stepIndex];
       if (!step) {
@@ -2135,6 +2180,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // documents, ready to be armed for the next matter — even while this run
       // is still going, which is why the run owns the documents from here.
       const run = W.newRun(wf, crypto.randomUUID(), now, msg.trigger, wf.docs);
+      // Told at the door rather than an hour later, for a run going out NOW. A
+      // run being QUEUED is left alone deliberately: its key is attached in the
+      // run editor, which is a thing you do after making the run — and the
+      // gate in driveRun still stops it when its moment comes.
+      if (run.trigger.type === "now") {
+        const blocked = await caseNumberBlock(run, W.runSource(run, wf));
+        if (blocked) return { ok: false, error: blocked };
+      }
       await saveRun(run);
       const workflows = (await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [];
       await set({ [WORKFLOWS_KEY]: W.upsertWorkflow(workflows, W.resetToTemplate(wf, now)) });
@@ -2161,6 +2214,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return { ok: false, error: "this run can't be re-run — tick it on the workflow first" };
       const next = W.rerunOf(run, msg.opts || {}, crypto.randomUUID(), Date.now());
       if (!next) return { ok: false, error: "could not build the re-run" };
+      if (next.trigger && next.trigger.type === "now") {
+        const blocked = await caseNumberBlock(next, W.runSource(next, null));
+        if (blocked) return { ok: false, error: blocked };
+      }
       await saveRun(next);
       await reschedule();
       // Armed to go, unless the caller parked it. Not awaited — a run is hours.
@@ -2181,6 +2238,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const t = msg.trigger || {};
       if (t.type === "time" && !(typeof t.at === "number" && t.at > Date.now()))
         return { ok: false, error: "pick a time in the future" };
+      if (t.type === "now") {
+        const blocked = await caseNumberBlock(run, W.runSource(run, null));
+        if (blocked) return { ok: false, error: blocked };
+      }
       const next = await saveRun(W.retrigger(run, t, Date.now()));
       await reschedule();
       if (next.trigger.type === "now") driveRun(next.id); // long-running: don't await

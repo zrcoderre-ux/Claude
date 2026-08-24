@@ -2524,6 +2524,22 @@
     );
   }
 
+  // Every name this run can write into a chat TITLE, which is every name of
+  // its that leaves this browser: the matter's own, the template's (which
+  // stands in for the matter on a run nobody named) and each chat's. What the
+  // case-number gate reads — see P.caseNumberGate.
+  function titleNames(run, src) {
+    const out = [];
+    const push = (v) => {
+      const t = trimmed(v);
+      if (t && out.indexOf(t) === -1) out.push(t);
+    };
+    push(run && run.name);
+    push(run && run.templateName);
+    for (const c of (src && src.chats) || []) push(c && c.name);
+    return out;
+  }
+
   // `clean` (optional) is P.nameCleaner for the run's pseudonym key: the matter
   // and the chat's own name go through it before anything is composed, so what
   // reaches claude.ai's sidebar is the case's FAKE name. A title is not display
@@ -3690,6 +3706,7 @@
     looksLikeCompletionUrl,
     conversationIdFromApiUrl,
     chatTitle,
+    titleNames,
     runStamp,
     soleActor,
     runUsage,

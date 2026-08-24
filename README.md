@@ -1918,7 +1918,9 @@ at a glance.
   names — see [While a run is working, the fakes
   show](#while-a-run-is-working-the-fakes-show) — and the **titles** it gives
   those chats go over in the fake name too ([The title goes over
-  pseudonymized](#the-title-goes-over-pseudonymized)).
+  pseudonymized](#the-title-goes-over-pseudonymized)). A run whose name carries
+  a **case number** the key doesn't replace does not go out at all ([A case
+  number stops the run](#a-case-number-stops-the-run)).
 
 **What an attached key does.**
 
@@ -2060,6 +2062,48 @@ no title at all and writes the reason into its notes, so a conversation sitting
 under claude.ai's own auto-title is never mistaken for the naming switch being
 off. A title that quietly went over with the real name in it is the one outcome
 this must not have.
+
+### A case number stops the run
+
+A party's name reaching claude.ai is a leak. A **case number** is the whole
+case: unique, public and searchable, so one of them turns a pseudonymized draft
+back into the matter it came from whatever the names were changed to. It is the
+one value worth refusing to run over.
+
+So before a run goes out — and again at every step, since a run's name can be
+edited mid-flight — the names it could write into a chat title are read for a
+case number: **the matter's own name, the template's** (which stands in for the
+matter on a run nobody named) **and each chat's**. Two shapes are recognised:
+
+| Shape | Example | What it is |
+| --- | --- | --- |
+| `NN` + location + case type + `NNNNN` | `23STCV12345`, `22SMCV01234`, `24STLC00987` | The modern LASC number: filing year, court location code, case-type code, sequential number |
+| Two letters + six digits | `BC123456`, `EC098765` | The pre-2018 numbers the court still carries |
+
+**Finding one makes the key mandatory.** The run goes out only if the matter's
+[pseudonym key](#pseudonym-translation) — its own or its group's — actually
+**replaces that number**. Not "mentions it somewhere": the test is the swap
+itself, run through the same cleaner the title goes through, so a key row
+reading `Case No. 23STCV12345` (which would not replace the bare number, and
+would not replace it in the title either) does not satisfy the gate. A number
+the key covers passes and is titled in its fake, like any other value.
+
+Anything else stops the run **before it opens a tab**: no key attached, a key
+that doesn't carry the number, or a key library that wouldn't read. "Couldn't
+tell" is not "the key carries it" — the point of the gate is that nothing goes
+out on an assumption.
+
+**It refuses; it never waits.** A run stopped here says so where it lives — an
+error on the run and a notification — and the message names the number and both
+ways out: *load a key that carries that number, or take it out of the run's
+name*. Pressing Start on a run that would be stopped tells you at the door
+rather than an hour later; a **queued** run is left alone at creation on
+purpose, because a run's key is attached in the run editor after the run
+exists — the gate still stops it when its moment comes.
+
+A name with no case number in it is not this gate's business at all: the
+[title cleaner](#the-title-goes-over-pseudonymized) handles names, and a matter
+with no key and no case number in its name runs exactly as it always did.
 
 ### Case comes across with the name
 
@@ -2610,7 +2654,7 @@ src/conv.js            The conversation payload, fetched once and shared
 src/toc-panel.js       The floating table of contents itself
 src/run-panel.js       The workflow's own contents — every step, every chat
 src/xlsxread.js        Minimal .xlsx reader — enough for the pseudonym key (pure)
-src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards, run hold, chat titles (pure)
+src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards, run hold, chat titles, case-number gate (pure)
 src/pseudo-view.js     Shows real names for the fakes, warns, guards the key file
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
