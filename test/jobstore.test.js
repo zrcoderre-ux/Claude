@@ -250,3 +250,35 @@ test("cleanProjectName strips the chats-toggle caption a live run was armed with
   );
   assert.equal(J.cleanProjectName("Draft Tentative Rulings"), "Draft Tentative Rulings");
 });
+
+test("stripNonText drops the accordion icon's glyph and its invisible company", () => {
+  // claude.ai draws the projects list's accordion with an icon font, so the
+  // scraped row leads with a private-use codepoint — no glyph in any font the
+  // extension renders in, which is the empty rectangle that showed up in front
+  // of every project name in the workflow pickers.
+  assert.equal(J.stripNonText(" Cutlist"), "Cutlist");
+  assert.equal(J.stripNonText("Cutlist"), "Cutlist");
+  // Planes 15 and 16 are private use too, and arrive as surrogate pairs.
+  assert.equal(J.stripNonText("󰀀Cutlist"), "Cutlist");
+  // The invisible marks a rich row sprinkles through its text.
+  assert.equal(J.stripNonText("​Cut​list﻿"), "Cutlist");
+  assert.equal(J.stripNonText("‪Cutlist‬"), "Cutlist");
+  // And what a font substitutes for something it could not render.
+  assert.equal(J.stripNonText("￼Cutlist"), "Cutlist");
+  assert.equal(J.stripNonText("�Cutlist"), "Cutlist");
+  // Text is left exactly as the user typed it — emoji and punctuation included.
+  assert.equal(J.stripNonText("📁 Cutlist — v2"), "📁 Cutlist — v2");
+  assert.equal(J.stripNonText(""), "");
+  assert.equal(J.stripNonText(null), "");
+});
+
+test("cleanProjectName drops the icon glyph along with the rest of the debris", () => {
+  assert.equal(J.cleanProjectName("Cutlist"), "Cutlist");
+  assert.equal(
+    J.cleanProjectName("Draft Tentative RulingsToggle chats for Draft Tentative Rulings"),
+    "Draft Tentative Rulings"
+  );
+  assert.equal(J.cleanProjectName("Cutlist2 hours ago"), "Cutlist");
+  // A name stored dirty before this fix is cleaned on the way out, too.
+  assert.equal(J.targetLabel({ projectName: "Cutlist" }), "→ Cutlist");
+});

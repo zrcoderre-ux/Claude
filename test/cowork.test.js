@@ -644,3 +644,23 @@ test("Cowork's send button says Start Task, and only sending words press it", ()
   assert.equal(K.isSendCaption("Add files, connectors, and more"), false);
   assert.equal(K.isSendCaption(""), false);
 });
+
+test("the accordion icon's glyph never reaches the project menu's filter", () => {
+  // The name is TYPED into the menu's search box; a leading private-use
+  // codepoint from claude.ai's icon font matches nothing, which is why the
+  // first attempt to select the project came back empty-handed.
+  assert.equal(K.wantedProjectName("Cutlist"), "Cutlist");
+  assert.equal(K.wantedProjectName(" Cutlist"), "Cutlist");
+  assert.equal(K.wantedProjectName("󰀀Cutlist"), "Cutlist");
+  assert.equal(K.wantedProjectName("​Cutlist﻿"), "Cutlist");
+  assert.equal(
+    K.wantedProjectName("Draft Tentative RulingsToggle chats for Draft Tentative Rulings"),
+    "Draft Tentative Rulings"
+  );
+  // A real name keeps everything a human put in it.
+  assert.equal(K.wantedProjectName("📁 Cutlist — v2"), "📁 Cutlist — v2");
+  // And a name stored with the glyph still finds its row and reads its trigger.
+  assert.equal(K.projectRowMatches("Cutlist", "Cutlist"), true);
+  assert.equal(K.projectTriggerIs("Cutlist", "Cutlist"), true);
+  assert.equal(K.projectRowMatches("Card Game Player", "Cutlist"), false);
+});

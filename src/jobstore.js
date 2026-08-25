@@ -98,7 +98,7 @@
     if (!job) return "New chat";
     if (job.chatUrl) return job.chatTitle ? "→ " + job.chatTitle : "→ this chat";
     if (job.codeRepo) return "→ Claude Code: " + job.codeRepo;
-    if (job.projectName) return "→ " + job.projectName;
+    if (job.projectName) return "→ " + (stripNonText(job.projectName) || job.projectName);
     if (job.projectUuid) return "→ project";
     return job && job.surface === "cowork" ? "New Cowork session" : "New chat";
   }
@@ -175,11 +175,46 @@
     return { mime: m[1] || "application/octet-stream", base64: m[3] || "", isBase64: !!m[2] };
   }
 
+  // Characters a project name can carry that are not text. claude.ai draws the
+  // projects list's accordion (the folder control that expands a project's
+  // chats) with an ICON FONT, so the row's textContent starts with a private-use
+  // codepoint — a character with no glyph in any font the extension's own UI
+  // renders in, which is why it showed as an empty rectangle at the head of
+  // every project name in the workflow pickers. It is worse than ugly: the
+  // Cowork send TYPES the stored name into the project menu's filter, and a
+  // leading rectangle filters the list to nothing, so the first attempt to
+  // select the project finds no row.
+  //
+  // Stripped with it: control codes, the invisible formatting marks a rich row
+  // sprinkles through its text (zero-width spaces, soft hyphens, bidi controls,
+  // variation selectors, BOM), the private-use planes 15 and 16 (as surrogate
+  // pairs), and the placeholders a font shows for what it could not render
+  // (object/replacement characters). None of them is ever part of a name a
+  // human typed; real emoji and punctuation are left alone.
+  //
+  // Two classes, because they leave different holes. A character that occupies
+  // no width JOINS what sits either side of it ("Cut\u200Blist" is "Cutlist"),
+  // so it is removed outright; one that occupies a glyph slot — the icon, or a
+  // font's placeholder — SEPARATES, so it becomes a space that the collapse
+  // below then absorbs.
+  const INVISIBLE_RE =
+    /[\u0000-\u0008\u000E-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFE00-\uFE0F\uFEFF]/g;
+  const GLYPH_RE = /[\uE000-\uF8FF\uFFF9-\uFFFD]|[\uDB80-\uDBFF][\uDC00-\uDFFF]/g;
+
+  /** Drop the characters above, then collapse the whitespace they leave behind. */
+  function stripNonText(raw) {
+    return String(raw || "")
+      .replace(INVISIBLE_RE, "")
+      .replace(GLYPH_RE, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   // Tidy a scraped project link's text (which concatenates title + metadata)
-  // down to a readable label: drop an embedded control label and a trailing
-  // relative-time / "Mon DD" suffix.
+  // down to a readable label: drop the icon font's glyph, an embedded control
+  // label, and a trailing relative-time / "Mon DD" suffix.
   function cleanProjectName(raw) {
-    let s = String(raw || "").replace(/\s+/g, " ").trim();
+    let s = stripNonText(raw);
     // The sidebar row's chat expander carries the text "Toggle chats for
     // <name>", and textContent concatenates it straight onto the title —
     // "Draft Tentative RulingsToggle chats for Draft Tentative Rulings".
@@ -246,6 +281,7 @@
     hasPendingResetJobs,
     nextTimeTrigger,
     parseDataUrl,
+    stripNonText,
     cleanProjectName,
     projectUuidFromHref,
     sameConversationUrl,
