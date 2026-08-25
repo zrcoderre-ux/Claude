@@ -721,6 +721,52 @@ test("a queued run's trigger can be changed, a started one's can't", () => {
   assert.equal(W.canRetrigger(null), false);
 });
 
+test("the watchdog picks up a run that was told to go and never went", () => {
+  // A run is driven by the in-process call made the moment it is armed, and a
+  // service worker is allowed to die in the middle of that. Nothing else was
+  // looking for the wreckage: the time alarm is only ever set from a "time"
+  // trigger, so a "now" run that missed its own call sat at Not started until
+  // somebody pressed Start by hand.
+  const wf = twoChatWorkflow();
+  const armed = W.newRun(wf, "r1", NOW, { type: "now" });
+  assert.equal(armed.status, "pending");
+  assert.deepEqual(
+    W.pickupRuns([armed], NOW + 1000, W.STALE_MS, {}).map((r) => r.id),
+    ["r1"],
+    "thirty seconds later, the watchdog has it"
+  );
+
+  // A time that has come counts the same way; one still ahead does not.
+  const later = W.newRun(wf, "r2", NOW, { type: "time", at: NOW + 7200000 });
+  assert.deepEqual(W.pickupRuns([later], NOW + 1000, W.STALE_MS, {}), []);
+  assert.deepEqual(
+    W.pickupRuns([later], NOW + 7200001, W.STALE_MS, {}).map((r) => r.id),
+    ["r2"]
+  );
+
+  // What must NOT be swept up: a run waiting for its usage reset, a draft
+  // nobody has armed, and a run that is genuinely being worked right now.
+  const reset = W.newRun(wf, "r3", NOW, { type: "reset" });
+  const draft = W.newRun(wf, "r4", NOW, { type: "draft" });
+  assert.deepEqual(W.pickupRuns([reset, draft], NOW + 1e9, W.STALE_MS, {}), []);
+  const working = Object.assign({}, W.markStarted(armed, NOW), {
+    phase: "awaiting-reply",
+    lastProgressAt: NOW,
+  });
+  assert.deepEqual(W.pickupRuns([working], NOW + 1000, W.STALE_MS, {}), []);
+
+  // Both kinds at once, each for its own reason.
+  const stalled = Object.assign({}, W.markStarted(armed, NOW), {
+    id: "r5",
+    phase: "awaiting-reply",
+    lastProgressAt: NOW,
+  });
+  assert.deepEqual(
+    W.pickupRuns([stalled, armed], NOW + W.STALE_MS + 1, W.STALE_MS, {}).map((r) => r.id),
+    ["r5", "r1"]
+  );
+});
+
 test("a run's editor opens on Run now, and keeps a real arrangement", () => {
   // The second gesture — set the matter up, then come back and start it — is
   // how a matter ends up late, so setting one up and saving it IS starting it.

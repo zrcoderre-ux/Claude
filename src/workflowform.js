@@ -1794,6 +1794,10 @@
               allowRerun: run.allowRerun,
               rerun: run.rerun,
               ignoreOutage: run.ignoreOutage,
+              // Its own window is the run's answer too — the editor writes this
+              // box back on save, so opening with the template's default would
+              // quietly turn a run's own window off.
+              newWindow: run.newWindow,
               pseudoKeyId: run.pseudoKeyId,
               runDate: run.runDate,
             },
