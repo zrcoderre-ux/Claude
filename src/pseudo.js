@@ -811,6 +811,114 @@
     return (s) => translate(fwd, String(s == null ? "" : s)).text;
   }
 
+  // ---- the title, coming back the other way ---------------------------------
+  //
+  // The title that LEFT is the fake, and it stays the fake: claude.ai stores
+  // it, syncs it to every signed-in device and shows it in the sidebar, so
+  // nothing here ever writes a real name back into it. But the person reading
+  // that sidebar knows the case by its real name and its number, and a list of
+  // "8.11.26 Strangeways MSJ" is a list they cannot navigate. So the title is
+  // translated for DISPLAY exactly the way the messages are — the same map,
+  // the same direction, in this tab only.
+  //
+  // What is new is that one page shows MANY chats' titles at once and they are
+  // not all this matter's. Each title is translated by ITS OWN chat's key
+  // where that chat has one attached. Where it has none, by the one key in the
+  // library that CLAIMS the title — and only where exactly one does, because a
+  // wrong case name over a chat is worse than the fake it replaced.
+
+  // claude.ai's own tail on the tab title — "8.11.26 Strangeways MSJ - Claude".
+  // Only the NAME is translated; the tail is the site's own and stays as
+  // written. The same shape content.js and save-chat.js strip to read the chat
+  // name, so all three agree on where the name ends.
+  const DOC_TITLE_TAIL_RE = /\s*[-–—|]\s*claude\b.*$/i;
+
+  /** The tab title split into the chat's name and claude.ai's own tail. */
+  function docTitleParts(title) {
+    const s = String(title == null ? "" : title);
+    const m = s.match(DOC_TITLE_TAIL_RE);
+    return m ? { name: s.slice(0, m.index), tail: m[0] } : { name: s, tail: "" };
+  }
+
+  /** Every value a compiled matcher actually matched in `text`, in order. */
+  function matchedValues(compiled, text) {
+    const out = [];
+    if (!compiled || !compiled.rx || !text) return out;
+    compiled.rx.lastIndex = 0;
+    let m;
+    while ((m = compiled.rx.exec(text))) {
+      out.push(m[0]);
+      if (m[0] === "") compiled.rx.lastIndex++; // a zero-width match would spin
+    }
+    return out;
+  }
+
+  // Whether a fake standing in an UNATTACHED title is evidence the title is
+  // that key's matter at all. A full name, a case number or a long invented
+  // surname is; a short word that happened to be bound to a key row is not —
+  // "Park" and "Alder" are pseudonyms in someone's key and also words another
+  // case's chat can be called, and matching one of those by coincidence would
+  // put the WRONG case's name over a chat, which is the one failure this path
+  // has to avoid. Six letters is where a single word stops reading as ordinary
+  // English; nothing rests on the exact number, since a miss costs a title
+  // left in the fake and the attachment below always overrides it.
+  //
+  // Attached titles are never asked this question: the chat has been declared
+  // that matter's, and its key translates whatever it translates.
+  function isDistinctiveFake(value) {
+    const f = fold(value);
+    if (!f) return false;
+    if (/\s/.test(f)) return true; // more than one word
+    if (/[0-9]/.test(f)) return true; // a case number, or a fake carrying digits
+    return f.length >= 6 && !COMMON_WORDS.has(f);
+  }
+
+  // The other way a title can be claimed: SEVERAL of one key's fakes standing
+  // in it. "Park v. Bay hearing" is two short words that prove little apart
+  // and a caption together — coincidence does not usually strike twice out of
+  // the same key.
+  function claimsTitle(matched) {
+    if (matched.some(isDistinctiveFake)) return true;
+    const distinct = new Set(matched.map(fold));
+    return distinct.size >= 2;
+  }
+
+  // Which key in the library claims this title. `entries` are the compiled
+  // reversal matchers, one per key ({ id, compiled }). Answers the swap that
+  // key would make, or null where no key claims it — and null just the same
+  // where TWO keys claim it with DIFFERENT answers, since a title that could
+  // be either case is a title that gets neither and keeps the fake.
+  function pickTitleKey(entries, text) {
+    const src = String(text == null ? "" : text);
+    if (!src.trim()) return null;
+    let hit = null;
+    for (const e of entries || []) {
+      if (!e || !e.compiled) continue;
+      if (!claimsTitle(matchedValues(e.compiled, src))) continue;
+      const r = translate(e.compiled, src);
+      if (!r.count) continue;
+      if (!hit) {
+        hit = { id: e.id, text: r.text, count: r.count };
+        continue;
+      }
+      if (r.text !== hit.text) return null; // two keys, two answers
+    }
+    return hit;
+  }
+
+  // Which key translates one chat's title on screen. `attachedId` is the key
+  // that chat has been given — through the popup, or by a run working the
+  // matter — and it wins outright: an attachment is the operator saying which
+  // case this is. Everything else falls to the library, under pickTitleKey's
+  // one-claimant rule. `via` says which of the two answered, so the wiring can
+  // say so.
+  function titleKeyFor(state) {
+    const s = state || {};
+    if (s.attachedId) return { id: s.attachedId, via: "attached" };
+    const hit = pickTitleKey(s.entries, s.text);
+    return hit ? { id: hit.id, via: "match" } : null;
+  }
+
   // ---- a run in flight holds the translation ---------------------------------
   //
   // A workflow run drives a conversation by machine: it sends, waits for the
@@ -918,6 +1026,12 @@
     caseNumberGate,
     nameCleaner,
     titlePlan,
+    docTitleParts,
+    matchedValues,
+    isDistinctiveFake,
+    claimsTitle,
+    pickTitleKey,
+    titleKeyFor,
     runTranslationHold,
     HOLD_STALE_MS,
     fold,
