@@ -314,6 +314,37 @@
 
   // ---- projects ----------------------------------------------------------
 
+  // Characters a scraped project name carries that are not text. claude.ai
+  // draws the projects list's accordion — the folder control that expands a
+  // project's chats — with an ICON FONT, so the row's textContent leads with a
+  // private-use codepoint: a character with no glyph anywhere, which showed as
+  // an empty rectangle in front of every project name. Typed into the project
+  // menu's FILTER, as this name is, it matches nothing and the first attempt
+  // to select the project comes back empty-handed. Also dropped: control
+  // codes, the invisible formatting marks a rich row sprinkles through its
+  // text, the private-use planes (as surrogate pairs), and the placeholders a
+  // font shows for what it could not render. (Kept in step with
+  // CUMJobs.stripNonText, which cleans the same names on the way IN; this
+  // module stays dependency-free on purpose, so the rule lives in both.)
+  //
+  // Two classes, because they leave different holes. A character that occupies
+  // no width JOINS what sits either side of it ("Cut\u200Blist" is "Cutlist"),
+  // so it is removed outright; one that occupies a glyph slot — the icon, or a
+  // font's placeholder — SEPARATES, so it becomes a space that the collapse
+  // below then absorbs.
+  const INVISIBLE_RE =
+    /[\u0000-\u0008\u000E-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFE00-\uFE0F\uFEFF]/g;
+  const GLYPH_RE = /[\uE000-\uF8FF\uFFF9-\uFFFD]|[\uDB80-\uDBFF][\uDC00-\uDFFF]/g;
+
+  /** Drop those, then collapse the whitespace they leave behind. */
+  function stripNonText(name) {
+    return str(name)
+      .replace(INVISIBLE_RE, "")
+      .replace(GLYPH_RE, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   /**
    * What a stored project name MEANT. Project names reach the extension by
    * scraping claude.ai's sidebar links, whose textContent concatenates the
@@ -329,8 +360,7 @@
    * always comes first, so cutting there loses nothing.)
    */
   function wantedProjectName(name) {
-    return str(name)
-      .replace(/\s+/g, " ")
+    return stripNonText(name)
       .replace(/\s*Toggle chats for\s[\s\S]*$/i, "")
       .trim();
   }
