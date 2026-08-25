@@ -1803,6 +1803,10 @@
       nameChats: flag("nameChats"),
       allowRerun: flag("allowRerun"),
       ignoreOutage: flag("ignoreOutage"),
+      // The run's own window, like the rest of them: the editor shows this
+      // switch on a run, and until it was carried here it showed it doing
+      // nothing.
+      newWindow: flag("newWindow"),
       pseudoKeyId:
         typeof p.pseudoKeyId !== "undefined" ? p.pseudoKeyId || null : run.pseudoKeyId || null,
       rerun: p.rerun ? rerunDefaults(p.rerun) : run.rerun,
@@ -2199,14 +2203,34 @@
   // (phase "idle") is always free to pick up — nobody is mid-step. A run whose
   // step is in flight is only picked up once its heartbeat has gone quiet, so a
   // worker restart can never re-send a message that is still on its way out.
+  // Everything that OUGHT to be moving right now with nobody moving it. Two
+  // kinds, and the second is the one that bites:
+  //
+  //   - RUNNING but nobody on it: idle between steps, or gone quiet past the
+  //     ceiling because the page or the worker driving it died mid-step.
+  //   - PENDING and DUE: armed to go now, or past the time it was set for, and
+  //     never picked up. A run is normally driven by the in-process call made
+  //     the moment it is armed — and a service worker is allowed to die in the
+  //     middle of that. Nothing else was looking for these: the time alarm is
+  //     only ever set from a "time" trigger (nextRunTrigger below), so a run
+  //     told to go NOW that missed its own call sat at Not started until the
+  //     browser was restarted or someone pressed Start by hand. Which is to
+  //     say: the automation failed to act, and did it silently.
+  //
+  // The keepalive watchdog asks this every thirty seconds, so a run that was
+  // told to go starts within thirty seconds of being told, whatever happened to
+  // the worker that was told. Driving one already being driven is a no-op —
+  // driveRun holds a set of the runs it has in hand.
   function pickupRuns(runs, now, staleMs, beats) {
     const beat = (id) => (beats && typeof beats[id] === "number" ? beats[id] : 0);
-    return (runs || []).filter(
+    const stalled = (runs || []).filter(
       (r) =>
         r &&
         r.status === "running" &&
         (r.phase === "idle" || !r.phase || isStale(r, now, staleMs, beat(r.id)))
     );
+    // Disjoint by status, so there is nothing to de-duplicate.
+    return stalled.concat(dueRuns(runs, now));
   }
 
   // `beatAt` is the run's own heartbeat key — the page saying "still mine".

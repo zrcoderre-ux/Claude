@@ -2321,14 +2321,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // Edit a run in progress — insert a step, fix a prompt, add this matter's
   // extra papers. It edits the RUN's own copy, never the template it came from.
+  // The run editor's Save — and, when it asks for one, the START, in the SAME
+  // message. It used to be two: save, then a second message from the page to
+  // arm the run. Two messages to a service worker that is allowed to die
+  // between them is a run that saves and then silently never goes, which is
+  // the exact failure the editor's Run-now default exists to prevent. One
+  // message, one handler, and the answer says whether it actually started.
   if (msg && msg.type === "cum-wf-edit-run" && msg.runId) {
     (async () => {
       const run = await readRun(msg.runId);
       if (!run) return { ok: false, error: "run not found" };
       if (run.status === "running")
         return { ok: false, error: "pause the run before editing it" };
-      await saveRun(W.applyRunEdit(run, msg.patch || {}, Date.now()));
-      return { ok: true };
+      const now = Date.now();
+      const saved = await saveRun(W.applyRunEdit(run, msg.patch || {}, now));
+      const t = msg.trigger;
+      // Saved, and nothing else asked for.
+      if (!t || !t.type) return { ok: true, started: false };
+      // The edit is already stored either way: everything below can only fail
+      // to START it, and says so rather than reporting the save as failed.
+      if (!W.canRetrigger(saved))
+        return { ok: true, started: false, why: "it has already started — Pause is the tool now" };
+      if (t.type === "time" && !(typeof t.at === "number" && t.at > now))
+        return { ok: true, started: false, why: "that time has already passed" };
+      if (t.type === "now") {
+        const blocked = await caseNumberBlock(saved, W.runSource(saved, null));
+        if (blocked) return { ok: true, started: false, why: blocked };
+      }
+      const next = await saveRun(W.retrigger(saved, t, now));
+      await reschedule();
+      if (next.trigger.type === "now") driveRun(next.id); // long-running: don't await
+      return { ok: true, started: next.trigger.type !== "draft", trigger: next.trigger.type };
     })()
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));

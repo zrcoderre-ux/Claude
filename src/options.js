@@ -1356,30 +1356,66 @@
     const run = (lastRuns || []).find((r) => r.id === runId);
     if (!run) return;
     wfForm.editRun(run, (edited, trigger) => {
+      // The question first, while the operator is still here to answer it: a
+      // run about to go out with nothing to upload. Asked BEFORE the save is
+      // sent, so answering no leaves a saved run rather than a started one —
+      // and never asked at all when the papers are ticked and ready, which is
+      // the whole point of Save and start.
+      const armed = Object.assign({}, run, {
+        docs: edited.docs,
+        plan: { chats: edited.chats, steps: edited.steps },
+      });
+      // Whether the run can still be armed is the WORKER's call, made on the
+      // run as it stands rather than on this page's copy of it: a list that had
+      // gone stale would otherwise drop the start silently, which is precisely
+      // the failure being fixed. The editor only shows a trigger at all while
+      // the run hasn't gone.
+      let want = trigger || null;
+      if (want && want.type !== "draft") {
+        const warning = WF.startWarning(armed, null);
+        if (warning && !confirm(warning)) want = null; // save it, don't start it
+      }
       // Documents new to a run ALREADY UNDER WAY are stamped with the step it
       // has reached, so they go up with the next step in their chats rather than
       // trying to ride an opening message that has already been sent. A run that
       // hasn't started yet has no such problem — its papers are just its papers.
-      chrome.runtime.sendMessage(
-        {
-          type: "cum-wf-edit-run",
-          runId: run.id,
-          patch: {
-            name: edited.name,
-            chats: edited.chats,
-            steps: edited.steps,
-            docs: edited.docs,
-            bundleText: !!edited.bundleText,
-            nameChats: edited.nameChats !== false,
-            allowRerun: !!edited.allowRerun,
-            ignoreOutage: !!edited.ignoreOutage,
-            pseudoKeyId: edited.pseudoKeyId || null,
-            runDate: edited.runDate || null,
-          },
+      //
+      // The trigger rides WITH the edit: the worker saves and starts in one
+      // handler, so there is no second message for a sleeping service worker to
+      // lose between a run being set up and a run going.
+      const message = {
+        type: "cum-wf-edit-run",
+        runId: run.id,
+        patch: {
+          name: edited.name,
+          chats: edited.chats,
+          steps: edited.steps,
+          docs: edited.docs,
+          bundleText: !!edited.bundleText,
+          nameChats: edited.nameChats !== false,
+          allowRerun: !!edited.allowRerun,
+          ignoreOutage: !!edited.ignoreOutage,
+          newWindow: !!edited.newWindow,
+          pseudoKeyId: edited.pseudoKeyId || null,
+          runDate: edited.runDate || null,
         },
-        (res) => {
-          if (res && !res.ok) {
-            alert("Could not save: " + (res.error || "unknown error"));
+        trigger: want,
+      };
+      // Both halves are idempotent — the edit is the same edit, and arming a
+      // run already armed leaves it armed — so a worker that answered nothing
+      // at all (it died mid-handler, the port closed) is asked once more rather
+      // than left to be discovered. Silence is the failure this path is for.
+      const send = (retry) =>
+        chrome.runtime.sendMessage(message, (res) => {
+          if (!res && !retry) return send(true);
+          // The retry finding the run already RUNNING is the first attempt
+          // having landed after all, worker and all: it saved, it armed, it
+          // went, and only the answer was lost. That is the outcome asked for,
+          // not an error to put in front of someone.
+          if (retry && res && !res.ok && /pause the run|already started/i.test(res.error || ""))
+            return renderRuns();
+          if (!res || !res.ok) {
+            alert("Could not save: " + ((res && res.error) || "the extension's worker didn't answer"));
             return renderRuns();
           }
           // A key changed here changes the CASE's key — the group and every
@@ -1391,31 +1427,13 @@
               runId: run.id,
               keyId: edited.pseudoKeyId || null,
             });
-          // The editor's own "When it starts" — applied after the edit, so the
-          // run that goes is the one you just finished setting up.
-          if (!trigger || !WF.canRetrigger(run)) return renderRuns();
-          const armed = Object.assign({}, run, {
-            docs: edited.docs,
-            plan: { chats: edited.chats, steps: edited.steps },
-          });
-          // "Not yet" needs no confirming — nothing is about to go out. On a run
-          // that was queued it puts it back to a draft, which is the only way to
-          // un-schedule one without cancelling it. Everything else is a start,
-          // and a start with nothing to upload is the one worth asking about
-          // (WF.startWarning) — the editor now opens on Run now, so this is
-          // what stands between a half-set-up matter and an empty first
-          // message. Answering no leaves the run exactly as it was.
-          const warning = trigger.type === "draft" ? "" : WF.startWarning(armed, null);
-          if (warning && !confirm(warning)) return renderRuns();
-          chrome.runtime.sendMessage(
-            { type: "cum-wf-retrigger", runId: run.id, trigger },
-            (r2) => {
-              if (r2 && !r2.ok) alert("Saved, but could not start: " + (r2.error || "unknown error"));
-              renderRuns();
-            }
-          );
-        }
-      );
+          // Asked to go and didn't: say why, out loud, on the spot. A run that
+          // saves and quietly stays put is the thing this whole path is against.
+          if (want && want.type !== "draft" && !res.started)
+            alert("Saved, but it did not start: " + (res.why || "unknown reason"));
+          renderRuns();
+        });
+      send(false);
     });
   }
 

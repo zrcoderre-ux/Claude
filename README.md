@@ -1008,6 +1008,12 @@ bottom.
 up and pressing **Save and start this run** is one gesture rather than two — the
 second one, coming back later to press Start, is how a matter ends up late, and a
 run parked at *Not started* looks exactly like one that is waiting on purpose.
+The save and the start are **one message to the worker**, which saves the edit
+and arms the run in the same handler: two messages to a service worker that is
+allowed to die between them is a run that saves and then quietly never goes. If
+it saves and still can't start — the [case-number gate](#a-case-number-stops-the-run),
+a time that has passed — it **says so on the spot** instead of leaving you to
+notice.
 
 - **Run now** is the default, and the button says so. **When usage resets** and
   **At a set time** start it as you save, at their moment.
@@ -1570,9 +1576,15 @@ browser open and logged in. If Claude is down it **waits mid-workflow** and pick
 up where it left off (same gate, same 6-hour ceiling as a scheduled send). If the
 service worker dies mid-step — which MV3 does routinely — the page keeps going
 and writes the result to storage, and the worker takes the run back within 30
-seconds. A step whose message has already gone out is **re-attached to, never
-re-sent**, so nothing is ever posted twice. A run that can't finish fails loudly
-(a notification, and the error on the row) rather than going quiet.
+seconds. **The same watchdog covers a run that was told to go and never got
+going**: arming a run drives it there and then, and a worker that dies in the
+middle of *that* used to leave the run sitting at *Not started* with nothing
+looking for it — a run set for a time has an alarm, a run set for **now** had
+only the call that died. Now it is picked up on the next thirty-second sweep,
+so being told to start and starting are the same thing. A step whose message has
+already gone out is **re-attached to, never re-sent**, so nothing is ever posted
+twice. A run that can't finish fails loudly (a notification, and the error on the
+row) rather than going quiet.
 
 ### A run's window
 
