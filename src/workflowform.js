@@ -223,16 +223,11 @@
       `<button class="cumwf-btn ghost cumwf-date-pick" type="button" title="Pick from a calendar">📅</button>` +
       `<input class="cumwf-date-native" type="date" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" tabindex="-1" />` +
       `<p class="cumwf-hint">Added to the end of the run's name automatically — and the runs list can sort by it.</p></div></div>` +
-      `<div class="cumwf-desc-row"><label class="cumwf-label">What it does (optional)</label>` +
-      `<input class="cumwf-desc" type="text" placeholder="One line, for the list" /></div>` +
 
-      `<label class="cumwf-label">Chats worked between</label>` +
-      `<div class="cumwf-row"><input class="cumwf-count" type="number" min="1" max="6" step="1" style="width:80px" />` +
-      `<p class="cumwf-hint">Each chat is its own claude.ai conversation. The workflow moves between them, ` +
-      `carrying the last reply across.</p></div>` +
-      `<div class="cumwf-chats cumwf-list"></div>` +
-
-      // Documents are a MATTER's, so they live on the run. A template holding
+      // The papers come straight after the matter's name and date, because
+      // they are the matter — everything below them is how the workflow is
+      // WORKED, and a run is set up by saying what it is about before saying
+      // how. Documents are a MATTER's, so they live on the run. A template holding
       // papers is a template that quietly sends the last matter's exhibits to
       // the next one.
       `<div class="cumwf-docs-row"><label class="cumwf-label">Documents</label>` +
@@ -269,6 +264,15 @@
       `only, nothing is sent — and warns if a prompt carries a real name. The key is never uploaded. ` +
       `Runs are per case, so one key covers a whole related-runs group: set it on any one of them ` +
       `and the rest share it.</p></div>` +
+
+      `<div class="cumwf-desc-row"><label class="cumwf-label">What it does (optional)</label>` +
+      `<input class="cumwf-desc" type="text" placeholder="One line, for the list" /></div>` +
+
+      `<label class="cumwf-label">Chats worked between</label>` +
+      `<div class="cumwf-row"><input class="cumwf-count" type="number" min="1" max="6" step="1" style="width:80px" />` +
+      `<p class="cumwf-hint">Each chat is its own claude.ai conversation. The workflow moves between them, ` +
+      `carrying the last reply across.</p></div>` +
+      `<div class="cumwf-chats cumwf-list"></div>` +
 
       // ...but HOW they upload is the template's business, and travels to every
       // run, so it sits with the other switches rather than with the papers.
@@ -1634,12 +1638,24 @@
         when === "draft"
           ? "It stays at the top of the runs list, doing nothing, until you come back and start it."
           : when === "now"
-          ? "It opens its own window and begins as soon as you save."
+          ? "It opens its own window and begins as soon as you save — this is what a run does unless " +
+            "you say otherwise here. With no documents ticked for a chat, it asks first."
           : when === "reset"
           ? "It waits for your next 5-hour usage reset, then begins."
           : "It waits for the time above, then begins.";
     }
-    ui.when.addEventListener("change", syncWhen);
+    // The button says what pressing it does, because with "Run now" standing
+    // by default "Save changes to this run" would be understating it.
+    function syncSaveLabel() {
+      if (!editingRun) return;
+      const armed = ui.whenRow && !ui.whenRow.hidden && ui.when.value !== "draft";
+      ui.save.textContent = armed ? "Save and start this run" : "Save changes to this run";
+    }
+
+    ui.when.addEventListener("change", () => {
+      syncWhen();
+      syncSaveLabel();
+    });
 
     ui.save.addEventListener("click", async () => {
       if (!wf) return;
@@ -1801,14 +1817,18 @@
         ui.whenRow.hidden = !armable;
         if (armable) {
           const t = run.trigger || {};
-          ui.when.value = t.type === "time" || t.type === "reset" || t.type === "now" ? t.type : "draft";
+          // Opens on "Run now" unless this run is keeping an arrangement of its
+          // own (a time, the next usage reset) — W.editorTriggerType owns that
+          // decision. Saving a run you have just set up is what starts it; the
+          // select is right there for the matter that shouldn't go yet.
+          ui.when.value = W.editorTriggerType(run);
           if (t.type === "time" && typeof t.at === "number") {
             const d = new Date(t.at - new Date(t.at).getTimezoneOffset() * 60000);
             ui.at.value = d.toISOString().slice(0, 16);
           }
           syncWhen();
         }
-        ui.save.textContent = "Save changes to this run";
+        syncSaveLabel();
       },
       close,
       isOpen: () => !el.hidden,

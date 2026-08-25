@@ -1400,18 +1400,13 @@
           });
           // "Not yet" needs no confirming — nothing is about to go out. On a run
           // that was queued it puts it back to a draft, which is the only way to
-          // un-schedule one without cancelling it.
-          if (trigger.type !== "draft" && !WF.totalUploads(WF.runSource(armed, null))) {
-            const stray = (edited.docs || []).length;
-            if (
-              !confirm(
-                stray
-                  ? `This run has ${stray} document(s), but none are ticked for a chat — nothing will be uploaded. Start it anyway?`
-                  : "This run has no documents attached — its first message goes out with nothing. Start it anyway?"
-              )
-            )
-              return renderRuns();
-          }
+          // un-schedule one without cancelling it. Everything else is a start,
+          // and a start with nothing to upload is the one worth asking about
+          // (WF.startWarning) — the editor now opens on Run now, so this is
+          // what stands between a half-set-up matter and an empty first
+          // message. Answering no leaves the run exactly as it was.
+          const warning = trigger.type === "draft" ? "" : WF.startWarning(armed, null);
+          if (warning && !confirm(warning)) return renderRuns();
           chrome.runtime.sendMessage(
             { type: "cum-wf-retrigger", runId: run.id, trigger },
             (r2) => {

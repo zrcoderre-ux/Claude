@@ -721,6 +721,40 @@ test("a queued run's trigger can be changed, a started one's can't", () => {
   assert.equal(W.canRetrigger(null), false);
 });
 
+test("a run's editor opens on Run now, and keeps a real arrangement", () => {
+  // The second gesture — set the matter up, then come back and start it — is
+  // how a matter ends up late, so setting one up and saving it IS starting it.
+  const wf = twoChatWorkflow();
+  assert.equal(W.editorTriggerType(W.newRun(wf, "r1", NOW, { type: "draft" })), "now");
+  assert.equal(W.editorTriggerType(W.newRun(wf, "r2", NOW, { type: "now" })), "now");
+  assert.equal(W.editorTriggerType(null), "now");
+  assert.equal(W.editorTriggerType({}), "now");
+
+  // An arrangement is a decision already made, and an edit is not a change of
+  // mind about it.
+  assert.equal(W.editorTriggerType(W.newRun(wf, "r3", NOW, { type: "reset" })), "reset");
+  assert.equal(
+    W.editorTriggerType(W.newRun(wf, "r4", NOW, { type: "time", at: NOW + 7200000 })),
+    "time"
+  );
+});
+
+test("a run with nothing to upload asks before it goes", () => {
+  const wf = twoChatWorkflow();
+  const armed = W.newRun(wf, "r1", NOW, { type: "draft" });
+  assert.equal(W.startWarning(armed, null), "", "its motion.pdf is ticked for a chat");
+
+  // No papers at all, and papers that are ticked for nobody, are different
+  // mistakes and read differently.
+  const bare = Object.assign({}, armed, { docs: [] });
+  assert.match(W.startWarning(bare, null), /no documents attached/);
+  const stray = Object.assign({}, armed, {
+    docs: [W.newDoc({ name: "a.pdf", chats: [] }, "d")],
+  });
+  assert.match(W.startWarning(stray, null), /^This run has 1 document\(s\), but none are ticked/);
+  assert.equal(W.startWarning(null, null), "This run has no documents attached — its first message goes out with nothing. Start it anyway?");
+});
+
 test("pausing keeps a run's place; resuming picks it up", () => {
   const { run } = startedRun();
   const waiting = W.markSent(run, { chatId: "a", url: "u", now: NOW });
