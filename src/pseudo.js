@@ -24,12 +24,13 @@
  *   - isKeyFileName / sheetsLookLikeKey:  is this file the key itself — the
  *                 one file that must never ride an upload into a chat.
  *   - runTranslationHold:  whether a workflow run is MOVING through this chat
- *                 (or this chat's matter), in which case the display stands
- *                 down and shows the fakes — a run's hand-off can fall back to
+ *                 (or this chat's matter), in which case the MESSAGES stand
+ *                 down and show the fakes — a run's hand-off can fall back to
  *                 the rendered message, and the rendered message is what the
- *                 display rewrites. Derived from the run's own status, so a
- *                 pause, a hold, a failure or a dead driver puts the real
- *                 names straight back.
+ *                 display rewrites. The chat TITLES are not held: nothing a
+ *                 run does reads one off the screen. Derived from the run's
+ *                 own status, so a pause, a hold, a failure or a dead driver
+ *                 puts the real names straight back.
  */
 (function (root) {
   "use strict";
@@ -821,6 +822,10 @@
   // translated for DISPLAY exactly the way the messages are — the same map,
   // the same direction, in this tab only.
   //
+  // A run moving through the chat does not stand this down the way it stands
+  // the messages down (runTranslationHold, below): the hold is about what a
+  // hand-off can pick up, and no hand-off has ever read a title.
+  //
   // What is new is that one page shows MANY chats' titles at once and they are
   // not all this matter's. Each title is translated by ITS OWN chat's key
   // where that chat has one attached. Where it has none, by the one key in the
@@ -929,8 +934,14 @@
   // names would ride the hand-off into the next chat, which is the one thing
   // the pseudonymization exists to prevent.
   //
-  // So while a run is MOVING, the conversations it can reach show the fakes,
-  // exactly as claude.ai wrote them. Two arms, because a run reaches further
+  // So while a run is MOVING, the MESSAGES in the conversations it can reach
+  // show the fakes, exactly as claude.ai wrote them. Only the messages: what
+  // a run can carry is what it can READ, and the one thing it never reads off
+  // the screen is a chat's title (the Chat rename asks the conversation API,
+  // the Cowork one reads an aria-label, and the title a run writes is its own
+  // name run through the key first — titlePlan above). Holding the titles
+  // bought nothing and cost the reader the line naming the case, in the very
+  // minutes a run was working it. Two arms, because a run reaches further
   // than the URLs it has written down so far:
   //
   //   - "chat": a conversation the run names among its own.

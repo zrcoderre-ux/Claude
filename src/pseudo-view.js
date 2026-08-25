@@ -15,10 +15,13 @@
  *      wrote.
  *
  *      Claude's own state is untouched: the swap edits text nodes in message
- *      turns, never the composer, and everything the extension sends or
- *      copies out of a chat reads claude.ai's API/state, not this DOM. A
- *      badge says translation is on and how many swaps are showing, so what
- *      you see is never silently different from what Claude sees.
+ *      turns and titles, never the composer, and everything the extension
+ *      sends or copies out of a chat reads claude.ai's API/state, not this
+ *      DOM. A badge says translation is on and how many swaps are showing, so
+ *      what you see is never silently different from what Claude sees. While a
+ *      run is moving, the MESSAGES stand down to the fakes and the titles do
+ *      not — a hand-off can fall back to a rendered message, and nothing
+ *      reads a title off the screen at all.
  *
  *   2. The COMPOSER warning. While a key is attached, the draft message is
  *      watched for REAL values from the key; each one found gets a loud
@@ -358,29 +361,54 @@
 
   // The other way the display stands down, and this one is not the user's
   // choice: while a workflow run is MOVING through this chat (or through this
-  // chat's matter), the fakes show, because a run's hand-off can fall back to
-  // the rendered message and the rendered message is what we rewrite — see
-  // P.runTranslationHold, which owns the decision. Held is a reading of the
-  // run's status rather than a switch: pause the run, or let it fail, hold or
-  // finish, and the real names come back on their own.
+  // chat's matter), the MESSAGES show the fakes, because a run's hand-off can
+  // fall back to the rendered message and the rendered message is what we
+  // rewrite — see P.runTranslationHold, which owns the decision. It covers the
+  // messages and nothing else (see translationOff/titlesOff below). Held is a
+  // reading of the run's status rather than a switch: pause the run, or let it
+  // fail, hold or finish, and the real names come back on their own.
   let hold = null; // { runId, name, via } or null
 
+  // The MESSAGES stand down for either reason. The TITLES stand down only for
+  // the peek, and the difference is the whole point of the run's hold: it
+  // exists because a run's hand-off can fall back to the RENDERED MESSAGE and
+  // paste it into the next chat. Nothing reads a title that way — the Chat
+  // rename asks the conversation API what it is called, the Cowork one reads
+  // the control's aria-label (never translated), and the title a run WRITES is
+  // its own name run through the key by the worker (background.js,
+  // chatTitleFor). So there is nothing for a real name in a title to ride, and
+  // holding it only cost the reader the one line telling them which case they
+  // are looking at, at exactly the moment a run is moving through it.
   function translationOff() {
     return paused || !!hold;
   }
 
-  // Put back the fakes exactly as claude.ai rendered them — messages, every
-  // title on the page, and the tab.
-  function restoreFakes() {
+  function titlesOff() {
+    return paused; // the peek is a choice about the display; a run's hold isn't
+  }
+
+  // Put back the fakes exactly as claude.ai rendered them.
+  function restoreMessages() {
     for (const turn of document.querySelectorAll(MSG_SEL)) restoreIn(turn);
+    shown = 0;
+  }
+
+  function restoreTitles() {
     for (const t of titleTargets()) restoreIn(t.el);
     restoreDocTitle();
-    shown = 0;
     titleShown = 0;
   }
 
+  // Everything, for the moments when the MAP changes rather than the display:
+  // a swap whose memo is about to be dropped has to go back first.
+  function restoreFakes() {
+    restoreMessages();
+    restoreTitles();
+  }
+
   function applyTranslationState() {
-    if (translationOff()) restoreFakes();
+    if (translationOff()) restoreMessages();
+    if (titlesOff()) restoreTitles();
     else sweepSoon();
     render();
   }
@@ -429,12 +457,11 @@
 
   function sweep() {
     sweepTimer = null;
-    const off = translationOff();
     let total = 0;
-    if (active && !off) {
+    if (active && !translationOff()) {
       for (const turn of document.querySelectorAll(MSG_SEL)) total += swapIn(turn, active.compiled);
     }
-    const titles = off ? 0 : sweepTitles();
+    const titles = titlesOff() ? 0 : sweepTitles();
     if (total !== shown || titles !== titleShown) {
       shown = total;
       titleShown = titles;
@@ -494,21 +521,6 @@
     return entry && entry.compiled.rx ? entry : null;
   }
 
-  // The same stand-down the messages get, asked of the row's OWN chat: while a
-  // run is moving through that conversation — or through that matter — its
-  // title shows the fake, like everything else that run can reach.
-  function rowHeld(conv, keyId) {
-    if (!runsCache.runs.some((r) => r && r.status === "running")) return false;
-    const W = window.CUMWorkflow;
-    return !!P.runTranslationHold(runsCache.runs, {
-      conv: conv,
-      keyId: keyId,
-      beats: runsCache.beats,
-      keyIdFor: (r) =>
-        W && W.runPseudoKey ? W.runPseudoKey(r, runsCache.runs, runsCache.groups || []) : r.pseudoKeyId,
-    });
-  }
-
   function titleTargets() {
     const found = [];
     const here = convKey();
@@ -541,7 +553,7 @@
       const fake = originalText(t.el);
       if (!fake || fake.length < 2) continue;
       const entry = titleKeyEntry(t.el, t.conv, fake);
-      if (!entry || rowHeld(t.conv, entry.id)) {
+      if (!entry) {
         restoreIn(t.el);
         continue;
       }
@@ -572,7 +584,7 @@
       return 0;
     }
     const entry = titleKeyEntry(null, conv, parts.name);
-    if (!entry || rowHeld(conv, entry.id)) {
+    if (!entry) {
       docMemo = null;
       return 0;
     }
@@ -775,9 +787,11 @@
         "Drag it anywhere — where you put it is where it stays. " +
         "Chat titles are translated too — the header, the sidebar and the tab — " +
         "each by its own chat's key; the title claude.ai stores stays the fake. " +
-        "While a workflow run is working this matter the translation stands down " +
-        "on its own and the fakes show, so nothing a run carries to the next chat " +
-        "can be a real name; a run that pauses, fails or finishes brings them back.";
+        "While a workflow run is working this matter the MESSAGES stand down on " +
+        "their own and show the fakes, so nothing a run carries to the next chat " +
+        "can be a real name; a run that pauses, fails or finishes brings them " +
+        "back. The titles keep their real names throughout — nothing a run does " +
+        "reads a title off the screen.";
       badge.addEventListener("click", () => {
         if (badgeDragged) return; // this click is the end of a drag, not a tap
         toggleCleaner();
@@ -795,8 +809,14 @@
     const bits = [];
     if (shown) bits.push(shown + " name" + (shown === 1 ? "" : "s"));
     if (titleShown) bits.push(titleShown + " title" + (titleShown === 1 ? "" : "s"));
+    // Held is now a HALF stand-down — the messages show the fakes, the titles
+    // still read in the real name — so the badge says which is which rather
+    // than "showing the fakes" over a title that plainly isn't.
+    const titles = titleShown
+      ? " · " + titleShown + " title" + (titleShown === 1 ? "" : "s") + " still real"
+      : "";
     badge.textContent = hold
-      ? "🔑 " + name + " — ⏸ a run is working · showing the fakes"
+      ? "🔑 " + name + " — ⏸ a run is working · the messages show the fakes" + titles
       : paused
       ? "🔑 " + name + " — ⏸ showing the fakes"
       : "🔑 " + name + (bits.length ? " — " + bits.join(" · ") + " restored" : "");
@@ -812,23 +832,26 @@
   // click, and pausing the run is exactly what the rule is waiting for.
   function styleToggle(tog) {
     if (hold) {
-      tog.textContent = "⏸ Held while a run works";
+      tog.textContent = "⏸ Messages held while a run works";
       tog.disabled = true;
       tog.title =
-        "This chat's translation is off while " +
+        "This chat's MESSAGES show the fakes while " +
         (hold.name ? "“" + hold.name + "”" : "a run") +
         " is running" +
         (hold.via === "key" ? " on this matter" : "") +
         ". A run's hand-off can fall back to the text on screen, so real names " +
-        "on screen could reach the next chat. Pause the run — or let it finish, " +
-        "hold or fail — and the real names come back by themselves.";
+        "in a message could reach the next chat. Pause the run — or let it " +
+        "finish, hold or fail — and the real names come back by themselves. " +
+        "The chat titles are not held: nothing a run does reads a title off " +
+        "the screen, so they keep their real names throughout.";
       return;
     }
     tog.textContent = paused ? "▶ Show real names" : "⏸ Show the fakes";
     tog.disabled = false;
     tog.title =
-      "Pause or resume this chat's translation. Paused shows the conversation exactly " +
-      "as claude.ai renders it — the fakes. This tab only, and never remembered.";
+      "Pause or resume this chat's translation — messages AND titles, since a peek " +
+      "is for seeing the page exactly as claude.ai renders it: the fakes. This tab " +
+      "only, and never remembered.";
   }
 
   // ---- the cleaner: type real names, paste out fakes -------------------------

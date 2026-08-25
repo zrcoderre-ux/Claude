@@ -1994,10 +1994,11 @@ none of these labels is ever sent.
   [Related runs, run dates, and the list's order](#related-runs-run-dates-and-the-lists-order)
   — a spreadsheet can't be a run document at all). And a run in a
   **related-runs group** with no key of its own inherits a group-mate's. While
-  that run is actually moving, its chats show the fakes rather than the real
-  names — see [While a run is working, the fakes
-  show](#while-a-run-is-working-the-fakes-show) — and the **titles** it gives
-  those chats go over in the fake name too ([The title goes over
+  that run is actually moving, its chats' **messages** show the fakes rather
+  than the real names — see [While a run is working, the messages show the
+  fakes](#while-a-run-is-working-the-messages-show-the-fakes); their **titles**
+  keep reading in the real names throughout, while the title the run *sends*
+  goes over in the fake name ([The title goes over
   pseudonymized](#the-title-goes-over-pseudonymized)). A run whose name carries
   a **case number** the key doesn't replace does not go out at all ([A case
   number stops the run](#a-case-number-stops-the-run)).
@@ -2109,11 +2110,15 @@ The badge counts titles beside names (`🔑 23STCV12345 Smith — 4 names · 2 t
 restored`), and **appears for titles alone** on a page where no chat has a key
 attached — a sidebar reading in real names is still translation, and it never
 happens without something on screen saying so. The peek toggle puts the fakes
-back in the titles too, and so does a run: while a run is moving through a
-conversation — or through its matter — that conversation's title shows the fake
-along with everything else it can reach (below).
+back in the titles too — a peek is for seeing the page exactly as claude.ai
+renders it. **A run working the matter does not**: while a run is moving, its
+chats' *messages* show the fakes and their **titles keep their real names**.
+The hold below exists because a hand-off can fall back to a rendered message,
+and no hand-off has ever read a title off the screen — so holding the titles
+bought nothing and cost you the one line naming the case, in the very minutes a
+run was working it.
 
-### While a run is working, the fakes show
+### While a run is working, the messages show the fakes
 
 A workflow run drives a conversation by machine: it sends, waits for the answer,
 takes the reply and pastes it into the next chat. It takes that reply from
@@ -2123,14 +2128,24 @@ message is exactly what the translation above rewrites. Left on, the run's
 hand-off could carry a real name into the next chat, which is the one thing the
 pseudonymization exists to prevent.
 
-So the translation stands down by itself while a run is **moving**, and the chat
-shows the fakes exactly as claude.ai wrote them. Two things are held, because a
-run reaches further than the URLs it has written down so far:
+So the message translation stands down by itself while a run is **moving**, and
+the conversation shows the fakes exactly as claude.ai wrote them. Two things are
+held, because a run reaches further than the URLs it has written down so far:
 
 - **The chats the run names** — the conversations it is driving.
 - **Every chat on the run's key** — a run is a *matter* and a matter has one
   key, so the chat a run opened a beat ago and hasn't recorded yet is held too.
   Another matter's chat, in the next tab, keeps its real names.
+
+**The chat titles are not held**, in either arm. The hold is about what a
+hand-off can *pick up*, and a title is the one thing on the page nothing reads:
+the Chat rename asks the conversation API what a chat is called, the Cowork one
+reads its control's `aria-label` (which is never translated), and the title a
+run *writes* is its own name run through the key before it is sent ([The title
+goes over pseudonymized](#the-title-goes-over-pseudonymized)). So a run working
+this matter leaves you the one line saying which case you're looking at, and
+the [title translation](#the-titles-read-back-in-the-real-name) carries on
+underneath it.
 
 **A pause or a failure brings them straight back**, without anything being
 switched on again: whether the display translates is only ever a *reading* of
@@ -2145,8 +2160,9 @@ mid-step — is a failure like any other: past **five minutes** with no heartbea
 and no progress, the real names return. A run genuinely waiting an hour for a
 long answer keeps beating every twenty seconds, so it keeps its hold.
 
-The badge says which state it is in (`⏸ a run is working · showing the fakes`),
-and while a run holds the display the **peek toggle** is disabled and says why —
+The badge says which state it is in (`⏸ a run is working · the messages show
+the fakes · 2 titles still real`), and while a run holds the messages the **peek
+toggle** is disabled and says why —
 pausing the run is one click, and pausing the run is exactly what this rule is
 waiting for. Everything that is *safety* rather than display stays on
 throughout: the composer warning, the typeahead swap, the upload guard, and the
