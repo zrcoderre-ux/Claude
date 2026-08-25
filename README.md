@@ -99,7 +99,10 @@ bottom-right corner of [claude.ai](https://claude.ai).
 - **Pseudonym translation** — load a case's `pseudonym_key.xlsx` (the real↔fake
   map PDF-Linker writes) into the popup and attach it to a chat, or to a
   workflow run. That conversation then shows **you** the real names while
-  Claude keeps seeing only the fakes — display-only — a warning fires if you
+  Claude keeps seeing only the fakes — display-only, and the chat **titles**
+  read back in the real case name and number too, in the header, the sidebar
+  and the tab, while the title claude.ai stores stays the fake — a warning
+  fires if you
   type a **real** value into the composer, and the key file itself is **blocked
   from being uploaded** into any chat unless you expressly override. See
   [Pseudonym translation](#pseudonym-translation).
@@ -2000,7 +2003,9 @@ none of these labels is ever sent.
    holds the fakes. The one exception is text you **select and copy by hand**
    out of the translated view: that carries the real names, because it copies
    what you're looking at. Don't paste it back into a chat — which the next
-   point is watching for anyway.
+   point is watching for anyway. The chat's **title** is translated the same
+   way, in the header, the sidebar and the tab — see [The titles read back in
+   the real name](#the-titles-read-back-in-the-real-name).
 2. **Catches a real name as you type it — press → to swap.** The moment the
    caret finishes typing one of the key's real values, a small prompt appears
    at the caret (`Rasho → Strangeways — press → to swap · Esc to keep`).
@@ -2045,6 +2050,51 @@ still caught — is held back behind a dialog that defaults to **Keep it out**.
 Uploading it takes the affirmative **Upload anyway**; other files in the same
 batch pass through untouched. The check reads the file locally and decides
 before claude.ai's own handlers ever see the event.
+
+### The titles read back in the real name
+
+The title that went out is the fake, and it stays the fake — that is the whole
+point of [The title goes over pseudonymized](#the-title-goes-over-pseudonymized):
+claude.ai stores a title, syncs it to every signed-in device and searches it. But
+a sidebar of `8.11.26 Strangeways MSJ` is a list you cannot navigate, so the
+title is translated back **for you**, the same way the messages are and with the
+same map:
+
+- **The chat's own title** in the header of the conversation you're in.
+- **Every chat in the sidebar**, in recents, and in search results.
+- **The browser tab**, with claude.ai's own ` - Claude` tail left as written.
+
+Nothing is written back to claude.ai. The swap is this tab's rendering, exactly
+like the message translation — and the two places the extension *reads* a title
+to **name** something (**Save chat**'s filename, the scheduler's "This chat")
+read what claude.ai wrote rather than what you are looking at, so a display swap
+never becomes a name that leaves the browser. The one thing it does reach that
+the message swap doesn't is the **browser's own tab title**, which means your
+local history and a bookmark of that page pick up the real name — the same
+trade the badge already makes with the screen itself.
+
+**Each title is translated by its own chat's key**, not by whichever key this
+tab happens to be showing. The sidebar is a list of *different matters*:
+
+1. **A key attached to that chat** — through the popup, or riding a run — wins
+   outright. It's you saying which case that conversation is.
+2. **Otherwise, the one key in the library that claims the title.** A key
+   claims it by having a *distinctive* fake standing in it: a full name, a case
+   number, or an invented surname long enough not to read as an ordinary word —
+   or two of its shorter fakes at once, which is a caption rather than a
+   coincidence. A bare `Park` is a pseudonym in someone's key and also a word a
+   chat can be called, so on its own it claims nothing.
+3. **Two keys claiming it differently gets neither**, and the title keeps the
+   fake. A *wrong* case name over a chat is worse than the pseudonym it
+   replaced.
+
+The badge counts titles beside names (`🔑 23STCV12345 Smith — 4 names · 2 titles
+restored`), and **appears for titles alone** on a page where no chat has a key
+attached — a sidebar reading in real names is still translation, and it never
+happens without something on screen saying so. The peek toggle puts the fakes
+back in the titles too, and so does a run: while a run is moving through a
+conversation — or through its matter — that conversation's title shows the fake
+along with everything else it can reach (below).
 
 ### While a run is working, the fakes show
 
@@ -2715,7 +2765,7 @@ src/toc-panel.js       The floating table of contents itself
 src/run-panel.js       The workflow's own contents — every step, every chat
 src/xlsxread.js        Minimal .xlsx reader — enough for the pseudonym key (pure)
 src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards, run hold, chat titles, case-number gate (pure)
-src/pseudo-view.js     Shows real names for the fakes, warns, guards the key file
+src/pseudo-view.js     Shows real names for the fakes — messages and chat titles — warns, guards the key file
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
 test/estimate.test.js  Unit tests for the tenths-place calibrator

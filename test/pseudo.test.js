@@ -919,3 +919,151 @@ test("with no folder anywhere, nothing is invented", () => {
   assert.equal(P.keepKeyFacts({ hint: "SMITH" }, next), next);
   assert.equal(P.keepKeyFacts({}, null), null);
 });
+
+// ---- the title, coming back the other way ----------------------------------
+//
+// The stored title stays the fake. What the OPERATOR reads is translated, and
+// a page shows many chats' titles at once — so the question each one asks is
+// "whose case is this title", and the wrong answer is worse than no answer.
+
+const RASHO = P.parseKey(
+  [
+    sheet("Key", [
+      HEADERS,
+      ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 12],
+      ["person-token", "Rasho", "Strangeways", "", "", "", 30],
+      ["case-number", "23STCV12345", "19ABCD98765", "", "", "", 4],
+    ]),
+  ],
+  "pseudonym_key.xlsx"
+);
+
+const FAIRBANKS = P.parseKey(
+  [
+    sheet("Key", [
+      HEADERS,
+      ["person", "Dana Fairbanks", "Petra Quenby", "", "", "", 9],
+      ["entity", "Bay", "Park", "", "", "", 2],
+    ]),
+  ],
+  "pseudonym_key.xlsx"
+);
+
+const TITLE_ENTRIES = [
+  { id: "key-rasho", compiled: P.compile(RASHO) },
+  { id: "key-fairbanks", compiled: P.compile(FAIRBANKS) },
+];
+
+test("docTitleParts splits the chat's name from claude.ai's own tail", () => {
+  assert.deepStrictEqual(P.docTitleParts("8.11.26 Strangeways MSJ - Claude"), {
+    name: "8.11.26 Strangeways MSJ",
+    tail: " - Claude",
+  });
+  assert.deepStrictEqual(P.docTitleParts("Strangeways — Claude"), {
+    name: "Strangeways",
+    tail: " — Claude",
+  });
+  assert.deepStrictEqual(P.docTitleParts("Claude"), { name: "Claude", tail: "" });
+  assert.deepStrictEqual(P.docTitleParts(""), { name: "", tail: "" });
+  assert.deepStrictEqual(P.docTitleParts(null), { name: "", tail: "" });
+});
+
+test("docTitleParts leaves a dash inside the chat's own name alone", () => {
+  assert.deepStrictEqual(P.docTitleParts("MSJ - reply due - Claude"), {
+    name: "MSJ - reply due",
+    tail: " - Claude",
+  });
+});
+
+test("matchedValues reports what a matcher actually caught, in order", () => {
+  const c = P.compile(RASHO);
+  assert.deepStrictEqual(P.matchedValues(c, "8.11.26 Strangeways MSJ — 19ABCD98765"), [
+    "Strangeways",
+    "19ABCD98765",
+  ]);
+  assert.deepStrictEqual(P.matchedValues(c, "Motion to compel"), []);
+  assert.deepStrictEqual(P.matchedValues(null, "Strangeways"), []);
+});
+
+test("a distinctive fake is a name or a number, not an ordinary short word", () => {
+  assert.ok(P.isDistinctiveFake("Strangeways"));
+  assert.ok(P.isDistinctiveFake("Ingrid Strangeways"), "a full name");
+  assert.ok(P.isDistinctiveFake("19ABCD98765"), "a case number");
+  assert.ok(P.isDistinctiveFake("Deverell5"));
+  assert.ok(P.isDistinctiveFake("Quenby"));
+  assert.ok(!P.isDistinctiveFake("Park"), "a short ordinary word proves nothing");
+  assert.ok(!P.isDistinctiveFake("Alder"), "nor a five-letter one");
+  assert.ok(!P.isDistinctiveFake("and"));
+  assert.ok(!P.isDistinctiveFake(""));
+});
+
+test("several of one key's fakes claim a title the short ones couldn't alone", () => {
+  assert.ok(P.claimsTitle(["Park", "Bay"]), "two of the same key's names is a caption");
+  assert.ok(!P.claimsTitle(["Park", "park"]), "the same word twice is still one word");
+  assert.ok(!P.claimsTitle(["Park"]));
+  assert.ok(!P.claimsTitle([]));
+});
+
+test("pickTitleKey answers the one key that claims an unattached title", () => {
+  const hit = P.pickTitleKey(TITLE_ENTRIES, "8.11.26 Strangeways MSJ");
+  assert.ok(hit);
+  assert.equal(hit.id, "key-rasho");
+  assert.equal(hit.text, "8.11.26 Rasho MSJ");
+  assert.equal(hit.count, 1);
+});
+
+test("pickTitleKey brings the case NUMBER back with the name", () => {
+  const hit = P.pickTitleKey(TITLE_ENTRIES, "19ABCD98765 Ingrid Strangeways MSJ");
+  assert.ok(hit);
+  assert.equal(hit.text, "23STCV12345 Helen Rasho MSJ");
+});
+
+test("a title no key claims keeps the fake", () => {
+  assert.equal(P.pickTitleKey(TITLE_ENTRIES, "Motion to compel arbitration"), null);
+  assert.equal(P.pickTitleKey(TITLE_ENTRIES, "   "), null);
+  assert.equal(P.pickTitleKey([], "8.11.26 Strangeways MSJ"), null);
+  assert.equal(P.pickTitleKey(null, "8.11.26 Strangeways MSJ"), null);
+});
+
+test("a coincidence on an ordinary word is not a claim", () => {
+  // "Park" is a real key row in the Fairbanks matter, and also a word another
+  // case's chat can be called. A wrong case name over a chat is worse than the
+  // fake, so the short ordinary word does not claim the title.
+  assert.equal(P.pickTitleKey(TITLE_ENTRIES, "Park frontage dispute"), null);
+});
+
+test("two keys with two answers is an ambiguity, and neither gets it", () => {
+  const twin = P.parseKey(
+    [sheet("Key", [HEADERS, ["person", "Marta Quill", "Strangeways", "", "", "", 3]])],
+    "pseudonym_key.xlsx"
+  );
+  const entries = TITLE_ENTRIES.concat([{ id: "key-twin", compiled: P.compile(twin) }]);
+  assert.equal(P.pickTitleKey(entries, "8.11.26 Strangeways MSJ"), null);
+});
+
+test("two keys agreeing on the answer is not an ambiguity", () => {
+  // The same case's key loaded twice under two library ids says the same thing
+  // both times, and a title that reads the same either way is not a coin flip.
+  const entries = TITLE_ENTRIES.concat([{ id: "key-copy", compiled: P.compile(RASHO) }]);
+  const hit = P.pickTitleKey(entries, "8.11.26 Strangeways MSJ");
+  assert.ok(hit);
+  assert.equal(hit.text, "8.11.26 Rasho MSJ");
+});
+
+test("an ATTACHED chat's title uses that chat's key, whatever the library says", () => {
+  const got = P.titleKeyFor({
+    attachedId: "key-fairbanks",
+    entries: TITLE_ENTRIES,
+    text: "8.11.26 Strangeways MSJ",
+  });
+  assert.deepStrictEqual(got, { id: "key-fairbanks", via: "attached" });
+});
+
+test("with nothing attached, the library's one claimant answers", () => {
+  assert.deepStrictEqual(
+    P.titleKeyFor({ entries: TITLE_ENTRIES, text: "Ingrid Strangeways — tentative" }),
+    { id: "key-rasho", via: "match" }
+  );
+  assert.equal(P.titleKeyFor({ entries: TITLE_ENTRIES, text: "Weekly calendar" }), null);
+  assert.equal(P.titleKeyFor(), null);
+});

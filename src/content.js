@@ -586,7 +586,12 @@
     // Claude Code sessions live at /code/<id> (no dashed uuid).
     const isCodeSession = /\/code\/[^/]+/.test(path);
     if (!hasComposer || (!hasUuid && !isCodeSession)) return null;
-    const title = document.title.replace(/\s*[-–|]\s*Claude.*$/i, "").trim();
+    // The tab title as CLAUDE.AI wrote it. A tab translating a pseudonym key
+    // shows the real case name up there, and a scheduled send is a name that
+    // is stored and goes out — so it is named after the fake, like everything
+    // else that leaves this browser.
+    const raw = window.CUMPseudoView ? window.CUMPseudoView.docTitle() : document.title;
+    const title = String(raw || "").replace(/\s*[-–|]\s*Claude.*$/i, "").trim();
     return { url: location.href, title: title || null };
   }
 

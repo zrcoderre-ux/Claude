@@ -60,7 +60,10 @@
     const out = [];
     for (const n of nodes) {
       if (out.some((o) => o.node.contains(n))) continue; // the same turn twice
-      const text = (n.textContent || "").trim();
+      // The turn as CLAUDE.AI rendered it: a tab translating a pseudonym key
+      // shows the real names, and this text becomes a file on disk.
+      const V = window.CUMPseudoView;
+      const text = ((V ? V.plainText(n) : n.textContent) || "").trim();
       if (!text) continue;
       const human = /user-message|font-user-message/.test(
         (n.getAttribute("data-testid") || "") + " " + (n.className || "")
@@ -74,7 +77,13 @@
     const turns = turnsFromPage();
     if (!turns.length) return null;
     return {
-      name: (document.title || "").replace(/\s*[-–—|]\s*claude.*$/i, "").trim() ||
+      // What claude.ai called the chat, never what a pseudonym key is showing
+      // in this tab: the name becomes a FILENAME on disk.
+      name: String(
+        (window.CUMPseudoView ? window.CUMPseudoView.docTitle() : document.title) || ""
+      )
+        .replace(/\s*[-–—|]\s*claude.*$/i, "")
+        .trim() ||
         turns[0].text.split("\n")[0].slice(0, 70),
       chat_messages: turns.map((t) => ({
         sender: t.sender,

@@ -6,7 +6,14 @@
  *
  *   1. DISPLAY translation. In a conversation a pseudonym key is attached to
  *      (through the popup, or riding a workflow run), every fake in the
- *      rendered messages is swapped for its real value — READ side only.
+ *      rendered messages — and in the chat's own TITLE, in the header, in the
+ *      sidebar and on the tab — is swapped for its real value — READ side
+ *      only. The stored title stays the fake claude.ai was given: the swap is
+ *      this tab's rendering, and everything that NAMES something from the
+ *      title (Save chat's filename, the scheduler's "this chat") reads it
+ *      back through CUMPseudoView.docTitle, which answers what claude.ai
+ *      wrote.
+ *
  *      Claude's own state is untouched: the swap edits text nodes in message
  *      turns, never the composer, and everything the extension sends or
  *      copies out of a chat reads claude.ai's API/state, not this DOM. A
@@ -45,6 +52,17 @@
   const MSG_SEL =
     '[data-testid="user-message"],[data-testid="assistant-message"],' +
     ".font-user-message,.font-claude-response,.font-claude-message";
+
+  // Where a chat's NAME is written. The header one is this conversation's; the
+  // links are other conversations, each of which gets its own chat's key
+  // rather than this one's. Text nodes only, never attributes: the Cowork
+  // rename confirms itself by reading the title control's aria-label, and that
+  // label has to keep saying what claude.ai stored — the fake.
+  const HEAD_TITLE_SEL =
+    '[data-testid="chat-menu-trigger"],[data-testid="conversation-title"],' +
+    '[data-testid="chat-title"],header h1,header h2,' +
+    '[aria-label*="rename session" i]';
+  const CONV_LINK_SEL = 'a[href*="/chat/"],a[href*="/cowork/"],a[href*="/code/"]';
 
   // ---- which key this conversation gets -----------------------------------
 
@@ -112,6 +130,15 @@
     const W = window.CUMWorkflow;
     if (!W || !W.RUN_IDS_KEY) return null;
     await refreshRuns(false);
+    return runKeyIdSync(conv);
+  }
+
+  // The same answer off the runs already in hand. The title sweep asks it once
+  // per conversation on screen, and a storage read per row per sweep is not a
+  // thing to do to a sidebar.
+  function runKeyIdSync(conv) {
+    const W = window.CUMWorkflow;
+    if (!W || !W.RUN_IDS_KEY || !conv) return null;
     for (const run of runsCache.runs) {
       if (!run) continue;
       const chats = run.chats || {};
@@ -133,6 +160,13 @@
     // With a key active, only a navigation matters; without one, keep looking —
     // a run records this conversation's URL a beat after opening it.
     if (!force && conv === lastConv && active) return;
+    if (conv !== lastConv) {
+      // A different chat: the peek, and the key the badge was naming for the
+      // titles, both belonged to the one we left.
+      paused = false;
+      titleKeyId = null;
+      restoreDocTitle();
+    }
     lastConv = conv;
     let id = conv ? chatMap[conv] : null;
     let via = "chat";
@@ -164,7 +198,12 @@
       ahead: P.compileTypeahead(key),
       via: via,
     };
+    // Out with the old map's work before the memo that explains it is dropped:
+    // a swap nothing can put back is a real name stranded on screen under a
+    // key that no longer says why.
+    restoreFakes();
     swapped = new WeakMap();
+    titleClaim = new WeakMap();
     shown = 0;
     paused = false; // a peek never outlives its chat
     // A different key means a different map — a cleaner left open would keep
@@ -179,6 +218,16 @@
 
   async function loadState() {
     const res = await storageGet([KEYS_KEY, CHATS_KEY, POS_KEY]);
+    // A key loaded, replaced or attached elsewhere changes what every title on
+    // this page should read. Put back what we wrote under the old library
+    // before adopting the new one — a swap left standing under a map that no
+    // longer explains it is exactly the silent difference the badge promises
+    // there isn't.
+    restoreFakes();
+    swapped = new WeakMap();
+    compiledLib = null;
+    fwdById = new Map();
+    titleClaim = new WeakMap();
     keys = res[KEYS_KEY] || {};
     chatMap = res[CHATS_KEY] || {};
     const p = res[POS_KEY];
@@ -209,6 +258,9 @@
         // hold immediate in both directions rather than something a poll
         // catches up with a step later.
         runsCache.at = 0;
+        // A run can be what attaches a key to a chat, so the claims the titles
+        // made under the old run state are asked again.
+        titleClaim = new WeakMap();
         resolveActive(true).then(() => refreshHold(true));
       }
     });
@@ -228,7 +280,73 @@
     if (!el) return true;
     if (el.closest('[contenteditable="true"],input,textarea,script,style')) return true;
     if (el.closest('[class*="cum-pseudo"]')) return true;
+    // The extension's own furniture — the pill, the panels, the run list —
+    // says what it says; it is not claude.ai's rendering to translate.
+    if (el.closest('[id^="cum-"],[class*="cum-"]')) return true;
     return false;
+  }
+
+  // ---- one element's text nodes ---------------------------------------------
+  //
+  // The memo is per NODE and carries three things: what we wrote, what
+  // claude.ai wrote, and how many swaps that was. Re-observing our own write
+  // (or React writing the same fake back mid-stream) is then a no-op rather
+  // than a loop, the peek has the original to put back, and a node that
+  // matched nothing is remembered too so a long conversation isn't re-scanned
+  // node by node on every streaming tick.
+  function swapIn(el, compiled) {
+    if (!el || !compiled || !compiled.rx) return 0;
+    let total = 0;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const text = node.nodeValue;
+      if (!text || text.length < 2) continue;
+      const prior = swapped.get(node);
+      if (prior && prior.text === text) {
+        total += prior.count;
+        continue;
+      }
+      if (skippable(node.parentElement)) continue;
+      const r = P.translate(compiled, text);
+      if (r.count > 0) {
+        node.nodeValue = r.text;
+        swapped.set(node, { text: r.text, orig: text, count: r.count });
+        total += r.count;
+      } else {
+        swapped.set(node, { text: text, orig: text, count: 0 });
+      }
+    }
+    return total;
+  }
+
+  function restoreIn(el) {
+    if (!el) return;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const p = swapped.get(node);
+      if (p && p.count > 0 && node.nodeValue === p.text) {
+        node.nodeValue = p.orig;
+        swapped.delete(node);
+      }
+    }
+  }
+
+  // What claude.ai wrote in this element, whatever this tab is showing — the
+  // memo's originals where we have swapped, the live text where we haven't.
+  // Every question about WHOSE title this is has to be asked of the fake: ask
+  // it of a translated title and the key that translated it no longer
+  // recognises its own work.
+  function originalText(el) {
+    let out = "";
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const p = swapped.get(node);
+      out += p && p.text === node.nodeValue ? p.orig : node.nodeValue;
+    }
+    return out;
   }
 
   // Paused = "let me peek at what claude.ai is actually showing": the fakes
@@ -251,20 +369,14 @@
     return paused || !!hold;
   }
 
-  // Put back the fakes exactly as claude.ai rendered them.
+  // Put back the fakes exactly as claude.ai rendered them — messages, every
+  // title on the page, and the tab.
   function restoreFakes() {
-    for (const turn of document.querySelectorAll(MSG_SEL)) {
-      const walker = document.createTreeWalker(turn, NodeFilter.SHOW_TEXT);
-      let node;
-      while ((node = walker.nextNode())) {
-        const p = swapped.get(node);
-        if (p && p.count > 0 && node.nodeValue === p.text) {
-          node.nodeValue = p.orig;
-          swapped.delete(node);
-        }
-      }
-    }
+    for (const turn of document.querySelectorAll(MSG_SEL)) restoreIn(turn);
+    for (const t of titleTargets()) restoreIn(t.el);
+    restoreDocTitle();
     shown = 0;
+    titleShown = 0;
   }
 
   function applyTranslationState() {
@@ -317,40 +429,185 @@
 
   function sweep() {
     sweepTimer = null;
-    if (!active || translationOff() || !active.compiled.rx) return;
+    const off = translationOff();
     let total = 0;
-    for (const turn of document.querySelectorAll(MSG_SEL)) {
-      const walker = document.createTreeWalker(turn, NodeFilter.SHOW_TEXT);
-      let node;
-      while ((node = walker.nextNode())) {
-        const text = node.nodeValue;
-        if (!text || text.length < 2) continue;
-        const prior = swapped.get(node);
-        if (prior && prior.text === text) {
-          // Already ours — nothing to rewrite, but it still counts on the badge.
-          total += prior.count;
-          continue;
-        }
-        if (skippable(node.parentElement)) continue;
-        const r = P.translate(active.compiled, text);
-        if (r.count > 0) {
-          node.nodeValue = r.text;
-          // `orig` is what the pause toggle restores — the fakes as claude.ai
-          // rendered them.
-          swapped.set(node, { text: r.text, orig: text, count: r.count });
-          total += r.count;
-        } else {
-          // Remember the miss too, so a long conversation isn't re-scanned
-          // node by node on every streaming tick.
-          swapped.set(node, { text: text, orig: text, count: 0 });
-        }
-      }
+    if (active && !off) {
+      for (const turn of document.querySelectorAll(MSG_SEL)) total += swapIn(turn, active.compiled);
     }
-    if (total !== shown) {
+    const titles = off ? 0 : sweepTitles();
+    if (total !== shown || titles !== titleShown) {
       shown = total;
+      titleShown = titles;
       render();
     }
   }
+
+  // ---- the titles ------------------------------------------------------------
+  //
+  // Every chat's name the page is showing, each translated by ITS OWN chat's
+  // key: the one attached to that conversation, or — where nothing is attached
+  // — the one key in the library that claims the title (P.titleKeyFor). A title
+  // no key claims, or one two keys claim differently, keeps the fake.
+  //
+  // This runs whether or not THIS chat has a key: the sidebar is where a case
+  // is found, and a list of fakes is a list you cannot navigate. The badge
+  // follows — it appears for titles alone and counts them — so a real name on
+  // screen still always has something on screen saying why.
+
+  let titleShown = 0; // title occurrences currently swapped, for the badge
+  let titleKeyId = null; // whose key did that, for the badge's label
+  let compiledLib = null; // [{ id, compiled }] — every key in the library
+  let fwdById = new Map(); // key id -> forward matcher, for the cleaner
+  let titleClaim = new WeakMap(); // element -> { text, id } — the last claim it made
+  let docMemo = null; // { wrote, orig, count, id } while the TAB title is ours
+
+  function libEntries() {
+    if (!compiledLib) {
+      compiledLib = Object.keys(keys).map((id) => ({ id: id, compiled: P.compile(keys[id]) }));
+    }
+    return compiledLib;
+  }
+
+  function attachedKeyId(conv) {
+    if (!conv) return null;
+    return chatMap[conv] || runKeyIdSync(conv);
+  }
+
+  // The compiled key one title gets, or null for "leave the fake". Memoised
+  // per element against the fake it was asked about, since the answer only
+  // changes when the title does.
+  function titleKeyEntry(el, conv, text) {
+    const cached = el && titleClaim.get(el);
+    let id;
+    if (cached && cached.text === text) id = cached.id;
+    else {
+      const pick = P.titleKeyFor({
+        attachedId: attachedKeyId(conv),
+        entries: libEntries(),
+        text: text,
+      });
+      id = pick ? pick.id : null;
+      if (el) titleClaim.set(el, { text: text, id: id });
+    }
+    if (!id || !keys[id]) return null;
+    const entry = libEntries().find((e) => e.id === id);
+    return entry && entry.compiled.rx ? entry : null;
+  }
+
+  // The same stand-down the messages get, asked of the row's OWN chat: while a
+  // run is moving through that conversation — or through that matter — its
+  // title shows the fake, like everything else that run can reach.
+  function rowHeld(conv, keyId) {
+    if (!runsCache.runs.some((r) => r && r.status === "running")) return false;
+    const W = window.CUMWorkflow;
+    return !!P.runTranslationHold(runsCache.runs, {
+      conv: conv,
+      keyId: keyId,
+      beats: runsCache.beats,
+      keyIdFor: (r) =>
+        W && W.runPseudoKey ? W.runPseudoKey(r, runsCache.runs, runsCache.groups || []) : r.pseudoKeyId,
+    });
+  }
+
+  function titleTargets() {
+    const found = [];
+    const here = convKey();
+    if (here) for (const el of document.querySelectorAll(HEAD_TITLE_SEL)) found.push({ el: el, conv: here });
+    for (const a of document.querySelectorAll(CONV_LINK_SEL)) {
+      // A link to a chat INSIDE a message is part of the message — Claude
+      // writes them — and it belongs to the message sweep, under this chat's
+      // key. Left in here it would be a title target with another chat's
+      // identity, and the two sweeps would take turns undoing each other.
+      if (a.closest(MSG_SEL)) continue;
+      // The href PROPERTY, which is absolute — the same shape convKey() reads
+      // off location, so a sidebar row and the chat it opens are one identity.
+      const conv = P.conversationKeyFromUrl(a.href || "");
+      if (conv) found.push({ el: a, conv: conv });
+    }
+    // One title, once. Two of these selectors can land on nested elements —
+    // a row's link around a heading — and the outer one already carries the
+    // inner one's text nodes, so counting both would double every swap on the
+    // badge.
+    return found.filter(
+      (t, i) => !found.some((o, j) => j !== i && o.el !== t.el && o.el.contains(t.el))
+    );
+  }
+
+  function sweepTitles() {
+    if (!Object.keys(keys).length) return 0;
+    let total = 0;
+    let owner = null;
+    for (const t of titleTargets()) {
+      const fake = originalText(t.el);
+      if (!fake || fake.length < 2) continue;
+      const entry = titleKeyEntry(t.el, t.conv, fake);
+      if (!entry || rowHeld(t.conv, entry.id)) {
+        restoreIn(t.el);
+        continue;
+      }
+      const n = swapIn(t.el, entry.compiled);
+      if (n) {
+        total += n;
+        owner = owner || entry.id;
+      }
+    }
+    const doc = sweepDocTitle();
+    total += doc;
+    if (doc && !owner) owner = docMemo && docMemo.id;
+    if (owner) titleKeyId = owner;
+    return total;
+  }
+
+  // The tab, which is a title like any other — claude.ai's own tail ("… -
+  // Claude") left exactly as written, and the swap held in a memo so our own
+  // write is never mistaken for the site's and CUMPseudoView.docTitle below
+  // can still answer with what the site wrote.
+  function sweepDocTitle() {
+    const cur = document.title;
+    if (docMemo && cur === docMemo.wrote) return docMemo.count;
+    const parts = P.docTitleParts(cur);
+    const conv = convKey();
+    if (!parts.name.trim()) {
+      docMemo = null;
+      return 0;
+    }
+    const entry = titleKeyEntry(null, conv, parts.name);
+    if (!entry || rowHeld(conv, entry.id)) {
+      docMemo = null;
+      return 0;
+    }
+    const r = P.translate(entry.compiled, parts.name);
+    if (!r.count) {
+      docMemo = null;
+      return 0;
+    }
+    docMemo = { wrote: r.text + parts.tail, orig: cur, count: r.count, id: entry.id };
+    document.title = docMemo.wrote;
+    return r.count;
+  }
+
+  function restoreDocTitle() {
+    if (docMemo && document.title === docMemo.wrote) document.title = docMemo.orig;
+    docMemo = null;
+  }
+
+  // The tab title as CLAUDE.AI wrote it — the fake — whatever this tab is
+  // showing. Anything that reads the title to NAME something (Save chat's
+  // filename, the scheduler's "this chat") reads it through here, so a swap
+  // made for the eyes never becomes a name that leaves the browser.
+  //
+  // plainText is the same answer for an ELEMENT: what claude.ai rendered
+  // inside it, with this tab's swaps taken back out. Save chat's incognito
+  // fallback reads the mounted turns off the page when there is no
+  // conversation record to fetch, and a file on disk is not display.
+  window.CUMPseudoView = {
+    docTitle: function () {
+      return docMemo && document.title === docMemo.wrote ? docMemo.orig : document.title;
+    },
+    plainText: function (el) {
+      return el ? originalText(el) : "";
+    },
+  };
 
   function sweepSoon() {
     if (sweepTimer) return;
@@ -358,7 +615,9 @@
   }
 
   const mo = new MutationObserver(() => {
-    if (active) sweepSoon();
+    // Titles are translated with or without a key on THIS chat, so the sweep
+    // runs whenever the library has anything to translate with.
+    if (active || Object.keys(keys).length) sweepSoon();
   });
 
   // ---- the badge and the composer warning ------------------------------------
@@ -478,8 +737,21 @@
     placeBadge(false);
   });
 
+  // The key this tab is translating WITH, for the badge and the cleaner: the
+  // chat's own where one is attached, and otherwise whichever key is doing the
+  // title swaps. A sidebar read in real names is still translation, and the
+  // badge is the thing that says so.
+  function displayKey() {
+    if (active) return { id: active.id, key: active.key, forward: active.forward };
+    const key = titleKeyId ? keys[titleKeyId] : null;
+    if (!key) return null;
+    if (!fwdById.has(titleKeyId)) fwdById.set(titleKeyId, P.compileForward(key));
+    return { id: titleKeyId, key: key, forward: fwdById.get(titleKeyId) };
+  }
+
   function render() {
-    if (!active) {
+    const disp = displayKey();
+    if (!disp) {
       if (badge) {
         badge.remove();
         badge = null;
@@ -501,6 +773,8 @@
         "exports read claude.ai's own data, not this view. " +
         "Click to open the cleaner: type text with real names, copy out the fakes. " +
         "Drag it anywhere — where you put it is where it stays. " +
+        "Chat titles are translated too — the header, the sidebar and the tab — " +
+        "each by its own chat's key; the title claude.ai stores stays the fake. " +
         "While a workflow run is working this matter the translation stands down " +
         "on its own and the fakes show, so nothing a run carries to the next chat " +
         "can be a real name; a run that pauses, fails or finishes brings them back.";
@@ -517,12 +791,15 @@
     // in two tabs, every key file is named pseudonym_key.xlsx and the badge has
     // to say WHICH case this tab is translating. (The tab already shows the
     // real names — the label reveals nothing the translation doesn't.)
-    const name = P.keyTitle ? P.keyTitle(active.key) : active.key.name || "pseudonym key";
+    const name = P.keyTitle ? P.keyTitle(disp.key) : disp.key.name || "pseudonym key";
+    const bits = [];
+    if (shown) bits.push(shown + " name" + (shown === 1 ? "" : "s"));
+    if (titleShown) bits.push(titleShown + " title" + (titleShown === 1 ? "" : "s"));
     badge.textContent = hold
       ? "🔑 " + name + " — ⏸ a run is working · showing the fakes"
       : paused
       ? "🔑 " + name + " — ⏸ showing the fakes"
-      : "🔑 " + name + (shown ? " — " + shown + " name" + (shown === 1 ? "" : "s") + " restored" : "");
+      : "🔑 " + name + (bits.length ? " — " + bits.join(" · ") + " restored" : "");
     badge.classList.toggle("cum-pseudo-paused", translationOff());
     badge.classList.toggle("cum-pseudo-held", !!hold);
     const tog = cleaner && cleaner.querySelector(".cum-pseudo-clean-toggle");
@@ -572,11 +849,12 @@
   }
 
   function runCleaner() {
-    if (!cleaner || !active) return;
+    const disp = cleaner && displayKey();
+    if (!disp) return;
     const src = cleaner.querySelector(".cum-pseudo-clean-in").value;
     const out = cleaner.querySelector(".cum-pseudo-clean-out");
     const note = cleaner.querySelector(".cum-pseudo-clean-note");
-    const r = P.translate(active.forward, src);
+    const r = P.translate(disp.forward, src);
     out.value = r.text;
     note.textContent = src
       ? r.count + " value" + (r.count === 1 ? "" : "s") + " swapped. Only values the key " +
@@ -586,13 +864,14 @@
 
   function toggleCleaner() {
     if (cleaner) return closeCleaner();
-    if (!active) return;
+    const disp = displayKey();
+    if (!disp) return;
     cleaner = document.createElement("div");
     cleaner.className = "cum-pseudo-clean";
     const head = document.createElement("div");
     head.className = "cum-pseudo-clean-head";
     const title = document.createElement("span");
-    title.textContent = "Pseudonymize for pasting — " + (active.key.name || "key");
+    title.textContent = "Pseudonymize for pasting — " + (disp.key.name || "key");
     const x = document.createElement("button");
     x.className = "cum-pseudo-clean-x";
     x.textContent = "✕";
