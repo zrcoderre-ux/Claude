@@ -998,13 +998,30 @@ renamed for the next matter, rewritten, or deleted outright.
 
 **Create run**, next to Edit and Copy, is how a matter starts. Press it and a run
 appears immediately at the top of the **Runs** section — with no trigger, so
-nothing can pick it up — and opens for editing: the matter's name, its papers,
-any tweak to the steps, and at the bottom **when it starts**.
+nothing can pick it up — and opens for editing. The editor reads in the order the
+work is done: the matter's **name**, its **run date**, then its **documents** and
+**pseudonym key** — those four are what the matter *is* — and only then how the
+workflow is worked (chats, switches, steps), with **when it starts** at the
+bottom.
 
-- **Not yet** leaves it set up and waiting at the top of the list, marked *Not
-  started*. This is the default, and choosing it on a run that was already queued
-  un-schedules it without cancelling it.
-- **Run now**, **When usage resets** or **At a set time** start it as you save.
+**Saving a run starts it.** The trigger opens on **Run now**, so setting a matter
+up and pressing **Save and start this run** is one gesture rather than two — the
+second one, coming back later to press Start, is how a matter ends up late, and a
+run parked at *Not started* looks exactly like one that is waiting on purpose.
+
+- **Run now** is the default, and the button says so. **When usage resets** and
+  **At a set time** start it as you save, at their moment.
+- **Not yet** is still in the same select for the matter you really are still
+  setting up: it leaves the run at the top of the list marked *Not started*, and
+  choosing it on a run that was already queued un-schedules it without cancelling
+  it.
+- **A run kept for a time, or for the next usage reset, keeps it.** Re-opening
+  such a run shows the arrangement it was given rather than *Run now* — an edit
+  is not a change of mind about when it goes.
+- **With nothing to upload it asks first.** A run about to start with no
+  documents ticked for a chat puts the question before it goes — separately for
+  *no documents at all* and for *documents attached but ticked for nobody*, which
+  are different mistakes. Answer no and the run stays exactly as it was.
 
 Nothing about a matter ever occupies a workflow's row: a workflow has no trigger
 and no Start of its own. And because the run owns its copy of the papers,

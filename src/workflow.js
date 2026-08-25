@@ -1610,6 +1610,43 @@
     return !!run && (run.status === "pending" || run.status === "draft");
   }
 
+  // ---- what the run editor opens on, and what it asks before it goes -------
+  //
+  // A run set up and saved GOES. The editor used to open on whatever the run
+  // was last left as, which for a run being set up is "draft" — so a matter
+  // that had just been given its papers, its date and its steps still sat
+  // there until somebody came back, chose Run now, and saved a second time.
+  // That second gesture was the commonest way for a matter to be late, and it
+  // told nobody anything: a draft looks exactly like a run that is waiting on
+  // purpose.
+  //
+  // So the editor opens on "now" — and an ARRANGEMENT is kept, because a run
+  // told to wait for a time or for the next usage reset was told that on
+  // purpose and saving an edit is not changing your mind about it. "Not yet"
+  // stays one click away in the same select, for the matter you really are
+  // still setting up; it is a choice made per save rather than a state a run
+  // sits in unasked.
+  function editorTriggerType(run) {
+    const t = (run && run.trigger) || {};
+    return t.type === "time" || t.type === "reset" ? t.type : "now";
+  }
+
+  // The one question a start is worth stopping for: a run about to go out with
+  // NOTHING to upload. With the editor now defaulting to "now", this is what
+  // stands between a half-set-up matter and a first message sent with no
+  // papers at all — so it distinguishes the two ways of having none, since
+  // documents attached but not ticked for a chat is a fixable mistake rather
+  // than a deliberately paperless run. Answers "" when there is nothing to
+  // ask.
+  function startWarning(run, wf) {
+    if (totalUploads(runSource(run, wf))) return "";
+    const stray = ((run && run.docs) || []).length;
+    return stray
+      ? "This run has " + stray + " document(s), but none are ticked for a chat — nothing will be " +
+          "uploaded. Start it anyway?"
+      : "This run has no documents attached — its first message goes out with nothing. Start it anyway?";
+  }
+
   function retrigger(run, trigger, now) {
     if (!run) return run;
     const t = trigger || {};
@@ -3732,6 +3769,8 @@
     reviseRun,
     runSource,
     canRetrigger,
+    editorTriggerType,
+    startWarning,
     retrigger,
     isDraft,
     canRerun,
