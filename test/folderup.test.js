@@ -53,18 +53,23 @@ test("the button belongs on a conversation that does not exist yet", () => {
   );
 });
 
-test("and never on work that already exists, or on a surface this hasn't been seen on", () => {
+test("Cowork composes at its own addresses, and they count too", () => {
+  // Toggling the surface leaves /new as /new, so that one is already covered.
+  assert.equal(F.isNewChatPath("https://claude.ai/cowork"), true);
+  assert.equal(
+    F.isNewChatPath("https://claude.ai/cowork/project/019f3fcd-9b35-7715-b2cc-b227512b5459"),
+    true
+  );
+  // A session is a conversation, not a composer.
+  assert.equal(F.isNewChatPath("https://claude.ai/cowork/cse_011f5HCzaWWJ2hm19"), false);
+});
+
+test("and never on work that already exists, or where there is no path at all", () => {
   assert.equal(
     F.isNewChatPath("https://claude.ai/chat/019f3fcd-9b35-7715-b2cc-b227512b5459"),
     false
   );
-  // Cowork is not Chat with a different address (CLAUDE.md) — neither half.
-  assert.equal(F.isNewChatPath("https://claude.ai/cowork"), false);
-  assert.equal(F.isNewChatPath("https://claude.ai/cowork/cse_011f5HCzaWWJ2hm19"), false);
-  assert.equal(
-    F.isNewChatPath("https://claude.ai/cowork/project/019f3fcd-9b35-7715-b2cc-b227512b5459"),
-    false
-  );
+  // Claude Code has neither an upload path here nor a rename one.
   assert.equal(F.isNewChatPath("https://claude.ai/code/session_01SXUhPi4YPzLy3o9"), false);
   // The projects LIST is not a composer, and neither is anything else here.
   assert.equal(F.isNewChatPath("https://claude.ai/projects"), false);
@@ -72,18 +77,37 @@ test("and never on work that already exists, or on a surface this hasn't been se
   assert.equal(F.isNewChatPath("https://claude.ai/settings/profile"), false);
 });
 
-test("the conversation a send created is read off the address, chats only", () => {
+test("the surface a pick goes out on: the address first, then the toggle", () => {
+  // A Cowork address settles it whatever the toggle happens to read.
+  assert.equal(F.pickSurface("https://claude.ai/cowork", "chat"), "cowork");
   assert.equal(
-    F.startedConversation("https://claude.ai/chat/019f3fcd-9b35-7715-b2cc-b227512b5459"),
-    "019f3fcd-9b35-7715-b2cc-b227512b5459"
+    F.pickSurface("https://claude.ai/cowork/project/019f3fcd-9b35-7715-b2cc-b227512b5459", ""),
+    "cowork"
   );
-  assert.equal(F.startedConversation("https://claude.ai/new"), "");
-  // A Cowork session has an id, and it is renamed by driving a menu rather than
-  // by the API this feature uses — so it is deliberately not answered here.
-  assert.equal(F.startedConversation("https://claude.ai/cowork/cse_011f5HCzaWWJ2hm19"), "");
-  assert.equal(
-    F.startedConversation("https://claude.ai/project/019f3fcd-9b35-7715-b2cc-b227512b5459"),
-    ""
+  // On /new the toggle is the answer — the address never changes there.
+  assert.equal(F.pickSurface("https://claude.ai/new", "chat"), "chat");
+  assert.equal(F.pickSurface("https://claude.ai/new", "cowork"), "cowork");
+  // Nothing to read: Cowork, because its confirmation covers both surfaces and
+  // Chat's silence on Cowork would call a good upload a failure.
+  assert.equal(F.pickSurface("https://claude.ai/new", ""), "cowork");
+  assert.equal(F.pickSurface("https://claude.ai/", null), "cowork");
+});
+
+test("the conversation a send created is read off the address, with its surface", () => {
+  assert.deepEqual(F.startedConversation("https://claude.ai/chat/019f3fcd-9b35-7715-b2cc-b227512b5459"), {
+    id: "019f3fcd-9b35-7715-b2cc-b227512b5459",
+    surface: "chat",
+  });
+  // A session's id is not a uuid, which is why it needs its own arm.
+  assert.deepEqual(F.startedConversation("https://claude.ai/cowork/cse_011f5HCzaWWJ2hm19"), {
+    id: "cse_011f5HCzaWWJ2hm19",
+    surface: "cowork",
+  });
+  assert.deepEqual(F.startedConversation("https://claude.ai/new"), { id: "", surface: "" });
+  // A project's uuid is not a conversation's — the wider pattern would take it.
+  assert.deepEqual(
+    F.startedConversation("https://claude.ai/cowork/project/019f3fcd-9b35-7715-b2cc-b227512b5459"),
+    { id: "", surface: "" }
   );
 });
 
@@ -283,44 +307,117 @@ const msgs = (n) => Array.from({ length: n }, (_, i) => ({ uuid: "m" + i }));
 
 test("a chat with the first send in it, made just now, is the one this started", () => {
   assert.equal(
-    F.isFreshConversation({ created_at: iso(NOW - 4000), chat_messages: msgs(1) }, NOW),
+    F.conversationFresh({ conv: { created_at: iso(NOW - 4000), chat_messages: msgs(1) }, now: NOW }).ok,
     true
   );
   // The reply landing makes it two, which is still the same conversation.
   assert.equal(
-    F.isFreshConversation({ created_at: iso(NOW - 40000), chat_messages: msgs(2) }, NOW),
+    F.conversationFresh({ conv: { created_at: iso(NOW - 40000), chat_messages: msgs(2) }, now: NOW }).ok,
     true
   );
 });
 
 test("a conversation already under way is somebody's work, whatever the address says", () => {
-  assert.equal(
-    F.isFreshConversation({ created_at: iso(NOW - 4000), chat_messages: msgs(3) }, NOW),
-    false
-  );
+  const long = F.conversationFresh({
+    conv: { created_at: iso(NOW - 4000), chat_messages: msgs(3) },
+    now: NOW,
+  });
+  assert.equal(long.ok, false);
+  assert.match(long.why, /already holds 3 messages/);
   // Short, but hours old — a chat left after one turn and clicked in the
   // sidebar. Renaming that is the mistake this test exists to prevent.
-  assert.equal(
-    F.isFreshConversation({ created_at: iso(NOW - 5 * 3600 * 1000), chat_messages: msgs(1) }, NOW),
-    false
-  );
-});
-
-test("no payload is 'can't tell', which is never a yes", () => {
-  assert.equal(F.isFreshConversation(null, NOW), null);
-  assert.equal(F.isFreshConversation({}, NOW), null); // no messages array
-  assert.equal(F.isFreshConversation("nope", NOW), null);
+  const old = F.conversationFresh({
+    conv: { created_at: iso(NOW - 5 * 3600 * 1000), chat_messages: msgs(1) },
+    now: NOW,
+  });
+  assert.equal(old.ok, false);
+  assert.match(old.why, /300 minutes ago/);
 });
 
 test("no conversation stamp falls back to the newest turn's own", () => {
   // The shapes are unversioned; a message carries a time in all of them.
-  const old = { chat_messages: [{ created_at: iso(NOW - 6 * 3600 * 1000) }] };
-  assert.equal(F.isFreshConversation(old, NOW), false);
-  const justNow = { chat_messages: [{ created_at: iso(NOW - 3000) }] };
-  assert.equal(F.isFreshConversation(justNow, NOW), true);
+  assert.equal(
+    F.conversationFresh({ conv: { chat_messages: [{ created_at: iso(NOW - 6 * 3600 * 1000) }] }, now: NOW }).ok,
+    false
+  );
+  assert.equal(
+    F.conversationFresh({ conv: { chat_messages: [{ created_at: iso(NOW - 3000) }] }, now: NOW }).ok,
+    true
+  );
 });
 
 test("no stamp anywhere leaves the message count, which is still an answer", () => {
-  assert.equal(F.isFreshConversation({ chat_messages: msgs(1) }, NOW), true);
-  assert.equal(F.isFreshConversation({ created_at: "who knows", chat_messages: msgs(9) }, NOW), false);
+  assert.equal(F.conversationFresh({ conv: { chat_messages: msgs(1) }, now: NOW }).ok, true);
+  assert.equal(
+    F.conversationFresh({ conv: { created_at: "who knows", chat_messages: msgs(9) }, now: NOW }).ok,
+    false
+  );
+});
+
+// A Cowork session's payload is not a chat's, and may answer with neither
+// turns nor a stamp. Then the page is the evidence — and it is three signals
+// that have to agree, not one.
+
+test("a Cowork session with nothing to read back is judged from the page", () => {
+  const got = F.conversationFresh({
+    conv: null,
+    turns: 1,
+    watched: true,
+    pickedAt: NOW - 30000,
+    now: NOW,
+  });
+  assert.equal(got.ok, true);
+  assert.match(got.why, /the page's word/);
+});
+
+test("the page's word is not taken where any of the three disagrees", () => {
+  // Turns already in it: this is a session that was going before the pick.
+  const busy = F.conversationFresh({ conv: null, turns: 4, watched: true, pickedAt: NOW, now: NOW });
+  assert.equal(busy.ok, false);
+  assert.match(busy.why, /shows 4 turns/);
+  // This tab never watched the composer become it — it was opened some other
+  // way, and nothing here can say it is the one.
+  assert.equal(
+    F.conversationFresh({ conv: null, turns: 1, watched: false, pickedAt: NOW, now: NOW }).ok,
+    null
+  );
+  // The pick is stale: an abandoned folder must not name a session picked up
+  // an hour later.
+  const stale = F.conversationFresh({
+    conv: null,
+    turns: 1,
+    watched: true,
+    pickedAt: NOW - 3600000,
+    now: NOW,
+  });
+  assert.equal(stale.ok, false);
+  assert.match(stale.why, /picked 60 minutes ago/);
+});
+
+test("nothing read and nothing counted is 'can't tell', which is never a yes", () => {
+  assert.equal(F.conversationFresh({ conv: null, turns: null, now: NOW }).ok, null);
+  assert.equal(F.conversationFresh({}).ok, null);
+  assert.equal(F.conversationFresh().ok, null);
+});
+
+test("a Cowork session that answers with a stamp and no turns is judged on the stamp", () => {
+  // Its payload is not a chat's: there may be no chat_messages at all, and the
+  // stamp is then the whole of what the conversation says about itself.
+  assert.equal(F.conversationFresh({ conv: { created_at: iso(NOW - 5000) }, now: NOW }).ok, true);
+  const old = F.conversationFresh({ conv: { created_at: iso(NOW - 3600000) }, now: NOW });
+  assert.equal(old.ok, false);
+  assert.match(old.why, /started 60 minutes ago/);
+});
+
+test("counting no turns is not counting none — it is a page that could not be read", () => {
+  const got = F.conversationFresh({
+    conv: null,
+    turns: 0,
+    watched: true,
+    pickedAt: NOW - 5000,
+    now: NOW,
+  });
+  assert.equal(got.ok, true);
+  assert.match(got.why, /nothing on the page contradicted that/);
+  assert.match(got.why, /the page's word/);
 });

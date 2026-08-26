@@ -68,13 +68,14 @@ bottom-right corner of [claude.ai](https://claude.ai).
 - **Save chat** — a button in claude.ai's own header, in with the file and share
   controls, that saves the whole conversation as a **Markdown file** you can hand
   to the next chat. See [Saving a chat](#saving-a-chat).
-- **Upload folder** — on a chat that doesn't exist yet, a button that takes a
-  **case folder** apart into it: the pseudonymized text under `Text Files` goes
-  up as **one combined file**, the `pseudonym_key.xlsx` beside it is loaded into
-  the extension and attached to the chat (never uploaded), and the conversation
-  takes the folder's name — pseudonymized — once you send. Nothing is typed and
-  nothing is sent; that half stays yours. See [Uploading a case folder into a
-  new chat](#uploading-a-case-folder-into-a-new-chat).
+- **Upload folder** — on a conversation that doesn't exist yet, chat **or
+  Cowork**, a button that takes a **case folder** apart into it: the
+  pseudonymized text under `Text Files` goes up as **one combined file**, the
+  `pseudonym_key.xlsx` beside it is loaded into the extension and attached to
+  the conversation (never uploaded), and the conversation takes the folder's
+  name — pseudonymized — once you send. Nothing is typed and nothing is sent;
+  that half stays yours. See [Uploading a case folder into a new
+  chat](#uploading-a-case-folder-into-a-new-chat).
 - **Copy ruling** — a second copy button in claude.ai's own action bar, beside
   the one that copies the whole reply. It copies **only the tentative ruling**:
   NATURE OF PROCEEDINGS through the end of the CONCLUSION, without the note
@@ -525,6 +526,10 @@ In a workflow the surface belongs to the **chat** (a conversation can't be half
 in Cowork) and the approval mode works like the model: set on the chat, and
 overridable **per step**, leaving the conversation on it for the steps after —
 so one chat can research with the brakes off and then edit a filing with them on.
+
+[Upload folder](#uploading-a-case-folder-into-a-new-chat) works on a new Cowork
+session too, on Cowork's own terms — it borrows this driver's attachment
+evidence and renames the session through its header control.
 
 ### Cowork sends run on their own driver
 
@@ -1831,10 +1836,11 @@ chats you drive yourself.
 
 It sits in [the tray](#the-header-slot) with Save, the contents list and Run,
 and **only on a conversation that does not exist yet** — `/new`, the home
-composer, a project's own composer. On a chat that already exists there is
-nothing here that the run editor doesn't do better, and a folder button over
-somebody's open work is an invitation to attach a matter's papers to the wrong
-one.
+composer, a project's own composer, and the same three on Cowork (`/cowork`,
+`/cowork/project/…`, and `/new` with the toggle flipped). On a conversation that
+already exists there is nothing here that the run editor doesn't do better, and
+a folder button over somebody's open work is an invitation to attach a matter's
+papers to the wrong one.
 
 Press it, pick the matter's folder, and:
 
@@ -1881,22 +1887,38 @@ claude.ai's own title:
 | The key library wouldn't read | "Couldn't tell" is not "there is nothing to protect" |
 | The key that named this matter has left the library | Same answer: the swap can't be made |
 
-Two more refusals, for the same reason each time — a chat wrongly named is worse
-than a chat left unnamed:
+Two more refusals, for the same reason each time — a conversation wrongly named
+is worse than one left unnamed:
 
 - **A conversation that was already going is never renamed.** From the address
-  bar, a chat your send just created and a chat you clicked in the sidebar look
-  identical, so the conversation itself is asked: only one that is short and
-  new gets the name and the key. A conversation the extension can't read back
-  gets neither, and says so.
+  bar, one your send just created and one you clicked in the sidebar look
+  identical on both surfaces, so the evidence is taken in order of strength and
+  the first kind that answers wins: the conversation itself where it reads back
+  (its turns and its stamp), and the page where it doesn't (this tab watched the
+  composer become it, it holds one turn, the pick was recent). Anything short of
+  a clear yes gets neither the name nor the key, and says so — including a
+  conversation nothing could read back at all.
 - **A folder whose name carries no case number is refused outright** — that is
   not a case folder, and this button will not take an ordinary folder apart on
   a guess.
 
-**Chat only.** Cowork is not Chat with a different address: its uploads confirm
-nowhere this can see and its sessions are renamed by driving a menu rather than
-through the API this uses. With the composer set to Cowork the button says so
-and does nothing.
+### Chat and Cowork, by two paths rather than one assumption
+
+[Cowork is not Chat with a different address](#cowork-sends-run-on-their-own-driver),
+so the button reads the **surface** before it does anything and then uses that
+surface's own plumbing. A Cowork address settles it; otherwise the page's own
+Chat/Cowork toggle does; and where neither says — inside a project, say — the
+answer is **Cowork**, because its confirmation covers both and Chat's would call
+a perfectly good Cowork upload a failure.
+
+| | Chat | Cowork |
+| --- | --- | --- |
+| Confirming the upload | the upload responses `src/inject.js` sees, chips behind them | what the composer **visibly carries** — chips or the filenames themselves — borrowed from the Cowork send driver rather than written again |
+| Naming the conversation | the rename API, the way a run names a chat | the header's own rename control, driven (`C.renameCoworkSession`), retried while the session's page is still building |
+| Confirming it's the right conversation | the conversation payload: its turns and its stamp | the same where the payload answers; **the page** where it doesn't — this tab watched the composer become it, it holds one turn, the pick was recent — and the note says when that weaker evidence is what carried it |
+
+What is the same on both: the split, the combined file, the key, the title rule,
+and every refusal above.
 
 The decisions are `src/folderup.js` (no DOM, no `chrome`), tested in
 `test/folderup.test.js`; the button, the picker and the wait around them are

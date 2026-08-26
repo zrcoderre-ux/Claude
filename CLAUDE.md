@@ -74,4 +74,7 @@ than inline in the wiring.
   seen returning the turn's TOOL PROMPTS instead of the answer, so a copy
   is only believed when it carries the reply's own ending
   (`copyCarriesEnd`). Cowork sends go through
-  `src/cowork-composer.js`; its decisions live in `src/cowork.js`.
+  `src/cowork-composer.js`; its decisions live in `src/cowork.js`. That
+  driver's attachment evidence (`attachFiles`, `humanTurns`) is exported and
+  REUSED by the Upload folder button rather than copied — one implementation
+  of what counts as a file landing on Cowork, so a shape change is one edit.

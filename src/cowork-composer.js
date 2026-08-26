@@ -1007,5 +1007,15 @@
     return fail("send phase never ran");
   }
 
-  window.CUMCoworkSend = { applies: applies, send: send, selectProject: selectProject };
+  // attachFiles and humanTurns are Cowork's, not the send's: the Upload folder
+  // button (src/folder-upload.js) attaches to this composer without sending,
+  // and it must confirm the attachment the way this surface allows rather than
+  // the way Chat does. One implementation of that evidence, not two.
+  window.CUMCoworkSend = {
+    applies: applies,
+    send: send,
+    selectProject: selectProject,
+    attachFiles: attachFiles,
+    humanTurns: humanTurns,
+  };
 })();
