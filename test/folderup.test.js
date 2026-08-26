@@ -7,6 +7,13 @@
  * a pseudonym key does with a name are their decisions, and a test that
  * stubbed them would prove nothing about the button.
  */
+// Pinned deliberately, and to a zone that is not UTC. The bug these stamp
+// tests exist for — a server timestamp with no zone read as LOCAL time — is
+// invisible in UTC and hours wrong everywhere else, so a suite that ran in UTC
+// would have gone on passing while the button silently refused to name every
+// conversation it started. Set before anything constructs a Date.
+process.env.TZ = "America/Los_Angeles";
+
 const test = require("node:test");
 const assert = require("node:assert");
 require("../src/workflow.js");
@@ -381,17 +388,17 @@ test("the page's word is not taken where any of the three disagrees", () => {
     F.conversationFresh({ conv: null, turns: 1, watched: false, pickedAt: NOW, now: NOW }).ok,
     null
   );
-  // The pick is stale: an abandoned folder must not name a session picked up
-  // an hour later.
+  // The pick is stale: a folder picked into a tab left open overnight must not
+  // name whatever turns up in it the next day.
   const stale = F.conversationFresh({
     conv: null,
     turns: 1,
     watched: true,
-    pickedAt: NOW - 3600000,
+    pickedAt: NOW - 20 * 3600 * 1000,
     now: NOW,
   });
   assert.equal(stale.ok, false);
-  assert.match(stale.why, /picked 60 minutes ago/);
+  assert.match(stale.why, /picked 1200 minutes ago/);
 });
 
 test("nothing read and nothing counted is 'can't tell', which is never a yes", () => {
@@ -420,4 +427,109 @@ test("counting no turns is not counting none — it is a page that could not be 
   assert.equal(got.ok, true);
   assert.match(got.why, /nothing on the page contradicted that/);
   assert.match(got.why, /the page's word/);
+});
+
+// ---- when claude.ai says a conversation happened ---------------------------
+
+test("a stamp with no zone is a SERVER stamp, and is read as UTC", () => {
+  const want = Date.UTC(2026, 7, 26, 18, 59, 56);
+  // The shape that broke it: no Z, no offset. Date.parse calls that local
+  // time, which in this test's zone is seven hours out.
+  assert.equal(F.stampMs("2026-08-26T18:59:56"), want);
+  assert.equal(F.stampMs("2026-08-26T18:59:56.123456"), want + 123);
+  assert.equal(F.stampMs("2026-08-26 18:59:56"), want);
+  assert.notEqual(Date.parse("2026-08-26T18:59:56"), want); // the bug, still there in Date.parse
+  // A stamp that says its zone is left exactly as written.
+  assert.equal(F.stampMs("2026-08-26T18:59:56Z"), want);
+  assert.equal(F.stampMs("2026-08-26T11:59:56-07:00"), want);
+  assert.equal(F.stampMs(want), want);
+  assert.equal(F.stampMs("whenever"), null);
+  assert.equal(F.stampMs(""), null);
+  assert.equal(F.stampMs(null), null);
+});
+
+test("the conversation the send just made is fresh in every time zone", () => {
+  const now = Date.UTC(2026, 7, 26, 19, 0, 0);
+  const got = F.conversationFresh({
+    conv: { created_at: "2026-08-26T18:59:56.123456", chat_messages: msgs(1) },
+    now: now,
+  });
+  // Read as local this is seven hours in the future, and the gate used to call
+  // that somebody else's work — so the button refused to name the very chat
+  // its own folder had started, everywhere outside UTC.
+  assert.equal(got.ok, true);
+  assert.match(got.why, /started under a minute ago/);
+});
+
+test("a stamp ahead of this clock is a clock disagreement, not a verdict", () => {
+  // Nothing left to read but the stamp, and the stamp is a day ahead: that
+  // says the two machines disagree about the time, which says nothing at all
+  // about WHICH conversation this is. It falls through to the rest of the
+  // evidence rather than refusing on it.
+  const ahead = F.conversationFresh({
+    conv: { created_at: iso(NOW + 24 * 3600 * 1000) },
+    turns: 1,
+    watched: true,
+    pickedAt: NOW - 5000,
+    now: NOW,
+  });
+  assert.equal(ahead.ok, true);
+  assert.match(ahead.why, /the page's word/);
+  // With no page evidence either it is still not a yes — it is unreadable.
+  assert.equal(
+    F.conversationFresh({ conv: { created_at: iso(NOW + 24 * 3600 * 1000) }, now: NOW }).ok,
+    null
+  );
+  // Ordinary clock drift is not a disagreement, it is just now.
+  const drift = F.conversationFresh({ conv: { created_at: iso(NOW + 20000) }, now: NOW });
+  assert.equal(drift.ok, true);
+  assert.match(drift.why, /under a minute ago/);
+});
+
+test("an old conversation is still refused, and says how old", () => {
+  const old = F.conversationFresh({
+    conv: { created_at: "2026-08-25T19:00:00", chat_messages: msgs(1) },
+    now: Date.UTC(2026, 7, 26, 19, 0, 0),
+  });
+  assert.equal(old.ok, false);
+  assert.match(old.why, /1440 minutes ago/);
+});
+
+// ---- what became of the name ----------------------------------------------
+
+test("a name is reported only once the conversation reads back carrying it", () => {
+  assert.equal(F.describeNamed({ title: "Cabot v. Reyes", took: true }), 'Named it "Cabot v. Reyes".');
+  // Asked for, not yet on it — which is the ordinary state in the seconds
+  // before claude.ai's own auto-title has finished fighting over it.
+  assert.match(F.describeNamed({ title: "Cabot v. Reyes", took: false }), /still trying/);
+  assert.match(F.describeNamed({ title: "Cabot v. Reyes", took: null }), /waiting to see it stick/);
+  assert.equal(F.describeNamed({ title: "", took: true }), "");
+});
+
+test("a name that would not stay says so, and says to do it by hand", () => {
+  const lost = F.describeNamed({ title: "Cabot v. Reyes", took: false, settled: true });
+  assert.match(lost, /would not stay/);
+  assert.match(lost, /Rename it by hand/);
+  const failed = F.describeNamed({ title: "Cabot v. Reyes", error: "rename refused", settled: true });
+  assert.match(failed, /rename refused/);
+  assert.match(failed, /Rename it by hand/);
+  // Unreadable is neither a yes nor a no, and must not be dressed up as either.
+  const unread = F.describeNamed({ title: "Cabot v. Reyes", took: null, settled: true });
+  assert.match(unread, /could not be read back/);
+  assert.doesNotMatch(unread, /^Named it/);
+});
+
+test("time spent writing the first message is not a reason to refuse the pick", () => {
+  // Attach the folder, read the papers, then write the prompt. An hour of that
+  // is the work, not an abandoned pick — and the tab never left the composer,
+  // which is what actually says this pick is still live.
+  const slow = F.conversationFresh({
+    conv: null,
+    turns: 1,
+    watched: true,
+    pickedAt: NOW - 90 * 60 * 1000,
+    now: NOW,
+  });
+  assert.equal(slow.ok, true);
+  assert.match(slow.why, /watched the composer become it/);
 });

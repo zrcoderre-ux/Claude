@@ -521,10 +521,70 @@
     return entry && entry.compiled.rx ? entry : null;
   }
 
+  /**
+   * The open conversation's name as CLAUDE.AI wrote it, from the one place it
+   * is always written: the tab. Our own swap is unwound first, since the whole
+   * point of asking is to get the fake back.
+   */
+  function nameOnTab() {
+    const raw = docMemo && document.title === docMemo.wrote ? docMemo.orig : document.title;
+    return P.docTitleParts(raw).name.trim();
+  }
+
+  const squash = (v) => String(v == null ? "" : v).replace(/\s+/g, " ").trim();
+
+  /**
+   * The header element carrying THIS conversation's name, where none of the
+   * hooks above found it.
+   *
+   * Cowork's title control announces itself — aria-label="<name>, rename
+   * session" — and HEAD_TITLE_SEL catches it. A CHAT's does not, and the
+   * data-testids above are shapes claude.ai has been seen using rather than a
+   * rule it keeps: when it stopped using them the chat header quietly stopped
+   * translating, so a Cowork session read back in the real names and a chat
+   * sat there in the fakes, which is exactly the sort of silent half-working
+   * this feature cannot afford.
+   *
+   * So the fallback anchors on claude.ai's own data instead of its markup: it
+   * writes the conversation's name into the TAB, and an element whose WHOLE
+   * text is exactly that name is that name on the page. Whole-text equality
+   * and nothing looser — an element that merely CONTAINS the title is the
+   * header, or the page, and translating those would drag in text belonging to
+   * no conversation at all. Links are left out: a sidebar row is another
+   * conversation's title and gets its own key below.
+   */
+  const HEAD_FALLBACK_SEL = 'h1,h2,button,[role="heading"]';
+  function headTitleFallback() {
+    const want = squash(nameOnTab());
+    if (want.length < 2) return null;
+    let best = null;
+    for (const el of document.querySelectorAll(HEAD_FALLBACK_SEL)) {
+      // Cheap first, since this runs over every button on the page each sweep:
+      // a title is about as long as the title, and anything wildly longer is a
+      // container that happens to hold one. Only what survives that is worth
+      // walking text node by text node.
+      const len = el.textContent ? el.textContent.length : 0;
+      if (!len || len > want.length * 4 + 20) continue;
+      if (skippable(el) || el.closest(MSG_SEL) || el.closest("a[href]")) continue;
+      if (squash(originalText(el)) !== want) continue;
+      // The deepest one: an element and its wrapper both read as the title,
+      // and the wrapper carries whatever else sits beside it.
+      if (!best || best.contains(el)) best = el;
+    }
+    return best;
+  }
+
   function titleTargets() {
     const found = [];
     const here = convKey();
-    if (here) for (const el of document.querySelectorAll(HEAD_TITLE_SEL)) found.push({ el: el, conv: here });
+    if (here) {
+      for (const el of document.querySelectorAll(HEAD_TITLE_SEL)) found.push({ el: el, conv: here });
+      // Always, not only where the hooks above found nothing: one of them
+      // landing says a header heading exists, not that it is this
+      // conversation's name. A duplicate is dropped below.
+      const el = headTitleFallback();
+      if (el && !found.some((t) => t.el === el)) found.push({ el: el, conv: here });
+    }
     for (const a of document.querySelectorAll(CONV_LINK_SEL)) {
       // A link to a chat INSIDE a message is part of the message — Claude
       // writes them — and it belongs to the message sweep, under this chat's
@@ -541,7 +601,9 @@
     // inner one's text nodes, so counting both would double every swap on the
     // badge.
     return found.filter(
-      (t, i) => !found.some((o, j) => j !== i && o.el !== t.el && o.el.contains(t.el))
+      (t, i) =>
+        found.findIndex((o) => o.el === t.el) === i &&
+        !found.some((o, j) => j !== i && o.el !== t.el && o.el.contains(t.el))
     );
   }
 

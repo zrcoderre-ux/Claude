@@ -286,6 +286,60 @@
    * given the page a moment to settle.
    */
   const FRESH_MS = 15 * 60 * 1000;
+
+  /**
+   * How long a pick may sit on the composer before it stops claiming the next
+   * conversation to appear.
+   *
+   * Not FRESH_MS, and the difference is the difference between two questions.
+   * FRESH_MS asks how old the CONVERSATION is, which is evidence about whether
+   * this is the one the send created. This asks how long ago the FOLDER was
+   * picked, which is not evidence about that at all — it is a measure of how
+   * long the operator took to write their first message, and on a case folder
+   * that is reading the papers, which is the work. Fifteen minutes said that a
+   * folder attached before lunch could not name the chat it was attached to,
+   * and said it by silently declining to rename anything.
+   *
+   * What guards the pick is not this clock but the composer: `watched` says the
+   * tab was sitting on a composer moments before this conversation appeared,
+   * and a tab that leaves the composer for anything that is not a conversation
+   * drops the pick outright (the stray count in src/folder-upload.js). So this
+   * is only a backstop against a tab left open overnight on a composer whose
+   * folder nobody remembers picking.
+   */
+  const PICK_MS = 8 * 60 * 60 * 1000;
+
+  // How far ahead of this browser's clock a server stamp may sit and still be
+  // read as "just now". Two machines' clocks differ by seconds; this is the
+  // slack for that, and nothing else.
+  const SKEW_MS = 2 * 60 * 1000;
+
+  /**
+   * When claude.ai says something happened, in ms — or null where it didn't
+   * say anything readable.
+   *
+   * A DATE-TIME WITH NO ZONE IS LOCAL TIME to Date.parse, and claude.ai's
+   * payloads have been seen carrying stamps both ways: "...T18:59:56Z" and the
+   * same instant written "...T18:59:56.123456" with no zone at all. A server
+   * stamp read as local is wrong by the whole of the browser's offset — seven
+   * hours in California — so the conversation the send created a moment ago
+   * reads as seven hours in the FUTURE, the gate below calls it somebody
+   * else's work, and the button refuses to name the very chat it started.
+   * That is the shape of a bug that only ever appears away from UTC, which is
+   * everywhere anyone actually works.
+   *
+   * So a stamp with no zone is read as UTC, which is what a server stamp is.
+   * One with a zone is left exactly as written.
+   */
+  const NAIVE_STAMP_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
+  function stampMs(raw) {
+    if (typeof raw === "number") return isFinite(raw) ? raw : null;
+    const s = str(raw).trim();
+    if (!s) return null;
+    const t = Date.parse(NAIVE_STAMP_RE.test(s) ? s.replace(" ", "T") + "Z" : s);
+    return isFinite(t) ? t : null;
+  }
+
   function conversationFresh(ev) {
     const e = ev || {};
     const now = typeof e.now === "number" ? e.now : Date.now();
@@ -299,17 +353,25 @@
     // this has been seen in (src/stamp.js reads the same fields). The stamp is
     // asked for on its own rather than only alongside the turns, because a
     // session's payload may answer with one and not the other.
-    let at = conv ? Date.parse(str(conv.created_at)) : NaN;
-    if (!isFinite(at) && msgs) {
+    let at = conv ? stampMs(conv.created_at) : null;
+    if (at === null && msgs) {
       for (const m of msgs) {
-        const t = Date.parse(str(m && (m.created_at || m.createdAt || m.updated_at)));
-        if (isFinite(t) && (!isFinite(at) || t > at)) at = t;
+        const t = stampMs(m && (m.created_at || m.createdAt || m.updated_at));
+        if (t !== null && (at === null || t > at)) at = t;
       }
     }
-    if (isFinite(at)) {
-      if (now - at > FRESH_MS || at - now > FRESH_MS)
-        return { ok: false, why: "that conversation was started " + minutes(now - at) + " ago" };
-      return { ok: true, why: "it was started " + minutes(now - at) + " ago" };
+    if (at !== null) {
+      const age = now - at;
+      if (age > FRESH_MS)
+        return { ok: false, why: "that conversation was started " + minutes(age) + " ago" };
+      if (age >= -SKEW_MS)
+        return { ok: true, why: "it was started " + minutes(age) + " ago" };
+      // Further AHEAD of this browser's clock than two machines ever drift.
+      // That is a disagreement about what time it is, and a disagreement about
+      // the time says nothing whatever about WHICH conversation this is — so
+      // it falls through to the rest of the evidence rather than refusing on
+      // it. Refusing on it was how a stamp with no zone (see stampMs) turned
+      // every rename outside UTC into a silent no.
     }
     if (msgs) return { ok: true, why: "it holds only the first turn (no time to read on it)" };
     // Nothing readable came back. The page is what is left, and it is three
@@ -325,7 +387,7 @@
           "could not be read back",
       };
     const since = typeof e.pickedAt === "number" ? now - e.pickedAt : 0;
-    if (since > FRESH_MS)
+    if (since > PICK_MS)
       return { ok: false, why: "the folder was picked " + minutes(since) + " ago" };
     // Zero turns counted is not "no turns" — a conversation that exists has at
     // least one — it is a page whose turn markup this could not read, which is
@@ -408,21 +470,72 @@
     return "This conversation will not be named: " + (d.why || "no name was worked out") + ".";
   }
 
+  /**
+   * What BECAME of that name, once the conversation has been asked for it and
+   * then read back.
+   *
+   * Asking is not the same as being named, and this button had been reporting
+   * the ask: it said 'Named it "X"' on an HTTP 200, having just written three
+   * paragraphs about how claude.ai titles a new conversation ITSELF moments
+   * into the first answer and lands on top of exactly this rename. So the
+   * operator was told the name had taken at the one moment it reliably had
+   * not, and when the auto-title won there was nothing on screen that ever
+   * said so. A name is reported now only when the conversation has been read
+   * back carrying it.
+   *
+   * `state`:
+   *   title    the name that was asked for
+   *   took     true  read back carrying it
+   *            false read back carrying something else
+   *            null  could not be read back at all
+   *   error    why the ATTEMPT failed, where it failed outright
+   *   settled  the re-stamping is over — this is the last word rather than a
+   *            progress report, and a name that is not on it by now is not
+   *            going to be
+   */
+  function describeNamed(state) {
+    const s = state || {};
+    const title = norm(s.title);
+    if (!title) return "";
+    const named = 'Named it "' + title + '".';
+    if (s.took === true) return named;
+    const hand = " Rename it by hand.";
+    if (s.error)
+      return s.settled
+        ? 'Could not name it "' + title + '" (' + s.error + ") — it keeps whatever claude.ai " +
+            "called it." + hand
+        : 'Could not name it "' + title + '" yet (' + s.error + ") — still trying.";
+    if (s.took === false)
+      return s.settled
+        ? 'The name "' + title + '" would not stay on this conversation — claude.ai\'s own ' +
+            "title kept winning." + hand
+        : 'Asked for the name "' + title + '"; claude.ai\'s own title is on it at the moment ' +
+            "— still trying.";
+    return s.settled
+      ? 'Asked for the name "' + title + '", and what this conversation ended up called could ' +
+          "not be read back — check it."
+      : 'Asked for the name "' + title + '" — waiting to see it stick.';
+  }
+
   const api = {
     BUNDLE_NAME,
     MAX_TITLE,
     isSpreadsheet,
+    stampMs,
     isNewChatPath,
     startedConversation,
     pickSurface,
     uploadPlan,
     keyForFolder,
     FRESH_MS,
+    PICK_MS,
+    SKEW_MS,
     conversationFresh,
     chatTitleFor,
     describeUpload,
     describeKey,
     describeTitle,
+    describeNamed,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMFolderUp = api;
