@@ -564,35 +564,99 @@
   }
 
   /**
+   * What this conversation is ACTUALLY called: true it carries `title`, false
+   * it carries something else, null nothing could be read back.
+   *
+   * Asked of the conversation rather than of the rename: a rename answers for
+   * the request it made, and the request is not the question. On Chat that is
+   * the payload's own name — never the header, because a tab translating a key
+   * shows the REAL name there while the fake is what actually went over. On
+   * Cowork there is no payload that answers, so it is the header controls'
+   * aria-labels, which is where a Cowork rename's name lives and which the
+   * display swap never touches.
+   */
+  async function confirmName(conv, title) {
+    const K = window.CUMCowork;
+    if (!K) return null;
+    if (conv.surface === "cowork") {
+      if (F.startedConversation(location.href).id !== conv.id) return null;
+      let shown = "";
+      try {
+        shown = (C.coworkSessionName && C.coworkSessionName()) || "";
+      } catch (e) {
+        return null;
+      }
+      return shown ? K.sameTitle(shown, title) : null;
+    }
+    const got = await fetchConversation(conv.id);
+    const payload = got && got.data;
+    if (!payload) return null;
+    const name = K.conversationName(payload);
+    return name ? K.sameTitle(name, title) : false;
+  }
+
+  /**
+   * Hold the folder's name on the conversation until it stays there, and say
+   * what happened either way.
+   *
    * claude.ai titles a new conversation ITSELF, early — moments into the first
    * answer — and that lands on top of a rename made when the conversation
-   * appeared. So the first minutes are re-checked on a backoff and the name is
-   * stamped again only where claude.ai's own has won.
+   * appeared. Two things were wrong with the way that was handled:
    *
-   * On Chat the check is the conversation payload, because a tab translating a
-   * key shows the real name in the header and the fake is what actually went
-   * out. On Cowork there is nothing to fetch that answers, and nothing to
-   * fetch either: renameCoworkSession reads the header's own control before it
-   * touches anything and returns "ok" for a name already in place, so calling
-   * it again IS the check.
+   *   The note reported the ASK. 'Named it "X"' went up on an HTTP 200 and was
+   *   never corrected, so the auto-title winning — the ordinary case, the case
+   *   this whole backoff exists for — looked from the outside exactly like a
+   *   button that had lied. Every pass now reads the conversation back and the
+   *   note says what it found, ending in a plain "rename it by hand" where the
+   *   name could not be made to stay.
+   *
+   *   It gave up the moment the tab moved. On Cowork it must: that rename
+   *   drives the control in the header of the page we are on, and doing it
+   *   elsewhere renames whatever session the tab moved to. On CHAT it must
+   *   not: that rename is a request by id, the tab has nothing to do with it,
+   *   and abandoning it meant that opening another chat in the twenty seconds
+   *   before the first re-check — which is most of them, since that is when
+   *   the answer is streaming and there is nothing to do but look elsewhere —
+   *   left the auto-title in place for good.
+   *
+   * The first two passes are seconds rather than tens of seconds, because that
+   * is when the auto-title actually lands.
    */
-  async function keepNaming(conv, title) {
-    const K = window.CUMCowork;
-    for (const wait of [20000, 30000, 60000, 120000, 240000]) {
-      await C.sleep(wait);
-      const now = F.startedConversation(location.href);
-      if (now.id !== conv.id) return; // moved on
+  const NAME_WAITS = [4000, 8000, 20000, 30000, 60000, 120000, 240000];
+  async function holdName(conv, title, lines, said) {
+    // Every pass, to the end of the ladder — not until the first success. The
+    // auto-title lands ON TOP of a rename that took, so stopping at the first
+    // confirmed name is stopping just before the thing being defended against.
+    //
+    // The note is rewritten only when what there is to say CHANGES, and only
+    // while the tab is still on this conversation: Chat's rename carries on
+    // wherever the tab goes, but the note must not follow it there.
+    let last = said || "";
+    const speak = (line, bad) => {
+      if (!line || line === last) return;
+      last = line;
+      if (F.startedConversation(location.href).id !== conv.id) return;
+      say(lines.concat([line]), bad);
+    };
+    for (let i = 0; i < NAME_WAITS.length; i++) {
+      await C.sleep(NAME_WAITS[i]);
+      // Cowork's rename is the page's own control, so leaving the session ends
+      // it. Chat's is a request by id and does not care where the tab is.
+      if (conv.surface === "cowork" && F.startedConversation(location.href).id !== conv.id) return;
+      const settled = i === NAME_WAITS.length - 1;
       try {
-        if (conv.surface === "cowork") {
-          await C.renameCoworkSession(title);
-          continue;
+        let took = await confirmName(conv, title);
+        if (took !== true) {
+          const named = await nameIt(conv, title);
+          if (!named.ok) {
+            speak(F.describeNamed({ title: title, error: named.error, settled: settled }), true);
+            continue;
+          }
+          took = await confirmName(conv, title);
         }
-        const got = await fetchConversation(conv.id);
-        const payload = got && got.data;
-        if (K && payload && K.sameTitle(K.conversationName(payload), title)) continue;
-        await renameConversation(conv.id, title);
+        speak(F.describeNamed({ title: title, took: took, settled: settled }), took !== true);
       } catch (e) {
-        /* best effort: the conversation keeps whatever name it has */
+        /* the next pass tries again; the last one says it could not be read */
       }
     }
   }
@@ -711,20 +775,26 @@
     }
     const named = await nameIt(conv, p.title);
     label("Folder");
-    if (named.ok) {
-      lines.push('Named it "' + named.name + '".');
-      // The weaker evidence is said where it was what carried the decision, so
-      // a name that landed on the wrong conversation is something you can see
-      // rather than something you find later.
-      if (/the page's word/.test(fresh.why)) lines.push("Confirmed from the page: " + fresh.why + ".");
-      say(lines);
-      keepNaming(conv, p.title);
-    } else {
-      lines.push(
-        "Could not name it (" + named.error + ") — it keeps whatever claude.ai called it."
-      );
-      say(lines, true);
-    }
+    // The weaker evidence is said where it was what carried the decision, so a
+    // name that landed on the wrong conversation is something you can see
+    // rather than something you find later.
+    if (/the page's word/.test(fresh.why)) lines.push("Confirmed from the page: " + fresh.why + ".");
+    // Read back rather than assumed. The rename answers for the request it
+    // made; what the conversation is CALLED is a different question, and it is
+    // the one the note has to answer — claude.ai's own auto-title is still to
+    // come and routinely wins this first round.
+    const took = named.ok ? await confirmName(conv, p.title) : false;
+    const verdict = F.describeNamed({
+      title: p.title,
+      took: took,
+      error: named.ok ? "" : named.error,
+    });
+    say(lines.concat([verdict]), took !== true);
+    // Either way the name is held: an attempt that failed outright gets tried
+    // again, and one that took gets defended against the auto-title still to
+    // come. The verdict just said is handed over so the hold only speaks again
+    // when there is something different to say.
+    holdName(conv, p.title, lines, verdict);
   }
 
   // ---- placement -----------------------------------------------------------

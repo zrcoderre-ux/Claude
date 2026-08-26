@@ -1017,6 +1017,28 @@
   }
 
   /**
+   * What the session's header says it is called, or "" where nothing in the
+   * header says.
+   *
+   * The same reading renameCoworkSession confirms itself with — both header
+   * controls carry the name in their aria-label — exported so a caller can ask
+   * whether a name TOOK without driving the rename again. A translated tab is
+   * no obstacle: the display swap edits text nodes and never attributes, so
+   * these labels keep saying what claude.ai stored.
+   */
+  function coworkSessionName() {
+    const k = K();
+    if (!k) return "";
+    for (const b of document.querySelectorAll("button")) {
+      if (isOurs(b) || !isVisible(b)) continue;
+      const l = b.getAttribute("aria-label");
+      const from = k.nameFromRenameSession(l) || k.nameFromMoreOptions(l);
+      if (from) return from;
+    }
+    return "";
+  }
+
+  /**
    * Rename a Cowork session, the way a person does it.
    *
    * There is no API for this. Renaming one by hand makes no HTTP request at
@@ -1392,6 +1414,7 @@
     surfaceWhy,
     renameCoworkSession,
     renameWhy,
+    coworkSessionName,
     currentSurface,
     selectSurface,
     findApprovalTrigger,
