@@ -56,11 +56,16 @@
 
   const P = window.CUMPseudo;
   const X = window.CUMXlsx;
+  const M = window.CUMMasterKey;
   if (!P || !X) return;
 
   const KEYS_KEY = "cum_pseudo_keys"; // id -> parsed key (see popup.js)
   const CHATS_KEY = "cum_pseudo_chats"; // conversation key -> key id
   const POS_KEY = "cum_pseudo_pos"; // where the user dragged the badge { left, top }
+  const MASTER_KEY = "cum_pseudo_master"; // the last 20 cases (see masterkey.js)
+  // The id the master key answers to. Not a library id — nothing is stored
+  // under it — so every lookup into `keys` has to go through masterOr().
+  const MASTER_ID = "cum-master-key";
 
   const MSG_SEL =
     '[data-testid="user-message"],[data-testid="assistant-message"],' +
@@ -230,7 +235,7 @@
   }
 
   async function loadState() {
-    const res = await storageGet([KEYS_KEY, CHATS_KEY, POS_KEY]);
+    const res = await storageGet([KEYS_KEY, CHATS_KEY, POS_KEY, MASTER_KEY]);
     // A key loaded, replaced or attached elsewhere changes what every title on
     // this page should read. Put back what we wrote under the old library
     // before adopting the new one — a swap left standing under a map that no
@@ -243,6 +248,7 @@
     titleClaim = new WeakMap();
     keys = res[KEYS_KEY] || {};
     chatMap = res[CHATS_KEY] || {};
+    setMaster(res[MASTER_KEY]);
     const p = res[POS_KEY];
     if (p && typeof p.left === "number" && typeof p.top === "number") badgePos = p;
     await resolveActive(true);
@@ -261,7 +267,7 @@
           placeBadge(false);
         }
       }
-      if (ch[KEYS_KEY] || ch[CHATS_KEY]) loadState();
+      if (ch[KEYS_KEY] || ch[CHATS_KEY] || ch[MASTER_KEY]) loadState();
       else if (
         ch.cum_run_groups ||
         Object.keys(ch).some((k) => k.indexOf("cum_wf_run") === 0)
@@ -505,6 +511,46 @@
     return compiledLib;
   }
 
+  // ---- the master key --------------------------------------------------------
+  //
+  // The last 20 cases, distilled to what a chat title needs and kept up to
+  // date by the worker off the library's own writes (src/masterkey.js). It is
+  // what makes Recents readable once a case's spreadsheet is no longer in the
+  // library — the case it names is a case whose key you loaded once, for
+  // anything, and never had to keep.
+  //
+  // Strictly a LAST resort, and strictly for TITLES:
+  //
+  //   Last resort, because a distilled key knows the caption and nothing else.
+  //   Where a real key claims the row it wins outright, so adding this can
+  //   never take a translation away or change one — only supply one where
+  //   there wasn't one.
+  //
+  //   Titles only, because those are the two properties a message doesn't
+  //   have. A caption is short enough to come out all-or-nothing; a brief run
+  //   through a key that knows four names comes out half in one language and
+  //   half in the other, with nothing on screen saying which half you are
+  //   reading. The message sweep never sees this.
+  let masterKey = null; // the synthetic pseudonym key, or null for an empty one
+  let masterEntry = null; // { id, compiled } — built on first use
+
+  function setMaster(stored) {
+    masterKey = M ? M.asKey(stored) : null;
+    masterEntry = null;
+  }
+
+  function masterFor() {
+    if (!masterKey) return null;
+    if (!masterEntry) masterEntry = { id: MASTER_ID, compiled: P.compile(masterKey) };
+    return masterEntry && masterEntry.compiled.rx ? masterEntry : null;
+  }
+
+  /** The key behind an id, master included — nothing is STORED under MASTER_ID. */
+  function masterOr(id) {
+    if (id === MASTER_ID) return masterKey;
+    return id ? keys[id] : null;
+  }
+
   function attachedKeyId(conv) {
     if (!conv) return null;
     return chatMap[conv] || runKeyIdSync(conv);
@@ -524,9 +570,18 @@
         text: text,
       });
       id = pick ? pick.id : null;
+      // Nothing in the library claimed it. The master key answers here and
+      // only here, under the same one-claimant rule the library is held to —
+      // P.claimsTitle, so a short fake matching by coincidence still gets
+      // nothing. It is asked LAST so it can never override a real key.
+      if (!id) {
+        const master = masterFor();
+        if (master && P.claimsTitle(P.matchedValues(master.compiled, text))) id = MASTER_ID;
+      }
       if (el) titleClaim.set(el, { text: text, id: id });
     }
-    if (!id || !keys[id]) return null;
+    if (!id || !masterOr(id)) return null;
+    if (id === MASTER_ID) return masterFor();
     const entry = libEntries().find((e) => e.id === id);
     return entry && entry.compiled.rx ? entry : null;
   }
@@ -827,10 +882,21 @@
   // badge is the thing that says so.
   function displayKey() {
     if (active) return { id: active.id, key: active.key, forward: active.forward };
-    const key = titleKeyId ? keys[titleKeyId] : null;
+    const key = masterOr(titleKeyId);
     if (!key) return null;
-    if (!fwdById.has(titleKeyId)) fwdById.set(titleKeyId, P.compileForward(key));
-    return { id: titleKeyId, key: key, forward: fwdById.get(titleKeyId) };
+    if (!key.master && !fwdById.has(titleKeyId))
+      fwdById.set(titleKeyId, P.compileForward(key));
+    // The CLEANER is a write-side tool — you type a paragraph and paste what
+    // comes back into a chat — so it may only ever run on a key that knows the
+    // whole case. The master key knows a caption: it would swap the parties,
+    // hand back everything else verbatim, and it would LOOK cleaned. That is
+    // the one direction a distilled key must not be pointed in, so it labels
+    // the badge and translates the titles and offers no cleaner at all.
+    return {
+      id: titleKeyId,
+      key: key,
+      forward: key.master ? null : fwdById.get(titleKeyId),
+    };
   }
 
   function render() {
@@ -851,19 +917,7 @@
     if (!badge) {
       badge = document.createElement("div");
       badge.className = "cum-pseudo-badge";
-      badge.title =
-        "Display only: this tab swaps the pseudonyms back to the real names for YOU. " +
-        "Claude still holds — and only ever sees — the fakes. Sends, copies and " +
-        "exports read claude.ai's own data, not this view. " +
-        "Click to open the cleaner: type text with real names, copy out the fakes. " +
-        "Drag it anywhere — where you put it is where it stays. " +
-        "Chat titles are translated too — the header, the sidebar and the tab — " +
-        "each by its own chat's key; the title claude.ai stores stays the fake. " +
-        "While a workflow run is working this matter the MESSAGES stand down on " +
-        "their own and show the fakes, so nothing a run carries to the next chat " +
-        "can be a real name; a run that pauses, fails or finishes brings them " +
-        "back. The titles keep their real names throughout — nothing a run does " +
-        "reads a title off the screen.";
+      badge.title = ""; // written on every render — see below
       badge.addEventListener("click", () => {
         if (badgeDragged) return; // this click is the end of a drag, not a tap
         toggleCleaner();
@@ -878,6 +932,33 @@
     // to say WHICH case this tab is translating. (The tab already shows the
     // real names — the label reveals nothing the translation doesn't.)
     const name = P.keyTitle ? P.keyTitle(disp.key) : disp.key.name || "pseudonym key";
+    // Written every render rather than once, because what is behind the badge
+    // changes: a distilled master key has no cleaner to offer, and a tooltip
+    // inviting a click that does nothing is worse than no tooltip.
+    badge.title =
+      "Display only: this tab swaps the pseudonyms back to the real names for YOU. " +
+      "Claude still holds — and only ever sees — the fakes. Sends, copies and " +
+      "exports read claude.ai's own data, not this view. " +
+      (disp.forward
+        ? "Click to open the cleaner: type text with real names, copy out the fakes. "
+        : "") +
+      "Drag it anywhere — where you put it is where it stays. " +
+      "Chat titles are translated too — the header, the sidebar and the tab — " +
+      "each by its own chat's key; the title claude.ai stores stays the fake. " +
+      "While a workflow run is working this matter the MESSAGES stand down on " +
+      "their own and show the fakes, so nothing a run carries to the next chat " +
+      "can be a real name; a run that pauses, fails or finishes brings them " +
+      "back. The titles keep their real names throughout — nothing a run does " +
+      "reads a title off the screen. " +
+      (disp.key.master
+        ? "This is the MASTER KEY: the last " +
+          (disp.key.caseCount || 0) +
+          " cases, distilled out of every pseudonym key you have loaded, and it " +
+          "answers only where no loaded key claims a title. It knows a case's " +
+          "caption and not its papers, so it never touches a message and offers " +
+          "no cleaner. Empty it from the popup."
+        : "Where no loaded key claims a title, the MASTER KEY answers instead — " +
+          "the last 20 cases, titles only. Empty it from the popup.");
     const bits = [];
     if (shown) bits.push(shown + " name" + (shown === 1 ? "" : "s"));
     if (titleShown) bits.push(titleShown + " title" + (titleShown === 1 ? "" : "s"));
@@ -949,6 +1030,7 @@
     const src = cleaner.querySelector(".cum-pseudo-clean-in").value;
     const out = cleaner.querySelector(".cum-pseudo-clean-out");
     const note = cleaner.querySelector(".cum-pseudo-clean-note");
+    if (!disp.forward) return closeCleaner();
     const r = P.translate(disp.forward, src);
     out.value = r.text;
     note.textContent = src
@@ -960,7 +1042,7 @@
   function toggleCleaner() {
     if (cleaner) return closeCleaner();
     const disp = displayKey();
-    if (!disp) return;
+    if (!disp || !disp.forward) return;
     cleaner = document.createElement("div");
     cleaner.className = "cum-pseudo-clean";
     const head = document.createElement("div");

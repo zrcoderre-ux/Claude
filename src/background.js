@@ -25,7 +25,11 @@ importScripts(
   "usagewarn.js",
   // The worker names conversations, and a chat's title is the one thing a run
   // SENDS that the pseudonymization never scrubbed — see chatTitleFor.
-  "pseudo.js"
+  "pseudo.js",
+  // The master key is kept up to date HERE, from the library's own storage
+  // writes, rather than at each of the three places a key can be loaded. One
+  // implementation, and it catches the fourth place too.
+  "masterkey.js"
 );
 
 const CFG_KEY = "cum_autocontinue";
@@ -40,6 +44,8 @@ const STATUS_KEY = "cum_status"; // last status.claude.com snapshot
 const STATUS_CFG_KEY = "cum_status_cfg"; // { warn, holdSends } — both default on
 const WARN_KEY = "cum_warn"; // usage-pace warnings already fired (see usagewarn.js)
 const WARN_CFG_KEY = "cum_warn_cfg"; // { enabled, dailyShare } — enabled defaults on
+const PSEUDO_KEYS_KEY = "cum_pseudo_keys"; // id -> parsed key (see popup.js)
+const MASTER_KEY = "cum_pseudo_master"; // { cases: [...] } — see masterkey.js
 const KEEPALIVE = "cum-ac-keepalive";
 const TIME_ALARM = "cum-job-time";
 const RESET_ALARM = "cum-job-reset";
@@ -2835,8 +2841,41 @@ chrome.alarms.onAlarm.addListener((a) => {
   }
 });
 
+// ---- the master key ------------------------------------------------------
+//
+// The last 20 cases, distilled to what a chat TITLE needs, so Recents reads
+// back in the real case names without every case's spreadsheet having to be
+// sitting in the library. Kept up to date from the library's own storage
+// writes: the popup, the run editor and the Folder button all load keys, and
+// hanging this off the write they share means there is one copy of it and a
+// fourth loader would be covered the day it is written.
+//
+// Never removes a case. A key leaving the library is the point at which the
+// master key starts earning its keep — that is a case whose spreadsheet is
+// gone and whose chats would otherwise go back to reading as fakes. Emptying
+// it is the popup's own control, and the only way it happens.
+let masterBusy = false;
+async function refreshMasterKey() {
+  const M = self.CUMMasterKey;
+  if (!M || masterBusy) return;
+  masterBusy = true;
+  try {
+    const res = await get([PSEUDO_KEYS_KEY, MASTER_KEY]);
+    const got = M.rebuild(res[MASTER_KEY], res[PSEUDO_KEYS_KEY] || {});
+    // Written only when it CHANGED: this runs off a storage write, and writing
+    // back unconditionally would be a storage event answering a storage event.
+    if (!got.added && !got.refreshed) return;
+    await set({ [MASTER_KEY]: got.master });
+  } catch (e) {
+    /* the next key load tries again; nothing here is load-bearing for a send */
+  } finally {
+    masterBusy = false;
+  }
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
+  if (changes[PSEUDO_KEYS_KEY]) refreshMasterKey();
   if (changes[CFG_KEY] || changes[DL_CFG_KEY]) {
     ensureKeepalive();
     acBurst();
@@ -2864,6 +2903,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 ensureKeepalive();
 seedWorkflows();
+// A key can be loaded while this worker is asleep — the listener above only
+// hears the writes it is awake for — so the library is folded in on every
+// start as well. It writes nothing when nothing changed.
+refreshMasterKey();
 migrateRuns().then(migrateSettings).then(reschedule);
 reschedule();
 ensureStatusAlarm(null);

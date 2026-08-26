@@ -487,6 +487,8 @@
     const X = window.CUMXlsx;
     const KEYS_KEY = "cum_pseudo_keys";
     const CHATS_KEY = "cum_pseudo_chats";
+    const MASTER_KEY = "cum_pseudo_master";
+    const M = window.CUMMasterKey;
     const ui = {
       here: document.getElementById("pseudo-here"),
       chat: document.getElementById("pseudo-chat"),
@@ -497,11 +499,14 @@
       forget: document.getElementById("pseudo-forget"),
       file: document.getElementById("pseudo-file"),
       status: document.getElementById("pseudo-status"),
+      masterHere: document.getElementById("master-here"),
+      masterClear: document.getElementById("master-clear"),
     };
     if (!ui.load || !P || !X) return;
 
     let keys = {};
     let chats = {};
+    let master = null; // { cases: [...] } — the last 20, see masterkey.js
     let tabConv = null; // conversation key of the active tab, if it's a chat
     let tabTitle = "";
 
@@ -546,12 +551,39 @@
       ui.attach.disabled = !tabConv || !ids.length;
       ui.detach.hidden = !attachedId;
       if (attachedId && keys[attachedId]) ui.select.value = attachedId;
+      renderMaster();
+    }
+
+    // What the master key holds, and the newest few cases by name — because a
+    // store of REAL case names has to be one you can look at. Nothing here is
+    // anything the tab isn't already showing, and it is this browser only.
+    function renderMaster() {
+      if (!ui.masterHere) return;
+      if (!M) {
+        ui.masterHere.textContent = "master key: unavailable";
+        if (ui.masterClear) ui.masterClear.hidden = true;
+        return;
+      }
+      const list = M.caseList(master);
+      ui.masterHere.textContent = list.length
+        ? "master key: " +
+          list.length +
+          (list.length === 1 ? " case — " : " cases — ") +
+          list
+            .slice(0, 3)
+            .map((c) => c.real || c.caseNo)
+            .join("; ") +
+          (list.length > 3 ? "; …" : "")
+        : "master key: empty — load any case's key once and it remembers that case";
+      ui.masterHere.title = M.describe(master);
+      if (ui.masterClear) ui.masterClear.hidden = !list.length;
     }
 
     function loadPseudoState() {
-      chrome.storage.local.get([KEYS_KEY, CHATS_KEY], (res) => {
+      chrome.storage.local.get([KEYS_KEY, CHATS_KEY, MASTER_KEY], (res) => {
         keys = (res && res[KEYS_KEY]) || {};
         chats = (res && res[CHATS_KEY]) || {};
+        master = (res && res[MASTER_KEY]) || null;
         renderPseudo();
       });
     }
@@ -653,6 +685,19 @@
         "Detached — reload the chat to see the fakes again."
       );
     });
+
+    if (ui.masterClear)
+      ui.masterClear.addEventListener("click", () => {
+        if (!M) return;
+        // Emptied outright rather than case by case: this is the "take the real
+        // case names off this machine" control, and one that made you do it
+        // twenty times would not be that.
+        master = M.clear(master, Date.now());
+        chrome.storage.local.set({ [MASTER_KEY]: master }, () => {
+          renderPseudo();
+          say("Emptied. Recents goes back to the fakes for any case whose key isn't loaded.");
+        });
+      });
 
     ui.forget.addEventListener("click", () => {
       const ids = Object.keys(keys);
