@@ -68,6 +68,13 @@ bottom-right corner of [claude.ai](https://claude.ai).
 - **Save chat** — a button in claude.ai's own header, in with the file and share
   controls, that saves the whole conversation as a **Markdown file** you can hand
   to the next chat. See [Saving a chat](#saving-a-chat).
+- **Upload folder** — on a chat that doesn't exist yet, a button that takes a
+  **case folder** apart into it: the pseudonymized text under `Text Files` goes
+  up as **one combined file**, the `pseudonym_key.xlsx` beside it is loaded into
+  the extension and attached to the chat (never uploaded), and the conversation
+  takes the folder's name — pseudonymized — once you send. Nothing is typed and
+  nothing is sent; that half stays yours. See [Uploading a case folder into a
+  new chat](#uploading-a-case-folder-into-a-new-chat).
 - **Copy ruling** — a second copy button in claude.ai's own action bar, beside
   the one that copies the whole reply. It copies **only the tentative ruling**:
   NATURE OF PROCEEDINGS through the end of the CONCLUSION, without the note
@@ -888,6 +895,10 @@ walked:
   group and the badge in the chat all say the same matter.
 - **A case folder with no `Text Files` in it adds nothing** and says so. It is
   still a case folder, which is exactly why the rest of it does not go instead.
+
+The same folder goes into a chat you drive yourself through the **Upload
+folder** button — same split, same key diversion, same refusals. See
+[Uploading a case folder into a new chat](#uploading-a-case-folder-into-a-new-chat).
 
 This is **gated on the name and only on the name**. A folder whose name carries
 no case number is handed over whole, exactly as it always was — the rules in
@@ -1810,6 +1821,87 @@ quietly claim to be more than it is:
 Where it goes is [the header slot](#the-header-slot), which it shares with the
 table of contents' toggle.
 
+## Uploading a case folder into a new chat
+
+A run takes a case folder apart ([A case folder is taken apart, not
+uploaded](#a-case-folder-is-taken-apart-not-uploaded)) and then does everything
+else too — types the prompt, sends it, waits, hands the reply on. Most work
+isn't a run. **Upload folder** is the first half of that on its own, for the
+chats you drive yourself.
+
+It sits in [the tray](#the-header-slot) with Save, the contents list and Run,
+and **only on a conversation that does not exist yet** — `/new`, the home
+composer, a project's own composer. On a chat that already exists there is
+nothing here that the run editor doesn't do better, and a folder button over
+somebody's open work is an invitation to attach a matter's papers to the wrong
+one.
+
+Press it, pick the matter's folder, and:
+
+- **Only what is under `Text Files` goes up.** The originals beside it — the
+  filings as served, in the real names — are left exactly where they are, and
+  the count is said out loud: *"Left 143 other files in the case folder alone."*
+- **The text files go up as ONE combined file**, `combined-documents.txt`, with
+  a numbered index at the top and each document between its own `BEGIN FILE` /
+  `END FILE` markers — byte for byte the file a run builds (`W.bundleText`).
+  Twelve attachments are twelve things claude.ai may or may not read; one
+  labelled file is one. What isn't text — a PDF, a Word file — can't be
+  concatenated and goes up on its own beside it, and a single text file is
+  already one upload, so nothing is combined with itself.
+- **The `pseudonym_key.xlsx` is loaded, never uploaded.** It is parsed into the
+  extension's key library under the case folder's name — the same entry the run
+  editor's picker and the popup show — and attached to the conversation once it
+  exists, so the chat [reads back in the real
+  names](#pseudonym-translation). The spreadsheet itself never reaches the
+  composer: it is barred from the upload twice over, by the plan and again by
+  the list handed to claude.ai. A folder you have picked before finds the key
+  it already loaded, without the `.xlsx` having to be sitting there again.
+- **Nothing is typed and nothing is sent.** The prompt is yours to write and
+  yours to send, which is the whole reason this is a button rather than a run.
+- **The chat takes the folder's name when you send it** — through the matter's
+  own key first, so `23STCV12345 Smith v. Jones` reaches claude.ai's sidebar as
+  `24STCV99999 Marchetti v. Okonkwo`. A title is not display: claude.ai stores
+  it, syncs it to every signed-in device and searches it, so the same rule the
+  run's titles are held to applies here ([The title goes over
+  pseudonymized](#the-title-goes-over-pseudonymized)). claude.ai auto-titles a
+  new conversation itself, early, so the name is stamped again on a backoff over
+  the first few minutes — and only where claude.ai's own has won. On your screen
+  the sidebar still reads `23STCV12345 Smith v. Jones`: the key this button just
+  attached translates the title back [for you](#the-titles-read-back-in-the-real-name),
+  while the title claude.ai stores stays the fake.
+
+**Where the name can't go over pseudonymized, no name goes.** Not the real one
+as a fallback — the note says which of these it was, and the chat keeps
+claude.ai's own title:
+
+| What happened | Why it holds |
+| --- | --- |
+| No pseudonym key came with the folder | There are no fakes to use, and a case folder's own name is the matter's real one |
+| The key doesn't replace the case number | A case number is the whole case — unique, public, searchable — whatever the names were changed to ([A case number stops the run](#a-case-number-stops-the-run)) |
+| The key library wouldn't read | "Couldn't tell" is not "there is nothing to protect" |
+| The key that named this matter has left the library | Same answer: the swap can't be made |
+
+Two more refusals, for the same reason each time — a chat wrongly named is worse
+than a chat left unnamed:
+
+- **A conversation that was already going is never renamed.** From the address
+  bar, a chat your send just created and a chat you clicked in the sidebar look
+  identical, so the conversation itself is asked: only one that is short and
+  new gets the name and the key. A conversation the extension can't read back
+  gets neither, and says so.
+- **A folder whose name carries no case number is refused outright** — that is
+  not a case folder, and this button will not take an ordinary folder apart on
+  a guess.
+
+**Chat only.** Cowork is not Chat with a different address: its uploads confirm
+nowhere this can see and its sessions are renamed by driving a menu rather than
+through the API this uses. With the composer set to Cowork the button says so
+and does nothing.
+
+The decisions are `src/folderup.js` (no DOM, no `chrome`), tested in
+`test/folderup.test.js`; the button, the picker and the wait around them are
+`src/folder-upload.js`.
+
 ## Copying just the ruling
 
 A reply that contains a tentative ruling usually contains other things too: a
@@ -1993,9 +2085,12 @@ the file itself has no way of knowing which folder it came out of. Picking it
 out of a different case folder renames it to that one. All of it is local UI —
 none of these labels is ever sent.
 
-**Attaching it.** Two ways, matching where work happens:
+**Attaching it.** Three ways, matching where work happens:
 
 - **A chat** — open the conversation, open the popup, **Attach to this chat**.
+- **A new chat, out of the case folder itself** — [Upload folder](#uploading-a-case-folder-into-a-new-chat)
+  loads the key sitting beside the papers and attaches it to the conversation
+  the send creates, so the matter arrives with its own key already on it.
 - **A run** — the run editor (where the documents field is) has a
   **Pseudonym key** picker. The key is the matter's, like the papers, so it
   lives on the run: every conversation the run opens or returns to gets the
@@ -2079,7 +2174,11 @@ carry the key's Real Value / Replacement fingerprint, so a renamed copy is
 still caught — is held back behind a dialog that defaults to **Keep it out**.
 Uploading it takes the affirmative **Upload anyway**; other files in the same
 batch pass through untouched. The check reads the file locally and decides
-before claude.ai's own handlers ever see the event.
+before claude.ai's own handlers ever see the event. The extension's **own**
+pickers are not uploads and are not asked about — [Upload
+folder](#uploading-a-case-folder-into-a-new-chat) reads a case folder locally
+and parses the key into the library — but what that button then hands to
+claude.ai goes through this guard like anything else.
 
 ### The titles read back in the real name
 
@@ -2799,6 +2898,8 @@ src/headerslot.js      Finds the file/share cluster and puts our buttons in it
 src/panelbar.js        Tray geometry beside the native sidebar toggle (pure)
 src/tray.js            The Save/Bookmark/Run tray, panels opening in line
 src/save-chat.js       The Save button in claude.ai's header
+src/folderup.js        A case folder into a new chat: what goes up, what it's called (pure)
+src/folder-upload.js   The Upload folder button on a new conversation
 src/replycopy.js       claude.ai's copy box: where it is, and what it wrote
 src/tentative.js       The tentative ruling out of a reply (pure)
 src/copy-ruling.js     The Copy-ruling button, beside claude.ai's own Copy
@@ -2827,6 +2928,7 @@ test/autodl.test.js    Unit tests for the auto-download ledger + ceilings
 test/tentative.test.js Unit tests for the ruling's start and end boundaries
 test/xlsxread.test.js  Unit tests for the .xlsx reader (zip + sheet XML)
 test/pseudo.test.js    Unit tests for the pseudonym key logic
+test/folderup.test.js  Unit tests for the case folder taken into a new chat
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only
 scripts/dl-probe.js    Paste at the DevTools console: what a reply really holds

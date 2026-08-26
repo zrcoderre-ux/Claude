@@ -1753,3 +1753,106 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 /* Held by a run in flight — not the same thing as a peek, and it says so:
    the display is standing down for safety, not because anyone asked it to. */
 .cum-pseudo-badge.cum-pseudo-held { background: #6b4a1f; font-style: normal; }
+
+/* ── Upload folder ────────────────────────────────────────────────────────
+   In the tray with Save, the contents list and Run, and styled like them: a
+   quiet header control rather than something of this extension's shouting on
+   claude.ai's page. Only ever on a conversation that doesn't exist yet. */
+#cum-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 5px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#cum-folder:hover { background: rgba(0, 0, 0, 0.06); }
+#cum-folder:disabled { opacity: 0.6; cursor: default; }
+.cum-folder-ico { font-size: 12px; line-height: 1; }
+
+/* The note hangs UNDER the button rather than beside it: the tray is pinned to
+   the right edge, and a 320px card in the row would push the whole row off it.
+   The slot is the only positioned ancestor, so the card can't wander. */
+.cum-tray-slot[data-slot="folder"] { position: relative; }
+#cum-folder-note {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  width: 320px;
+  max-width: 78vw;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  z-index: 2147483644;
+  padding: 10px 12px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 11px;
+  background: #ffffff;
+  color: #1f1f1f;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  font-size: 12.5px;
+  line-height: 1.45;
+  pointer-events: auto;
+}
+#cum-folder-note p { margin: 0 0 7px; }
+#cum-folder-note p:last-child { margin-bottom: 0; }
+/* A refusal, or an upload that didn't land: this is the half of the feature
+   that must never be missed, so it is coloured rather than merely written. */
+#cum-folder-note.cum-folder-bad {
+  border-color: rgba(210, 63, 49, 0.5);
+  border-left: 3px solid #d23f31;
+}
+.cum-folder-close {
+  float: right;
+  margin: -4px -4px 0 6px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  opacity: 0.55;
+  cursor: pointer;
+}
+.cum-folder-close:hover { opacity: 1; }
+
+/* No tray on the page: the bottom-left corner, above the Save button's own
+   fallback, and never the top right — that is where Share lives. */
+#cum-folder.cum-folder-loose {
+  position: fixed;
+  left: 16px;
+  bottom: 100px;
+  z-index: 2147483643;
+  background: #ffffff;
+  color: #1f1f1f;
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+#cum-folder-note.cum-folder-loose {
+  position: fixed;
+  left: 16px;
+  bottom: 140px;
+  top: auto;
+  right: auto;
+}
+
+@media (prefers-color-scheme: dark) {
+  #cum-folder { border-color: rgba(255, 255, 255, 0.22); }
+  #cum-folder:hover { background: rgba(255, 255, 255, 0.08); }
+  #cum-folder.cum-folder-loose { background: #2a2a28; color: #f0efea; }
+  #cum-folder-note {
+    background: #2a2a28;
+    color: #f0efea;
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+}
