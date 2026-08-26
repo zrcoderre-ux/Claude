@@ -135,9 +135,52 @@
     return 0;
   }
 
+  /**
+   * Where a small card sits relative to the control it belongs to — the Upload
+   * folder button's note, whose button lives down in claude.ai's own composer
+   * row rather than up in the tray.
+   *
+   * ABOVE the control by preference, because the composer is at the bottom of
+   * the window and a card below it would be off-screen; below only when there
+   * is no room above. Left-aligned with the control and clamped to the window,
+   * so a control near the right edge doesn't push the card off it.
+   *
+   * With no control to anchor to — the note outlives the button, which is the
+   * whole point of it: the send navigates off the composer and the naming
+   * happens after that — the card goes to the bottom centre, clear of the
+   * usage pill and the pseudonym badge in the corners.
+   *
+   * `anchor` is the control's viewport rect, `card` its own { w, h },
+   * `viewport` the window's { w, h }. Answers { left, top } for a fixed card.
+   */
+  const CARD_EDGE = 8; // never closer than this to any window edge
+  const CARD_BOTTOM = 96; // how far up from the bottom an unanchored card sits
+  function cardNear(anchor, card, viewport) {
+    const vw = (viewport && Number(viewport.w)) || 0;
+    const vh = (viewport && Number(viewport.h)) || 0;
+    const w = (card && Number(card.w)) || 0;
+    const h = (card && Number(card.h)) || 0;
+    const clampLeft = (x) => Math.max(CARD_EDGE, Math.min(Math.round(x), Math.max(CARD_EDGE, vw - w - CARD_EDGE)));
+    const clampTop = (y) => Math.max(CARD_EDGE, Math.min(Math.round(y), Math.max(CARD_EDGE, vh - h - CARD_EDGE)));
+    const a = anchor || null;
+    const sane =
+      a &&
+      typeof a.top === "number" &&
+      typeof a.left === "number" &&
+      isFinite(a.top) &&
+      isFinite(a.left) &&
+      (Number(a.width) || 0) > 0 &&
+      (Number(a.height) || 0) > 0;
+    if (!sane) return { left: clampLeft((vw - w) / 2), top: clampTop(vh - h - CARD_BOTTOM) };
+    const above = a.top - h - GAP;
+    const top = above >= CARD_EDGE ? above : (Number(a.bottom) || a.top + (Number(a.height) || 0)) + GAP;
+    return { left: clampLeft(a.left), top: clampTop(top) };
+  }
+
   const api = {
     GAP,
     FALLBACK,
+    cardNear,
     trayPlace,
     consolePlace,
     trayDodge,

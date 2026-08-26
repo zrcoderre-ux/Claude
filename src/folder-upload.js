@@ -1,10 +1,12 @@
 /**
  * Claude Usage Meter — Upload folder, on a new conversation (ISOLATED world).
  *
- * A button in the tray beside claude.ai's own sidebar toggle, on a chat that
- * does not exist yet. It does to a chat you are about to type in exactly what
- * the run editor's folder pick does to a run (README: "A case folder is taken
- * apart, not uploaded"), and stops where a run would carry on:
+ * A button in claude.ai's own composer row — beside the approval control
+ * ("Skip all approvals") on Cowork, beside the Chat/Cowork toggle where there
+ * is no approval control — on a conversation that does not exist yet. It does
+ * to a conversation you are about to type in exactly what the run editor's
+ * folder pick does to a run (README: "A case folder is taken apart, not
+ * uploaded"), and stops where a run would carry on:
  *
  *   The case folder is taken apart. Only what sits under `Text Files` becomes
  *   an upload; the matter's originals — the filings as served, in the real
@@ -50,6 +52,7 @@
   const W = window.CUMWorkflow;
   const DD = window.CUMDropDir;
   const F = window.CUMFolderUp;
+  const PB = window.CUMPanelBar;
   if (!C || !W || !DD || !F) return;
 
   const ID = "cum-folder";
@@ -157,7 +160,7 @@
       p.textContent = line;
       note.appendChild(p);
     }
-    place(); // puts the note in the tray slot beside the button
+    place(); // puts the note on the page and under the button
   }
 
   // ---- storage -------------------------------------------------------------
@@ -716,10 +719,94 @@
   }
 
   // ---- placement -----------------------------------------------------------
+  //
+  // Beside the composer's OWN controls — next to "Skip all approvals" on
+  // Cowork, next to the Chat/Cowork toggle where there is no approval control
+  // (the owner's instruction, and it reads right: what this button does is an
+  // upload, and that row is where the composer's own furniture lives). The
+  // tray beside the sidebar toggle stays as the fallback for a page showing
+  // neither of those controls.
+  //
+  // Two lessons from the header slot, which had to learn both the hard way:
+  // ONLY claude.ai's own controls are anchored to, and INSERTED and VISIBLE
+  // are different things — a row that clips, or one with no room left, puts a
+  // button in the page and nowhere on the screen.
+
+  function rowAnchor() {
+    const finders = [
+      () => C.findApprovalTrigger && C.findApprovalTrigger(),
+      () => C.findSurfaceGroup && C.findSurfaceGroup(),
+    ];
+    for (const find of finders) {
+      let el = null;
+      try {
+        el = find();
+      } catch (e) {
+        el = null;
+      }
+      if (el && el.parentElement && C.isVisible(el)) return el;
+    }
+    return null;
+  }
+
+  /** Put the button in that row, right after the control. Answers whether it took. */
+  function dockInRow(b) {
+    const anchor = rowAnchor();
+    if (!anchor) return false;
+    if (b.parentElement !== anchor.parentElement || b.previousElementSibling !== anchor) {
+      try {
+        anchor.parentElement.insertBefore(b, anchor.nextSibling);
+      } catch (e) {
+        return false;
+      }
+    }
+    if (!C.isVisible(b)) return false; // in the page, nowhere on the screen
+    b.classList.add("cum-folder-inrow");
+    b.classList.remove("cum-folder-loose");
+    return true;
+  }
+
+  /** The tray beside claude.ai's sidebar toggle, or a corner of our own. */
+  function dockInTray(b) {
+    b.classList.remove("cum-folder-inrow");
+    const T = window.CUMTray;
+    if (T) {
+      b.classList.remove("cum-folder-loose");
+      T.put("folder", b);
+      return;
+    }
+    b.classList.add("cum-folder-loose");
+    if (b.parentElement !== document.body) document.body.appendChild(b);
+  }
+
+  /**
+   * The note sits under the button it belongs to — above it, really, since the
+   * composer is at the bottom of the window — and stands on its own at the
+   * bottom centre once the button has gone, which it does the moment the send
+   * navigates off the composer. CUMPanelBar.cardNear owns that geometry.
+   */
+  function positionNote() {
+    if (!note) return;
+    if (!note.isConnected) (document.body || document.documentElement).appendChild(note);
+    let rect = null;
+    try {
+      if (btn && btn.isConnected && C.isVisible(btn)) rect = btn.getBoundingClientRect();
+    } catch (e) {
+      rect = null;
+    }
+    if (!PB || !PB.cardNear) return; // the stylesheet's own corner takes it
+    const at = PB.cardNear(
+      rect,
+      { w: note.offsetWidth || 340, h: note.offsetHeight || 160 },
+      { w: window.innerWidth, h: window.innerHeight }
+    );
+    note.style.left = at.left + "px";
+    note.style.top = at.top + "px";
+  }
 
   function place() {
     // The BUTTON belongs only where a send would CREATE the conversation. On a
-    // chat that already exists there is nothing here to do that the run editor
+    // conversation that already exists there is nothing here the run editor
     // doesn't do better, and a folder button over somebody's open work is an
     // invitation to attach a matter's papers to the wrong one.
     const wanted = F.isNewChatPath(location.href) && !!C.findEditor();
@@ -727,10 +814,9 @@
     // The NOTE outlives it by design: the send navigates off the composer, and
     // the naming happens after that. It stays while a pick is pending, on the
     // composer it was made from, and in the conversation it named — and goes
-    // when the tab has moved on to something else.
-    // Whatever it says, it gets long enough to be READ: a refusal written the
-    // instant the tab left the composer would otherwise be swept away by the
-    // same navigation that caused it.
+    // when the tab has moved on to something else. Whatever it says, it gets
+    // long enough to be READ: a refusal written the instant the tab left the
+    // composer would otherwise be swept away by the same navigation.
     if (
       note &&
       !wanted &&
@@ -741,26 +827,11 @@
       note.remove();
       note = null;
     }
-    if (!wanted && !note) return;
-    const b = wanted ? build() : null;
-    // In the tray beside claude.ai's own sidebar toggle, with Save, the
-    // contents list and Run (src/tray.js). The loose corner is only for a tray
-    // that didn't load, and the class comes back off the moment one does.
-    const T = window.CUMTray;
-    if (T) {
-      if (b) b.classList.remove("cum-folder-loose");
-      if (note) note.classList.remove("cum-folder-loose");
-      T.put("folder", b, note);
-    } else {
-      if (b) {
-        b.classList.add("cum-folder-loose");
-        if (b.parentNode !== document.body) document.body.appendChild(b);
-      }
-      if (note) {
-        note.classList.add("cum-folder-loose");
-        if (note.parentNode !== document.body) document.body.appendChild(note);
-      }
+    if (wanted) {
+      const b = build();
+      if (!dockInRow(b)) dockInTray(b);
     }
+    positionNote();
   }
 
   function tick() {
@@ -799,5 +870,8 @@
   }
 
   setInterval(tick, TICK_MS);
+  // The row the button sits in moves with the window; the note follows it
+  // rather than waiting up to a tick to catch up.
+  window.addEventListener("resize", positionNote);
   tick();
 })();

@@ -1834,13 +1834,20 @@ else too — types the prompt, sends it, waits, hands the reply on. Most work
 isn't a run. **Upload folder** is the first half of that on its own, for the
 chats you drive yourself.
 
-It sits in [the tray](#the-header-slot) with Save, the contents list and Run,
-and **only on a conversation that does not exist yet** — `/new`, the home
-composer, a project's own composer, and the same three on Cowork (`/cowork`,
+It sits **in claude.ai's own composer row** — next to **Skip all approvals** on
+Cowork, next to the Chat/Cowork toggle where there is no approval control — and
+**only on a conversation that does not exist yet**: `/new`, the home composer, a
+project's own composer, and the same three on Cowork (`/cowork`,
 `/cowork/project/…`, and `/new` with the toggle flipped). On a conversation that
 already exists there is nothing here that the run editor doesn't do better, and
 a folder button over somebody's open work is an invitation to attach a matter's
-papers to the wrong one.
+papers to the wrong one. (A page showing neither of those controls falls back to
+[the tray](#the-header-slot) with Save, the contents list and Run.)
+
+Everything it has to say goes in a small card, which hangs **above the button**
+while you are still on the composer and stands on its own at the bottom of the
+window once the send has navigated off it — because the naming happens after
+that, and a report swept away by the navigation that caused it is no report.
 
 Press it, pick the matter's folder, and:
 
@@ -2917,7 +2924,7 @@ src/incognito.js       Incognito recovery records (pure)
 src/incognito-watch.js Keeps a copy while an incognito chat is open
 src/mdexport.js        A conversation as Markdown (pure)
 src/headerslot.js      Finds the file/share cluster and puts our buttons in it
-src/panelbar.js        Tray geometry beside the native sidebar toggle (pure)
+src/panelbar.js        Tray, console and card geometry on claude.ai's page (pure)
 src/tray.js            The Save/Bookmark/Run tray, panels opening in line
 src/save-chat.js       The Save button in claude.ai's header
 src/folderup.js        A case folder into a new chat: what goes up, what it's called (pure)
