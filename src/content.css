@@ -1779,7 +1779,19 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 }
 #cum-folder:hover { background: rgba(0, 0, 0, 0.06); }
 #cum-folder:disabled { opacity: 0.6; cursor: default; }
-.cum-folder-ico { font-size: 12px; line-height: 1; }
+/* The folder mark: drawn, not an emoji — it sits among claude.ai's own line
+   icons and has to be one of them. currentColor, so light and dark need no
+   second rule, and sized in em so it tracks the label beside it. */
+.cum-folder-ico {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.cum-folder-ico svg {
+  width: 1.15em;
+  height: 1.15em;
+  display: block;
+}
 
 /* In the composer's row: rounder, to match the controls either side of it,
    and self-centred in case that row aligns its children some other way. */
