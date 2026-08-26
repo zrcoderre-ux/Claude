@@ -1220,6 +1220,14 @@
       if (passing) return;
       const input = ev.target;
       if (!input || input.type !== "file" || !input.files || !input.files.length) return;
+      // Our OWN pickers are not uploads. The folder button's picker reads a case
+      // folder locally — the key it finds there is parsed into the library and
+      // never handed to claude.ai — and a dialog asking whether to upload it
+      // would be asking about something that isn't happening. The guard still
+      // covers what that button then attaches: those files go through
+      // claude.ai's own input, which is not ours.
+      const C = window.CUMComposer;
+      if (C && C.isOurs && C.isOurs(input)) return;
       const files = Array.from(input.files);
       if (!files.some((f) => suspectName(f.name))) return;
       ev.stopImmediatePropagation();

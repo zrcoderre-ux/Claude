@@ -30,7 +30,7 @@
   if (!C || !P) return;
 
   const ID = "cum-tray";
-  const ORDER = ["save", "toc", "run"];
+  const ORDER = ["save", "toc", "run", "folder"];
   const TICK_MS = 1000;
 
   let tray = null;
