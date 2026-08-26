@@ -2245,6 +2245,10 @@ tab happens to be showing. The sidebar is a list of *different matters*:
 3. **Two keys claiming it differently gets neither**, and the title keeps the
    fake. A *wrong* case name over a chat is worse than the pseudonym it
    replaced.
+4. **Failing all of those, the [master key](#the-master-key-the-last-20-cases)** —
+   the last 20 cases, distilled automatically out of every key you have ever
+   loaded, so a case whose spreadsheet is no longer in the library still reads
+   back by name.
 
 The badge counts titles beside names (`🔑 23STCV12345 Smith — 4 names · 2 titles
 restored`), and **appears for titles alone** on a page where no chat has a key
@@ -2257,6 +2261,54 @@ The hold below exists because a hand-off can fall back to a rendered message,
 and no hand-off has ever read a title off the screen — so holding the titles
 bought nothing and cost you the one line naming the case, in the very minutes a
 run was working it.
+
+### The master key: the last 20 cases
+
+Rule 2 above needs the case's `pseudonym_key.xlsx` to be **in the library right
+now**, and rule 3 gets stricter the more keys are in it. Neither holds for long:
+keys get replaced, cleared out, and left behind on the machine you loaded them
+on. So underneath both sits a standing digest.
+
+Every pseudonym key that passes through the extension — loaded from the popup,
+picked in the run editor, or found beside the papers by [Upload
+folder](#uploading-a-case-folder-into-a-new-chat) — is **automatically distilled
+down to what a title needs**: the case's real **case number** and its
+**parties**, and nothing else. The last **20 cases** are kept, newest first,
+filed by real case number, and the twenty-first pushes the oldest off the end.
+There is nothing to upload and nothing to download: load a case's key **once,
+for anything**, and its chats read back by name in Recents from then on.
+
+Filed by the **case number** because that is what makes two cases two cases —
+the folder gets renamed and the parties get spelled three ways, but the number
+does not. A key with no case number anywhere in it is not filed at all; it has
+nothing to be unique by.
+
+Three deliberate limits, and each one is why this can be switched on without
+taking anything away:
+
+- **Titles only, never messages.** A distilled key knows four names out of a
+  key that had hundreds. Run over a brief it would swap the caption and leave
+  every declarant, witness and address in the fakes — a document half in one
+  language and half in the other, with nothing on screen saying which half you
+  are reading. A caption is short enough to come out all-or-nothing, and that
+  is the only place this is allowed to speak.
+- **Last, never instead.** Where a real key claims a title it wins outright, so
+  adding this can only ever *supply* a translation, never change one. And the
+  same one-claimant rule applies here: a fake that isn't distinctive still
+  claims nothing.
+- **No cleaner behind it.** The cleaner is a write-side tool — you type a
+  paragraph and paste back what it hands you — so it only ever runs on a key
+  that knows the whole case. A distilled key would swap the parties, return
+  everything else verbatim, and *look* cleaned. The badge says so and offers no
+  cleaner at all.
+
+**It outlives the keys it came from**, which is the point — and which means real
+case names sit in this browser's storage after the spreadsheet is gone. So the
+popup shows what it holds and has one control, **Empty the master key**. That
+emptying **sticks**: the library those cases came from is still sitting there,
+and a store that quietly refilled itself on the next restart would be a button
+that appeared to work. Loading a case's key again after emptying is you asking
+for that case back, and brings it back.
 
 ### While a run is working, the messages show the fakes
 

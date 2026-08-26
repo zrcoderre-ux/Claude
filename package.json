@@ -4,7 +4,7 @@
   "private": true,
   "description": "Chrome extension showing current Claude session usage and time to reset.",
   "scripts": {
-    "test": "node --test test/harvest.test.js test/estimate.test.js test/log.test.js test/jobstore.test.js test/predict.test.js test/daily.test.js test/weights.test.js test/split.test.js test/status.test.js test/autocontinue.test.js test/autodl.test.js test/tentative.test.js test/workflow.test.js test/wfusage.test.js test/toc.test.js test/mdexport.test.js test/incognito.test.js test/stamp.test.js test/cowork.test.js test/panelbar.test.js test/nag.test.js test/usagewarn.test.js test/xlsxread.test.js test/pseudo.test.js test/wfexport.test.js test/dropdir.test.js test/folderup.test.js",
+    "test": "node --test test/harvest.test.js test/estimate.test.js test/log.test.js test/jobstore.test.js test/predict.test.js test/daily.test.js test/weights.test.js test/split.test.js test/status.test.js test/autocontinue.test.js test/autodl.test.js test/tentative.test.js test/workflow.test.js test/wfusage.test.js test/toc.test.js test/mdexport.test.js test/incognito.test.js test/stamp.test.js test/cowork.test.js test/panelbar.test.js test/nag.test.js test/usagewarn.test.js test/xlsxread.test.js test/pseudo.test.js test/masterkey.test.js test/wfexport.test.js test/dropdir.test.js test/folderup.test.js",
     "icons": "python3 scripts/make_icons.py"
   },
   "license": "MIT"

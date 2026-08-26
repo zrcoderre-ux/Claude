@@ -69,6 +69,7 @@
         "src/stamp.js",
         "src/xlsxread.js",
         "src/pseudo.js",
+        "src/masterkey.js",
         "src/folderup.js",
         "src/cowork.js",
         "src/panelbar.js",

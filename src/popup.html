@@ -106,6 +106,18 @@
         a real value into the composer gets a warning naming the fake to use. The
         key file itself is <b>blocked from being uploaded</b> into any chat unless
         you expressly override — loading it here attaches it, it never uploads it.</p>
+      <div class="row sub" id="master-here">—</div>
+      <div class="btn-row">
+        <button id="master-clear" type="button" hidden>Empty the master key</button>
+      </div>
+      <p class="hint">The <b>master key</b> keeps the last 20 cases — their real
+        case numbers and party names — distilled out of every pseudonym key you
+        load, automatically. It is what makes <b>Recents</b> read back in the real
+        case names once a case's spreadsheet is no longer loaded here: nothing to
+        upload, nothing to download. It translates <b>titles only</b>, never the
+        messages in a chat, and it only ever answers where no loaded key does. It
+        outlives Forget, so real case names sit in this browser until you empty
+        it here.</p>
       <div id="pseudo-status" class="status" hidden></div>
     </div>
 
@@ -218,6 +230,7 @@
     <script src="autodl.js"></script>
     <script src="xlsxread.js"></script>
     <script src="pseudo.js"></script>
+    <script src="masterkey.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
