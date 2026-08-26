@@ -109,3 +109,40 @@ test("our own chat reservation does not read as the sidebar (the cascade)", () =
   // No root to measure: the window edge is the fallback, not a crash.
   assert.equal(P.sideGap(vw - 16, null, vw), 16);
 });
+
+// ---- the card that hangs off a button in the composer's own row -------------
+
+const CARD = { w: 340, h: 180 };
+const VIEW = { w: 1400, h: 900 };
+const at = (left, top, w, h) => ({ left, top, width: w, height: h, bottom: top + h });
+
+test("the note sits ABOVE the control it belongs to — the composer is at the bottom", () => {
+  const got = P.cardNear(at(500, 760, 90, 34), CARD, VIEW);
+  assert.equal(got.left, 500); // left-aligned with the button
+  assert.equal(got.top, 760 - CARD.h - P.GAP);
+});
+
+test("with no room above, it goes below rather than off the top of the window", () => {
+  const got = P.cardNear(at(500, 60, 90, 34), CARD, VIEW);
+  assert.equal(got.top, 60 + 34 + P.GAP);
+});
+
+test("a control near the right edge doesn't push the card off it", () => {
+  const got = P.cardNear(at(1380, 700, 90, 34), CARD, VIEW);
+  assert.equal(got.left, VIEW.w - CARD.w - 8);
+  assert.ok(got.left + CARD.w <= VIEW.w);
+});
+
+test("no control to anchor to — the note outlives the button — is the bottom centre", () => {
+  const got = P.cardNear(null, CARD, VIEW);
+  assert.equal(got.left, Math.round((VIEW.w - CARD.w) / 2));
+  assert.equal(got.top, VIEW.h - CARD.h - 96);
+  // A rect that measured at zero before layout is not an anchor either.
+  assert.deepEqual(P.cardNear(at(500, 700, 0, 0), CARD, VIEW), got);
+});
+
+test("a card taller than the window is clamped rather than hung off the top", () => {
+  const tall = { w: 340, h: 1200 };
+  const got = P.cardNear(at(500, 760, 90, 34), tall, VIEW);
+  assert.equal(got.top, 8);
+});

@@ -1755,14 +1755,15 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 .cum-pseudo-badge.cum-pseudo-held { background: #6b4a1f; font-style: normal; }
 
 /* ── Upload folder ────────────────────────────────────────────────────────
-   In the tray with Save, the contents list and Run, and styled like them: a
-   quiet header control rather than something of this extension's shouting on
-   claude.ai's page. Only ever on a conversation that doesn't exist yet. */
+   The button sits in claude.ai's OWN composer row, beside the approval control
+   ("Skip all approvals") or the Chat/Cowork toggle — so it is styled to sit
+   beside theirs rather than to be found: quiet, small, and borrowing the
+   page's own colour. Only ever on a conversation that doesn't exist yet. */
 #cum-folder {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin: 0;
+  margin: 0 0 0 6px;
   padding: 5px 10px;
   border: 1px solid rgba(0, 0, 0, 0.16);
   border-radius: 9px;
@@ -1774,20 +1775,28 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   line-height: 1.2;
   cursor: pointer;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 #cum-folder:hover { background: rgba(0, 0, 0, 0.06); }
 #cum-folder:disabled { opacity: 0.6; cursor: default; }
 .cum-folder-ico { font-size: 12px; line-height: 1; }
 
-/* The note hangs UNDER the button rather than beside it: the tray is pinned to
-   the right edge, and a 320px card in the row would push the whole row off it.
-   The slot is the only positioned ancestor, so the card can't wander. */
-.cum-tray-slot[data-slot="folder"] { position: relative; }
+/* In the composer's row: rounder, to match the controls either side of it,
+   and self-centred in case that row aligns its children some other way. */
+#cum-folder.cum-folder-inrow {
+  border-radius: 999px;
+  align-self: center;
+  box-shadow: none;
+}
+
+/* The note. Placed by CUMPanelBar.cardNear — above the button while it is on
+   screen, bottom centre once the send has navigated off the composer — so the
+   only thing the stylesheet decides is what it looks like and how big it is. */
 #cum-folder-note {
-  position: absolute;
-  top: 34px;
-  right: 0;
-  width: 320px;
+  position: fixed;
+  left: 16px;
+  top: 16px;
+  width: 340px;
   max-width: 78vw;
   max-height: calc(100vh - 120px);
   overflow-y: auto;
@@ -1826,8 +1835,8 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 }
 .cum-folder-close:hover { opacity: 1; }
 
-/* No tray on the page: the bottom-left corner, above the Save button's own
-   fallback, and never the top right — that is where Share lives. */
+/* Neither the composer's row nor the tray: a corner of our own, on the left,
+   never the top right — that is where Share lives. */
 #cum-folder.cum-folder-loose {
   position: fixed;
   left: 16px;
@@ -1837,13 +1846,6 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   color: #1f1f1f;
   border-color: rgba(0, 0, 0, 0.18);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-}
-#cum-folder-note.cum-folder-loose {
-  position: fixed;
-  left: 16px;
-  bottom: 140px;
-  top: auto;
-  right: auto;
 }
 
 @media (prefers-color-scheme: dark) {
