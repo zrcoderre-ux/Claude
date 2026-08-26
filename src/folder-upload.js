@@ -23,6 +23,15 @@
  *   Nothing is typed and nothing is sent. That half is the operator's, which
  *   is the whole reason this is a button rather than a run.
  *
+ *   On CHAT and on COWORK, by two paths rather than one assumption. Cowork's
+ *   uploads run in a worker no page hook sees, so they are confirmed by what
+ *   the composer visibly carries (the Cowork send driver's own evidence, borrowed
+ *   from src/cowork-composer.js rather than re-derived); its sessions are
+ *   renamed by driving the header's own control (C.renameCoworkSession) rather
+ *   than through the API a chat is renamed with; and a session that will not
+ *   read back is judged fresh from the page instead, which the note says out
+ *   loud as the weaker evidence it is.
+ *
  *   And when the conversation starts, it takes the folder's name — through the
  *   matter's own key first (real → fake), or not at all. A chat title is not
  *   display: claude.ai stores it, syncs it to every signed-in device and
@@ -55,7 +64,9 @@
   // in storage, and deliberately: a reload loses the composer's attachments
   // too, and a remembered name outliving them would land on whatever chat the
   // tab reached next.
-  let pending = null; // { folder, title, why, keyId, strayTicks, fetchTries }
+  // { folder, title, why, keyId, surface, pickedAt, sawComposerAt, strayTicks,
+  //   fetchTries }
+  let pending = null;
   let claiming = "";
   // The conversation the note on screen is ABOUT, so a report about this chat
   // isn't swept away the moment the send navigates off the composer — and
@@ -76,9 +87,9 @@
     btn.id = ID;
     btn.type = "button";
     btn.title =
-      "Take a case folder apart into this new chat: its Text Files go up as one " +
-      "combined file, its pseudonym key is loaded (never uploaded), and the chat " +
-      "takes the folder's name when you send";
+      "Take a case folder apart into this new conversation — chat or Cowork: its " +
+      "Text Files go up as one combined file, its pseudonym key is loaded (never " +
+      "uploaded), and the conversation takes the folder's name when you send";
     btn.innerHTML =
       '<span class="cum-folder-ico">🗂</span><span class="cum-folder-txt">Folder</span>';
     btn.addEventListener("click", onPick);
@@ -238,27 +249,22 @@
     return !!(P && P.caseNumbers && P.caseNumbers(name).length);
   }
 
-  function onPick() {
-    // Cowork is not Chat with a different address, and none of this — the
-    // upload confirmations, the rename API — has been seen working there. A
-    // button that quietly did half of it would be worse than one that says so.
-    let surface = "";
+  /**
+   * Which surface this pick goes out on. The address settles it where it is a
+   * Cowork one; otherwise the page's own Chat/Cowork toggle does; and where
+   * neither says, F.pickSurface answers Cowork, whose confirmation covers both.
+   */
+  function surfaceHere() {
+    let toggle = "";
     try {
-      surface = C.currentSurface();
+      toggle = C.currentSurface();
     } catch (e) {
-      surface = "";
+      toggle = "";
     }
-    if (surface === "cowork") {
-      say(
-        [
-          "This composer is set to Cowork, and this button only knows how to do this on Chat " +
-            "— its uploads confirm and its titles land there.",
-          "Switch the composer to Chat and press Folder again.",
-        ],
-        true
-      );
-      return;
-    }
+    return F.pickSurface(location.href, toggle);
+  }
+
+  function onPick() {
     buildInput().click();
   }
 
@@ -330,11 +336,16 @@
 
     // Whatever happens to the upload, the key is loaded and the name is worked
     // out — so the wait is armed before the slow half rather than after it.
+    const surface = surfaceHere();
+    const now = Date.now();
     pending = {
       folder: split.root,
       title: decision.title,
       why: decision.why,
       keyId: keyRec ? keyRec.id : "",
+      surface: surface,
+      pickedAt: now,
+      sawComposerAt: now,
       strayTicks: 0,
       fetchTries: 0,
     };
@@ -346,19 +357,49 @@
     }
     say(lines.concat(["Uploading…"]));
     label("Uploading…");
-    const att = await C.attachFiles(files, 120000);
+    const att = await attach(files, surface);
     if (att.ok) {
       lines.push(
         "Attached " +
           files.length +
           (files.length === 1 ? " file" : " files") +
-          " — nothing was typed and nothing was sent."
+          " (" + att.why + ") — nothing was typed and nothing was sent."
       );
       say(lines);
     } else {
-      lines.push("The upload did not land: " + att.detail + ". Nothing was sent.");
+      lines.push("The upload did not land: " + att.why + ". Nothing was sent.");
       say(lines, true);
     }
+  }
+
+  /**
+   * Hand the files to the composer, and confirm they landed the way this
+   * surface allows.
+   *
+   * Chat's confirmation is the upload responses inject.js sees, with its chip
+   * markup behind them. Cowork's uploads run inside a worker no hook reaches
+   * and its chips are not Chat's markup, so there the confirmation is the
+   * composer visibly carrying the files — chips OR the filenames themselves —
+   * which is exactly what the Cowork send driver already worked out. Borrowed
+   * from it rather than written again here, because two copies of that
+   * evidence would drift and only one of them would be the tested one.
+   */
+  async function attach(files, surface) {
+    const CW = window.CUMCoworkSend;
+    if (surface === "cowork" && CW && CW.attachFiles) {
+      const r = await CW.attachFiles(files, 120000);
+      return { ok: r.ok, why: (r.how ? "via " + r.how + ": " : "") + (r.why || "") };
+    }
+    const r = await C.attachFiles(files, 120000);
+    const why = (r.how ? "via " + r.how + ": " : "") + (r.detail || "");
+    if (surface !== "cowork") return { ok: r.ok, why: why };
+    // Cowork without its own driver loaded: Chat's confirmation is the only one
+    // there is, and on this surface its silence proves nothing — so what it saw
+    // is reported rather than dressed up as a verdict either way.
+    return {
+      ok: r.ok,
+      why: why + " (Cowork's own upload driver isn't loaded, so this is Chat's evidence)",
+    };
   }
 
   /**
@@ -457,7 +498,13 @@
   async function attachKeyHere(keyId) {
     const P = window.CUMPseudo;
     if (!P || !keyId) return false;
-    const conv = P.conversationKeyFromUrl(location.href);
+    // The key the READER uses, not one of our own devising: pseudo-view keys
+    // this map by W.conversationKey where it can and P.conversationKeyFromUrl
+    // where it can't (a Cowork session has no uuid, so both fall back to the
+    // path). A key filed under any other spelling is a key nothing finds.
+    const conv = W.conversationKey
+      ? W.conversationKey(location.href)
+      : P.conversationKeyFromUrl(location.href);
     if (!conv) return false;
     const store = await readLocal([CHATS_KEY]);
     if (!store.ok) return false;
@@ -466,60 +513,143 @@
     return await storageSet({ [CHATS_KEY]: chats });
   }
 
+  /** Give this conversation the folder's name. Answers { ok, name, error }. */
+  async function nameIt(conv, title) {
+    if (conv.surface === "cowork") {
+      // A Cowork session has no rename API — renaming one by hand makes no
+      // HTTP request at all — so it is done the way you do it: the control in
+      // its own header, which C.renameCoworkSession drives and which answers
+      // "ok" for a session already called that.
+      //
+      // Tried more than once, because the session's page has only just been
+      // built: the header carries that control a moment after the address
+      // changes, and "no rename control in the header" a second too early is
+      // not the same thing as a session that cannot be named.
+      let r = "failed";
+      for (let i = 0; i < 3; i++) {
+        if (i) await C.sleep(3000);
+        // Checked before EVERY attempt: this rename drives the control in the
+        // header of the page we are on, so doing it after the tab has moved
+        // would rename whatever session it moved to. The chat path has no such
+        // hazard — it names a conversation by id, through the API.
+        if (F.startedConversation(location.href).id !== conv.id)
+          return { ok: false, name: title, error: "the tab left that session before it could be named" };
+        try {
+          r = await C.renameCoworkSession(title);
+        } catch (e) {
+          r = "failed";
+        }
+        if (r === "ok") break;
+      }
+      return { ok: r === "ok", name: title, error: (C.renameWhy && C.renameWhy()) || r };
+    }
+    const named = await renameConversation(conv.id, title);
+    return {
+      ok: !!(named && named.ok),
+      name: (named && named.name) || title,
+      error: (named && named.error) || "no answer",
+    };
+  }
+
   /**
    * claude.ai titles a new conversation ITSELF, early — moments into the first
-   * answer — and that lands on top of a rename made when the chat appeared. So
-   * the first minutes are re-checked on a backoff and the name is stamped again
-   * only where claude.ai's own has won. Reading the title from the conversation
-   * rather than the page, because a tab translating a key shows the real name
-   * up there and the fake is what actually went out.
+   * answer — and that lands on top of a rename made when the conversation
+   * appeared. So the first minutes are re-checked on a backoff and the name is
+   * stamped again only where claude.ai's own has won.
+   *
+   * On Chat the check is the conversation payload, because a tab translating a
+   * key shows the real name in the header and the fake is what actually went
+   * out. On Cowork there is nothing to fetch that answers, and nothing to
+   * fetch either: renameCoworkSession reads the header's own control before it
+   * touches anything and returns "ok" for a name already in place, so calling
+   * it again IS the check.
    */
-  async function keepNaming(uuid, title) {
+  async function keepNaming(conv, title) {
     const K = window.CUMCowork;
     for (const wait of [20000, 30000, 60000, 120000, 240000]) {
       await C.sleep(wait);
-      if (F.startedConversation(location.href) !== uuid) return; // moved on
+      const now = F.startedConversation(location.href);
+      if (now.id !== conv.id) return; // moved on
       try {
-        const got = await fetchConversation(uuid);
-        const conv = got && got.data;
-        if (K && conv && K.sameTitle(K.conversationName(conv), title)) continue;
-        await renameConversation(uuid, title);
+        if (conv.surface === "cowork") {
+          await C.renameCoworkSession(title);
+          continue;
+        }
+        const got = await fetchConversation(conv.id);
+        const payload = got && got.data;
+        if (K && payload && K.sameTitle(K.conversationName(payload), title)) continue;
+        await renameConversation(conv.id, title);
       } catch (e) {
-        /* best effort: the chat keeps whatever name it has */
+        /* best effort: the conversation keeps whatever name it has */
       }
     }
+  }
+
+  /** Human turns visible on the page — the page's own word on how far in it is. */
+  function humanTurns() {
+    const CW = window.CUMCoworkSend;
+    if (CW && CW.humanTurns) {
+      try {
+        return CW.humanTurns();
+      } catch (e) {
+        /* fall through to the count below */
+      }
+    }
+    let n = null;
+    for (const sel of ['[data-testid="user-message"]', ".font-user-message"]) {
+      try {
+        const found = document.querySelectorAll(sel).length;
+        n = n === null ? found : Math.max(n, found);
+      } catch (e) {
+        /* try the next shape */
+      }
+    }
+    return n;
   }
 
   /**
    * The conversation the send created — or so the address says.
    *
    * The address cannot tell that from a conversation clicked in the sidebar,
-   * and the difference is the whole safety of this: naming the wrong chat
+   * and the difference is the whole safety of this: naming the wrong one
    * renames somebody's open work and hangs a matter's key on it. So the
-   * conversation is fetched and asked whether it is short and new
-   * (F.isFreshConversation), and anything short of a clear yes — including a
-   * fetch that will not answer, after a few tries — leaves it alone and says
-   * so. A chat left unnamed is a nuisance; a chat wrongly named is a mess.
+   * evidence is gathered — the conversation itself where it reads back, the
+   * page where it doesn't — and F.conversationFresh weighs it. Anything short
+   * of a clear yes leaves the conversation alone and says so. One left unnamed
+   * is a nuisance; one wrongly named is a mess.
    */
-  async function claim(uuid) {
-    if (claiming === uuid) return;
-    claiming = uuid;
+  async function claim(conv) {
+    if (claiming === conv.id) return;
+    claiming = conv.id;
     const p = pending;
-    const got = await fetchConversation(uuid);
-    const fresh = F.isFreshConversation(got && got.data, Date.now());
-    if (fresh === null) {
-      // Not an answer yet. The conversation may still be settling — let the
-      // tick try again, a few times, before giving up on it out loud.
+    const got = await fetchConversation(conv.id);
+    // That fetch can take seconds, and the tab can move in them. A pick that
+    // has since been cleared or replaced is not this one's to finish, and the
+    // page evidence below would be some other page's.
+    if (pending !== p) {
+      claiming = "";
+      return;
+    }
+    const fresh = F.conversationFresh({
+      conv: got && got.data,
+      turns: humanTurns(),
+      watched: !!p && Date.now() - p.sawComposerAt < 90000,
+      pickedAt: p && p.pickedAt,
+      now: Date.now(),
+    });
+    if (fresh.ok === null) {
+      // Not an answer yet. The page may still be settling — let the tick try
+      // again, a few times, before giving up on it out loud.
       claiming = "";
       if (pending && ++pending.fetchTries < 4) return;
       pending = null;
-      noteConv = uuid;
+      noteConv = conv.id;
       label("Folder");
       say(
         [
-          "Could not read this conversation back, so nothing was renamed and no key was " +
-            "attached to it — this button will not name a chat it cannot confirm is the one " +
-            "your folder started.",
+          "Nothing was renamed and no key was attached here: " + fresh.why + ", and this " +
+            "button will not name a conversation it cannot confirm is the one your folder " +
+            "started.",
           p && p.keyId
             ? "The pseudonym key is loaded either way; attach it from the popup."
             : "Nothing else was changed.",
@@ -529,14 +659,14 @@
       return;
     }
     pending = null;
-    noteConv = uuid;
+    noteConv = conv.id;
     label("Folder");
-    if (fresh === false) {
+    if (fresh.ok === false) {
       say(
         [
-          "This conversation was already going, so it is not the one your folder started — " +
-            "nothing was renamed and no key was attached to it.",
-          "Go back to a new chat and press Folder there.",
+          "This is not the conversation your folder started — " + fresh.why + ". Nothing was " +
+            "renamed and no key was attached to it.",
+          "Start a new conversation and press Folder there.",
         ],
         true
       );
@@ -547,24 +677,39 @@
       const ok = await attachKeyHere(p.keyId);
       lines.push(
         ok
-          ? "The pseudonym key is attached to this chat — it reads back in the real names."
-          : "Could not attach the pseudonym key to this chat — attach it from the popup."
+          ? "The pseudonym key is attached to this conversation — it reads back in the real names."
+          : "Could not attach the pseudonym key here — attach it from the popup."
       );
     }
     if (!p.title) {
-      lines.push("This chat was left unnamed: " + p.why + ".");
+      lines.push("This conversation was left unnamed: " + p.why + ".");
       say(lines, true);
       return;
     }
-    const named = await renameConversation(uuid, p.title);
-    if (named && named.ok) {
-      lines.push('Named this chat "' + named.name + '".');
+    label("Naming…");
+    // The session's own page is still being built in the moment the address
+    // changes; the chat's rename goes through the API and needs no such wait.
+    if (conv.surface === "cowork") {
+      await C.sleep(2500);
+      if (F.startedConversation(location.href).id !== conv.id) {
+        lines.push("The tab left this session before it could be named.");
+        say(lines, true);
+        return;
+      }
+    }
+    const named = await nameIt(conv, p.title);
+    label("Folder");
+    if (named.ok) {
+      lines.push('Named it "' + named.name + '".');
+      // The weaker evidence is said where it was what carried the decision, so
+      // a name that landed on the wrong conversation is something you can see
+      // rather than something you find later.
+      if (/the page's word/.test(fresh.why)) lines.push("Confirmed from the page: " + fresh.why + ".");
       say(lines);
-      keepNaming(uuid, p.title);
+      keepNaming(conv, p.title);
     } else {
       lines.push(
-        "Could not name this chat (" + ((named && named.error) || "no answer") + ") — it keeps " +
-          "whatever claude.ai called it."
+        "Could not name it (" + named.error + ") — it keeps whatever claude.ai called it."
       );
       say(lines, true);
     }
@@ -590,7 +735,7 @@
       note &&
       !wanted &&
       !pending &&
-      F.startedConversation(location.href) !== noteConv &&
+      F.startedConversation(location.href).id !== noteConv &&
       Date.now() - noteAt > NOTE_MIN_MS
     ) {
       note.remove();
@@ -621,29 +766,32 @@
   function tick() {
     place();
     if (!pending) return;
-    const uuid = F.startedConversation(location.href);
-    if (uuid) {
-      claim(uuid);
+    const conv = F.startedConversation(location.href);
+    if (conv.id) {
+      claim(conv);
       return;
     }
-    // The send went somewhere this button cannot name — a Cowork session, or
-    // straight out of claude.ai. Said once rather than waited on forever, and
-    // only after the address has settled: an SPA navigation passes through
-    // states that are neither.
+    // Still on a composer: remember that this tab is watching it, which is
+    // half of what says the next conversation to appear is the one this pick
+    // started (the other half is that it holds one turn).
     if (F.isNewChatPath(location.href)) {
+      pending.sawComposerAt = Date.now();
       pending.strayTicks = 0;
       return;
     }
+    // The tab left the composer for something that is not a conversation at
+    // all. Said once rather than waited on forever, and only after the address
+    // has settled: an SPA navigation passes through states that are neither.
     if (++pending.strayTicks < 3) return;
     const keyed = !!pending.keyId;
     pending = null;
     label("Folder");
     say(
       [
-        "This left the new-chat composer for somewhere this button cannot name — a Cowork " +
-          "session, or another page.",
+        "This left the composer for a page that is not a conversation, so there was nothing " +
+          "to name or attach the key to.",
         keyed
-          ? "The pseudonym key is loaded either way; attach it to a chat from the popup."
+          ? "The pseudonym key is loaded either way; attach it to a conversation from the popup."
           : "Nothing was named and nothing was sent.",
       ],
       true

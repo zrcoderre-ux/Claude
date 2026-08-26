@@ -11,11 +11,18 @@
  * What it decides, and why each decision is here rather than in the button:
  *
  *   WHERE THE BUTTON BELONGS. A new conversation is an address a send would
- *   CREATE — /new, the home composer, a project's own composer. A chat that
- *   already exists is somebody's work: attaching a matter's papers to it
- *   uninvited is not what was asked for. And /cowork is not Chat — nothing
- *   built for Chat is assumed to work there (CLAUDE.md), so this button does
- *   not offer itself on it.
+ *   CREATE — /new, the home composer, a project's own composer, and the same
+ *   again on Cowork. A conversation that already exists is somebody's work:
+ *   attaching a matter's papers to it uninvited is not what was asked for.
+ *
+ *   WHICH SURFACE THE PICK IS ON, which decides everything done afterwards.
+ *   Cowork is not Chat with a different address (CLAUDE.md): its uploads run
+ *   in a worker no page hook sees, so they are confirmed by what the composer
+ *   visibly carries rather than by upload responses, and its sessions are
+ *   renamed by driving the header's own control rather than through the API a
+ *   chat is renamed with. So a pick reads the surface first — and where the
+ *   page will not say which it is, the answer is COWORK, whose evidence
+ *   ladder starts with Chat's own upload confirmations and keeps going.
  *
  *   WHAT GOES UP. The run combines a chat's text documents into ONE labelled
  *   file (W.bundleText) because twelve attachments are twelve things claude.ai
@@ -81,32 +88,60 @@
    * Is this address a conversation that does not exist yet — one the next send
    * would create?
    *
-   * Yes: the home composer ("/"), "/new", and a PROJECT's own page, whose
-   * composer starts a new chat inside that project. No: a conversation that
-   * already exists (/chat/…), a Cowork session or project (Cowork is not Chat,
-   * and this button has never been seen working there), a Claude Code session,
-   * and every page that is a list rather than a composer.
+   * Yes: the home composer ("/"), "/new" (which is where a Cowork session is
+   * composed too — toggling the surface leaves the address alone), a PROJECT's
+   * own page, and Cowork's own two, /cowork and /cowork/project/<uuid>.
+   *
+   * No: a conversation that already exists, chat or session; a Claude Code
+   * session, which this has no path for at all; and every page that is a list
+   * rather than a composer.
    */
   function isNewChatPath(href) {
     const path = pathOf(href);
-    if (/^\/cowork(\/|$)/.test(path)) return false; // not Chat, and not claimed to be
     if (/^\/code(\/|$)/.test(path)) return false;
     if (/^\/chat\//.test(path)) return false;
+    if (/^\/cowork\/cse_/.test(path)) return false; // a session, not a composer
     if (path === "/" || /^\/new(\/|$)/.test(path)) return true;
-    // A project's own page — /project/<uuid> — but not the projects LIST, and
-    // not a conversation living inside a project.
-    return /^\/project\/[0-9a-f-]{36}$/i.test(path);
+    if (path === "/cowork") return true;
+    // A project's own page — /project/<uuid>, or Cowork's — but never the
+    // projects LIST, and never a conversation living inside one.
+    return /^(\/cowork)?\/project\/[0-9a-f-]{36}$/i.test(path);
   }
 
   /**
-   * The uuid of the conversation this address IS, once one exists — and only
-   * for an ordinary chat. A Cowork session's id (cse_…) is deliberately not
-   * answered: it is renamed by driving a menu rather than by the API this
-   * feature uses, which is a different path that has not been built here.
+   * Which surface a pick made on this page goes out on: "chat" or "cowork".
+   *
+   * `toggle` is what the page's own Chat/Cowork control says (C.currentSurface,
+   * which is confirmed working on both) — "" where the page has no control to
+   * read, which is what a project page looks like.
+   *
+   * A Cowork ADDRESS settles it whatever the toggle says. Where nothing says,
+   * the answer is Cowork rather than Chat: guessing that way costs a couple of
+   * seconds of slower confirmation, and guessing the other way reports a
+   * perfectly good upload as having failed.
+   */
+  function pickSurface(href, toggle) {
+    if (/^\/cowork(\/|$)/.test(pathOf(href))) return "cowork";
+    return norm(toggle).toLowerCase() === "chat" ? "chat" : "cowork";
+  }
+
+  /**
+   * The conversation this address IS, once one exists: { id, surface }, or
+   * { id: "", surface: "" } for an address that is not one yet.
+   *
+   * The surface travels with the id because everything done to a conversation
+   * afterwards differs by it — a chat is renamed through the API, a Cowork
+   * session by driving the control its header carries. A session's id is not a
+   * uuid (cse_011f5HCzaWWJ2hm19v6NuQmN), which is why it needs its own arm
+   * rather than a wider pattern that would also swallow a project's.
    */
   function startedConversation(href) {
-    const m = pathOf(href).match(/^\/chat\/([0-9a-f-]{36})/i);
-    return m ? m[1] : "";
+    const path = pathOf(href);
+    const chat = path.match(/^\/chat\/([0-9a-f-]{36})/i);
+    if (chat) return { id: chat[1], surface: "chat" };
+    const cowork = path.match(/^\/cowork\/(cse_[A-Za-z0-9_-]+)/);
+    if (cowork) return { id: cowork[1], surface: "cowork" };
+    return { id: "", surface: "" };
   }
 
   // ---- what goes up ---------------------------------------------------------
@@ -228,40 +263,85 @@
    * Is this conversation the one the send just created — or one you clicked in
    * the sidebar?
    *
-   * From the address bar the two are identical: both are /chat/<uuid> arrived
-   * at from the composer. The difference matters more than anything else this
-   * button does, because the wrong answer renames somebody's open work and
-   * hangs a matter's key on it. So the conversation itself is asked, and only
-   * a conversation that is both SHORT and NEW counts: the first send and its
-   * reply are two messages, and a chat this button started cannot be older
-   * than the minutes since the folder was picked.
+   * From the address bar the two are identical on both surfaces: /chat/<uuid>
+   * or /cowork/cse_<id>, arrived at from a composer either way. The difference
+   * matters more than anything else this button does, because the wrong answer
+   * renames somebody's open work and hangs a matter's key on it. So the
+   * evidence is taken in order of strength and the first kind that answers
+   * wins — the same ladder Cowork's own attach confirmation climbs:
    *
-   * Answers null for "can't tell" — no payload at all — which the caller must
-   * treat as a refusal rather than a yes. Nothing here is worth guessing at.
+   *   THE CONVERSATION ITSELF, where it can be read back. A chat answers with
+   *   its turns and its stamp, and both have to agree: the first send and its
+   *   reply are two messages, and a conversation this button started cannot be
+   *   older than the minutes since the folder was picked.
+   *
+   *   THE PAGE, where it cannot. A Cowork session's payload is not the shape a
+   *   chat's is and may carry neither — so what is left is that this tab was
+   *   sitting on the composer when the address became this conversation, that
+   *   the conversation holds one turn, and that the pick was recent. Three
+   *   weak signals that agree, said plainly as the weaker evidence it is.
+   *
+   * Answers { ok, why }: ok true, false, or null for "nothing could be read",
+   * which a caller must treat as a refusal rather than a yes — after it has
+   * given the page a moment to settle.
    */
   const FRESH_MS = 15 * 60 * 1000;
-  function isFreshConversation(conv, nowMs) {
-    if (!conv || typeof conv !== "object") return null;
-    const msgs = conv.chat_messages;
-    if (!Array.isArray(msgs)) return null;
-    if (msgs.length > 2) return false;
-    const now = typeof nowMs === "number" ? nowMs : Date.now();
+  function conversationFresh(ev) {
+    const e = ev || {};
+    const now = typeof e.now === "number" ? e.now : Date.now();
+    const conv = e.conv && typeof e.conv === "object" ? e.conv : null;
+    const msgs = conv && Array.isArray(conv.chat_messages) ? conv.chat_messages : null;
+    if (msgs && msgs.length > 2)
+      return { ok: false, why: "that conversation already holds " + msgs.length + " messages" };
     // The conversation's own stamp where it has one, and the newest TURN's
-    // where it doesn't — claude.ai's shapes are unversioned, and a message
-    // carries a time in every shape this has been seen in (src/stamp.js reads
-    // the same fields).
-    let at = Date.parse(str(conv.created_at));
-    if (!isFinite(at)) {
+    // where it doesn't — claude.ai's shapes are unversioned, a Cowork
+    // session's is not a chat's, and a message carries a time in every shape
+    // this has been seen in (src/stamp.js reads the same fields). The stamp is
+    // asked for on its own rather than only alongside the turns, because a
+    // session's payload may answer with one and not the other.
+    let at = conv ? Date.parse(str(conv.created_at)) : NaN;
+    if (!isFinite(at) && msgs) {
       for (const m of msgs) {
         const t = Date.parse(str(m && (m.created_at || m.createdAt || m.updated_at)));
         if (isFinite(t) && (!isFinite(at) || t > at)) at = t;
       }
     }
-    // No usable stamp anywhere: the message count is all there is. It is a
-    // weaker answer than the clock, and it is the one the caller gets rather
-    // than a refusal — a conversation of one turn is what a fresh send makes.
-    if (!isFinite(at)) return true;
-    return now - at <= FRESH_MS && at - now <= FRESH_MS;
+    if (isFinite(at)) {
+      if (now - at > FRESH_MS || at - now > FRESH_MS)
+        return { ok: false, why: "that conversation was started " + minutes(now - at) + " ago" };
+      return { ok: true, why: "it was started " + minutes(now - at) + " ago" };
+    }
+    if (msgs) return { ok: true, why: "it holds only the first turn (no time to read on it)" };
+    // Nothing readable came back. The page is what is left, and it is three
+    // signals that have to agree rather than one.
+    const turns = typeof e.turns === "number" ? e.turns : null;
+    if (turns !== null && turns > 1)
+      return { ok: false, why: "the page shows " + turns + " turns in it already" };
+    if (!e.watched)
+      return {
+        ok: null,
+        why:
+          "this tab did not watch the composer become this conversation, and the conversation " +
+          "could not be read back",
+      };
+    const since = typeof e.pickedAt === "number" ? now - e.pickedAt : 0;
+    if (since > FRESH_MS)
+      return { ok: false, why: "the folder was picked " + minutes(since) + " ago" };
+    // Zero turns counted is not "no turns" — a conversation that exists has at
+    // least one — it is a page whose turn markup this could not read, which is
+    // said rather than counted as agreement.
+    return {
+      ok: true,
+      why:
+        "this tab watched the composer become it, " +
+        (turns ? "and it holds one turn" : "and nothing on the page contradicted that") +
+        " — the page's word, not the conversation's",
+    };
+  }
+
+  function minutes(ms) {
+    const m = Math.max(0, Math.round(ms / 60000));
+    return m < 1 ? "under a minute" : m === 1 ? "a minute" : m + " minutes";
   }
 
   // ---- what the button says -------------------------------------------------
@@ -312,20 +392,20 @@
         (r.already
           ? "already in the extension from an earlier pick"
           : "loaded into the extension") +
-        " and attached to this chat, never uploaded."
+        " and attached to this conversation, never uploaded."
       );
     return (
       "No pseudonym key in " +
       root_ +
-      " — nothing will translate this chat, and its name cannot go over pseudonymized."
+      " — nothing will translate this conversation, and its name cannot go over pseudonymized."
     );
   }
 
   /** What the conversation will be called, or why it will not be named. */
   function describeTitle(decision) {
     const d = decision || {};
-    if (d.title) return 'This chat will be named "' + d.title + '" once you send.';
-    return "This chat will not be named: " + (d.why || "no name was worked out") + ".";
+    if (d.title) return 'This conversation will be named "' + d.title + '" once you send.';
+    return "This conversation will not be named: " + (d.why || "no name was worked out") + ".";
   }
 
   const api = {
@@ -334,10 +414,11 @@
     isSpreadsheet,
     isNewChatPath,
     startedConversation,
+    pickSurface,
     uploadPlan,
     keyForFolder,
     FRESH_MS,
-    isFreshConversation,
+    conversationFresh,
     chatTitleFor,
     describeUpload,
     describeKey,
