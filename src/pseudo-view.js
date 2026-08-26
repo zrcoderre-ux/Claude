@@ -28,6 +28,16 @@
  *      banner naming the fake to use instead. Warn, never rewrite — the
  *      composer belongs to the user.
  *
+ *      Anything else on the page you can TYPE INTO is the composer for this
+ *      purpose, and Claude's draft-email card is the case that raised it: it
+ *      renders inside the reply but is editable in place, so what it holds is
+ *      what would be sent. Translating it would put the real names into the
+ *      thing that leaves — back through Claude and out to a recipient — which
+ *      is precisely what the key exists to prevent. So it stays in the fakes,
+ *      and that is a deliberate limitation the repo owner has accepted rather
+ *      than a gap to close (skippable() below is what holds it). Do not make
+ *      an editable surface translate.
+ *
  *   3. The KEY-UPLOAD guard, active on every claude.ai page whether or not a
  *      key is attached anywhere. The key spreadsheet is the whole real↔fake
  *      map, so it must never ride an upload into a chat by accident: a file
