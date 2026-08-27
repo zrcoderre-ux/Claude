@@ -1017,5 +1017,12 @@
     selectProject: selectProject,
     attachFiles: attachFiles,
     humanTurns: humanTurns,
+    // Exported because Cowork's send control does NOT wear any of Chat's
+    // labels — it reads "Start Task" — so C.findSend answers nothing here.
+    // Anything that needs to find it (the Folder button anchors its placement
+    // to it) reuses this rather than learning that the hard way a second time.
+    findSend: function () {
+      return findSendControl(scopeOf());
+    },
   };
 })();

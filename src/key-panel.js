@@ -133,6 +133,7 @@
       'stroke-linecap="round" stroke-linejoin="round">' +
       '<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 21 2"/>' +
       '<path d="m17 6 3 3"/></svg></span>' +
+      '<span class="cum-key-txt">Key</span>' +
       '<span class="cum-key-count"></span>';
     btn.addEventListener("click", () => setOpen(!open));
     return btn;

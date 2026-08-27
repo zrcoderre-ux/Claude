@@ -1723,12 +1723,20 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 #cum-key-btn {
   display: inline-flex; align-items: center; gap: 5px; margin: 0;
   padding: 5px 9px; border: 1px solid rgba(0, 0, 0, 0.16); border-radius: 9px;
-  background: transparent; color: inherit; font: inherit; font-size: 12.5px;
-  font-weight: 600; line-height: 1.2; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.2;
+  cursor: pointer;
+  /* NO `background: transparent` here. The tray's buttons carry their own
+     ground (.cum-tray-slot > button) because they ride over claude.ai's page
+     rather than sitting in its header, and an id selector overriding that left
+     this one a bare 15px icon floating on whatever was behind it — which read
+     as no button at all beside its solid white neighbours. */
 }
-#cum-key-btn:hover { background: rgba(0, 0, 0, 0.06); }
+#cum-key-btn:hover { background: #f2f0ea; }
 .cum-key-ico { display: inline-flex; }
 .cum-key-ico svg { width: 15px; height: 15px; display: block; }
+/* And it says its own name, like every other button in that row. An unlabelled
+   icon among labelled buttons is the one that gets looked past. */
+.cum-key-txt { white-space: nowrap; }
 .cum-key-count { font-variant-numeric: tabular-nums; color: #6b6b6b; }
 .cum-key-count:empty { display: none; }
 

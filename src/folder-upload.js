@@ -875,76 +875,116 @@
   // are different things — a row that clips, or one with no room left, puts a
   // button in the page and nowhere on the screen.
 
+  /**
+   * claude.ai's own control to sit beside, in the composer row under the
+   * prompt box — and which side of it to sit on.
+   *
+   * Four ways of finding one, because the row is not the same row on the two
+   * surfaces and the FIRST version of this found only two of them. On a Cowork
+   * session that carried a "Skip all approvals" button the operator could see,
+   * every one of them missed and the button fell back to the tray in the top
+   * right corner, which is not a composer row at all.
+   *
+   *   1. The approval control by its own aria-label (C.findApprovalTrigger).
+   *   2. The approval control by its CAPTION — same three modes, read off the
+   *      aria-label or the visible text, over anything that behaves like a
+   *      button. claude.ai labels that control with the mode in force, and a
+   *      label it has not been seen wearing is not a reason to give up on a
+   *      control whose words are right there.
+   *   3. The Chat/Cowork toggle, which only ever sits on the composer home.
+   *   4. SEND, which every composer has. Found the way the COWORK driver finds
+   *      it (CW.findSend) before Chat's own way: Cowork's send control reads
+   *      "Start Task" and wears none of Chat's labels, so C.findSend answers
+   *      nothing on the surface this fallback most needed to work on.
+   *
+   * The button goes AFTER the first three — to the right of Skip, which is
+   * where it was asked for — and BEFORE Send, which is the last thing in that
+   * row and the one control there it must never crowd or be mistaken for.
+   */
+  function modeControl() {
+    const K = window.CUMCowork;
+    if (!K || !K.modeFromLabel) return null;
+    let list;
+    try {
+      list = document.querySelectorAll('button,[role="button"]');
+    } catch (e) {
+      return null;
+    }
+    for (const el of list) {
+      if (C.isOurs(el) || !C.isVisible(el)) continue;
+      const aria = (el.getAttribute && el.getAttribute("aria-label")) || "";
+      if (K.modeFromLabel(aria) || K.modeFromLabel(el.textContent)) return el;
+    }
+    return null;
+  }
+
+  function sendControl() {
+    const CW = window.CUMCoworkSend;
+    let el = null;
+    try {
+      el = (CW && CW.findSend && CW.findSend()) || (C.findSend && C.findSend());
+    } catch (e) {
+      return null;
+    }
+    return el;
+  }
+
   function rowAnchor() {
-    const finders = [
+    const after = [
       () => C.findApprovalTrigger && C.findApprovalTrigger(),
+      modeControl,
       () => C.findSurfaceGroup && C.findSurfaceGroup(),
     ];
-    for (const find of finders) {
+    for (const find of after) {
       let el = null;
       try {
         el = find();
       } catch (e) {
         el = null;
       }
-      if (el && el.parentElement && C.isVisible(el)) return el;
+      if (usable(el)) return { el: el, after: true };
     }
-    return null;
+    const send = sendControl();
+    return usable(send) ? { el: send, after: false } : null;
   }
 
   /**
-   * The composer row on a page carrying neither of those controls — which is
-   * an ordinary CHAT conversation: the approval control is Cowork's, and the
-   * Chat/Cowork toggle only ever sits on the composer home.
-   *
-   * The Send button is what is left, and it is the right thing to anchor to
-   * rather than a container found by shape: it is one of claude.ai's own
-   * controls, it is matched by its aria-label rather than its markup
-   * (C.findSend), and it is in the row under the prompt box by definition —
-   * every send in this extension goes through it.
-   *
-   * The button goes BEFORE it. Send is the last thing in that row and the one
-   * control there you must never crowd or be mistaken for.
+   * An anchor has to be claude.ai's own furniture, on screen, and somewhere a
+   * button can actually be put — never inside a rendered message, where a
+   * "send" is the one in a code block Claude wrote.
    */
-  function sendAnchor() {
-    let send = null;
+  function usable(el) {
+    if (!el || !el.parentElement) return false;
     try {
-      send = C.findSend && C.findSend();
+      if (el.closest('[data-testid="assistant-message"],[data-testid="user-message"]')) return false;
     } catch (e) {
-      return null;
+      /* a page whose closest() throws is not one to reason about */
     }
-    return send && send.parentElement && C.isVisible(send) ? send : null;
+    return C.isVisible(el);
   }
 
-  /** Put the button in that row, right after the control. Answers whether it took. */
   function dockInRow(b) {
-    // To the RIGHT of the approval control ("Skip all approvals") or the
-    // Chat/Cowork toggle; to the LEFT of Send where the page carries neither,
-    // which is an ordinary chat conversation. Both are checked before they are
-    // done, so a docked button is not re-inserted on every tick.
-    const anchor = rowAnchor();
-    if (anchor) {
-      if (b.parentElement !== anchor.parentElement || b.previousElementSibling !== anchor) {
-        try {
-          anchor.parentElement.insertBefore(b, anchor.nextSibling);
-        } catch (e) {
-          return false;
-        }
-      }
-    } else {
-      const send = sendAnchor();
-      if (!send) return false;
-      if (b.parentElement !== send.parentElement || b.nextElementSibling !== send) {
-        try {
-          send.parentElement.insertBefore(b, send);
-        } catch (e) {
-          return false;
-        }
+    const at = rowAnchor();
+    if (!at) return false;
+    // Checked before it is done, so a docked button is not torn out and put
+    // back on every tick — which would cost it its own hover and focus.
+    const placed = at.after
+      ? b.parentElement === at.el.parentElement && b.previousElementSibling === at.el
+      : b.parentElement === at.el.parentElement && b.nextElementSibling === at.el;
+    if (!placed) {
+      // The row is claude.ai's own furniture and the class decides how the
+      // button looks in it, so it goes on BEFORE the insert rather than after:
+      // measuring a button still wearing the tray's styling is measuring
+      // something that is not what will be on the screen.
+      b.classList.add("cum-folder-inrow");
+      b.classList.remove("cum-folder-loose");
+      try {
+        at.el.parentElement.insertBefore(b, at.after ? at.el.nextSibling : at.el);
+      } catch (e) {
+        return false;
       }
     }
     if (!C.isVisible(b)) return false; // in the page, nowhere on the screen
-    b.classList.add("cum-folder-inrow");
-    b.classList.remove("cum-folder-loose");
     return true;
   }
 
