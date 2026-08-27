@@ -2262,7 +2262,9 @@ swept on the next extension start.
    outlived the visit would be translation quietly off), and the button says
    plainly when it's paused. The composer warning, the
    typeahead and the upload guard stay on while paused — they're safety,
-   not display.
+   not display. The same switch is also a **one-click button in the composer
+   row**, with no panel to open — see [The fakes
+   toggle](#the-fakes-toggle-beside-upload-folder).
 
 **The key never rides an upload.** Independent of any attachment, on every
 claude.ai page: a file picked, dropped, or pasted into a chat is checked, and
@@ -2333,6 +2335,48 @@ The hold below exists because a hand-off can fall back to a rendered message,
 and no hand-off has ever read a title off the screen — so holding the titles
 bought nothing and cost you the one line naming the case, in the very minutes a
 run was working it.
+
+### The fakes toggle, beside Upload folder
+
+The peek is a switch used **mid-read** — *am I looking at the real names, or at
+what claude.ai actually holds?* — and reaching it in the panel is a click to
+open, a click to throw and a click to close. So it has a second home: a
+one-click button in claude.ai's own composer row, immediately **to the right of
+[Upload folder](#uploading-a-case-folder-into-a-chat)**, with no panel of its
+own.
+
+It is the *same switch*, not a second one — one `paused` flag — so pressing
+either moves both and the two can never disagree about which way the page is
+being read.
+
+It says which way that is, in a word, and keeps the key button's rules because
+they are claims about the same page:
+
+| The button | What is on screen |
+| --- | --- |
+| **Real names**, lit | The key's real values, in place of the fakes |
+| **Fakes**, italic | Exactly what claude.ai renders |
+| **Held**, italic, unpressable | The fakes, because [a run is working](#while-a-run-is-working-the-messages-show-the-fakes) — pause the run, not this |
+
+**Lit if and only if real names are on screen**, in the key button's own colour:
+a peek and a run's hold are monochrome, because in both of them the page *is*
+showing the fakes, and they are told apart by the word rather than by a second
+colour that would dilute the first.
+
+It appears only where there is a switch to throw — a key translating this page,
+or a peek to come back from — and it **follows the Folder button** rather than
+claude.ai's furniture, so "to the right of Folder" holds in all three of that
+button's homes and stays one edit in one file. Where the row has no room to
+show it, it stays out rather than sitting in the page and nowhere on the screen;
+the peek is still in the panel, where it has always been.
+
+And what it does **not** switch is in its tooltip, because a control that looks
+like it turns the feature off has to say so: the composer warning, the typeahead
+swap and the upload guard stay on either way. Faking is display.
+
+The decision — the word, the colour, whether it may be pressed — is
+`src/faking.js`, pure and tested; `src/fake-toggle.js` is the button and the
+docking.
 
 ### The master key: the last 20 cases
 
@@ -3182,6 +3226,8 @@ src/run-panel.js       The workflow's own contents — every step, every chat
 src/xlsxread.js        Minimal .xlsx reader — enough for the pseudonym key (pure)
 src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards, run hold, chat titles, case-number gate (pure)
 src/pseudo-view.js     Shows real names for the fakes — messages and chat titles — warns, guards the key file
+src/faking.js          The fakes toggle: its word, its colour, whether it may be pressed (pure)
+src/fake-toggle.js     That toggle in the composer row, to the right of Folder
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
 test/estimate.test.js  Unit tests for the tenths-place calibrator

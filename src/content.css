@@ -1831,6 +1831,104 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 }
 .cum-key-out { background: #232321; color: #d9e7d9; }
 
+/* ── The fakes toggle ─────────────────────────────────────────────────────
+   Immediately to the right of the Folder button, wherever that button ended
+   up, so it is styled to match it: same size, same weight, same quiet border,
+   and the same round/loose variants. A one-click peek — the panel's toggle
+   without the panel.
+
+   The rules are in cascade order and have to stay that way: base, then the
+   in-row variant, then hover, then the lit state and its own hover. Everything
+   here is one id plus one class, so ties are broken by which came last —
+   putting hover above the in-row rule silently costs the button its hover. */
+#cum-fakes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 0 6px;
+  padding: 5px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  /* The tray's ground, stated on the id rather than inherited. In the tray the
+     buttons carry their own (.cum-tray-slot > button) because they ride over
+     claude.ai's page — and an id selector beats that class every time, which is
+     what once left the key button a bare icon floating on whatever was behind
+     it. Declaring nothing would leave the same hole with the browser's default
+     button face in it. The row takes it back off below. */
+  background: #ffffff;
+  color: #1f1f1f;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+#cum-fakes:disabled { opacity: 0.6; cursor: default; }
+/* The eye: drawn, not an emoji — it sits among claude.ai's own line icons and
+   has to be one of them. currentColor, so light and dark need no second rule,
+   and sized in em so it tracks the label beside it. */
+.cum-fakes-ico {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.cum-fakes-ico svg {
+  width: 1.15em;
+  height: 1.15em;
+  display: block;
+}
+/* In claude.ai's own composer row: the page's own ground and the page's own
+   colour, rounder to match the controls either side of it, and self-centred in
+   case that row aligns its children some other way. */
+#cum-fakes.cum-fakes-inrow {
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  align-self: center;
+  box-shadow: none;
+}
+#cum-fakes:hover { background: rgba(0, 0, 0, 0.06); }
+/* LIT IF AND ONLY IF REAL NAMES ARE ON SCREEN — the key button's rule, in the
+   key button's colour, because it is the same claim about the same page. A
+   peek and a run's hold are monochrome like the off state (the page IS showing
+   the fakes in both) and are told apart by the word on the button. */
+#cum-fakes.cum-fakes-on {
+  color: #c96442;
+  border-color: rgba(201, 100, 66, 0.45);
+  background: rgba(201, 100, 66, 0.12);
+}
+#cum-fakes.cum-fakes-on:hover { background: rgba(201, 100, 66, 0.2); }
+#cum-fakes.cum-fakes-off { font-style: italic; }
+/* Following a Folder button that found neither the row nor the tray: it draws
+   its own corner, and this sits beside it — placed from that button's own
+   measured edge, since the width of both changes with the word on them. */
+#cum-fakes.cum-fakes-loose {
+  position: fixed;
+  left: 108px;
+  bottom: 100px;
+  z-index: 2147483643;
+  background: #ffffff;
+  color: #1f1f1f;
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  #cum-fakes {
+    background: #2a2a28;
+    color: #f0efea;
+    border-color: rgba(255, 255, 255, 0.22);
+  }
+  #cum-fakes.cum-fakes-inrow { background: transparent; color: inherit; }
+  #cum-fakes:hover { background: rgba(255, 255, 255, 0.08); }
+  #cum-fakes.cum-fakes-on { background: rgba(201, 100, 66, 0.16); }
+  #cum-fakes.cum-fakes-on:hover { background: rgba(201, 100, 66, 0.24); }
+  #cum-fakes.cum-fakes-loose { background: #2a2a28; color: #f0efea; }
+}
+
 /* ── Upload folder ────────────────────────────────────────────────────────
    The button sits in claude.ai's OWN composer row, beside the approval control
    ("Skip all approvals") or the Chat/Cowork toggle — so it is styled to sit

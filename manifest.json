@@ -71,6 +71,7 @@
         "src/pseudo.js",
         "src/masterkey.js",
         "src/folderup.js",
+        "src/faking.js",
         "src/cowork.js",
         "src/panelbar.js",
         "src/nag.js",
@@ -97,6 +98,7 @@
         "src/save-chat.js",
         "src/pseudo-view.js",
         "src/key-panel.js",
+        "src/fake-toggle.js",
         "src/copy-ruling.js",
         "src/stamps.js",
         "src/incognito-watch.js"

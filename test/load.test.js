@@ -78,6 +78,7 @@ test("each module publishes the global the next one reads", () => {
     "CUMPanelBar",
     "CUMTray",
     "CUMPseudoView",
+    "CUMFaking",
   ];
   const missing = wanted.filter((g) => !loaded.win[g]);
   assert.deepEqual(missing, [], "never published: " + missing.join(", "));
@@ -95,6 +96,20 @@ test("the pseudonym view publishes what the key button reads from it", () => {
   const st = V.state();
   assert.equal(typeof st, "object");
   assert.equal(st.on, false);
+});
+
+test("the fakes toggle is loaded after everything it reads", () => {
+  // It reads CUMComposer, CUMPseudoView and CUMFaking on its first lines and
+  // returns quietly if any is missing — which is a button that is silently not
+  // there, the exact failure this file exists for. Manifest order is what
+  // makes those three present, so it is asserted rather than assumed.
+  const order = contentScripts();
+  const at = (f) => order.indexOf(f);
+  assert.ok(at("src/fake-toggle.js") !== -1, "the fakes toggle is not in the manifest");
+  for (const dep of ["src/composer.js", "src/pseudo-view.js", "src/faking.js"])
+    assert.ok(at(dep) !== -1 && at(dep) < at("src/fake-toggle.js"), dep + " loads too late for it");
+  // And after the Folder button, which is the thing it docks itself beside.
+  assert.ok(at("src/folder-upload.js") < at("src/fake-toggle.js"));
 });
 
 test("the tray holds a slot for every button that asks for one", () => {
