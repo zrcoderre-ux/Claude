@@ -1067,3 +1067,41 @@ test("with nothing attached, the library's one claimant answers", () => {
   assert.equal(P.titleKeyFor({ entries: TITLE_ENTRIES, text: "Weekly calendar" }), null);
   assert.equal(P.titleKeyFor(), null);
 });
+
+// ---- a copy that carries the real names ------------------------------------
+
+test("a copy carrying real values says which, and says not to paste it back", () => {
+  const got = P.copyWarning(
+    [
+      { real: "Zachary Coderre", fake: "John Doe" },
+      { real: "Helen Rasho", fake: "Ingrid Strangeways" },
+    ],
+    { caseName: "23STCV12345 Coderre v. Rasho" }
+  );
+  assert.match(got.head, /REAL names/);
+  assert.deepEqual(got.names.map((n) => n.real), ["Zachary Coderre", "Helen Rasho"]);
+  assert.equal(got.more, 0);
+  // The case, so two tabs on two matters are not one warning.
+  assert.match(got.body, /23STCV12345 Coderre v\. Rasho/);
+  // The whole point: which direction this is safe in.
+  assert.match(got.body, /minute order/);
+  assert.match(got.body, /do not\s+paste this back into Claude/i);
+});
+
+test("a copy carrying nothing of the key's says nothing at all", () => {
+  assert.equal(P.copyWarning([], {}), null);
+  assert.equal(P.copyWarning(null, {}), null);
+  // A row with no real value is not a real value.
+  assert.equal(P.copyWarning([{ real: "  ", fake: "Doe" }], {}), null);
+});
+
+test("the same name twice is one name, and the rest are counted", () => {
+  const many = [];
+  for (let i = 0; i < 9; i++) many.push({ real: "Real " + i, fake: "Fake " + i });
+  many.push({ real: "REAL 0", fake: "Fake 0" }); // the same party, shouted
+  const got = P.copyWarning(many, {});
+  assert.equal(got.names.length, P.COPY_WARN_MAX);
+  assert.equal(got.more, 9 - P.COPY_WARN_MAX);
+  // No case name known: the sentence still reads.
+  assert.match(got.body, /^The clipboard holds what this tab was showing you —/);
+});

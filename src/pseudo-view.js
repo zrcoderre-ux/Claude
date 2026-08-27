@@ -245,6 +245,7 @@
     swapped = new WeakMap();
     compiledLib = null;
     fwdById = new Map();
+    realsById = new Map();
     titleClaim = new WeakMap();
     keys = res[KEYS_KEY] || {};
     chatMap = res[CHATS_KEY] || {};
@@ -1311,6 +1312,131 @@
       more.textContent = "…and " + (hits.length - 4) + " more.";
       warnBox.appendChild(more);
     }
+  }
+
+  // ---- a copy that carries the real names ------------------------------------
+  //
+  // Every copy on the page, not just the extension's own button. The rule the
+  // README states — what LEAVES the page reads claude.ai's own state, which
+  // still holds the fakes — has one exception, and the exception has grown:
+  // Copy ruling copies the RENDERED message now, so it takes the real names;
+  // and ⌘C, right-click Copy and claude.ai's own selection copies always did.
+  // Usually that is exactly right, since a tentative ruling is pasted into a
+  // minute order and a minute order says the parties' real names. It is
+  // catastrophic in one direction only — back into a chat — and on the
+  // clipboard the two are indistinguishable. So the copy says what it carried.
+  //
+  // Read off the SELECTION rather than the clipboard: at capture time a copy
+  // event's clipboardData is empty (the browser fills it afterwards), and a
+  // handler that writes its own — src/copy-ruling.js does, off an off-screen
+  // holder holding the rendered blocks — has not run yet. The selection is
+  // what both of them are about to copy, so it is what both are judged on.
+  //
+  // Warn, never rewrite. The clipboard is the user's, exactly as the composer
+  // is: this names what went onto it and gets out of the way.
+
+  let copyBox = null;
+  let realsById = new Map(); // key id -> compiled reals, built on demand
+
+  const COPY_SCAN_MAX = 200000; // a whole conversation's worth, and no further
+
+  /**
+   * The keys whose REAL values could be on this page: the one translating the
+   * messages, and the one translating the titles. Not the whole library — a
+   * name belonging to a case this tab is not showing is not on the clipboard
+   * because of anything we did, and warning about it would be crying wolf
+   * about every chat that happens to mention a common surname.
+   */
+  function realMatchers() {
+    const out = [];
+    const add = (id, key) => {
+      if (!id || !key || out.some((e) => e.id === id)) return;
+      if (!realsById.has(id)) realsById.set(id, P.compileReals(key));
+      const compiled = realsById.get(id);
+      if (compiled && compiled.rx) out.push({ id: id, key: key, compiled: compiled });
+    };
+    if (active) add(active.id, active.key);
+    if (titleKeyId) add(titleKeyId, masterOr(titleKeyId));
+    return out;
+  }
+
+  function closeCopyBox() {
+    if (copyBox) copyBox.remove();
+    copyBox = null;
+  }
+
+  function onCopy() {
+    // A peek is the user asking to see exactly what claude.ai renders. Nothing
+    // is swapped, so nothing swapped can be on the clipboard.
+    if (paused) return closeCopyBox();
+    let text = "";
+    try {
+      text = String(window.getSelection() || "");
+    } catch (e) {
+      return;
+    }
+    if (!text) return closeCopyBox();
+    if (text.length > COPY_SCAN_MAX) text = text.slice(0, COPY_SCAN_MAX);
+    let hits = [];
+    let owner = null;
+    for (const m of realMatchers()) {
+      const found = P.findReals(m.compiled, text);
+      if (!found.length) continue;
+      owner = owner || m.key;
+      hits = hits.concat(found);
+    }
+    const warn = P.copyWarning(hits, {
+      // The master key is twenty cases at once, so it cannot name the one this
+      // value belongs to — and "for master key · 3 recent cases" would be a
+      // worse sentence than no name at all.
+      caseName: owner && !owner.master && P.keyTitle ? P.keyTitle(owner) : "",
+    });
+    if (!warn) return closeCopyBox();
+    showCopyWarning(warn);
+  }
+
+  function showCopyWarning(warn) {
+    closeCopyBox();
+    copyBox = document.createElement("div");
+    copyBox.className = "cum-pseudo-copy";
+    const x = document.createElement("button");
+    x.className = "cum-pseudo-copy-x";
+    x.type = "button";
+    x.textContent = "✕";
+    x.title = "Dismiss";
+    x.addEventListener("click", closeCopyBox);
+    copyBox.appendChild(x);
+    const head = document.createElement("div");
+    head.className = "cum-pseudo-warn-head";
+    head.textContent = warn.head;
+    copyBox.appendChild(head);
+    for (const n of warn.names) {
+      const line = document.createElement("div");
+      line.className = "cum-pseudo-warn-line";
+      const real = document.createElement("b");
+      real.textContent = "“" + n.real + "”";
+      line.append(real, n.fake ? " — the chat says “" + n.fake + "”." : ".");
+      copyBox.appendChild(line);
+    }
+    if (warn.more) {
+      const more = document.createElement("div");
+      more.className = "cum-pseudo-warn-line";
+      more.textContent = "…and " + warn.more + " more.";
+      copyBox.appendChild(more);
+    }
+    const body = document.createElement("div");
+    body.className = "cum-pseudo-copy-body";
+    body.textContent = warn.body;
+    copyBox.appendChild(body);
+    document.documentElement.appendChild(copyBox);
+  }
+
+  // Capture, so it is seen before a handler that calls preventDefault and
+  // writes its own clipboard data — which is what Copy ruling does.
+  try {
+    document.addEventListener("copy", onCopy, true);
+  } catch (e) {
+    /* the translation still works; only the warning is missing */
   }
 
   // ---- the as-you-type prompt: finish a real name, press → for the fake -----

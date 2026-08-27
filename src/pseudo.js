@@ -569,6 +569,55 @@
     return out;
   }
 
+  // ---- a copy that carries the real names ------------------------------------
+  //
+  // The display translation's boundary was always "what LEAVES the page reads
+  // claude.ai's own state, which still holds the fakes" — with one declared
+  // exception: text you select and copy by hand out of the translated view
+  // carries what you are looking at.
+  //
+  // That exception has quietly grown. Copy ruling copies the RENDERED message
+  // now (src/copy-ruling.js — the markdown route lost on three separate
+  // counts), so the extension's own button takes the real names too, and so
+  // does every ⌘C, every right-click Copy, every drag of a paragraph out of an
+  // answer. Which is usually exactly right: a tentative ruling is pasted into
+  // a minute order, and a minute order says the parties' real names.
+  //
+  // It is catastrophic in one direction only — back into a chat — and the
+  // difference between the two is invisible on the clipboard. So a copy that
+  // carries real values says so, once, naming them. Warn, never rewrite: the
+  // clipboard is the user's, exactly as the composer is.
+  const COPY_WARN_MAX = 4;
+
+  /**
+   * What to say about a copy that carried real values, or null where there is
+   * nothing to say. `hits` are findReals rows; `opts.caseName` is what the key
+   * is called, where the caller knows.
+   */
+  function copyWarning(hits, opts) {
+    const seen = new Set();
+    const list = [];
+    for (const h of hits || []) {
+      const real = trim(h && h.real);
+      if (!real || seen.has(fold(real))) continue;
+      seen.add(fold(real));
+      list.push({ real: real, fake: trim(h && h.fake) });
+    }
+    if (!list.length) return null;
+    const name = trim((opts || {}).caseName);
+    return {
+      head: "⚠ That copy carries the REAL names",
+      names: list.slice(0, COPY_WARN_MAX),
+      more: Math.max(0, list.length - COPY_WARN_MAX),
+      body:
+        "The clipboard holds what this tab was showing you" +
+        (name ? " for " + name : "") +
+        " — the real values, not the pseudonyms claude.ai holds. That is what a " +
+        "minute order wants. It is not what a chat can ever be given: do not " +
+        "paste this back into Claude.",
+    };
+  }
+
   /**
    * Typeahead entries for the as-you-type prompt: the warning's own rows
    * (common English out), longest real first so "Helen Rasho" is offered
@@ -1024,6 +1073,8 @@
     compileForward,
     isCommonReal,
     findReals,
+    copyWarning,
+    COPY_WARN_MAX,
     compileTypeahead,
     endingReal,
     mirrorCase,

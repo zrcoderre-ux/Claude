@@ -1673,6 +1673,25 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 .cum-pseudo-warn-head { font-weight: 700; margin-bottom: 3px; }
 .cum-pseudo-warn-line b { font-weight: 700; }
 
+/* A copy that carried the real names off the page. Top rather than bottom:
+   the draft warning owns the space above the composer, and these two must
+   never be mistaken for one another — one is about what you are typing, the
+   other about what is already on the clipboard. */
+.cum-pseudo-copy {
+  position: fixed; left: 50%; transform: translateX(-50%); top: 18px;
+  z-index: 2147483002; background: #7a1f1f; color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 12px;
+  padding: 10px 34px 11px 14px; font: 13px/1.45 system-ui, sans-serif;
+  max-width: 560px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+.cum-pseudo-copy-body { margin-top: 6px; opacity: 0.92; }
+.cum-pseudo-copy-x {
+  position: absolute; top: 4px; right: 6px; background: none; border: 0;
+  color: inherit; font: 13px/1 system-ui, sans-serif; cursor: pointer;
+  opacity: 0.75; padding: 4px;
+}
+.cum-pseudo-copy-x:hover { opacity: 1; }
+
 /* The key-upload guard dialog. */
 .cum-pseudo-guard {
   position: fixed; inset: 0; z-index: 2147483002;

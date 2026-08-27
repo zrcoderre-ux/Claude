@@ -1954,6 +1954,13 @@ still being written. A second copy control under every answer in every chat
 would be clutter, and half a ruling pasted into a minute order is worse than
 none.
 
+Because it reads the page, it copies **what the page is showing** — so on a
+chat with a [pseudonym key](#pseudonym-translation) attached, the ruling
+reaches the clipboard in the **real names**, ready for a minute order. That is
+worth knowing before you paste it anywhere else, and the extension says so
+every time: [A copy that carries the real
+names](#a-copy-that-carries-the-real-names).
+
 **It reads the page, not the markdown.** On the page a horizontal rule is an
 `<hr>` — an element, which is why you can't select it. In text it's three
 characters that have to be told apart from a setext underline, a table border
@@ -2153,11 +2160,15 @@ none of these labels is ever sent.
    has been put.
    **Display-only, and the boundary is structural**: the swap edits what this
    tab *renders*; everything that leaves the page — sends, workflow hand-offs,
-   Save chat, Copy ruling — reads claude.ai's own state or API, which still
-   holds the fakes. The one exception is text you **select and copy by hand**
-   out of the translated view: that carries the real names, because it copies
-   what you're looking at. Don't paste it back into a chat — which the next
-   point is watching for anyway. The chat's **title** is translated the same
+   Save chat — reads claude.ai's own state or API, which still holds the fakes.
+   **The clipboard is the exception**, and it is a wider one than it used to
+   be: text you select and copy by hand carries what you are looking at, and so
+   does [Copy ruling](#copying-just-the-ruling), which copies the *rendered* message rather
+   than the markdown. That is usually exactly right — a tentative ruling is
+   pasted into a minute order, and a minute order says the parties' real names
+   — and it is catastrophic in one direction only, back into a chat. So a copy
+   that carried real values **says so**: see [A copy that carries the real
+   names](#a-copy-that-carries-the-real-names). The chat's **title** is translated the same
    way, in the header, the sidebar and the tab — see [The titles read back in
    the real name](#the-titles-read-back-in-the-real-name).
 2. **Catches a real name as you type it — press → to swap.** The moment the
@@ -2316,6 +2327,28 @@ emptying **sticks**: the library those cases came from is still sitting there,
 and a store that quietly refilled itself on the next restart would be a button
 that appeared to work. Loading a case's key again after emptying is you asking
 for that case back, and brings it back.
+
+### A copy that carries the real names
+
+On the clipboard, the real names and the fakes are indistinguishable — and
+every copy off a translated page takes the real ones: ⌘C, right-click Copy,
+and [Copy ruling](#copying-just-the-ruling), which copies the rendered message rather than
+the markdown. Pasted into a minute order that is what you want. Pasted back
+into a chat it is the one thing the pseudonymization exists to prevent.
+
+So a copy that carried real values raises a banner naming them, the case they
+belong to, and which direction the copy is safe in. It is read off the
+**selection** rather than the clipboard — at that moment a copy event's
+clipboard data is still empty, and a handler about to write its own hasn't run
+— so the extension's own button and a plain ⌘C are judged on exactly the same
+thing.
+
+**Warn, never rewrite.** The clipboard is yours, the same way the composer is:
+the banner says what went onto it and gets out of the way. It replaces itself
+on the next copy, clears when you copy something with no real names in it, and
+has a ✕. A [peek](#pseudonym-translation) stands it down — nothing is swapped,
+so nothing swapped can be on the clipboard — and so does a run's hold, for the
+messages it covers.
 
 ### Lists reached the other way
 
