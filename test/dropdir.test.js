@@ -396,3 +396,52 @@ test("no predicate means no case folder — the rule is opt-in by name", () => {
 test("the scan cap is far above the upload cap, because it has to reach the folder", () => {
   assert.ok(D.MAX_SCAN > D.MAX_FILES * 5, D.MAX_SCAN + " vs " + D.MAX_FILES);
 });
+
+// ---- a folder picked to load a KEY out of ----------------------------------
+
+test("a picked folder yields its own name and the spreadsheets in it", () => {
+  const f = (path) => ({ path: path, file: { name: path.split("/").pop() } });
+  const got = D.keyFolder([
+    f("23STCV12345 Cabot v. Reyes/Text Files/brief.txt"),
+    f("23STCV12345 Cabot v. Reyes/pseudonym_key.xlsx"),
+    f("23STCV12345 Cabot v. Reyes/Originals/served.pdf"),
+  ]);
+  // The folder is what NAMES the key: every case's key file is called
+  // pseudonym_key.xlsx, so the file cannot say which matter it is.
+  assert.equal(got.root, "23STCV12345 Cabot v. Reyes");
+  assert.deepEqual(got.keys.map((k) => k.path), ["23STCV12345 Cabot v. Reyes/pseudonym_key.xlsx"]);
+  assert.equal(got.seen, 3);
+});
+
+test("it does NOT ask whether the folder is a case folder", () => {
+  // splitCaseFolder's case-number gate belongs on a folder whose papers are
+  // about to go UP. Nothing goes up here — the one file this leads to is the
+  // key — and a matter filed under a name with no number in it still has one.
+  const f = (path) => ({ path: path, file: { name: path.split("/").pop() } });
+  const got = D.keyFolder([f("Cabot matter/pseudonym_key.xlsx")]);
+  assert.equal(got.root, "Cabot matter");
+  assert.equal(got.keys.length, 1);
+  // Where splitCaseFolder refuses it outright.
+  assert.equal(D.splitCaseFolder([f("Cabot matter/pseudonym_key.xlsx")], { isCaseName: () => false }).ok, false);
+});
+
+test("every spreadsheet is a candidate, in path order, and junk is not", () => {
+  const f = (path) => ({ path: path, file: { name: path.split("/").pop() } });
+  const got = D.keyFolder([
+    f("Matter/z-later.xlsx"),
+    f("Matter/Subfolder/pseudonym_key.xlsx"),
+    f("Matter/.DS_Store"),
+    f("Matter/notes.txt"),
+  ]);
+  assert.deepEqual(got.keys.map((k) => k.path), [
+    "Matter/Subfolder/pseudonym_key.xlsx",
+    "Matter/z-later.xlsx",
+  ]);
+});
+
+test("a folder with no spreadsheet in it yields none", () => {
+  const f = (path) => ({ path: path, file: { name: path.split("/").pop() } });
+  assert.deepEqual(D.keyFolder([f("Matter/brief.txt")]).keys, []);
+  assert.deepEqual(D.keyFolder([]).keys, []);
+  assert.equal(D.keyFolder([]).root, "");
+});

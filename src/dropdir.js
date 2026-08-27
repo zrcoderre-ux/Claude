@@ -269,6 +269,40 @@
    *                                 Text Files in it — a thing to SAY, never a
    *                                 reason to fall back to uploading the rest.
    */
+  /**
+   * A folder picked to LOAD A KEY out of, and nothing else.
+   *
+   * It differs from splitCaseFolder in the one way that matters: it does not
+   * ask whether this is a CASE folder. That gate belongs on a folder whose
+   * papers are about to go UP, where a folder with no case number in its name
+   * is not a matter and must not be taken apart. Nothing goes up here. The one
+   * file this leads to is the key, and the whole reason to pick the FOLDER
+   * rather than the file is that the folder is what NAMES the key — every
+   * case's key file is called pseudonym_key.xlsx, so the file cannot say which
+   * matter it is and the folder around it can.
+   *
+   * Answers { root, keys, seen }: the top-level folder's own name, every
+   * spreadsheet under it in path order (candidates — content decides which is
+   * a key), and how many files were looked at.
+   */
+  function keyFolder(files) {
+    const list = files || [];
+    const out = { root: "", keys: [], seen: list.length };
+    for (const f of list) {
+      const segs = String((f && f.path) || "").split("/");
+      if (segs.length > 1 && segs[0]) {
+        out.root = segs[0];
+        break;
+      }
+    }
+    for (const f of sortByPath(list.slice())) {
+      const segs = String((f && f.path) || "").split("/");
+      const name = segs[segs.length - 1];
+      if (isSpreadsheetName(name) && !isJunkName(name)) out.keys.push(f);
+    }
+    return out;
+  }
+
   function splitCaseFolder(files, opts) {
     const o = opts || {};
     const isCaseName = typeof o.isCaseName === "function" ? o.isCaseName : () => false;
@@ -359,6 +393,7 @@
     normSeg,
     isTextFilesDir,
     isSpreadsheetName,
+    keyFolder,
     splitCaseFolder,
     summarizeCase,
   };

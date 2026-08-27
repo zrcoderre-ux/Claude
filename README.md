@@ -2096,10 +2096,19 @@ real↔fake map; the exports that reach Claude carry only the fakes. This
 feature closes the reading gap: the person who knows the case by its real
 names shouldn't have to keep the key open in Excel to follow a draft.
 
-**Loading a key.** In the popup, **Load pseudonym_key.xlsx…** parses the key
-in the extension (`src/xlsxread.js` reads the workbook, `src/pseudo.js` reads
-the map) and stores only the parsed rows in `chrome.storage.local`. Loading is
-not uploading — the file goes nowhere. The key is read the way
+**Loading a key.** From the [key button](#the-key-button), **Load key from case
+folder…** picks the *matter's folder* and takes only the `pseudonym_key.xlsx`
+out of it. Nothing else in that folder is opened, uploaded or looked at — the
+papers are the [Folder button](#uploading-a-case-folder-into-a-chat)'s business
+— and picking the folder rather than the file is the whole point: every case's
+key is named `pseudonym_key.xlsx`, so the *file* can't say which matter it is
+and the *folder around it* can. The key is called by that folder's name from
+then on, everywhere a key is named. The popup's **Load pseudonym_key.xlsx…**
+still takes a loose file, for a key that has no folder.
+
+Either way it is parsed in the extension (`src/xlsxread.js` reads the workbook,
+`src/pseudo.js` reads the map) and only the parsed rows are stored in
+`chrome.storage.local`. Loading is not uploading — the file goes nowhere. The key is read the way
 `DeAnonymize.bas` reads it: columns found by **header name**, never position;
 an operator keep (`no`, `never`, `[bracketed]`, `{braced}`) in the Replacement
 cell is an instruction, not a pseudonym, and is skipped; an **alt spelling**
@@ -2115,6 +2124,15 @@ derives its bare form, so `Zachary's → John's` also maps `Zachary` to
 `John`. This holds in every direction: display, the composer warning, the
 typeahead swap (which offers `John's` when you typed `Zachary's`), and the
 cleaner.
+
+**A picker offers the three most recent**, newest first — plus whatever is
+already attached to this chat (or carried by this run), however old, since a
+select that can't represent its own current value silently reports a different
+one the moment anything reads it back. The rest aren't gone: the library never
+evicts, the count is said out loud (`… 9 older keys not shown`), and any of them
+is one folder-pick away from being recent again. Reading an old case back needs
+none of this — that's what the [master key](#the-master-key-the-last-20-cases)
+is for.
 
 **Keys are case-specific, and several live side by side.** Every attachment
 is per-conversation, and every tab resolves its own chat's key — so two chats
@@ -2386,10 +2404,12 @@ The panel under it holds, in order:
 - **This conversation** — attach a key to it, or detach. Attaching in a chat
   that belongs to a **run** re-keys the whole case, exactly as the popup does:
   the run, its group, and their chats all follow.
-- **The key library** — load a `pseudonym_key.xlsx` (parsed here, never
-  uploaded — and the [upload guard](#pseudonym-translation) leaves this one
-  picker alone, since it is the door keys come in by), or forget one, which
-  detaches it everywhere it was attached.
+- **The key library** — load a key by picking the **case folder** it lives in
+  (only the `pseudonym_key.xlsx` is read; parsed here, never uploaded — and the
+  [upload guard](#pseudonym-translation) leaves this one picker alone, since it
+  is the door keys come in by), or forget one, which detaches it everywhere it
+  was attached. The picker offers the **three most recent** keys and says how
+  many older ones it isn't showing.
 - **The master key** — what its [20 cases](#the-master-key-the-last-20-cases)
   are, and the one control that empties it.
 - **The cleaner** — type real names, read out the fakes, **Copy cleaned**. It
