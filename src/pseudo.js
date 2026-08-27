@@ -257,6 +257,65 @@
     return Object.assign({}, next, { folder: folder });
   }
 
+  // ---- which keys a picker offers ------------------------------------------
+  //
+  // The library never evicts: every case's key you have ever loaded is still in
+  // it, and after a year of matters a dropdown of them is a list you scroll
+  // rather than a list you choose from. A picker offers the last few, and the
+  // rest are one file-pick away from being the last few again.
+  //
+  // Reading an old case back does not need this at all — that is what the
+  // master key is for (src/masterkey.js keeps the last twenty cases in title
+  // form). This is only about ATTACHING, which is a thing you do to the matter
+  // in front of you.
+  const RECENT_KEYS = 3;
+
+  function savedAtOf(key) {
+    const t = key && key.savedAt;
+    return typeof t === "number" && isFinite(t) ? t : 0;
+  }
+
+  /**
+   * The ids a picker should offer, newest first.
+   *
+   * `opts.keep` is the id already chosen — the key attached to this chat, or
+   * the one on this run. It is ALWAYS offered, whatever its age: a select that
+   * cannot represent its own current value does not merely look wrong, it
+   * silently resets to something else the moment anything reads it back (the
+   * run editor already had to guard against exactly that: "the stored key is
+   * gone; don't pretend"). Where it is not among the recent ones it takes the
+   * place of the oldest that is, so the list stays the length it promises.
+   *
+   * `opts.max` overrides RECENT_KEYS. Keys with no savedAt — stored before the
+   * loaders wrote one — sort last, and are ordered by name among themselves so
+   * the list does not shuffle between renders.
+   */
+  function recentKeys(keys, opts) {
+    const lib = keys || {};
+    const o = opts || {};
+    const max = typeof o.max === "number" && o.max > 0 ? Math.floor(o.max) : RECENT_KEYS;
+    const ids = Object.keys(lib).filter((id) => lib[id]);
+    ids.sort(
+      (a, b) =>
+        savedAtOf(lib[b]) - savedAtOf(lib[a]) ||
+        fold(keyTitle(lib[a])).localeCompare(fold(keyTitle(lib[b])))
+    );
+    const out = ids.slice(0, max);
+    const keep = trim(o.keep);
+    if (keep && lib[keep] && out.indexOf(keep) === -1) {
+      if (out.length >= max) out[out.length - 1] = keep;
+      else out.push(keep);
+    }
+    return out;
+  }
+
+  /** How many the picker is not showing — said out loud, never just dropped. */
+  function hiddenKeyCount(keys, shown) {
+    const all = Object.keys(keys || {}).length;
+    const n = (shown || []).length;
+    return Math.max(0, all - n);
+  }
+
   // ---- the key library's identity ------------------------------------------
   //
   // Keys are CASE-specific, and every case's key file is named
@@ -1067,6 +1126,9 @@
     keyTitle,
     keyLabel,
     keepKeyFacts,
+    RECENT_KEYS,
+    recentKeys,
+    hiddenKeyCount,
     compile,
     translate,
     compileReals,

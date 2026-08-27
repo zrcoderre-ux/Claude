@@ -1105,3 +1105,66 @@ test("the same name twice is one name, and the rest are counted", () => {
   // No case name known: the sentence still reads.
   assert.match(got.body, /^The clipboard holds what this tab was showing you —/);
 });
+
+// ---- which keys a picker offers --------------------------------------------
+
+const libOf = (...rows) => {
+  const out = {};
+  for (const [id, folder, savedAt] of rows)
+    out[id] = { name: "pseudonym_key.xlsx", folder: folder, rows: 1, pairs: [], warn: [], savedAt: savedAt };
+  return out;
+};
+
+test("a picker offers the three most recent keys, newest first", () => {
+  const lib = libOf(
+    ["a", "20STCV00001 A v. Z", 1],
+    ["b", "21STCV00002 B v. Z", 2],
+    ["c", "22STCV00003 C v. Z", 3],
+    ["d", "23STCV00004 D v. Z", 4],
+    ["e", "24STCV00005 E v. Z", 5]
+  );
+  assert.equal(P.RECENT_KEYS, 3);
+  assert.deepEqual(P.recentKeys(lib), ["e", "d", "c"]);
+  assert.equal(P.hiddenKeyCount(lib, P.recentKeys(lib)), 2);
+  // A library smaller than the cap is offered whole, and nothing is hidden.
+  const small = libOf(["a", "A", 1], ["b", "B", 2]);
+  assert.deepEqual(P.recentKeys(small), ["b", "a"]);
+  assert.equal(P.hiddenKeyCount(small, P.recentKeys(small)), 0);
+});
+
+test("the key already chosen is always offered, however old", () => {
+  const lib = libOf(
+    ["a", "A", 1],
+    ["b", "B", 2],
+    ["c", "C", 3],
+    ["d", "D", 4],
+    ["e", "E", 5]
+  );
+  // A select that cannot represent its own current value does not look wrong,
+  // it silently reports a different one the moment anything reads it back.
+  const got = P.recentKeys(lib, { keep: "a" });
+  assert.ok(got.includes("a"));
+  assert.equal(got.length, P.RECENT_KEYS, "and the list stays the length it promises");
+  assert.deepEqual(got, ["e", "d", "a"]);
+  // One that is already recent is not added twice.
+  assert.deepEqual(P.recentKeys(lib, { keep: "e" }), ["e", "d", "c"]);
+  // One that is not in the library at all claims nothing.
+  assert.deepEqual(P.recentKeys(lib, { keep: "gone" }), ["e", "d", "c"]);
+});
+
+test("keys stored before savedAt existed sort last, in a stable order", () => {
+  const lib = libOf(["z", "Zeta", 0], ["m", "Mu", 0], ["new", "Nu", 99]);
+  const got = P.recentKeys(lib);
+  assert.equal(got[0], "new");
+  // Alphabetical among themselves, so the list does not shuffle between
+  // renders — a picker whose order moves under the cursor is its own bug.
+  assert.deepEqual(got.slice(1), ["m", "z"]);
+  assert.deepEqual(P.recentKeys(lib), got);
+});
+
+test("an empty library offers nothing and hides nothing", () => {
+  assert.deepEqual(P.recentKeys({}), []);
+  assert.deepEqual(P.recentKeys(null), []);
+  assert.equal(P.hiddenKeyCount({}, []), 0);
+  assert.equal(P.hiddenKeyCount(null, null), 0);
+});

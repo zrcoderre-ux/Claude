@@ -529,13 +529,27 @@
 
     function renderPseudo() {
       const ids = Object.keys(keys);
-      ui.select.hidden = ids.length < 2;
+      const attachedNow = tabConv ? chats[tabConv] : null;
+      // The last few, newest first — plus whatever is attached to this chat,
+      // whatever its age, since a select that cannot show its own current
+      // value silently reports a different one the moment anything reads it.
+      const offered = P.recentKeys ? P.recentKeys(keys, { keep: attachedNow }) : ids;
+      ui.select.hidden = offered.length < 2;
       ui.select.innerHTML = "";
-      for (const id of ids) {
+      for (const id of offered) {
         const opt = document.createElement("option");
         opt.value = id;
         opt.textContent = keyLabel(keys[id]);
         ui.select.appendChild(opt);
+      }
+      const hidden = P.hiddenKeyCount ? P.hiddenKeyCount(keys, offered) : 0;
+      if (hidden) {
+        // Said rather than dropped: a list quietly missing most of the library
+        // is a list that has lied about what the library holds.
+        const more = document.createElement("option");
+        more.disabled = true;
+        more.textContent = "… " + hidden + " older " + (hidden === 1 ? "key" : "keys") + " not shown";
+        ui.select.appendChild(more);
       }
       ui.forget.hidden = !ids.length;
       const attachedId = tabConv ? chats[tabConv] : null;
@@ -669,7 +683,8 @@
     ui.attach.addEventListener("click", () => {
       const ids = Object.keys(keys);
       if (!tabConv || !ids.length) return;
-      const id = ui.select.hidden ? ids[0] : ui.select.value || ids[0];
+      const first = (P.recentKeys ? P.recentKeys(keys, { keep: chats[tabConv] }) : ids)[0];
+      const id = ui.select.hidden ? first : ui.select.value || first;
       rekeyOrChat(
         id,
         "Attached to this case — %n run(s) and all their chats follow.",
@@ -702,7 +717,8 @@
     ui.forget.addEventListener("click", () => {
       const ids = Object.keys(keys);
       if (!ids.length) return;
-      const id = ui.select.hidden ? ids[0] : ui.select.value || ids[0];
+      const first = (P.recentKeys ? P.recentKeys(keys, { keep: tabConv ? chats[tabConv] : "" }) : ids)[0];
+      const id = ui.select.hidden ? first : ui.select.value || first;
       delete keys[id];
       for (const conv of Object.keys(chats)) if (chats[conv] === id) delete chats[conv];
       chrome.storage.local.set({ [KEYS_KEY]: keys, [CHATS_KEY]: chats }, () => {

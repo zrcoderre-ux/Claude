@@ -324,12 +324,23 @@
           : "No key loaded yet."
       )
     );
-    if (ids.length > 1) {
+    // The last few, newest first — and whatever is attached here, whatever its
+    // age, or the select could not show its own current value.
+    const offered = P.recentKeys ? P.recentKeys(keys, { keep: attached }) : ids;
+    if (offered.length > 1) {
       const sel = el("select", "cum-key-select");
-      for (const id of ids) {
+      for (const id of offered) {
         const opt = el("option", null, keyLabel(keys[id]));
         opt.value = id;
         sel.appendChild(opt);
+      }
+      const hidden = P.hiddenKeyCount ? P.hiddenKeyCount(keys, offered) : 0;
+      if (hidden) {
+        // Said, never just dropped. A list quietly missing nine of its twelve
+        // entries is a list that has lied about what the library holds.
+        const more = el("option", null, "… " + hidden + " older " + (hidden === 1 ? "key" : "keys") + " not shown");
+        more.disabled = true;
+        sel.appendChild(more);
       }
       if (attached && keys[attached]) sel.value = attached;
       sel.id = "cum-key-select";
@@ -338,7 +349,7 @@
     const row = el("div", "cum-key-row");
     const attach = button("Attach to this chat", "cum-key-primary", () => {
       const sel = panel && panel.querySelector("#cum-key-select");
-      const id = (sel && sel.value) || ids[0];
+      const id = (sel && sel.value) || offeredFirst();
       if (!id) return;
       rekey(id, (ok, runs) =>
         say(
@@ -372,57 +383,116 @@
 
   // ---- the library -----------------------------------------------------------
 
-  async function loadKeyFile(file) {
-    if (!file) return;
-    if (!X || !X.parseXlsx)
-      return say("The workbook reader isn't loaded on this page — load the key from the popup.");
-    say("Reading " + file.name + "…");
+  /**
+   * One spreadsheet, parsed and filed. `folder` is the case folder it was
+   * picked out of, where there was one — which is what the key ends up CALLED
+   * everywhere it appears.
+   */
+  async function loadKeyFile(file, folder) {
+    if (!file) return false;
+    if (!X || !X.parseXlsx) {
+      say("The workbook reader isn't loaded on this page — load the key from the popup.");
+      return false;
+    }
     let wb;
     try {
       wb = await X.parseXlsx(await file.arrayBuffer());
     } catch (e) {
-      return say("Couldn't read that file: " + String((e && e.message) || e));
+      return false; // unreadable is not a key; the caller says what it found
     }
-    if (!wb || !(P.isKeyFileName(file.name) || P.sheetsLookLikeKey(wb.sheets)))
-      return say("That workbook has no Real Value / Replacement sheet — not a pseudonym key.");
+    if (!wb || !(P.isKeyFileName(file.name) || P.sheetsLookLikeKey(wb.sheets))) return false;
     const key = P.parseKey(wb.sheets, file.name);
-    if (!key || !key.rows) return say("The key parsed but holds no usable rows.");
+    if (!key || !key.rows) return false;
     // Content decides identity, never the filename — every case's key is named
     // pseudonym_key.xlsx, and a filename as the library id would silently
     // replace the first case with the second.
     const where = P.libraryIdFor(keys, key);
     key.savedAt = Date.now();
-    // The file cannot know which case FOLDER named this key, so a refresh from
-    // here keeps what the entry already learned.
+    if (folder) key.folder = folder;
+    // A refresh keeps what the entry already learned, since a file re-picked
+    // from somewhere else cannot know the folder that first named it.
     keys[where.id] = P.keepKeyFacts ? P.keepKeyFacts(keys[where.id], key) : key;
     await set({ [KEYS_KEY]: keys });
     const d = key.dropped || {};
     say(
       (where.refreshed ? "Refreshed " : "Loaded ") +
-        keyLabel(key) +
+        keyLabel(keys[where.id]) +
         (d.keeps ? " · " + d.keeps + " keep rows skipped" : "") +
         (d.ambiguous ? " · " + d.ambiguous + " ambiguous fakes retired" : "")
     );
     load();
+    return true;
   }
 
-  function pickFile() {
+  /**
+   * A CASE FOLDER is picked and only its key is taken.
+   *
+   * Every case's key file is named pseudonym_key.xlsx, so the file itself
+   * cannot say which matter it is — which is why a key loaded loose has only
+   * its "case hint" to be called by, and why a picker full of them reads as a
+   * list of the same thing. The folder around it is the matter's own name, in
+   * the operator's own filing, and it is the same name the run editor's picker,
+   * the runs list, the tab group and this panel all use.
+   *
+   * Nothing else in that folder is opened, uploaded or looked at beyond the
+   * spreadsheets: the papers are the Folder button's business
+   * (src/folder-upload.js), and this is the key's.
+   */
+  async function loadFromFolder(list) {
+    const DD = window.CUMDropDir;
+    if (!DD || !DD.keyFolder) return say("The folder reader isn't loaded on this page.");
+    // Scanned without the ordinary cap: the key can sit anywhere under the
+    // matter, and 300 files into the originals is not far enough in.
+    const scan = DD.fromPicked(list, { maxFiles: DD.MAX_SCAN });
+    const found = DD.keyFolder(scan.files);
+    if (!found.keys.length)
+      return say(
+        "No spreadsheet in " + (found.root || "that folder") + " — a pseudonym key is an .xlsx."
+      );
+    say("Reading the key in " + (found.root || "that folder") + "…");
+    // In the order the folder holds them, stopping at the first REAL one: a
+    // spreadsheet that isn't a key is not an error here, it just isn't a key.
+    for (const k of found.keys) {
+      if (await loadKeyFile(k.file, found.root)) return;
+    }
+    say(
+      "Nothing in " +
+        (found.root || "that folder") +
+        " read as a pseudonym key — no Real Value / Replacement sheet in any of its " +
+        found.keys.length +
+        " spreadsheet" +
+        (found.keys.length === 1 ? "" : "s") +
+        "."
+    );
+  }
+
+  function pickFolder() {
     if (!fileInput || !fileInput.isConnected) {
       fileInput = el("input");
       // C.isOurs — the key-upload guard has to leave our own picker alone, or
       // the one door that exists for loading a key would refuse to load one.
       fileInput.id = "cum-key-file";
       fileInput.type = "file";
-      fileInput.accept = ".xlsx";
+      fileInput.multiple = true;
+      fileInput.setAttribute("webkitdirectory", "");
+      fileInput.setAttribute("directory", "");
       fileInput.style.display = "none";
       fileInput.addEventListener("change", () => {
-        const f = (fileInput.files || [])[0];
+        const list = Array.from(fileInput.files || []);
         fileInput.value = "";
-        if (f) loadKeyFile(f);
+        if (list.length) loadFromFolder(list);
       });
       (document.body || document.documentElement).appendChild(fileInput);
     }
     fileInput.click();
+  }
+
+  /** The first key any picker in this panel would be offering right now. */
+  function offeredFirst() {
+    const conv = convKey();
+    const attached = (conv && chats[conv]) || "";
+    const offered = P.recentKeys ? P.recentKeys(keys, { keep: attached }) : Object.keys(keys);
+    return offered[0] || "";
   }
 
   function drawLibrary() {
@@ -434,17 +504,36 @@
         "p",
         "cum-key-line",
         ids.length
-          ? ids.length + (ids.length === 1 ? " key loaded." : " keys loaded.")
+          ? ids.length +
+              (ids.length === 1 ? " key loaded." : " keys loaded.") +
+              (ids.length > (P.RECENT_KEYS || 3)
+                ? " The picker offers the " + (P.RECENT_KEYS || 3) + " most recent."
+                : "")
           : "Nothing loaded. A key is parsed here and never uploaded."
       )
     );
+    box.appendChild(
+      el(
+        "p",
+        "cum-key-line cum-key-dim",
+        "Pick the case FOLDER — only its pseudonym_key.xlsx is read, and the folder's " +
+          "name is what the key is called from then on. A loose key file loads from the " +
+          "extension popup."
+      )
+    );
     const row = el("div", "cum-key-row");
-    row.appendChild(button("Load pseudonym_key.xlsx…", "", pickFile));
+    // A FOLDER rather than the file. Every case's key is named
+    // pseudonym_key.xlsx, so the file cannot say which matter it is — the
+    // folder around it can, and a key that knows its case folder is a key the
+    // picker, the runs list and the tab group can all call by the matter's own
+    // name. Only the key is read: nothing in that folder is uploaded, opened
+    // or looked at beyond the one spreadsheet.
+    row.appendChild(button("Load key from case folder…", "", pickFolder));
     if (ids.length)
       row.appendChild(
         button("Forget key", "cum-key-warn", async () => {
           const sel = panel && panel.querySelector("#cum-key-select");
-          const id = (sel && sel.value) || ids[0];
+          const id = (sel && sel.value) || offeredFirst();
           if (!id) return;
           delete keys[id];
           for (const conv of Object.keys(chats)) if (chats[conv] === id) delete chats[conv];

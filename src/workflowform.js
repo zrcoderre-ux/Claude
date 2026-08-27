@@ -1504,7 +1504,15 @@
           none.value = "";
           none.textContent = "None";
           ui.pseudo.appendChild(none);
-          for (const id of Object.keys(keys)) {
+          // The last few, newest first — plus the key this run already carries,
+          // whatever its age. The library never evicts, and a run editor
+          // offering every case ever loaded is a list you scroll rather than
+          // one you choose from.
+          const P0 = window.CUMPseudo;
+          const offered = P0 && P0.recentKeys
+            ? P0.recentKeys(keys, { keep: (wf && wf.pseudoKeyId) || "" })
+            : Object.keys(keys);
+          for (const id of offered) {
             const opt = document.createElement("option");
             opt.value = id;
             // Called what the popup and the in-chat badge call it: the case
@@ -1517,6 +1525,14 @@
                 ? P.keyLabel(keys[id])
                 : (keys[id].name || id) + " · " + (keys[id].rows || 0) + " rows";
             ui.pseudo.appendChild(opt);
+          }
+          const hidden = P0 && P0.hiddenKeyCount ? P0.hiddenKeyCount(keys, offered) : 0;
+          if (hidden) {
+            const more = document.createElement("option");
+            more.disabled = true;
+            more.textContent =
+              "… " + hidden + " older " + (hidden === 1 ? "key" : "keys") + " not shown";
+            ui.pseudo.appendChild(more);
           }
           ui.pseudo.value = (wf && wf.pseudoKeyId) || "";
           if (ui.pseudo.value !== ((wf && wf.pseudoKeyId) || ""))
