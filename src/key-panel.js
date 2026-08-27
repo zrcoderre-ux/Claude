@@ -2,8 +2,18 @@
  * Claude Usage Meter — the key button, beside Save (ISOLATED world).
  *
  * Everything the pseudonym feature needs, on the page, in one control: a key
- * in the tray next to claude.ai's own sidebar toggle, first in the row, and a
- * panel under it holding both halves of what used to be two separate things.
+ * to the LEFT of Save — in the tray beside claude.ai's own sidebar toggle where
+ * that row exists, beside Save wherever else Save has ended up if it doesn't,
+ * and its own corner failing both — with a panel holding what used to be two
+ * separate things.
+ *
+ * Three homes because the first version had one and no way of telling whether
+ * it had worked: it handed the button to the tray and returned, and when the
+ * button did not appear there was no error, no fallback and nothing on screen.
+ * A control the operator has no other way to reach must not have a path where
+ * it quietly does not exist — so place() now CHECKS, and every module this
+ * file reads except the two it cannot draw without is optional, because a
+ * missing section is a sentence the panel can say and a missing button is not.
  *
  *   WHAT THE FLOATING BADGE SAID. Which case this tab is translating, how many
  *   names and titles are showing in the real values, whether a run is holding
@@ -46,7 +56,13 @@
   const X = window.CUMXlsx;
   const V = window.CUMPseudoView;
   const M = window.CUMMasterKey;
-  if (!C || !P || !X || !V) return;
+  // Only the two this file cannot draw a single thing without. X (the workbook
+  // reader), V (the live translation state) and M (the master key) are each
+  // one SECTION of the panel, and a missing section is a sentence the panel
+  // can say — where a missing BUTTON is nothing at all, on a page where the
+  // operator has no other way to reach the key from. Requiring all five was a
+  // fifth way for this control to not exist without explaining itself.
+  if (!C || !P) return;
 
   const BTN_ID = "cum-key-btn";
   const PANEL_ID = "cum-key";
@@ -239,7 +255,7 @@
         ? "Show the real names"
         : "Show the fakes",
       "cum-key-peek",
-      () => V.setPaused(!state.paused)
+      () => V && V.setPaused(!state.paused)
     );
     peek.disabled = !!st.hold || !st.on;
     peek.title = st.hold
@@ -358,6 +374,8 @@
 
   async function loadKeyFile(file) {
     if (!file) return;
+    if (!X || !X.parseXlsx)
+      return say("The workbook reader isn't loaded on this page — load the key from the popup.");
     say("Reading " + file.name + "…");
     let wb;
     try {
@@ -481,7 +499,7 @@
     const foot = el("div", "cum-key-row");
     const count = el("span", "cum-key-line cum-key-dim");
     const run = () => {
-      const r = V.clean(input.value);
+      const r = V ? V.clean(input.value) : { text: input.value, count: 0 };
       out.value = r.text;
       count.textContent = input.value
         ? r.count +
@@ -593,23 +611,96 @@
 
   // ---- placement -------------------------------------------------------------
   //
-  // First in the tray, so the key sits to the LEFT of Save (src/tray.js orders
-  // the row). The tray is the only home: unlike Save there is no header slot
-  // fallback, because a key control that turned up in a different place on a
-  // page that didn't load the tray would be worse than one that waited.
+  // First in the tray, whose row puts the key to the LEFT of Save — and then
+  // CHECKED, which is the part that was missing.
+  //
+  // This used to hand the button to CUMTray and return, with nothing anywhere
+  // asking whether a button had appeared. When it hadn't, there was no error,
+  // no fallback and nothing on screen: the operator's whole account of it was
+  // "still no key", and every test said the code was fine, because in a stub
+  // it is. A control the operator has no other way to reach must not have a
+  // path where it quietly does not exist.
+  //
+  // So: the tray, then beside Save wherever Save actually is — which is the
+  // instruction anyway, "to the left of the Save button", and it holds whether
+  // Save ended up in the tray, in claude.ai's header, or loose in a corner —
+  // and failing even that, its own fixed corner. Three homes, and the button
+  // is on the page at the end of all three.
 
-  function place() {
-    const T = window.CUMTray;
-    if (!T) return;
-    const b = build();
-    if (open) T.put("key", b, buildPanel());
-    else T.put("key", b);
+  let zeroTicks = 0;
+  function docked(b) {
+    if (!b || !b.isConnected) return false;
+    // On the page is not the same as ON SCREEN. A row that clips, or one with
+    // no room left, puts a button in the page and nowhere the operator can
+    // reach — the lesson the header slot had to learn twice. But it is COUNTED
+    // rather than acted on at once: a button measures zero for a tick while
+    // the row lays out, and a control that hopped between two homes on every
+    // tick would be worse than one in the wrong home.
+    if (C.isVisible(b)) {
+      zeroTicks = 0;
+      return true;
+    }
+    return ++zeroTicks < 4;
   }
 
-  V.subscribe((st) => {
-    state = st || state;
-    draw();
-  });
+  /** Immediately before the Save button, wherever Save has ended up. */
+  function besideSave(b) {
+    const save = document.getElementById("cum-save-chat");
+    if (!save || !save.parentElement || !C.isVisible(save)) return false;
+    if (b.parentElement !== save.parentElement || b.nextElementSibling !== save) {
+      try {
+        save.parentElement.insertBefore(b, save);
+      } catch (e) {
+        return false;
+      }
+    }
+    if (open) {
+      const p = buildPanel();
+      p.classList.add("cum-key-hang");
+      if (p.parentElement !== document.body) (document.body || document.documentElement).appendChild(p);
+    }
+    return docked(b);
+  }
+
+  /** Its own corner. Last, and never silent — the tooltip says it is here. */
+  function loose(b) {
+    b.classList.add("cum-key-loose");
+    if (b.parentElement !== document.body) (document.body || document.documentElement).appendChild(b);
+    if (open) {
+      const p = buildPanel();
+      p.classList.add("cum-key-hang");
+      if (p.parentElement !== document.body) (document.body || document.documentElement).appendChild(p);
+    }
+  }
+
+  function place() {
+    const b = build();
+    const T = window.CUMTray;
+    if (T) {
+      try {
+        T.put("key", b, open ? buildPanel() : null);
+      } catch (e) {
+        /* the two homes below are what that failing means */
+      }
+      if (docked(b)) {
+        b.classList.remove("cum-key-loose");
+        const p = panel;
+        if (p) p.classList.remove("cum-key-hang");
+        return;
+      }
+    }
+    if (besideSave(b)) {
+      b.classList.remove("cum-key-loose");
+      return;
+    }
+    loose(b);
+  }
+
+  if (V)
+    V.subscribe((st) => {
+      state = st || state;
+      draw();
+    });
 
   try {
     chrome.storage.onChanged.addListener((ch, area) => {

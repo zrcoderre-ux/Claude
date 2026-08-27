@@ -133,9 +133,14 @@ function makeStub() {
       if (!c) return c;
       if (c.parentElement) c.parentElement.removeChild(c);
       c.parentElement = this;
-      c.isConnected = this.isConnected;
       this.children.push(c);
+      c._connect(this.isConnected);
       return c;
+    }
+    /** isConnected is inherited by a whole SUBTREE, not just the child moved. */
+    _connect(on) {
+      this.isConnected = !!on;
+      for (const c of this.children) if (c._connect) c._connect(on);
     }
     append(...n) {
       for (const c of n) {
@@ -147,10 +152,10 @@ function makeStub() {
       if (!c) return c;
       if (c.parentElement) c.parentElement.removeChild(c);
       c.parentElement = this;
-      c.isConnected = this.isConnected;
       const i = ref ? this.children.indexOf(ref) : -1;
       if (i === -1) this.children.push(c);
       else this.children.splice(i, 0, c);
+      c._connect(this.isConnected);
       return c;
     }
     removeChild(c) {
@@ -158,7 +163,7 @@ function makeStub() {
       if (i !== -1) this.children.splice(i, 1);
       if (c) {
         c.parentElement = null;
-        c.isConnected = false;
+        if (c._connect) c._connect(false);
       }
       return c;
     }

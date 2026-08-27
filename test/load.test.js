@@ -110,3 +110,20 @@ test("the tray holds a slot for every button that asks for one", () => {
   assert.equal(order[0], "key");
   assert.ok(order.indexOf("key") < order.indexOf("save"));
 });
+
+test("the key button actually lands in the tray", () => {
+  // Not "it loads" — it PLACES. src/key-panel.js calls place() on its way up,
+  // so by the time every script has run the button should be in the tray's
+  // first slot. Twice now a button has been reported missing while every
+  // module loaded, every global was published and every slot existed; this is
+  // the assertion that tells those apart.
+  const body = loaded.win.document.body;
+  const tray = body.children.find((c) => c.id === "cum-tray");
+  assert.ok(tray, "the tray was never put on the page");
+  const slots = tray.children.map((s) => s.dataset && s.dataset.slot);
+  assert.equal(slots[0], "key", "the key slot does not lead the row");
+  const keySlot = tray.children[0];
+  const btn = keySlot.children.find((c) => c.id === "cum-key-btn");
+  assert.ok(btn, "the key slot is empty — the button was built and never placed");
+  assert.ok(btn.isConnected, "the key button was placed but is not connected");
+});
