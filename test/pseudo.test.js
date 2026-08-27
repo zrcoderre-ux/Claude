@@ -1168,3 +1168,38 @@ test("an empty library offers nothing and hides nothing", () => {
   assert.equal(P.hiddenKeyCount({}, []), 0);
   assert.equal(P.hiddenKeyCount(null, null), 0);
 });
+
+// ---- which addresses can hold a key ----------------------------------------
+
+const AT = (path) => "https://claude.ai" + path;
+
+test("only a conversation's address can hold a key", () => {
+  assert.equal(
+    P.conversationFromUrl(AT("/chat/11111111-2222-3333-4444-555555555555")),
+    "11111111-2222-3333-4444-555555555555"
+  );
+  assert.equal(
+    P.conversationFromUrl(AT("/cowork/cse_011f5HCzaWWJ2hm19v6NuQmN")),
+    "/cowork/cse_011f5HCzaWWJ2hm19v6NuQmN"
+  );
+  // The whole of the bug: a key attached to one of these is a key attached to
+  // every page of that shape, so the next matter's blank composer comes up
+  // wearing the last one's names.
+  for (const path of ["/new", "/", "/cowork", "/recents", "/projects", "/chats", "/code/abc"])
+    assert.equal(P.conversationFromUrl(AT(path)), "", path);
+  // A PROJECT page carries a uuid that makes it look exactly like a chat's.
+  // The path is what tells them apart, and only this function can see it.
+  assert.equal(P.conversationFromUrl(AT("/project/11111111-2222-3333-4444-555555555555")), "");
+  // And it answers in conversationKeyFromUrl's spelling, so what comes back is
+  // a key into the same maps.
+  const chat = AT("/chat/11111111-2222-3333-4444-555555555555");
+  assert.equal(P.conversationFromUrl(chat), P.conversationKeyFromUrl(chat));
+});
+
+test("a stored key that is plainly a PAGE is not a conversation", () => {
+  assert.equal(P.isConversationKey("11111111-2222-3333-4444-555555555555"), true);
+  assert.equal(P.isConversationKey("/cowork/cse_011f5HCzaWWJ2hm19v6NuQmN"), true);
+  assert.equal(P.isConversationKey("cse_011f5HCzaWWJ2hm19v6NuQmN"), true);
+  for (const bad of ["/new", "/", "/cowork", "/recents", "/projects", "", null])
+    assert.equal(P.isConversationKey(bad), false, String(bad));
+});

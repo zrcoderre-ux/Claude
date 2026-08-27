@@ -752,6 +752,61 @@
     }
   }
 
+  /**
+   * The conversation this URL IS — or "" where the address is not a
+   * conversation at all.
+   *
+   * conversationKeyFromUrl above answers for ANY url, falling back to the
+   * pathname, and it is right to: it is an IDENTITY, and two things looking at
+   * the same page have to agree on what to call it.
+   *
+   * That is the wrong question for ATTACHING a key to. "/new" is a perfectly
+   * good identity and a terrible conversation — a key attached to it is a key
+   * attached to every new page you ever open, which is how the last matter's
+   * names came to be sitting over the next one's blank composer. So does
+   * "/cowork", "/recents", "/projects". The popup had already met two of them
+   * and blocked those two by name, which is the shape of a rule nobody had
+   * written down yet.
+   *
+   * So this asks the ADDRESS rather than the key: /chat/<uuid> and
+   * /cowork/cse_<id>, and nothing else. A PROJECT page is refused too, though
+   * its address carries a uuid that makes it look exactly like a chat's — the
+   * path is what tells them apart, and only this function can see it.
+   *
+   * The spelling it answers in is conversationKeyFromUrl's, so what it hands
+   * back is a key into the same maps.
+   */
+  function conversationFromUrl(url) {
+    const s = String(url || "");
+    let path = s;
+    try {
+      path = new URL(s).pathname;
+    } catch (e) {
+      /* not absolute — what we were given is the path */
+    }
+    path = path.replace(/\/+$/, "") || "/";
+    if (/^\/chat\/[0-9a-f-]{36}/i.test(path) || /^\/cowork\/cse_[A-Za-z0-9_-]+/.test(path))
+      return conversationKeyFromUrl(s);
+    return "";
+  }
+
+  /**
+   * Whether a STORED conversation key is one at all — for sweeping a map that
+   * already holds entries this rule would never have written.
+   *
+   * Weaker than conversationFromUrl on purpose, because a key is not an
+   * address: a bare uuid could be a chat's or a project page's and there is
+   * nothing left in it to tell them apart, so it is kept. What it does catch
+   * is every entry that is plainly a PAGE — "/new", "/recents", "/projects" —
+   * which is the whole of the damage.
+   */
+  function isConversationKey(conv) {
+    const s = trim(conv);
+    if (!s) return false;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) return true;
+    return /(^|\/)cse_[A-Za-z0-9_-]+$/.test(s);
+  }
+
   // ---- case numbers: the one value that must never go out unswapped --------
   //
   // A party's name in a chat title is a leak; a CASE NUMBER is the whole case.
@@ -1145,6 +1200,8 @@
     isPincitePaste,
     buildMatcher,
     conversationKeyFromUrl,
+    conversationFromUrl,
+    isConversationKey,
     caseNumbers,
     uncoveredCaseNumbers,
     caseNumberGate,

@@ -186,10 +186,17 @@
       restoreDocTitle();
     }
     lastConv = conv;
-    let id = conv ? chatMap[conv] : null;
+    // The ADDRESS decides whether there is a conversation here to have a key,
+    // not the identity string. "/new" is a perfectly good identity, and a key
+    // found under it would be applied to every new page ever opened — which is
+    // how the last matter's names came to be sitting over the next one's blank
+    // composer. convKey() stays as it is: the TITLES still want an identity for
+    // any page, and only this lookup wants a conversation.
+    const real = P.conversationFromUrl ? P.conversationFromUrl(location.href) : conv;
+    let id = real ? chatMap[real] : null;
     let via = "chat";
-    if (!id && conv) {
-      id = await runKeyFor(conv);
+    if (!id && real) {
+      id = await runKeyFor(real);
       via = "run";
     }
     const key = id ? keys[id] : null;

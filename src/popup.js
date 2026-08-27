@@ -605,8 +605,16 @@
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = (tabs || [])[0];
       if (tab && /^https:\/\/claude\.ai\//.test(tab.url || "")) {
-        const conv = P.conversationKeyFromUrl(tab.url);
-        if (conv && conv !== "/new" && conv !== "/") {
+        // Only a real conversation. This used to be conversationKeyFromUrl
+        // with "/new" and "/" struck off by hand — the two pages somebody had
+        // met — and every other page that is not a conversation went straight
+        // through: "/cowork", "/recents", a project's own page. A key attached
+        // to one of those is a key attached to every page of that shape, which
+        // is the last matter's names over the next one's blank composer.
+        const conv = P.conversationFromUrl
+          ? P.conversationFromUrl(tab.url)
+          : P.conversationKeyFromUrl(tab.url);
+        if (conv) {
           tabConv = conv;
           tabTitle = tab.title || "";
         }
