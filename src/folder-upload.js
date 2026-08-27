@@ -963,14 +963,27 @@
     return C.isVisible(el);
   }
 
+  // The next (or previous) sibling that is claude.ai's OWN, skipping anything of
+  // ours sitting between. The fakes toggle docks itself immediately to the
+  // right of this button, and in an ordinary chat — where the anchor is SEND
+  // and this button goes BEFORE it — a literal next-sibling test would read
+  // that as "not docked". Both buttons would then re-insert on every tick,
+  // each undoing the other, forever: permanent churn, and neither one keeping
+  // its own hover or focus.
+  const theirs = (el, dir) => {
+    let n = el && el[dir];
+    while (n && C.isOurs(n)) n = n[dir];
+    return n;
+  };
+
   function dockInRow(b) {
     const at = rowAnchor();
     if (!at) return false;
     // Checked before it is done, so a docked button is not torn out and put
     // back on every tick — which would cost it its own hover and focus.
     const placed = at.after
-      ? b.parentElement === at.el.parentElement && b.previousElementSibling === at.el
-      : b.parentElement === at.el.parentElement && b.nextElementSibling === at.el;
+      ? b.parentElement === at.el.parentElement && theirs(b, "previousElementSibling") === at.el
+      : b.parentElement === at.el.parentElement && theirs(b, "nextElementSibling") === at.el;
     if (!placed) {
       // The row is claude.ai's own furniture and the class decides how the
       // button looks in it, so it goes on BEFORE the insert rather than after:
