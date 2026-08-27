@@ -533,3 +533,78 @@ test("time spent writing the first message is not a reason to refuse the pick", 
   assert.equal(slow.ok, true);
   assert.match(slow.why, /watched the composer become it/);
 });
+
+// ---- the button on a conversation that already exists ----------------------
+
+test("the button belongs on a composer AND on a conversation that exists", () => {
+  for (const href of [
+    "https://claude.ai/",
+    "https://claude.ai/new",
+    "https://claude.ai/cowork",
+    "https://claude.ai/project/11111111-2222-3333-4444-555555555555",
+  ])
+    assert.equal(F.buttonBelongs(href), true, href);
+  // The two it did not use to belong on, and the whole of this change.
+  assert.equal(F.buttonBelongs("https://claude.ai/chat/11111111-2222-3333-4444-555555555555"), true);
+  assert.equal(F.buttonBelongs("https://claude.ai/cowork/cse_011f5HCzaWWJ2hm19v6NuQmN"), true);
+  // Still never: Claude Code, and every page that is a list rather than a
+  // place you type.
+  assert.equal(F.buttonBelongs("https://claude.ai/code/abc"), false);
+  assert.equal(F.buttonBelongs("https://claude.ai/recents"), false);
+  assert.equal(F.buttonBelongs("https://claude.ai/projects"), false);
+  assert.equal(F.buttonBelongs("https://claude.ai/settings/profile"), false);
+});
+
+test("an open chat is CHAT, whatever the account-wide toggle last remembered", () => {
+  // The toggle only ever sits on the composer home, so an open conversation
+  // has none — and the stale setting must not speak for it. Defaulting to
+  // Cowork here would send a pick made in an ordinary chat out through the
+  // Cowork driver, on a page that has never had one.
+  const chat = "https://claude.ai/chat/11111111-2222-3333-4444-555555555555";
+  assert.equal(F.pickSurface(chat, ""), "chat");
+  assert.equal(F.pickSurface(chat, "cowork"), "chat");
+  // A Cowork address is still Cowork whatever it says.
+  assert.equal(F.pickSurface("https://claude.ai/cowork/cse_abc", "chat"), "cowork");
+  // And on a composer, where nothing says, Cowork still wins — its evidence
+  // ladder starts with Chat's own confirmations and keeps going.
+  assert.equal(F.pickSurface("https://claude.ai/new", ""), "cowork");
+  assert.equal(F.pickSurface("https://claude.ai/new", "Chat"), "chat");
+});
+
+test("a conversation that exists keeps its name, and takes the key it has none of", () => {
+  const got = F.planHere({
+    root: "23STCV12345 Cabot v. Reyes",
+    keyId: "k1",
+    keyName: "23STCV12345 Cabot v. Reyes · 40 rows",
+  });
+  assert.equal(got.attach, true);
+  assert.equal(got.key, ""); // only the caller knows whether the write landed
+  assert.match(got.name, /keeps the name it has/);
+  assert.match(got.name, /its own send created/);
+});
+
+test("a key already on the conversation is never swapped out from under it", () => {
+  const same = F.planHere({ keyId: "k1", keyName: "Cabot", attachedId: "k1", attachedName: "Cabot" });
+  assert.equal(same.attach, false);
+  assert.match(same.key, /already attached/);
+
+  // Another matter's key. Re-reading every message in an open chat under a
+  // different map is the one outcome worth refusing outright.
+  const other = F.planHere({
+    keyId: "k1",
+    keyName: "Cabot",
+    attachedId: "k2",
+    attachedName: "Strangeways",
+  });
+  assert.equal(other.attach, false);
+  assert.match(other.key, /already reads in Strangeways/);
+  assert.match(other.key, /left alone/);
+  assert.match(other.key, /key button/); // and how to change it on purpose
+});
+
+test("no key in the folder is said plainly, and attaches nothing", () => {
+  const got = F.planHere({ root: "23STCV12345 Cabot v. Reyes", keyId: "" });
+  assert.equal(got.attach, false);
+  assert.match(got.key, /No pseudonym key in 23STCV12345 Cabot v\. Reyes/);
+  assert.match(got.name, /keeps the name it has/);
+});

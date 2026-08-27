@@ -1,12 +1,14 @@
 /**
- * Claude Usage Meter — Upload folder, on a new conversation (ISOLATED world).
+ * Claude Usage Meter — Upload folder (ISOLATED world content script).
  *
- * A button in claude.ai's own composer row — beside the approval control
- * ("Skip all approvals") on Cowork, beside the Chat/Cowork toggle where there
- * is no approval control — on a conversation that does not exist yet. It does
- * to a conversation you are about to type in exactly what the run editor's
- * folder pick does to a run (README: "A case folder is taken apart, not
- * uploaded"), and stops where a run would carry on:
+ * A button in claude.ai's own composer row — to the RIGHT of the approval
+ * control ("Skip all approvals") on Cowork, to the right of the Chat/Cowork
+ * toggle on the composer home, and to the LEFT of Send in an ordinary chat,
+ * which carries neither of those. On a conversation that does not exist yet
+ * AND on one that already does. It does to the conversation you are typing in
+ * exactly what the run editor's folder pick does to a run (README: "A case
+ * folder is taken apart, not uploaded"), and stops where a run would carry
+ * on:
  *
  *   The case folder is taken apart. Only what sits under `Text Files` becomes
  *   an upload; the matter's originals — the filings as served, in the real
@@ -34,7 +36,16 @@
  *   read back is judged fresh from the page instead, which the note says out
  *   loud as the weaker evidence it is.
  *
- *   And when the conversation starts, it takes the folder's name — through the
+ *   IN A CONVERSATION THAT ALREADY EXISTS, the papers go up and the key is
+ *   attached, and that is all. The chat keeps its name — renaming somebody's
+ *   open work is not what "upload this folder" asked for, and a title is not
+ *   display: claude.ai stores it, syncs it and searches it. It keeps any key
+ *   already on it, too, since re-reading every message under another matter's
+ *   map is worse than leaving it. Both are said out loud rather than left to
+ *   be noticed.
+ *
+ *   And when the conversation is one this button's own send STARTS, it takes
+ *   the folder's name — through the
  *   matter's own key first (real → fake), or not at all. A chat title is not
  *   display: claude.ai stores it, syncs it to every signed-in device and
  *   searches it, so "23STCV12345 Smith v. Jones" over a chat whose every
@@ -54,6 +65,8 @@
   const F = window.CUMFolderUp;
   const PB = window.CUMPanelBar;
   if (!C || !W || !DD || !F) return;
+
+  const norm = (v) => String(v == null ? "" : v).replace(/\s+/g, " ").trim();
 
   const ID = "cum-folder";
   const INPUT_ID = "cum-folder-input";
@@ -329,38 +342,55 @@
     if (!keyRec) keyRec = await keyAlreadyLoaded(split.root);
 
     const plan = F.uploadPlan(split.docs);
-    const decision = await titleFor(split.root, keyRec);
-    const lines = [
-      F.describeUpload({
-        root: split.root,
-        bundle: plan.bundle,
-        singles: plan.singles,
-        left: split.left,
-        capped: split.capped,
-      }),
-      F.describeKey({
-        root: split.root,
-        keyName: keyRec ? keyRec.label : "",
-        already: !!(keyRec && keyRec.already),
-      }),
-      F.describeTitle(decision),
-    ];
+    const upload = F.describeUpload({
+      root: split.root,
+      bundle: plan.bundle,
+      singles: plan.singles,
+      left: split.left,
+      capped: split.capped,
+    });
 
-    // Whatever happens to the upload, the key is loaded and the name is worked
-    // out — so the wait is armed before the slow half rather than after it.
+    // A conversation that ALREADY EXISTS takes the papers and nothing else:
+    // there is no send to wait for, no name to give it, and any key already on
+    // it stays. So this path finishes its half here and now, and no wait is
+    // armed — an armed one would go looking for a conversation to claim and
+    // find this one, which is the very chat it must not rename.
+    const here = F.startedConversation(location.href);
+    let lines;
     const surface = surfaceHere();
-    const now = Date.now();
-    pending = {
-      folder: split.root,
-      title: decision.title,
-      why: decision.why,
-      keyId: keyRec ? keyRec.id : "",
-      surface: surface,
-      pickedAt: now,
-      sawComposerAt: now,
-      strayTicks: 0,
-      fetchTries: 0,
-    };
+    if (here.id) {
+      // Cleared rather than merely not armed: a wait left over from a pick
+      // made on the composer would go looking for a conversation to claim and
+      // find THIS one — the very chat that must keep its name.
+      pending = null;
+      lines = [upload].concat(await keyLinesHere(split.root, keyRec));
+    } else {
+      // Whatever happens to the upload, the key is loaded and the name is
+      // worked out — so the wait is armed before the slow half rather than
+      // after it.
+      const decision = await titleFor(split.root, keyRec);
+      lines = [
+        upload,
+        F.describeKey({
+          root: split.root,
+          keyName: keyRec ? keyRec.label : "",
+          already: !!(keyRec && keyRec.already),
+        }),
+        F.describeTitle(decision),
+      ];
+      const now = Date.now();
+      pending = {
+        folder: split.root,
+        title: decision.title,
+        why: decision.why,
+        keyId: keyRec ? keyRec.id : "",
+        surface: surface,
+        pickedAt: now,
+        sawComposerAt: now,
+        strayTicks: 0,
+        fetchTries: 0,
+      };
+    }
 
     const files = await buildUploads(plan, lines);
     if (!files.length) {
@@ -452,6 +482,40 @@
     // The last word on the bar that matters most: a spreadsheet — which is what
     // a pseudonym key is — never reaches the composer, whatever came before.
     return out.filter((f) => f && !F.isSpreadsheet(f.name));
+  }
+
+  /**
+   * The key half of a pick made inside a conversation that already exists:
+   * read what that conversation is already on, let F.planHere decide, do the
+   * one write it may call for, and answer the lines to say.
+   */
+  async function keyLinesHere(root, keyRec) {
+    const store = await readLocal([KEYS_KEY, CHATS_KEY]);
+    const keys = store.data[KEYS_KEY] || {};
+    const chats = store.data[CHATS_KEY] || {};
+    const P = window.CUMPseudo;
+    const conv = W.conversationKey
+      ? W.conversationKey(location.href)
+      : P && P.conversationKeyFromUrl(location.href);
+    const attachedId = (conv && chats[conv]) || "";
+    const plan = F.planHere({
+      root: root,
+      keyId: keyRec ? keyRec.id : "",
+      keyName: keyRec ? keyRec.label : "",
+      attachedId: attachedId,
+      attachedName:
+        attachedId && keys[attachedId] && P && P.keyLabel ? P.keyLabel(keys[attachedId]) : "",
+    });
+    if (!plan.attach) return [plan.key, plan.name];
+    const ok = await attachKeyHere(keyRec.id);
+    return [
+      ok
+        ? norm(keyRec.label) +
+          " is the pseudonym key — loaded into the extension and attached to this " +
+          "conversation, never uploaded. It reads back in the real names."
+        : "Could not attach the pseudonym key here — attach it from the key button.",
+      plan.name,
+    ];
   }
 
   async function titleFor(folder, keyRec) {
@@ -828,15 +892,54 @@
     return null;
   }
 
+  /**
+   * The composer row on a page carrying neither of those controls — which is
+   * an ordinary CHAT conversation: the approval control is Cowork's, and the
+   * Chat/Cowork toggle only ever sits on the composer home.
+   *
+   * The Send button is what is left, and it is the right thing to anchor to
+   * rather than a container found by shape: it is one of claude.ai's own
+   * controls, it is matched by its aria-label rather than its markup
+   * (C.findSend), and it is in the row under the prompt box by definition —
+   * every send in this extension goes through it.
+   *
+   * The button goes BEFORE it. Send is the last thing in that row and the one
+   * control there you must never crowd or be mistaken for.
+   */
+  function sendAnchor() {
+    let send = null;
+    try {
+      send = C.findSend && C.findSend();
+    } catch (e) {
+      return null;
+    }
+    return send && send.parentElement && C.isVisible(send) ? send : null;
+  }
+
   /** Put the button in that row, right after the control. Answers whether it took. */
   function dockInRow(b) {
+    // To the RIGHT of the approval control ("Skip all approvals") or the
+    // Chat/Cowork toggle; to the LEFT of Send where the page carries neither,
+    // which is an ordinary chat conversation. Both are checked before they are
+    // done, so a docked button is not re-inserted on every tick.
     const anchor = rowAnchor();
-    if (!anchor) return false;
-    if (b.parentElement !== anchor.parentElement || b.previousElementSibling !== anchor) {
-      try {
-        anchor.parentElement.insertBefore(b, anchor.nextSibling);
-      } catch (e) {
-        return false;
+    if (anchor) {
+      if (b.parentElement !== anchor.parentElement || b.previousElementSibling !== anchor) {
+        try {
+          anchor.parentElement.insertBefore(b, anchor.nextSibling);
+        } catch (e) {
+          return false;
+        }
+      }
+    } else {
+      const send = sendAnchor();
+      if (!send) return false;
+      if (b.parentElement !== send.parentElement || b.nextElementSibling !== send) {
+        try {
+          send.parentElement.insertBefore(b, send);
+        } catch (e) {
+          return false;
+        }
       }
     }
     if (!C.isVisible(b)) return false; // in the page, nowhere on the screen
@@ -884,11 +987,12 @@
   }
 
   function place() {
-    // The BUTTON belongs only where a send would CREATE the conversation. On a
-    // conversation that already exists there is nothing here the run editor
-    // doesn't do better, and a folder button over somebody's open work is an
-    // invitation to attach a matter's papers to the wrong one.
-    const wanted = F.isNewChatPath(location.href) && !!C.findEditor();
+    // Wherever there is a composer to put papers into: a conversation that does
+    // not exist yet, and one that already does. What the pick DOES differs
+    // between them (see handle) — an open chat keeps its name and keeps any key
+    // already on it — but the button is welcome on both. The editor has to be
+    // on screen either way, which is what keeps this off the lists.
+    const wanted = F.buttonBelongs(location.href) && !!C.findEditor();
     if (!wanted && btn && btn.parentNode) btn.remove();
     // The NOTE outlives it by design: the send navigates off the composer, and
     // the naming happens after that. It stays while a pick is pending, on the
