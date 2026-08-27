@@ -15,13 +15,14 @@
  *      wrote.
  *
  *      Claude's own state is untouched: the swap edits text nodes in message
- *      turns and titles, never the composer, and everything the extension
- *      sends or copies out of a chat reads claude.ai's API/state, not this
- *      DOM. A badge says translation is on and how many swaps are showing, so
- *      what you see is never silently different from what Claude sees. While a
- *      run is moving, the MESSAGES stand down to the fakes and the titles do
- *      not — a hand-off can fall back to a rendered message, and nothing
- *      reads a title off the screen at all.
+ *      turns and titles, never the composer. The KEY BUTTON beside Save
+ *      (src/key-panel.js) says translation is on and counts the swaps, so what
+ *      you see is never silently different from what Claude sees — this module
+ *      publishes state()/clean()/setPaused()/subscribe() for it and draws no
+ *      furniture of its own beyond the two warnings. While a run is moving,
+ *      the MESSAGES stand down to the fakes and the titles do not — a hand-off
+ *      can fall back to a rendered message, and nothing reads a title off the
+ *      screen at all.
  *
  *   2. The COMPOSER warning. While a key is attached, the draft message is
  *      watched for REAL values from the key; each one found gets a loud
@@ -61,7 +62,6 @@
 
   const KEYS_KEY = "cum_pseudo_keys"; // id -> parsed key (see popup.js)
   const CHATS_KEY = "cum_pseudo_chats"; // conversation key -> key id
-  const POS_KEY = "cum_pseudo_pos"; // where the user dragged the badge { left, top }
   const MASTER_KEY = "cum_pseudo_master"; // the last 20 cases (see masterkey.js)
   // The id the master key answers to. Not a library id — nothing is stored
   // under it — so every lookup into `keys` has to go through masterOr().
@@ -224,9 +224,10 @@
     titleClaim = new WeakMap();
     shown = 0;
     paused = false; // a peek never outlives its chat
-    // A different key means a different map — a cleaner left open would keep
-    // showing the last case's title over this one's swaps.
-    closeCleaner();
+    // A different key means a different map, and a cleaner still holding the
+    // last case's answer would be worse than an empty one. The panel clears
+    // its own boxes off the key id in the state below — this side no longer
+    // knows what the cleaner looks like, which is the point of the seam.
     render();
     sweepSoon();
     // The hold belongs to the RUN rather than to the tab, so a chat arrived at
@@ -235,7 +236,7 @@
   }
 
   async function loadState() {
-    const res = await storageGet([KEYS_KEY, CHATS_KEY, POS_KEY, MASTER_KEY]);
+    const res = await storageGet([KEYS_KEY, CHATS_KEY, MASTER_KEY]);
     // A key loaded, replaced or attached elsewhere changes what every title on
     // this page should read. Put back what we wrote under the old library
     // before adopting the new one — a swap left standing under a map that no
@@ -250,24 +251,12 @@
     keys = res[KEYS_KEY] || {};
     chatMap = res[CHATS_KEY] || {};
     setMaster(res[MASTER_KEY]);
-    const p = res[POS_KEY];
-    if (p && typeof p.left === "number" && typeof p.top === "number") badgePos = p;
     await resolveActive(true);
   }
 
   try {
     chrome.storage.onChanged.addListener((ch, area) => {
       if (area !== "local") return;
-      if (ch[POS_KEY]) {
-        // Dragged in another tab: the badge is one control in as many tabs as
-        // are open, and having to move it in each of them would be worse than
-        // it moving under you here.
-        const np = ch[POS_KEY].newValue;
-        if (np && typeof np.left === "number" && typeof np.top === "number") {
-          badgePos = np;
-          placeBadge(false);
-        }
-      }
       if (ch[KEYS_KEY] || ch[CHATS_KEY] || ch[MASTER_KEY]) loadState();
       else if (
         ch.cum_run_groups ||
@@ -890,6 +879,33 @@
     plainText: function (el) {
       return el ? originalText(el) : "";
     },
+    // ---- what the key button in the tray renders from ----------------------
+    // This module owns the keys, the sweep and the peek; src/key-panel.js owns
+    // the button and its panel. The seam is deliberately data and verbs, not
+    // DOM: nothing about how it looks lives on this side of it.
+    state: function () {
+      return viewState();
+    },
+    clean: function (text) {
+      return clean(text);
+    },
+    setPaused: function (on) {
+      setPaused(on);
+    },
+    /** Called on every render with the new state; answers an unsubscribe. */
+    subscribe: function (fn) {
+      if (typeof fn !== "function") return function () {};
+      watchers.push(fn);
+      try {
+        fn(viewState());
+      } catch (e) {
+        /* the next render will try it again */
+      }
+      return function () {
+        const i = watchers.indexOf(fn);
+        if (i !== -1) watchers.splice(i, 1);
+      };
+    },
   };
 
   function sweepSoon() {
@@ -906,122 +922,27 @@
     if (active || Object.keys(keys).length || masterFor()) sweepSoon();
   });
 
-  // ---- the badge and the composer warning ------------------------------------
+  // ---- what the key button shows, and the composer warning -------------------
+  //
+  // There is no floating badge any more. It said the right things — which case
+  // this tab is translating, how many swaps are showing, whether a run is
+  // holding the messages — and it said them from a draggable lozenge sitting
+  // over claude.ai's page, which is one more thing to move out of the way.
+  // Everything it said now belongs to the key button in the tray
+  // (src/key-panel.js), beside Save.
+  //
+  // The invariant it existed for is untouched, and is the reason the button
+  // carries a live count rather than only opening a panel: a real name on
+  // screen must always have something on screen saying why. A closed panel
+  // would break that; a button reading "🔑 12" does not.
+  //
+  // So this module keeps the machinery and publishes it. state() is what the
+  // badge used to render, as data; clean() is the cleaner's translation;
+  // subscribe() fires on every render so the button follows the sweep without
+  // polling it.
 
-  let badge = null;
   let warnBox = null;
-  let badgePos = null; // { left, top } once dragged; null = its default corner
-  let badgeDragged = false; // set through a drag so the click that ends it isn't a tap
-
-  // ---- dragging the badge ---------------------------------------------------
-  // The same contract as the usage meter's own pill, because it's the same kind
-  // of object: a small fixed thing sitting over someone else's page, which is
-  // going to be over the wrong part of it sooner or later. Position is clamped
-  // to the viewport, remembered across tabs and reloads, and a drag never counts
-  // as the click that opens the cleaner.
-
-  function clampBadge(left, top) {
-    const r = badge.getBoundingClientRect();
-    return {
-      left: Math.min(Math.max(0, left), Math.max(0, window.innerWidth - r.width)),
-      top: Math.min(Math.max(0, top), Math.max(0, window.innerHeight - r.height)),
-    };
-  }
-
-  // Switch the badge from its default left/bottom corner to explicit left/top.
-  // Called on every render and on resize, so a window narrowed since the drag
-  // brings the badge back on screen instead of stranding it past the edge.
-  function placeBadge(persist) {
-    if (!badge || !badgePos) return;
-    const c = clampBadge(badgePos.left, badgePos.top);
-    badge.style.left = c.left + "px";
-    badge.style.top = c.top + "px";
-    badge.style.right = "auto";
-    badge.style.bottom = "auto";
-    badgePos = c;
-    placeCleaner();
-    if (persist) {
-      try {
-        chrome.storage?.local.set({ [POS_KEY]: c });
-      } catch (e) {
-        /* a position we couldn't store is still the position on screen */
-      }
-    }
-  }
-
-  // The cleaner opens off the badge, so it goes wherever the badge went — above
-  // it where there's room for it, below it where there isn't.
-  function placeCleaner() {
-    if (!cleaner || !badge) return;
-    if (!badgePos) {
-      cleaner.style.left = "";
-      cleaner.style.top = "";
-      cleaner.style.bottom = "";
-      return;
-    }
-    const b = badge.getBoundingClientRect();
-    const h = cleaner.offsetHeight || 260;
-    const w = cleaner.offsetWidth || 420;
-    const above = b.top - 8 - h;
-    const top = above >= 8 ? above : Math.min(b.bottom + 8, Math.max(8, window.innerHeight - h - 8));
-    cleaner.style.left = Math.max(8, Math.min(b.left, window.innerWidth - w - 8)) + "px";
-    cleaner.style.top = top + "px";
-    cleaner.style.bottom = "auto";
-  }
-
-  function setupBadgeDrag(el) {
-    let startX = 0, startY = 0, originLeft = 0, originTop = 0, moved = false, dragging = false;
-
-    el.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      dragging = true;
-      moved = false;
-      // Cleared here rather than in the click handler: a drag that ends in a
-      // pointercancel produces no click to consume the flag, and a stale one
-      // would swallow the next real press.
-      badgeDragged = false;
-      startX = e.clientX;
-      startY = e.clientY;
-      const r = el.getBoundingClientRect();
-      originLeft = r.left;
-      originTop = r.top;
-      try {
-        el.setPointerCapture(e.pointerId);
-      } catch (err) {
-        /* ignore */
-      }
-    });
-
-    el.addEventListener("pointermove", (e) => {
-      if (!dragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      if (!moved && Math.hypot(dx, dy) < 4) return; // ignore tiny jitters
-      moved = true;
-      badgePos = { left: originLeft + dx, top: originTop + dy };
-      placeBadge(false);
-    });
-
-    function end(e) {
-      if (!dragging) return;
-      dragging = false;
-      try {
-        el.releasePointerCapture(e.pointerId);
-      } catch (err) {
-        /* ignore */
-      }
-      if (moved) {
-        badgeDragged = true; // the click that follows this drag is not a tap
-        placeBadge(true);
-      }
-    }
-    el.addEventListener("pointerup", end);
-    el.addEventListener("pointercancel", end);
-  }
-
-  window.addEventListener("resize", () => {
-    placeBadge(false);
-  });
+  const watchers = [];
 
   // The key this tab is translating WITH, for the badge and the cleaner: the
   // chat's own where one is attached, and otherwise whichever key is doing the
@@ -1046,214 +967,72 @@
     };
   }
 
-  function render() {
+  /**
+   * What the key button shows. The badge's own sentence, taken apart into the
+   * pieces that made it, so the button can show a count and its panel can show
+   * the whole thing.
+   */
+  function viewState() {
     const disp = displayKey();
-    if (!disp) {
-      if (badge) {
-        badge.remove();
-        badge = null;
-      }
+    if (!disp) return { on: false, names: 0, titles: 0, paused: paused, hold: null };
+    return {
+      on: true,
+      id: disp.id,
+      // What this key is CALLED (P.keyTitle): the case folder it was picked
+      // from where there is one, the case hint where there isn't. With two
+      // cases open in two tabs, every key file is named pseudonym_key.xlsx and
+      // the button has to say WHICH case this tab is translating. (The tab
+      // already shows the real names — the label reveals nothing the
+      // translation doesn't.)
+      name: P.keyTitle ? P.keyTitle(disp.key) : disp.key.name || "pseudonym key",
+      master: !!disp.key.master,
+      caseCount: disp.key.caseCount || 0,
+      names: shown,
+      titles: titleShown,
+      paused: paused,
+      hold: hold ? { name: hold.name || "", via: hold.via || "" } : null,
+      // A distilled key must never be pointed at the write side (see
+      // displayKey), so the panel is told whether there is a cleaner at all
+      // rather than being left to work it out.
+      canClean: !!disp.forward,
+    };
+  }
+
+  function render() {
+    const st = viewState();
+    if (!st.on) {
       if (warnBox) {
         warnBox.remove();
         warnBox = null;
       }
-      closeCleaner();
       hideTip();
-      return;
     }
-    if (!badge) {
-      badge = document.createElement("div");
-      badge.className = "cum-pseudo-badge";
-      badge.title = ""; // written on every render — see below
-      badge.addEventListener("click", () => {
-        if (badgeDragged) return; // this click is the end of a drag, not a tap
-        toggleCleaner();
-      });
-      setupBadgeDrag(badge);
-      document.documentElement.appendChild(badge);
-      placeBadge(false); // a position from an earlier visit, applied on arrival
-    }
-    // What this key is CALLED (P.keyTitle): the case folder it was picked from
-    // where there is one, the case hint where there isn't. With two cases open
-    // in two tabs, every key file is named pseudonym_key.xlsx and the badge has
-    // to say WHICH case this tab is translating. (The tab already shows the
-    // real names — the label reveals nothing the translation doesn't.)
-    const name = P.keyTitle ? P.keyTitle(disp.key) : disp.key.name || "pseudonym key";
-    // Written every render rather than once, because what is behind the badge
-    // changes: a distilled master key has no cleaner to offer, and a tooltip
-    // inviting a click that does nothing is worse than no tooltip.
-    badge.title =
-      "Display only: this tab swaps the pseudonyms back to the real names for YOU. " +
-      "Claude still holds — and only ever sees — the fakes. Sends, copies and " +
-      "exports read claude.ai's own data, not this view. " +
-      (disp.forward
-        ? "Click to open the cleaner: type text with real names, copy out the fakes. "
-        : "") +
-      "Drag it anywhere — where you put it is where it stays. " +
-      "Chat titles are translated too — the header, the sidebar and the tab — " +
-      "each by its own chat's key; the title claude.ai stores stays the fake. " +
-      "While a workflow run is working this matter the MESSAGES stand down on " +
-      "their own and show the fakes, so nothing a run carries to the next chat " +
-      "can be a real name; a run that pauses, fails or finishes brings them " +
-      "back. The titles keep their real names throughout — nothing a run does " +
-      "reads a title off the screen. " +
-      (disp.key.master
-        ? "This is the MASTER KEY: the last " +
-          (disp.key.caseCount || 0) +
-          " cases, distilled out of every pseudonym key you have loaded, and it " +
-          "answers only where no loaded key claims a title. It knows a case's " +
-          "caption and not its papers, so it never touches a message and offers " +
-          "no cleaner. Empty it from the popup."
-        : "Where no loaded key claims a title, the MASTER KEY answers instead — " +
-          "the last 20 cases, titles only. Empty it from the popup.");
-    const bits = [];
-    if (shown) bits.push(shown + " name" + (shown === 1 ? "" : "s"));
-    if (titleShown) bits.push(titleShown + " title" + (titleShown === 1 ? "" : "s"));
-    // Held is now a HALF stand-down — the messages show the fakes, the titles
-    // still read in the real name — so the badge says which is which rather
-    // than "showing the fakes" over a title that plainly isn't.
-    const titles = titleShown
-      ? " · " + titleShown + " title" + (titleShown === 1 ? "" : "s") + " still real"
-      : "";
-    badge.textContent = hold
-      ? "🔑 " + name + " — ⏸ a run is working · the messages show the fakes" + titles
-      : paused
-      ? "🔑 " + name + " — ⏸ showing the fakes"
-      : "🔑 " + name + (bits.length ? " — " + bits.join(" · ") + " restored" : "");
-    badge.classList.toggle("cum-pseudo-paused", translationOff());
-    badge.classList.toggle("cum-pseudo-held", !!hold);
-    const tog = cleaner && cleaner.querySelector(".cum-pseudo-clean-toggle");
-    if (tog) styleToggle(tog);
-  }
-
-  // What the peek toggle says and whether it can be pressed at all. A run
-  // moving through this chat owns the display until it stops, and the button
-  // says which run and how to get the names back — pausing the run is one
-  // click, and pausing the run is exactly what the rule is waiting for.
-  function styleToggle(tog) {
-    if (hold) {
-      tog.textContent = "⏸ Messages held while a run works";
-      tog.disabled = true;
-      tog.title =
-        "This chat's MESSAGES show the fakes while " +
-        (hold.name ? "“" + hold.name + "”" : "a run") +
-        " is running" +
-        (hold.via === "key" ? " on this matter" : "") +
-        ". A run's hand-off can fall back to the text on screen, so real names " +
-        "in a message could reach the next chat. Pause the run — or let it " +
-        "finish, hold or fail — and the real names come back by themselves. " +
-        "The chat titles are not held: nothing a run does reads a title off " +
-        "the screen, so they keep their real names throughout.";
-      return;
-    }
-    tog.textContent = paused ? "▶ Show real names" : "⏸ Show the fakes";
-    tog.disabled = false;
-    tog.title =
-      "Pause or resume this chat's translation — messages AND titles, since a peek " +
-      "is for seeing the page exactly as claude.ai renders it: the fakes. This tab " +
-      "only, and never remembered.";
-  }
-
-  // ---- the cleaner: type real names, paste out fakes -------------------------
-  //
-  // Opens from the badge. Whatever is typed is pseudonymized LIVE with the
-  // attached key — the ReAnonymize direction, longest real first, keeps left
-  // verbatim, common English never touched — into a read-only box beside it,
-  // with Copy. It writes nothing into the composer: pasting the cleaned text
-  // is deliberately the user's own move.
-
-  let cleaner = null;
-
-  function closeCleaner() {
-    if (cleaner) {
-      cleaner.remove();
-      cleaner = null;
-    }
-  }
-
-  function runCleaner() {
-    const disp = cleaner && displayKey();
-    if (!disp) return;
-    const src = cleaner.querySelector(".cum-pseudo-clean-in").value;
-    const out = cleaner.querySelector(".cum-pseudo-clean-out");
-    const note = cleaner.querySelector(".cum-pseudo-clean-note");
-    if (!disp.forward) return closeCleaner();
-    const r = P.translate(disp.forward, src);
-    out.value = r.text;
-    note.textContent = src
-      ? r.count + " value" + (r.count === 1 ? "" : "s") + " swapped. Only values the key " +
-        "knows are swapped — read it before pasting."
-      : "";
-  }
-
-  function toggleCleaner() {
-    if (cleaner) return closeCleaner();
-    const disp = displayKey();
-    if (!disp || !disp.forward) return;
-    cleaner = document.createElement("div");
-    cleaner.className = "cum-pseudo-clean";
-    const head = document.createElement("div");
-    head.className = "cum-pseudo-clean-head";
-    const title = document.createElement("span");
-    title.textContent = "Pseudonymize for pasting — " + (disp.key.name || "key");
-    const x = document.createElement("button");
-    x.className = "cum-pseudo-clean-x";
-    x.textContent = "✕";
-    x.title = "Close";
-    x.addEventListener("click", closeCleaner);
-    head.append(title, x);
-
-    const input = document.createElement("textarea");
-    input.className = "cum-pseudo-clean-in";
-    input.placeholder = "Type or paste text with real names…";
-    input.addEventListener("input", runCleaner);
-
-    const out = document.createElement("textarea");
-    out.className = "cum-pseudo-clean-out";
-    out.readOnly = true;
-    out.placeholder = "The cleaned version appears here.";
-
-    const foot = document.createElement("div");
-    foot.className = "cum-pseudo-clean-foot";
-    // The peek toggle: pause the in-chat translation to see exactly what
-    // claude.ai is showing (the fakes), then bring the real names back.
-    const toggle = document.createElement("button");
-    toggle.className = "cum-pseudo-clean-toggle";
-    styleToggle(toggle);
-    toggle.addEventListener("click", () => setPaused(!paused));
-    const note = document.createElement("span");
-    note.className = "cum-pseudo-clean-note";
-    const copy = document.createElement("button");
-    copy.className = "cum-pseudo-clean-copy";
-    copy.textContent = "Copy cleaned";
-    copy.addEventListener("click", () => {
-      const text = out.value;
-      if (!text) return;
-      const flash = (ok) => {
-        copy.textContent = ok ? "Copied ✓" : "Select it and copy by hand";
-        setTimeout(() => {
-          copy.textContent = "Copy cleaned";
-        }, 1600);
-      };
+    for (const fn of watchers) {
       try {
-        navigator.clipboard.writeText(text).then(
-          () => flash(true),
-          () => {
-            out.select();
-            flash(document.execCommand("copy"));
-          }
-        );
+        fn(st);
       } catch (e) {
-        out.select();
-        flash(document.execCommand("copy"));
+        /* one bad watcher must not stop the rest, or the sweep */
       }
-    });
-    foot.append(toggle, note, copy);
+    }
+  }
 
-    cleaner.append(head, input, out, foot);
-    document.documentElement.appendChild(cleaner);
-    placeCleaner(); // it opens off the badge, wherever the badge has been put
-    input.focus();
+  // ---- the cleaner: type real names, read out fakes --------------------------
+  //
+  // The ReAnonymize direction — longest real first, keeps left verbatim,
+  // common English never touched. It writes nothing into the composer: pasting
+  // the cleaned text is deliberately the user's own move, and it is the key
+  // button's panel that shows the boxes now.
+  //
+  // Only ever run on a key that knows the WHOLE case (see displayKey): a
+  // distilled master key would swap the parties, hand back everything else
+  // verbatim, and look cleaned.
+
+  function clean(text) {
+    const disp = displayKey();
+    const src = String(text == null ? "" : text);
+    if (!disp || !disp.forward) return { text: src, count: 0, can: false };
+    const r = P.translate(disp.forward, src);
+    return { text: r.text, count: r.count, can: true };
   }
 
   function warnHtmlFor(hits) {
