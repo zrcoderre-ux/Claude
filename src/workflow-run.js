@@ -1168,7 +1168,6 @@
         model: msg.model || null,
         codeRepo: msg.codeRepo || null,
         surface: msg.surface || null,
-        approval: msg.approval || null,
         coworkProject: msg.coworkProject || null,
         stop: () => halted,
       });

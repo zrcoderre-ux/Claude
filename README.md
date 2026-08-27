@@ -493,7 +493,17 @@ Cowork is the other half of claude.ai's composer — the **Chat / Cowork** toggl
 on the home screen, which swaps in a Project menu and a control saying how much
 Claude may do without asking: **Manually approve**, **Automatically approve**,
 **Skip all approvals**. A scheduled send and a workflow chat can each name a
-surface, and a Cowork one can name an approval mode.
+surface.
+
+**The approval mode is not one of the extension's settings.** It is sticky —
+whatever it was last set to by hand is what every new tab comes up on — so
+there was never anything for a send to do but leave it alone. The three labels
+are still read, because a page carrying one of them is how the extension knows
+it is looking at Cowork, and they are still what the Upload folder button sits
+beside; nothing here ever clicks that control. Runs and templates saved back
+when it *was* a setting are scrubbed of it the moment they are read, so a run
+paused under the older build resumes with nothing to say about approvals
+either.
 
 Three things about it shape how this works, and none of them is obvious:
 
@@ -501,8 +511,9 @@ Three things about it shape how this works, and none of them is obvious:
   leaves `/new` as `/new`. A send only lands somewhere distinctive *after* it
   goes — `/cowork/cse_…`, whose id isn't a uuid, so `conversationId` has its own
   arm for it and `settledUrl` its own test. Reading the surface off the DOM is
-  the only honest answer, and the page gives one: the approval control's own
-  `aria-label` **is** the mode in force.
+  the only honest answer, and the page gives one: the approval control exists
+  in Cowork and nowhere else, and its own `aria-label` is one of those three
+  fixed phrases.
 - **The choice is remembered for the whole account, not the tab.** Set Cowork in
   one window and the next window you open comes up in Cowork, whatever else is
   already open. So a 3am job that switches surfaces changes what you find in the
@@ -510,23 +521,19 @@ Three things about it shape how this works, and none of them is obvious:
   gone — and where it can't (the toggle lives on the composer home, which the
   send navigates away from), it says so in the job's note rather than leaving
   you to notice.
-- **A Cowork job goes to `/new`, even when it has a Project.** The toggle, the
-  approval control and the project menu all live on the composer home. Arriving
-  at `/cowork/project/{uuid}` instead would mean arriving with no way to set any
-  of the three, so `targetUrl` sends a Cowork job to `/new` and the project is
-  chosen from the menu there, by name.
+- **A Cowork job goes to `/new`, even when it has a Project.** The toggle and
+  the project menu both live on the composer home. Arriving at
+  `/cowork/project/{uuid}` instead would mean arriving with no way to set
+  either, so `targetUrl` sends a Cowork job to `/new` and the project is chosen
+  from the menu there, by name.
 
-Both fields default to **leave as-is**, the same contract the model picker has:
-a job that never mentions the surface never touches it, so nothing that predates
-this behaves differently. And a mode asked for on a page with no approval
-control is **not** quietly treated as satisfied — the send reports that it was
-ignored, because "it must have worked" is exactly the assumption that gets a
-message sent under a mode nobody chose.
+The surface field defaults to **leave as-is**, the same contract the model
+picker has: a job that never mentions the surface never touches it, so nothing
+that predates this behaves differently.
 
-In a workflow the surface belongs to the **chat** (a conversation can't be half
-in Cowork) and the approval mode works like the model: set on the chat, and
-overridable **per step**, leaving the conversation on it for the steps after —
-so one chat can research with the brakes off and then edit a filing with them on.
+In a workflow the surface belongs to the **chat** rather than to a step — a
+conversation can't be half in Cowork — and every step carries it, so a resumed
+run lands the right way up.
 
 [Upload folder](#uploading-a-case-folder-into-a-chat) works on a new Cowork
 session too, on Cowork's own terms — it borrows this driver's attachment
@@ -546,16 +553,15 @@ chip selectors counted zero on a composer that was visibly holding the files.
 So a Cowork send goes through `src/cowork-composer.js`, a parallel driver that
 borrows from the Chat one only what is surface-agnostic mechanics (clicks,
 menus, sleeping in a hidden tab) or has been confirmed on Cowork itself (the
-Chat/Cowork toggle, the approval menu, the model menu). Everything else is its
+Chat/Cowork toggle, the model menu). Everything else is its
 own: choosing the project (a wider net than literal `<button>`s, with the
 navigating rows still excluded by name), confirming attachments by what the
 composer **visibly carries** — chips or the filenames themselves, truncation
 tolerated — and proving the send by Cowork's own evidence (the address becoming
 `/cowork/cse_…`, a new human turn, the editor emptying). Every phase reports,
 and a phase that fails **fails the send loudly** — a message posted into the
-wrong project, or under an approval mode nobody chose, is worse than one that
-waits. The decisions live in `src/cowork.js`, pure and tested; the driver holds
-only the wiring.
+wrong project is worse than one that waits. The decisions live in
+`src/cowork.js`, pure and tested; the driver holds only the wiring.
 
 ## Workflows
 
@@ -3143,7 +3149,7 @@ src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/wfexport.js        Workflow export/import bundles: what travels (pure)
 src/dropdir.js         A dropped folder, taken apart: walk, skips, caps, case folders (pure)
-src/cowork.js          Chat/Cowork surface + approval modes (pure)
+src/cowork.js          Chat/Cowork surface, read off the page (pure)
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown
 src/content.css        Floating-button styles (light + dark)

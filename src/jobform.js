@@ -149,12 +149,6 @@
       `<select class="cumjf-model"></select>` +
       `<label class="cumjf-label">Chat or Cowork</label>` +
       `<select class="cumjf-surface"></select>` +
-      `<div class="cumjf-approval-row" hidden>` +
-      `<label class="cumjf-label">Approvals</label>` +
-      `<select class="cumjf-approval"></select>` +
-      `<p class="cumjf-hint">Cowork remembers this choice for the whole account, ` +
-      `so a send that changes it changes what your next new tab opens on. ` +
-      `This puts it back afterwards where it can.</p></div>` +
       `<label class="cumjf-label">When to send</label>` +
       `<div class="cumjf-when">` +
       `<label class="cumjf-radio"><input type="radio" name="cumjf-trig" value="reset" checked /> When usage resets</label>` +
@@ -183,8 +177,6 @@
       repoList: q("#cumjf-repo-list"),
       model: q(".cumjf-model"),
       surface: q(".cumjf-surface"),
-      approvalRow: q(".cumjf-approval-row"),
-      approval: q(".cumjf-approval"),
       time: q(".cumjf-time"),
       add: q(".cumjf-add"),
       cancel: q(".cumjf-cancel"),
@@ -318,17 +310,7 @@
       }
       sel.value = value || "";
     }
-    // Approvals are Cowork's alone: in Chat there is no such control, so a
-    // field offering one would be promising something the send can't keep.
-    function syncApprovalRow() {
-      if (ui.approvalRow) ui.approvalRow.hidden = !ui.surface || ui.surface.value !== "cowork";
-    }
-    if (K) {
-      fillSelect(ui.surface, K.surfaceOptions(), "");
-      fillSelect(ui.approval, K.modeOptions(), "");
-    }
-    if (ui.surface) ui.surface.addEventListener("change", syncApprovalRow);
-    syncApprovalRow();
+    if (K) fillSelect(ui.surface, K.surfaceOptions(), "");
 
     // ---- repos (for the Claude Code repo picker) ----
     function fillRepos(repos) {
@@ -490,11 +472,6 @@
           trigger,
           model: ui.model.value,
           surface: (ui.surface && ui.surface.value) || "",
-          // Only when it can be honoured. A mode saved against a Chat job would
-          // sit in storage looking like a promise and be quietly ignored on
-          // every send.
-          approval:
-            ui.surface && ui.surface.value === "cowork" ? (ui.approval && ui.approval.value) || "" : "",
         };
         const tv = ui.target.value;
         if (tv === "chat") {
@@ -546,8 +523,6 @@
       ui.prompt.value = "";
       ui.model.value = "";
       if (ui.surface) ui.surface.value = "";
-      if (ui.approval) ui.approval.value = "";
-      syncApprovalRow();
       files = [];
       renderFiles();
       // Back to "reset" trigger.
@@ -585,8 +560,6 @@
       }
       ui.model.value = job.model || "";
       if (ui.surface) ui.surface.value = job.surface || "";
-      if (ui.approval) ui.approval.value = job.approval || "";
-      syncApprovalRow();
       // Trigger.
       const isTime = job.trigger && job.trigger.type === "time";
       const radio = el.querySelector(`input[name="cumjf-trig"][value="${isTime ? "time" : "reset"}"]`);

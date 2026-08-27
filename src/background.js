@@ -1289,8 +1289,8 @@ async function stepTab(run, savedUrl, chat) {
       projectUuid: (chat.target && chat.target.projectUuid) || null,
       codeRepo: (chat.target && chat.target.codeRepo) || null,
       // targetUrl sends a Cowork chat to the composer home rather than to its
-      // project, because the toggle, the approval control and the project menu
-      // are all there and nowhere else.
+      // project, because the toggle and the project menu are both there and
+      // nowhere else.
       surface: (chat.target && chat.target.surface) || null,
     });
   // Reuse only where the address is a conversation this run already has. A
@@ -1579,7 +1579,6 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
     // Only on the way in. Once a conversation exists the toggle isn't on the
     // page any more, and the project menu is the composer home's.
     surface: !saved.url ? m.surface || null : null,
-    approval: m.approval || null,
     coworkProject:
       m.surface === "cowork" && m.firstInChat && !saved.url
         ? (chat.target && chat.target.projectName) || null
@@ -1886,7 +1885,6 @@ async function driveRun(runId, opts) {
         codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
         // Only on the way in — see the wave payload for why.
         surface: !saved.url ? step.surface || null : null,
-        approval: step.approval || null,
         coworkProject:
           step.surface === "cowork" && step.firstInChat && !saved.url
             ? (chat.target && chat.target.projectName) || null

@@ -33,12 +33,10 @@
       chatTitle: f.chatTitle || null,
       codeRepo: (f.codeRepo || "").trim() || null, // "owner/name" → new Claude Code chat on that repo
       model: (f.model || "").trim() || null, // "" / null → leave the picker as-is
-      // Which surface to send on, and — in Cowork — how much Claude may do
-      // unattended. Both carry the same contract as `model`: "" / null means
+      // Which surface to send on. Same contract as `model`: "" / null means
       // leave the control alone, because the Chat/Cowork choice is remembered
       // for the whole account and a job that never asked must not move it.
       surface: (f.surface || "").trim() || null, // "" / null | "chat" | "cowork"
-      approval: (f.approval || "").trim() || null, // "" / null | "manual" | "auto" | "skip"
       trigger:
         f.trigger && f.trigger.type === "time"
           ? { type: "time", at: f.trigger.at }
@@ -84,9 +82,9 @@
     }
     if (job && job.codeRepo) return ORIGIN + "/code"; // fresh Claude Code session
     // A Cowork job goes to the composer home even when it has a project. The
-    // toggle, the approval control and the project menu all live there and
-    // nowhere else, so arriving anywhere else means arriving with no way to
-    // set any of the three. The project is chosen on the page instead.
+    // toggle and the project menu both live there and nowhere else, so arriving
+    // anywhere else means arriving with no way to set either. The project is
+    // chosen on the page instead.
     if (job && job.surface === "cowork") return ORIGIN + "/new";
     if (job && job.projectHref) return ORIGIN + job.projectHref;
     if (job && job.projectUuid) return ORIGIN + "/cowork/project/" + job.projectUuid;
@@ -109,9 +107,7 @@
   function surfaceLabel(job) {
     if (!job || !job.surface) return "";
     const K = typeof CUMCowork !== "undefined" ? CUMCowork : null;
-    const surface = K ? K.describeSurface(job.surface) : job.surface;
-    if (job.surface !== "cowork" || !job.approval) return surface;
-    return surface + " · " + (K ? K.describeMode(job.approval) : job.approval);
+    return K ? K.describeSurface(job.surface) : job.surface;
   }
 
   // A job still on its way out: queued, or held back by an outage.

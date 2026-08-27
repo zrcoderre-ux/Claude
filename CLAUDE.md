@@ -66,9 +66,10 @@ than inline in the wiring.
 - **Cowork is not Chat with a different address (standing instruction from the
   repo owner).** Never assume plumbing built for Chat works on Cowork — build
   parallel Cowork paths unless a piece has been CONFIRMED working on both
-  surfaces. Confirmed so far: the Chat/Cowork toggle, the approval menu, the
-  model menu, and generic mechanics (clicks, menu open/close, hidden-tab
-  sleeps). Confirmed broken on Cowork: upload confirmations (its traffic runs
+  surfaces. Confirmed so far: the Chat/Cowork toggle, the model menu, and
+  generic mechanics (clicks, menu open/close, hidden-tab sleeps). The approval
+  control is READ ONLY — its label is how a page proves it is Cowork, and the
+  mode itself is sticky, so nothing here sets it. Confirmed broken on Cowork: upload confirmations (its traffic runs
   in a worker no page hook sees), the event-stream and socket hooks, Chat's
   chip selectors, the `/chat/` URL tests, and the reply's copy control —
   seen returning the turn's TOOL PROMPTS instead of the answer, so a copy

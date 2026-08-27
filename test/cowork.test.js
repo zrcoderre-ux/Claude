@@ -51,66 +51,13 @@ test("whitespace and case in the page's markup don't matter", () => {
   assert.equal(K.modeFromLabel("SKIP ALL APPROVALS"), "skip");
 });
 
-test("a label round-trips back out for finding the control", () => {
-  for (const m of K.MODES) assert.equal(K.modeFromLabel(K.labelForMode(m.key)), m.key);
-  assert.equal(K.labelForMode(""), "");
-  assert.equal(K.labelForMode("nonsense"), "");
-});
-
-test("an unset mode describes itself as leaving the page alone", () => {
-  assert.equal(K.describeMode(""), "Leave as-is");
-  assert.equal(K.describeMode("manual"), "Manually approve");
-});
-
-test("the picker offers 'leave as-is' first, the way the model select does", () => {
-  const opts = K.modeOptions();
-  assert.equal(opts.length, 4);
-  assert.equal(opts[0].value, "");
-  assert.deepEqual(
-    opts.slice(1).map((o) => o.value),
-    ["manual", "auto", "skip"]
-  );
-});
-
-test("rowIsMode asks the prefix question the other way round", () => {
-  const row = "Skip all approvalsClaude never pauses, even for unsafe actions";
-  assert.equal(K.rowIsMode(row, "skip"), true);
-  assert.equal(K.rowIsMode(row, "manual"), false);
-  assert.equal(K.rowIsMode(row, ""), false);
-  assert.equal(K.rowIsMode("", "skip"), false);
-});
-
-// ---- reconcile ------------------------------------------------------------
-
-test("a job that didn't ask never moves the control", () => {
-  assert.equal(K.reconcile("", "Automatically approve"), "inherit");
-  assert.equal(K.reconcile(null, "Manually approve"), "inherit");
-  // Not even when there's no control at all: nothing was asked for.
-  assert.equal(K.reconcile("", ""), "inherit");
-});
-
-test("a job already on its mode is left alone", () => {
-  assert.equal(K.reconcile("auto", "Automatically approve"), "ok");
-  assert.equal(K.reconcile("manual", "Manually approve"), "ok");
-});
-
-test("a job on the wrong mode says so", () => {
-  assert.equal(K.reconcile("manual", "Automatically approve"), "set");
-  assert.equal(K.reconcile("skip", "Manually approve"), "set");
-});
-
-test("a job that asked, on a page with no approval control, is NOT quietly ok", () => {
-  // The mode is sticky and invisible in the url, so this is the case that would
-  // otherwise send in whatever mode the tab happened to be left in.
-  assert.equal(K.reconcile("manual", ""), "unknown");
-  assert.equal(K.reconcile("skip", null), "unknown");
-});
-
-test("the note is empty when nothing happened and loud when it didn't", () => {
-  assert.equal(K.reconcileNote("", "Automatically approve"), "");
-  assert.equal(K.reconcileNote("auto", "Automatically approve"), "");
-  assert.match(K.reconcileNote("manual", "Automatically approve"), /Manually approve/);
-  assert.match(K.reconcileNote("manual", ""), /isn't in Cowork/);
+test("every mode's own label reads back as that mode", () => {
+  // The labels are the extension's whole interest in this control: seeing one
+  // is how a page proves it is Cowork, and nothing here ever sets the mode.
+  for (const m of K.MODES) {
+    assert.equal(K.modeFromLabel(m.label), m.key);
+    assert.equal(K.modeFromLabel(m.short), m.key);
+  }
 });
 
 // ---- the surface ----------------------------------------------------------
@@ -158,15 +105,6 @@ test("reconcileSurface answers the same four ways", () => {
   // No toggle on the page: ordinary, not a failure — it only exists on the
   // composer home, so a job resuming a conversation never had a choice.
   assert.equal(K.reconcileSurface("cowork", ""), "unknown");
-});
-
-test("approval only applies where an approval control exists", () => {
-  assert.equal(K.approvalApplies("cowork", "Chat"), true);
-  assert.equal(K.approvalApplies("chat", "Cowork"), false);
-  // Unset surface: go by what the page is actually on.
-  assert.equal(K.approvalApplies("", "Cowork"), true);
-  assert.equal(K.approvalApplies("", "Chat"), false);
-  assert.equal(K.approvalApplies("", ""), false);
 });
 
 test("moving the toggle and failing to move it back is said out loud", () => {
@@ -459,13 +397,12 @@ test("a Cowork send on the composer home runs every phase it was asked for, in o
   assert.deepEqual(
     K.coworkPhases({
       onSession: false,
-      approval: true,
       project: true,
       model: true,
       files: true,
       text: true,
     }),
-    ["surface", "approval", "project", "model", "attach", "prompt", "send"]
+    ["surface", "project", "model", "attach", "prompt", "send"]
   );
 });
 
@@ -473,13 +410,12 @@ test("inside a conversation there is no surface to choose and no project menu to
   assert.deepEqual(
     K.coworkPhases({
       onSession: true,
-      approval: true,
       project: true, // asked for, but the control isn't on this page
       model: true,
       files: false,
       text: true,
     }),
-    ["approval", "model", "prompt", "send"]
+    ["model", "prompt", "send"]
   );
 });
 
@@ -492,7 +428,7 @@ test("send is always the last phase, whatever else was asked", () => {
     {},
     { onSession: true },
     { onSession: false, files: true },
-    { onSession: false, approval: true, project: true, model: true, files: true, text: true },
+    { onSession: false, project: true, model: true, files: true, text: true },
   ]) {
     const phases = K.coworkPhases(job);
     assert.equal(phases[phases.length - 1], "send");
@@ -589,19 +525,6 @@ test("a short filename must appear whole — its letters alone vouch for nothing
   // "a" appears in almost any composer text; that must not count as "a.txt".
   assert.equal(K.nameSeen("attach the papers", "a.txt"), false);
   assert.equal(K.nameSeen("a.txt", "a.txt"), true);
-});
-
-test("the approval switch is believed when the page says so, not when a menu closes", () => {
-  // The trigger's own aria-label is the mode in force.
-  assert.equal(K.approvalTook({ triggerLabel: "Automatically approve" }, "auto"), true);
-  assert.equal(K.approvalTook({ triggerLabel: "Skip all approvals" }, "skip"), true);
-  // The row marking itself checked is the same word said earlier.
-  assert.equal(K.approvalTook({ triggerLabel: "Manually approve", rowChecked: true }, "auto"), true);
-  // Neither is not evidence — that is as true of Escape.
-  assert.equal(K.approvalTook({ triggerLabel: "Manually approve" }, "auto"), false);
-  assert.equal(K.approvalTook({}, "auto"), false);
-  assert.equal(K.approvalTook({ triggerLabel: "Automatically approve" }, "nonsense"), false);
-  assert.equal(K.approvalTook(null, "auto"), false);
 });
 
 test("the operator's own test file is seen, and its near-namesake chat is not", () => {

@@ -12,11 +12,10 @@
  * surface-agnostic mechanics (sleep, robustClick, menu open/close, visibility)
  * or has been confirmed working on Cowork itself:
  *   - the Chat/Cowork toggle (selectSurface — built for and proved on Cowork),
- *   - the approval control's FINDERS (findApprovalTrigger/currentApproval —
- *     the label read is also part of surface evidence); the SWITCHING lives
- *     here, with a why on every exit, after a live run failed it with a bare
- *     "(failed)" that said nothing about which step died,
  *   - the model menu (selectModel — seen switching models on a live Cowork run).
+ * The approval control is READ (its label is part of the surface evidence) and
+ * never touched: the mode is sticky, so leaving it alone is leaving it on
+ * whatever was last chosen by hand.
  * Everything else — choosing the project, attaching files, confirming the
  * attachments, typing the prompt, pressing send, and proving the message left —
  * is done here, with Cowork's own evidence, and reported phase by phase so a
@@ -593,108 +592,6 @@
     return { ok: false, why: "clicked the row but no control came to read " + JSON.stringify(name) };
   }
 
-  // ---- the approval mode ---------------------------------------------------
-
-  /**
-   * Put Cowork's approval control on `mode`, saying WHY on every exit. The
-   * old switcher answered a live failure with a bare "(failed)" — three
-   * different failures wearing one face: the menu not opening, the row not
-   * matching, and the click not verifiably taking are different problems with
-   * different fixes, and the report is the only witness an unattended run has.
-   *
-   * Two other lessons applied here: a dispatched click is untrusted and does
-   * not run activation behaviour everywhere (the toggle taught that — #170),
-   * so the method click is the fallback; and a hidden Cowork tab renders LATE,
-   * so the old two-second verification window could time out on a switch that
-   * had actually taken — the windows here are longer, the row marking itself
-   * checked counts as the page's word too, and there is one last look after
-   * the menu closes. Returns { ok, why }.
-   */
-  async function selectApproval(mode) {
-    const wanted = K.modeFromLabel(mode);
-    if (!wanted) return { ok: true, why: "nothing asked for" };
-    if (C.currentApproval() === wanted) return { ok: true, why: "already on it" };
-    const trigger = C.findApprovalTrigger();
-    if (!trigger) return { ok: false, why: "no approval control on this page" };
-
-    const trouble = await C.openMenu(trigger, C.menuItems());
-    if (trouble) {
-      C.closeMenu();
-      return { ok: false, why: "the menu: " + trouble };
-    }
-
-    const rowFor = () =>
-      C.menuItems().find((el) => !C.isOurs(el) && K.rowIsMode(el.textContent, wanted)) || null;
-    let row = rowFor();
-    for (let i = 0; i < 12 && !row; i++) {
-      await sleep(200);
-      row = rowFor();
-    }
-    if (!row) {
-      const saw = C.menuItems()
-        .map((el) => norm(el.textContent).slice(0, 32))
-        .filter(Boolean)
-        .join(" | ");
-      C.closeMenu();
-      return {
-        ok: false,
-        why: "no row for " + K.labelForMode(wanted) + " — saw " + JSON.stringify(saw),
-      };
-    }
-
-    const took = async (tries) => {
-      for (let i = 0; i < tries; i++) {
-        await sleep(400);
-        const t = C.findApprovalTrigger();
-        let checked = false;
-        try {
-          checked =
-            row.getAttribute("aria-checked") === "true" ||
-            row.getAttribute("data-state") === "checked";
-        } catch (e) {
-          /* a detached row answers nothing; the trigger still can */
-        }
-        if (
-          K.approvalTook(
-            { triggerLabel: t && t.getAttribute("aria-label"), rowChecked: checked },
-            wanted
-          )
-        )
-          return true;
-      }
-      return false;
-    };
-
-    C.robustClick(row);
-    if (await took(8)) {
-      C.closeMenu();
-      return { ok: true, why: "clicked the row" };
-    }
-    try {
-      if (typeof row.click === "function") row.click();
-    } catch (e) {
-      /* the final report says what the trigger reads */
-    }
-    if (await took(8)) {
-      C.closeMenu();
-      return { ok: true, why: "clicked the row (el.click())" };
-    }
-    C.closeMenu();
-    // One last look. A switch that took after the window closed is still a
-    // switch that took, and failing the send over a slow re-render would stop
-    // a run whose page is in exactly the state it asked for.
-    await sleep(600);
-    const t = C.findApprovalTrigger();
-    if (K.approvalTook({ triggerLabel: t && t.getAttribute("aria-label") }, wanted))
-      return { ok: true, why: "took after the menu closed" };
-    return {
-      ok: false,
-      why:
-        "clicked the row both ways and the trigger still reads " +
-        JSON.stringify((t && t.getAttribute("aria-label")) || "nothing"),
-    };
-  }
-
   // ---- attaching, with Cowork's evidence -----------------------------------
 
   /**
@@ -804,8 +701,8 @@
    * One composed Cowork message, end to end. Same contract as the Chat
    * driver's sendMessage — { ok, error?, halted?, notes } — but every phase
    * reports, and a phase that fails fails the SEND, loudly, rather than
-   * leaving a note and sailing on: a message sent into the wrong project, or
-   * under an approval mode nobody chose, is worse than one that waits.
+   * leaving a note and sailing on: a message sent into the wrong project is
+   * worse than one that waits.
    */
   async function send(o) {
     const j = o || {};
@@ -848,7 +745,6 @@
     const onHome = !!C.findSurfaceGroup();
     const phases = K.coworkPhases({
       onSession: !onHome,
-      approval: !!j.approval,
       project: !!project,
       model: !!j.model,
       files: !!files.length,
@@ -878,19 +774,6 @@
         say("surface", surfaceWas ? "switched from " + surfaceWas : "on Cowork");
         // Switching re-renders the composer; a handle held across it is stale.
         editor = (await C.waitFor(C.findEditor, 15000)) || editor;
-      } else if (phase === "approval") {
-        let r;
-        try {
-          r = await selectApproval(j.approval);
-        } catch (e) {
-          r = { ok: false, why: String((e && e.message) || e) };
-        }
-        if (!r.ok)
-          return fail(
-            "could not set approval to " + K.describeMode(j.approval) + " — " + r.why +
-              " — not sent: the mode is remembered account-wide, and sending under one nobody chose is worse than waiting"
-          );
-        say("approval", K.describeMode(j.approval) + " (" + r.why + ")");
       } else if (phase === "project") {
         const r = await selectProject(project);
         if (!r.ok)
