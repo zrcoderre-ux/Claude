@@ -10,10 +10,18 @@
  *
  * What it decides, and why each decision is here rather than in the button:
  *
- *   WHERE THE BUTTON BELONGS. A new conversation is an address a send would
- *   CREATE — /new, the home composer, a project's own composer, and the same
- *   again on Cowork. A conversation that already exists is somebody's work:
- *   attaching a matter's papers to it uninvited is not what was asked for.
+ *   WHERE THE BUTTON BELONGS. Anywhere there is a composer to put papers into:
+ *   an address a send would CREATE — /new, the home composer, a project's own
+ *   composer, and the same again on Cowork — and a conversation that already
+ *   exists, chat or Cowork session. Never Claude Code, and never a page that
+ *   is a list rather than a place you type.
+ *
+ *   WHAT DIFFERS INSIDE ONE THAT ALREADY EXISTS, which is two things and only
+ *   two: it keeps its name, and it keeps any key already on it. The papers are
+ *   the same papers. See planHere — the reasoning is that a chat somebody has
+ *   been working in is not this button's to rename, and that swapping a key
+ *   out from under one re-reads every message in it under another matter's
+ *   map.
  *
  *   WHICH SURFACE THE PICK IS ON, which decides everything done afterwards.
  *   Cowork is not Chat with a different address (CLAUDE.md): its uploads run
@@ -109,6 +117,30 @@
   }
 
   /**
+   * Is the button welcome on this page at all?
+   *
+   * Two kinds of page take a case folder, and they do different things with
+   * one:
+   *
+   *   A COMPOSER for a conversation that does not exist yet (isNewChatPath).
+   *   The folder's papers go up, its key is loaded, and the conversation the
+   *   send creates takes the folder's name.
+   *
+   *   A CONVERSATION THAT ALREADY EXISTS, chat or Cowork session. The papers
+   *   go up and the key is attached, and that is all: an open chat's name is
+   *   not this button's to change, and the key already on one is not its to
+   *   swap out (see planHere).
+   *
+   * Never a Claude Code session, and never a page that is a list rather than a
+   * place you type — the caller pairs this with an editor actually being on
+   * screen, which is what keeps a list out.
+   */
+  function buttonBelongs(href) {
+    if (/^\/code(\/|$)/.test(pathOf(href))) return false;
+    return isNewChatPath(href) || !!startedConversation(href).id;
+  }
+
+  /**
    * Which surface a pick made on this page goes out on: "chat" or "cowork".
    *
    * `toggle` is what the page's own Chat/Cowork control says (C.currentSurface,
@@ -121,7 +153,14 @@
    * perfectly good upload as having failed.
    */
   function pickSurface(href, toggle) {
-    if (/^\/cowork(\/|$)/.test(pathOf(href))) return "cowork";
+    const path = pathOf(href);
+    if (/^\/cowork(\/|$)/.test(path)) return "cowork";
+    // An open CHAT conversation carries no toggle at all, and the account-wide
+    // setting the toggle remembers must never speak for it: a /chat/ address is
+    // Chat, full stop — the same rule content.js's isCoworkSurface holds. Left
+    // to the default below, a pick made inside an ordinary chat would go out
+    // through the Cowork driver on a page that has never had one.
+    if (/^\/chat(\/|$)/.test(path)) return "chat";
     return norm(toggle).toLowerCase() === "chat" ? "chat" : "cowork";
   }
 
@@ -471,6 +510,62 @@
   }
 
   /**
+   * A pick made INSIDE a conversation that already exists: what to do about
+   * the key, and what to say about the name.
+   *
+   * The papers are the same papers, so the upload is the same upload. The two
+   * things that differ are the two things this conversation already HAS.
+   *
+   *   ITS NAME. Renaming a conversation somebody has been working in is not
+   *   what "upload this folder" asked for, and the name is not display —
+   *   claude.ai stores it, syncs it and searches it. So the name is left
+   *   exactly as it is, and the note says so rather than leaving you to notice.
+   *
+   *   ITS KEY. A conversation with no key gets this folder's, which is the
+   *   whole point of bringing the matter into it. A conversation already on
+   *   THIS case needs nothing. A conversation already on a DIFFERENT case is
+   *   left alone: swapping a key out from under an open chat re-reads every
+   *   message in it under another matter's map, and a wrong real name over a
+   *   fake is worse than the fake. The key button switches it in one click for
+   *   anyone who meant to.
+   *
+   * `state`: { root, keyId, keyName, attachedId, attachedName }.
+   * Answers { attach, key, name } — `attach` whether to write the attachment,
+   * `key` what to say when it is NOT being written ("" when it is, since only
+   * the caller knows whether the write landed), `name` always.
+   */
+  function planHere(state) {
+    const s = state || {};
+    const root_ = norm(s.root) || "that folder";
+    const name =
+      "This conversation keeps the name it has — the Folder button only names a " +
+      "conversation its own send created.";
+    const said = (attach, key) => ({ attach: attach, key: key, name: name });
+    if (!s.keyId)
+      return said(
+        false,
+        "No pseudonym key in " +
+          root_ +
+          " — nothing new will translate this conversation."
+      );
+    const keyName = norm(s.keyName) || "that key";
+    if (s.attachedId && s.attachedId === s.keyId)
+      return said(false, keyName + " was already attached to this conversation.");
+    if (s.attachedId)
+      return said(
+        false,
+        "This conversation already reads in " +
+          (norm(s.attachedName) || "another case") +
+          ", and that was left alone — a key is not something to swap out from under " +
+          "an open chat, where it would re-read every message under another matter's " +
+          "map. " +
+          keyName +
+          " is loaded either way; switch to it from the key button if this is that case."
+      );
+    return said(true, "");
+  }
+
+  /**
    * What BECAME of that name, once the conversation has been asked for it and
    * then read back.
    *
@@ -523,6 +618,7 @@
     isSpreadsheet,
     stampMs,
     isNewChatPath,
+    buttonBelongs,
     startedConversation,
     pickSurface,
     uploadPlan,
@@ -535,6 +631,7 @@
     describeUpload,
     describeKey,
     describeTitle,
+    planHere,
     describeNamed,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

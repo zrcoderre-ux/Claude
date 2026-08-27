@@ -72,10 +72,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
   Cowork**, a button that takes a **case folder** apart into it: the
   pseudonymized text under `Text Files` goes up as **one combined file**, the
   `pseudonym_key.xlsx` beside it is loaded into the extension and attached to
-  the conversation (never uploaded), and the conversation takes the folder's
-  name — pseudonymized — once you send. Nothing is typed and nothing is sent;
-  that half stays yours. See [Uploading a case folder into a new
-  chat](#uploading-a-case-folder-into-a-new-chat).
+  the conversation (never uploaded), and a conversation this button's own send
+  creates takes the folder's name — pseudonymized. In a chat that already
+  exists the papers still go up and the key is still attached, but the chat
+  keeps its name. Nothing is typed and nothing is sent; that half stays yours.
+  See [Uploading a case folder into a chat](#uploading-a-case-folder-into-a-chat).
 - **Copy ruling** — a second copy button in claude.ai's own action bar, beside
   the one that copies the whole reply. It copies **only the tentative ruling**:
   NATURE OF PROCEEDINGS through the end of the CONCLUSION, without the note
@@ -527,7 +528,7 @@ in Cowork) and the approval mode works like the model: set on the chat, and
 overridable **per step**, leaving the conversation on it for the steps after —
 so one chat can research with the brakes off and then edit a filing with them on.
 
-[Upload folder](#uploading-a-case-folder-into-a-new-chat) works on a new Cowork
+[Upload folder](#uploading-a-case-folder-into-a-chat) works on a new Cowork
 session too, on Cowork's own terms — it borrows this driver's attachment
 evidence and renames the session through its header control.
 
@@ -903,7 +904,7 @@ walked:
 
 The same folder goes into a chat you drive yourself through the **Upload
 folder** button — same split, same key diversion, same refusals. See
-[Uploading a case folder into a new chat](#uploading-a-case-folder-into-a-new-chat).
+[Uploading a case folder into a chat](#uploading-a-case-folder-into-a-chat).
 
 This is **gated on the name and only on the name**. A folder whose name carries
 no case number is handed over whole, exactly as it always was — the rules in
@@ -1826,7 +1827,7 @@ quietly claim to be more than it is:
 Where it goes is [the header slot](#the-header-slot), which it shares with the
 table of contents' toggle.
 
-## Uploading a case folder into a new chat
+## Uploading a case folder into a chat
 
 A run takes a case folder apart ([A case folder is taken apart, not
 uploaded](#a-case-folder-is-taken-apart-not-uploaded)) and then does everything
@@ -1834,15 +1835,36 @@ else too — types the prompt, sends it, waits, hands the reply on. Most work
 isn't a run. **Upload folder** is the first half of that on its own, for the
 chats you drive yourself.
 
-It sits **in claude.ai's own composer row** — next to **Skip all approvals** on
-Cowork, next to the Chat/Cowork toggle where there is no approval control — and
-**only on a conversation that does not exist yet**: `/new`, the home composer, a
-project's own composer, and the same three on Cowork (`/cowork`,
-`/cowork/project/…`, and `/new` with the toggle flipped). On a conversation that
-already exists there is nothing here that the run editor doesn't do better, and
-a folder button over somebody's open work is an invitation to attach a matter's
-papers to the wrong one. (A page showing neither of those controls falls back to
-[the tray](#the-header-slot) with Save, the contents list and Run.)
+It sits **in claude.ai's own composer row**, wherever there is a composer to put
+papers into:
+
+- **To the right of Skip all approvals** on Cowork.
+- **To the right of the Chat/Cowork toggle** on the composer home.
+- **To the left of Send** in an ordinary chat conversation, which carries
+  neither of those controls.
+
+That covers a conversation that **does not exist yet** — `/new`, the home
+composer, a project's own composer, and the same three on Cowork — **and one
+that already does**, chat or Cowork session. Never Claude Code, and never a page
+that is a list rather than a place you type. (A composer showing none of those
+three anchors falls back to [the tray](#the-header-slot) with Save, the contents
+list and Run.)
+
+**Inside a conversation that already exists, two things differ and only two** —
+the papers are the same papers:
+
+- **It keeps its name.** Renaming a chat somebody has been working in is not
+  what "upload this folder" asked for, and a title is not display: claude.ai
+  stores it, syncs it to every signed-in device and searches it.
+- **It keeps any key already on it.** A conversation with no key gets this
+  folder's — that is the point of bringing the matter into it. One already on
+  *this* case needs nothing. One already on a *different* case is left alone:
+  swapping a key out from under an open chat re-reads every message in it under
+  another matter's map, and a wrong real name over a fake is worse than the
+  fake. The [key button](#the-key-button) switches it in one click for anyone
+  who meant to.
+
+Both are said out loud in the card rather than left to be noticed.
 
 Everything it has to say goes in a small card, which hangs **above the button**
 while you are still on the composer and stands on its own at the bottom of the
@@ -2124,9 +2146,11 @@ none of these labels is ever sent.
 **Attaching it.** Three ways, matching where work happens:
 
 - **A chat** — open the conversation, open the popup, **Attach to this chat**.
-- **A new chat, out of the case folder itself** — [Upload folder](#uploading-a-case-folder-into-a-new-chat)
-  loads the key sitting beside the papers and attaches it to the conversation
-  the send creates, so the matter arrives with its own key already on it.
+- **Out of the case folder itself** — [Upload folder](#uploading-a-case-folder-into-a-chat)
+  loads the key sitting beside the papers and attaches it: to the conversation
+  the send creates on a new chat, or to the open one you pressed it in, so the
+  matter arrives with its own key already on it. A conversation already reading
+  in another case keeps that one.
 - **A run** — the run editor (where the documents field is) has a
   **Pseudonym key** picker. The key is the matter's, like the papers, so it
   lives on the run: every conversation the run opens or returns to gets the
@@ -2214,7 +2238,7 @@ Uploading it takes the affirmative **Upload anyway**; other files in the same
 batch pass through untouched. The check reads the file locally and decides
 before claude.ai's own handlers ever see the event. The extension's **own**
 pickers are not uploads and are not asked about — [Upload
-folder](#uploading-a-case-folder-into-a-new-chat) reads a case folder locally
+folder](#uploading-a-case-folder-into-a-chat) reads a case folder locally
 and parses the key into the library — but what that button then hands to
 claude.ai goes through this guard like anything else.
 
@@ -2284,7 +2308,7 @@ on. So underneath both sits a standing digest.
 
 Every pseudonym key that passes through the extension — loaded from the popup,
 picked in the run editor, or found beside the papers by [Upload
-folder](#uploading-a-case-folder-into-a-new-chat) — is **automatically distilled
+folder](#uploading-a-case-folder-into-a-chat) — is **automatically distilled
 down to what a title needs**: the case's real **case number** and its
 **parties**, and nothing else. The last **20 cases** are kept, newest first,
 filed by real case number, and the twenty-first pushes the oldest off the end.
