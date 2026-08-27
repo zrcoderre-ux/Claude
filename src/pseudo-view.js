@@ -313,10 +313,34 @@
   // than a loop, the peek has the original to put back, and a node that
   // matched nothing is remembered too so a long conversation isn't re-scanned
   // node by node on every streaming tick.
+  /**
+   * A text walker that can REJECT a whole subtree in one question rather than
+   * asking the same one of every text node inside it.
+   *
+   * That difference is what makes a page-wide pass affordable: skippable()
+   * costs three closest() calls, and a conversation is mostly text nodes but
+   * comparatively few branches worth pruning.
+   */
+  function textWalker(root, prune) {
+    if (!prune) return document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    return document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (n) =>
+          n.nodeType === 1
+            ? prune(n)
+              ? NodeFilter.FILTER_REJECT
+              : NodeFilter.FILTER_SKIP
+            : NodeFilter.FILTER_ACCEPT,
+      }
+    );
+  }
+
   function swapIn(el, compiled) {
     if (!el || !compiled || !compiled.rx) return 0;
     let total = 0;
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const walker = textWalker(el);
     let node;
     while ((node = walker.nextNode())) {
       const text = node.nodeValue;
@@ -339,9 +363,9 @@
     return total;
   }
 
-  function restoreIn(el) {
+  function restoreIn(el, prune) {
     if (!el) return;
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const walker = textWalker(el, prune);
     let node;
     while ((node = walker.nextNode())) {
       const p = swapped.get(node);
@@ -411,6 +435,7 @@
 
   function restoreTitles() {
     for (const t of titleTargets()) restoreIn(t.el);
+    restoreLoose();
     restoreDocTitle();
     titleShown = 0;
   }
@@ -672,9 +697,117 @@
     );
   }
 
-  function sweepTitles() {
-    if (!Object.keys(keys).length) return 0;
+  // ---- everywhere else a case's name is written ------------------------------
+  //
+  // titleTargets() above finds a title by being told where one is: the header
+  // controls, and links whose href IS a conversation. That covers the chat
+  // you are in and a sidebar row that happens to be an anchor, and it misses
+  // every list claude.ai builds some other way — the Recents page, a project's
+  // own page, the Chats and Tasks margin, where a row is a button, a div with
+  // a click handler, or a link to somewhere that is not /chat/. Those are
+  // exactly the lists a case gets FOUND in, and they were the ones still
+  // reading in the fakes.
+  //
+  // Naming those shapes would be guessing at unversioned markup and would go
+  // stale the same way. So the rest of the page is swept as a whole, with the
+  // MASTER KEY, which is the one matcher that does not need to know which row
+  // belongs to which case — it holds all twenty at once, so each row comes out
+  // in its own case's real name from a single pass.
+  //
+  // Four limits keep a page-wide pass honest:
+  //
+  //   ONE CLAIMANT PER ROW. The targeted pass gets that from P.titleKeyFor;
+  //   here it is asked of each text node, which in a list IS a row. Without
+  //   it a case binding the fake "Doe" would rename a chat called "Doe hours"
+  //   that has nothing to do with the matter — a wrong case name over a chat
+  //   being worse than the pseudonym it replaced, on this path as on that one.
+  //
+  //   RENDERED TURNS ARE PRUNED. A message belongs to the message sweep, under
+  //   this chat's own full key. A distilled key must never touch one (see
+  //   src/masterkey.js) and it never gets the chance.
+  //
+  //   TITLE-LENGTH TEXT ONLY. A chat title is capped at 100 characters; a
+  //   paragraph is not. The ceiling is what keeps this about names in lists
+  //   rather than prose that a turn selector happened to miss.
+  //
+  //   IT STANDS DOWN WITH THE MESSAGES, not with the titles. The per-target
+  //   pass keeps translating through a run's hold because those targets are
+  //   PROVABLY titles — a header control, an href that is a conversation.
+  //   This pass believes it has a title; and while a run is moving, something
+  //   we merely believe is a title is something a hand-off might read.
+  //
+  // The library is not merged in beside the master key, and does not need to
+  // be: the worker folds every library key INTO the master key already, so
+  // the twenty cases here are the library's own cases plus the ones whose
+  // spreadsheets have since gone. Merging twenty full keys would put every
+  // declarant and address in one matcher, which is the merged library
+  // src/masterkey.js exists to avoid being.
+  const LOOSE_PRUNE_SEL =
+    MSG_SEL +
+    ',[contenteditable="true"],input,textarea,script,style,svg,' +
+    '[id^="cum-"],[class*="cum-"]';
+  const LOOSE_MAX = 160; // a title, with room for the "· 2 days ago" beside it
+
+  function loosePrune(el) {
+    try {
+      return el.matches(LOOSE_PRUNE_SEL);
+    } catch (e) {
+      return true; // unreadable is not walked into
+    }
+  }
+
+  function looseRoot() {
+    return document.body || document.documentElement || null;
+  }
+
+  function sweepLoose() {
+    if (translationOff()) return 0;
+    const master = masterFor();
+    const root = looseRoot();
+    if (!master || !root) return 0;
     let total = 0;
+    const walker = textWalker(root, loosePrune);
+    let node;
+    while ((node = walker.nextNode())) {
+      const text = node.nodeValue;
+      if (!text || text.length < 2 || text.length > LOOSE_MAX) continue;
+      const prior = swapped.get(node);
+      if (prior && prior.text === text) {
+        total += prior.count;
+        continue;
+      }
+      // The one-claimant rule, asked of each TEXT NODE — which in a list is a
+      // row. It is what the targeted pass gets from P.titleKeyFor and what a
+      // whole-page pass would otherwise have thrown away: a key binding "Doe"
+      // would rename a chat called "Doe hours" that has nothing to do with the
+      // case. A distinctive fake claims a row; a short one has to bring a
+      // second fake from the same case with it.
+      const r = P.claimsTitle(P.matchedValues(master.compiled, text))
+        ? P.translate(master.compiled, text)
+        : { text: text, count: 0 };
+      if (r.count > 0) {
+        node.nodeValue = r.text;
+        swapped.set(node, { text: r.text, orig: text, count: r.count });
+        total += r.count;
+      } else {
+        swapped.set(node, { text: text, orig: text, count: 0 });
+      }
+    }
+    return total;
+  }
+
+  function restoreLoose() {
+    const root = looseRoot();
+    if (root) restoreIn(root, loosePrune);
+  }
+
+  function sweepTitles() {
+    const master = masterFor();
+    // An empty LIBRARY is not an empty map any more: the master key is the
+    // whole point of a case whose spreadsheet is no longer loaded, and this
+    // guard was refusing to sweep anything at all for exactly that operator.
+    if (!Object.keys(keys).length && !master) return 0;
+    let claimed = 0;
     let owner = null;
     for (const t of titleTargets()) {
       const fake = originalText(t.el);
@@ -686,10 +819,20 @@
       }
       const n = swapIn(t.el, entry.compiled);
       if (n) {
-        total += n;
+        claimed += n;
         owner = owner || entry.id;
       }
     }
+    // Then the rest of the page. This runs SECOND so a real key always gets
+    // first refusal on a title it knows — the master key fills in behind it
+    // and can never overwrite it, since a node already swapped comes back off
+    // the memo untouched.
+    const loose = sweepLoose();
+    // ...and that memo is why `loose` is the page's whole count rather than a
+    // second one to add: it re-walks what the pass above just swapped and
+    // counts it from the memo. Adding the two would double every sidebar row.
+    let total = loose || claimed;
+    if (!owner && loose) owner = MASTER_ID;
     const doc = sweepDocTitle();
     total += doc;
     if (doc && !owner) owner = docMemo && docMemo.id;
@@ -755,8 +898,11 @@
 
   const mo = new MutationObserver(() => {
     // Titles are translated with or without a key on THIS chat, so the sweep
-    // runs whenever the library has anything to translate with.
-    if (active || Object.keys(keys).length) sweepSoon();
+    // runs whenever there is anything at all to translate with — the master
+    // key included. Asking only the LIBRARY was the same mistake sweepTitles
+    // made: an operator whose cases are all in the master key and whose
+    // library is empty got no sweep at all, on any page.
+    if (active || Object.keys(keys).length || masterFor()) sweepSoon();
   });
 
   // ---- the badge and the composer warning ------------------------------------
