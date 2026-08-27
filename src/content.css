@@ -1732,6 +1732,25 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
      as no button at all beside its solid white neighbours. */
 }
 #cum-key-btn:hover { background: #f2f0ea; }
+/* The two homes the button falls back to when the tray does not take it — see
+   place() in src/key-panel.js. Beside Save it needs its own ground, since Save
+   may have ended up somewhere that gives it none; loose, it needs a place. */
+#cum-key-btn {
+  background: #ffffff;
+  color: #1f1f1f;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+#cum-key-btn.cum-key-loose {
+  position: fixed; top: 8px; right: 12px; z-index: 2147483645;
+}
+.cum-key-panel.cum-key-hang {
+  position: fixed; top: 46px; right: 12px; z-index: 2147483645;
+}
+@media (prefers-color-scheme: dark) {
+  #cum-key-btn { background: #2a2a28; color: #f0efea; border-color: rgba(255, 255, 255, 0.18); }
+  #cum-key-btn:hover { background: #34332f; }
+  .cum-key-count { color: #c9c7c0; }
+}
 .cum-key-ico { display: inline-flex; }
 .cum-key-ico svg { width: 15px; height: 15px; display: block; }
 /* And it says its own name, like every other button in that row. An unlabelled
