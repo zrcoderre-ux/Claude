@@ -1647,21 +1647,6 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 
 /* ---- Pseudonym translation (src/pseudo-view.js) -------------------------- */
 
-/* Display-only badge: a key is attached and fakes are being shown as reals.
-   Draggable, like the usage meter's pill — same reason, same cursor: it's a
-   fixed thing sitting over someone else's page, and sooner or later it's over
-   the part of it you wanted. `touch-action: none` so a pointer drag on a
-   touchscreen moves the badge instead of scrolling the page under it. */
-.cum-pseudo-badge {
-  position: fixed; left: 14px; bottom: 14px; z-index: 2147483000;
-  background: #2a2a28; color: #f0efea; border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 999px; padding: 5px 11px; font: 12px/1.35 system-ui, sans-serif;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25); pointer-events: auto; cursor: grab;
-  max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  user-select: none; touch-action: none;
-}
-.cum-pseudo-badge:active { cursor: grabbing; }
-
 /* A real value is standing in the draft message. */
 .cum-pseudo-warn {
   position: fixed; left: 50%; transform: translateX(-50%); bottom: 96px;
@@ -1719,35 +1704,6 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   .cum-pseudo-guard-send { color: #ff9f9f; }
 }
 
-/* The cleaner behind the badge: type real names, copy out the fakes. */
-.cum-pseudo-clean {
-  position: fixed; left: 14px; bottom: 52px; z-index: 2147483001;
-  width: min(420px, 90vw); background: #2a2a28; color: #f0efea;
-  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 12px;
-  padding: 10px 12px; font: 12.5px/1.4 system-ui, sans-serif;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
-  display: flex; flex-direction: column; gap: 7px;
-}
-.cum-pseudo-clean-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
-.cum-pseudo-clean-x {
-  background: none; border: none; color: inherit; font: inherit; cursor: pointer;
-  padding: 2px 6px; border-radius: 6px;
-}
-.cum-pseudo-clean-x:hover { background: rgba(255, 255, 255, 0.1); }
-.cum-pseudo-clean-in, .cum-pseudo-clean-out {
-  width: 100%; box-sizing: border-box; min-height: 72px; resize: vertical;
-  font: 12.5px/1.45 system-ui, sans-serif; border-radius: 8px; padding: 6px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.22); background: #1f1f1e; color: #f0efea;
-}
-.cum-pseudo-clean-out { background: #232321; color: #d9e7d9; }
-.cum-pseudo-clean-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.cum-pseudo-clean-note { color: #c9c7c0; font-size: 11.5px; }
-.cum-pseudo-clean-copy {
-  font: inherit; font-weight: 600; border-radius: 8px; padding: 5px 12px; cursor: pointer;
-  border: 1px solid #c96442; background: #c96442; color: #fff; flex: 0 0 auto;
-}
-.cum-pseudo-clean-copy:hover { background: #b85838; }
-
 /* The as-you-type prompt at the caret: press → to swap the real name. */
 .cum-pseudo-tip {
   position: fixed; z-index: 2147483003; max-width: 340px;
@@ -1759,19 +1715,94 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 .cum-pseudo-tip b { font-weight: 700; }
 .cum-pseudo-tip-how { opacity: 0.75; font-size: 11.5px; }
 
-/* The peek toggle in the cleaner, and the paused badge. */
-.cum-pseudo-clean-toggle {
+/* ---- The key button and its panel (src/key-panel.js) ---------------------
+   First in the tray, so it sits to the LEFT of Save. It replaces the floating
+   badge outright: everything that lozenge said is in the panel, and the count
+   on the button is what keeps the badge's own invariant — a real name on
+   screen always has something on screen saying why. */
+#cum-key-btn {
+  display: inline-flex; align-items: center; gap: 5px; margin: 0;
+  padding: 5px 9px; border: 1px solid rgba(0, 0, 0, 0.16); border-radius: 9px;
+  background: transparent; color: inherit; font: inherit; font-size: 12.5px;
+  font-weight: 600; line-height: 1.2; cursor: pointer;
+}
+#cum-key-btn:hover { background: rgba(0, 0, 0, 0.06); }
+.cum-key-ico { display: inline-flex; }
+.cum-key-ico svg { width: 15px; height: 15px; display: block; }
+.cum-key-count { font-variant-numeric: tabular-nums; color: #6b6b6b; }
+.cum-key-count:empty { display: none; }
+
+/* LIT IF AND ONLY IF REAL NAMES ARE ON SCREEN, and black and white the rest of
+   the time. That is the badge's old invariant turned into a colour: colour
+   means this page is not saying what claude.ai says, and the absence of colour
+   means it is. Anything subtler asks you to read a button before you trust
+   what is under it.
+
+   So the two stood-down states — a peek, and a run holding the messages — are
+   monochrome like the off state, because in both of them the page IS showing
+   the fakes. They are told apart by the word on the button ("fakes", "held")
+   and by the italic, not by a second colour that would dilute the first. */
+#cum-key-btn.cum-key-on {
+  color: #c96442;
+  border-color: rgba(201, 100, 66, 0.45);
+  background: rgba(201, 100, 66, 0.12);
+}
+#cum-key-btn.cum-key-on .cum-key-count { color: #c96442; }
+#cum-key-btn.cum-key-on:hover { background: rgba(201, 100, 66, 0.2); }
+#cum-key-btn.cum-key-off { font-style: italic; }
+
+.cum-key-panel {
+  width: 312px; max-width: 312px; box-sizing: border-box;
+  background: #2a2a28; color: #f0efea;
+  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 12px;
+  font: 12.5px/1.45 system-ui, sans-serif;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  max-height: calc(100vh - 120px); display: flex; flex-direction: column;
+}
+.cum-key-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 10px 7px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.cum-key-title { font-weight: 700; }
+.cum-key-body { padding: 10px 12px 12px; overflow-y: auto; }
+.cum-key-sec, .cum-key-status { margin-bottom: 12px; }
+.cum-key-status { padding-bottom: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+.cum-key-case { font-weight: 700; margin-bottom: 3px; word-break: break-word; }
+.cum-key-h {
+  font-weight: 700; font-size: 11px; letter-spacing: 0.04em;
+  text-transform: uppercase; color: #c9c7c0; margin-bottom: 4px;
+}
+.cum-key-line { margin: 0 0 6px; }
+.cum-key-dim { color: #c9c7c0; font-size: 11.5px; }
+.cum-key-note { margin: 4px 0 0; color: #d9e7d9; }
+.cum-key-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cum-key-cases { margin: 0 0 8px; padding-left: 18px; }
+.cum-key-cases li { margin: 1px 0; word-break: break-word; }
+.cum-key-b {
   font: inherit; border-radius: 8px; padding: 5px 10px; cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.25); background: #1f1f1e; color: #f0efea;
-  flex: 0 0 auto;
 }
-.cum-pseudo-clean-toggle:hover { background: #34332f; }
-.cum-pseudo-clean-toggle:disabled { cursor: not-allowed; opacity: 0.6; }
-.cum-pseudo-clean-toggle:disabled:hover { background: #1f1f1e; }
-.cum-pseudo-badge.cum-pseudo-paused { background: #4a4a45; font-style: italic; }
-/* Held by a run in flight — not the same thing as a peek, and it says so:
-   the display is standing down for safety, not because anyone asked it to. */
-.cum-pseudo-badge.cum-pseudo-held { background: #6b4a1f; font-style: normal; }
+.cum-key-b:hover { background: #34332f; }
+.cum-key-b:disabled { cursor: not-allowed; opacity: 0.55; }
+.cum-key-b:disabled:hover { background: #1f1f1e; }
+.cum-key-primary { border-color: #c96442; background: #c96442; color: #fff; }
+.cum-key-primary:hover { background: #b85838; }
+.cum-key-warn { border-color: #7a3a3a; }
+.cum-key-peek { margin-top: 2px; }
+.cum-key-x { border: none; background: none; padding: 2px 6px; }
+.cum-key-x:hover { background: rgba(255, 255, 255, 0.1); }
+.cum-key-select {
+  width: 100%; box-sizing: border-box; margin-bottom: 6px; font: inherit;
+  border-radius: 8px; padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.22); background: #1f1f1e; color: #f0efea;
+}
+.cum-key-in, .cum-key-out {
+  width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical;
+  margin-bottom: 6px; font: 12.5px/1.45 system-ui, sans-serif;
+  border-radius: 8px; padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22); background: #1f1f1e; color: #f0efea;
+}
+.cum-key-out { background: #232321; color: #d9e7d9; }
 
 /* ── Upload folder ────────────────────────────────────────────────────────
    The button sits in claude.ai's OWN composer row, beside the approval control

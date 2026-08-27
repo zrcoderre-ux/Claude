@@ -96,6 +96,7 @@
         "src/folder-upload.js",
         "src/save-chat.js",
         "src/pseudo-view.js",
+        "src/key-panel.js",
         "src/copy-ruling.js",
         "src/stamps.js",
         "src/incognito-watch.js"

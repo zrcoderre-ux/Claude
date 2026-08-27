@@ -30,7 +30,10 @@
   if (!C || !P) return;
 
   const ID = "cum-tray";
-  const ORDER = ["save", "toc", "run", "folder"];
+  // Left to right. The key leads: it is the control you check BEFORE you read
+  // or copy anything on a translated page, and Save is the one you reach for
+  // after.
+  const ORDER = ["key", "save", "toc", "run", "folder"];
   const TICK_MS = 1000;
 
   let tray = null;

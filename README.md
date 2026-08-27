@@ -897,7 +897,7 @@ walked:
   you have already typed a run name, which always wins.
 - **So does the key.** The key it attaches is called by the folder's name from
   then on, wherever keys are listed — so the picker, the runs list, the tab
-  group and the badge in the chat all say the same matter.
+  group and the key button in the chat all say the same matter.
 - **A case folder with no `Text Files` in it adds nothing** and says so. It is
   still a case folder, which is exactly why the rest of it does not go instead.
 
@@ -2105,7 +2105,7 @@ grows) lands on its existing entry, so every chat and run attached to it
 follows onto the new rows.
 
 **What a key is called** is the same answer everywhere it appears — the popup,
-the run editor's picker, the badge in the chat, the tab group, the runs list:
+the run editor's picker, the key button in the chat, the tab group, the runs list:
 
 1. **The case folder it came out of** — `23STCV12345 Smith v. Jones` — when it
    was picked as part of one ([A case folder is taken apart, not
@@ -2153,11 +2153,9 @@ none of these labels is ever sent.
    case-insensitively, **and in the case the fake was written in** rather than
    the case the key happens to store: `John Doe` → `Zachary Coderre`,
    `JOHN DOE` → `ZACHARY CODERRE`, `john doe` → `zachary coderre`. See [Case
-   comes across with the name](#case-comes-across-with-the-name). A badge (bottom-left) names the key and counts the swaps,
-   so what you see is never silently different from what Claude sees. **Drag it
-   anywhere** — like the usage pill, where you put it is where it stays, in
-   every tab and across reloads, and the cleaner below opens off it wherever it
-   has been put.
+   comes across with the name](#case-comes-across-with-the-name). The **key button** beside Save names
+   the key and counts the swaps, so what you see is never silently different
+   from what Claude sees — see [The key button](#the-key-button).
    **Display-only, and the boundary is structural**: the swap edits what this
    tab *renders*; everything that leaves the page — sends, workflow hand-offs,
    Save chat — reads claude.ai's own state or API, which still holds the fakes.
@@ -2191,19 +2189,19 @@ none of these labels is ever sent.
    below — because those words are what normal writing is made of. Multi-word
    values keep warning even when their words are ordinary ("Cross River
    Bank").
-3. **Cleans text for pasting.** Click the badge and a small panel opens:
-   type or paste text with real names into the top box and the bottom box
+3. **Cleans text for pasting.** Open the [key button](#the-key-button) and
+   type or paste text with real names into the top box; the bottom box
    shows it pseudonymized live — the same map run forward (real → fake),
    longest name first, alt spellings covered, keeps left verbatim — with a
    **Copy cleaned** button, so what lands in the chat is the cleaned version.
    It only swaps values the key knows, and says so; it never writes into the
    composer itself — pasting is your move, and the composer warning is still
-   watching either way. The panel also holds the **peek toggle** —
-   **⏸ Show the fakes / ▶ Show real names** — which pauses this chat's
-   translation so you can see the conversation exactly as claude.ai renders
-   it, then puts the real names back. This tab only, never remembered (a
-   peek that silently outlived the visit would be translation quietly off),
-   and the badge says plainly when it's paused. The composer warning, the
+   watching either way. The same panel holds the **peek toggle** —
+   **Show the fakes / Show the real names** — which pauses this page's
+   translation so you can see it exactly as claude.ai renders it, then puts the
+   real names back. This tab only, never remembered (a peek that silently
+   outlived the visit would be translation quietly off), and the button says
+   plainly when it's paused. The composer warning, the
    typeahead and the upload guard stay on while paused — they're safety,
    not display.
 
@@ -2245,7 +2243,7 @@ read what claude.ai wrote rather than what you are looking at, so a display swap
 never becomes a name that leaves the browser. The one thing it does reach that
 the message swap doesn't is the **browser's own tab title**, which means your
 local history and a bookmark of that page pick up the real name — the same
-trade the badge already makes with the screen itself.
+trade the translation already makes with the screen itself.
 
 **Each title is translated by its own chat's key**, not by whichever key this
 tab happens to be showing. The sidebar is a list of *different matters*:
@@ -2266,10 +2264,9 @@ tab happens to be showing. The sidebar is a list of *different matters*:
    loaded, so a case whose spreadsheet is no longer in the library still reads
    back by name.
 
-The badge counts titles beside names (`🔑 23STCV12345 Smith — 4 names · 2 titles
-restored`), and **appears for titles alone** on a page where no chat has a key
-attached — a sidebar reading in real names is still translation, and it never
-happens without something on screen saying so. The peek toggle puts the fakes
+The key button counts titles beside names, and **lights up for titles alone**
+on a page where no chat has a key attached — a sidebar reading in real names is
+still translation, and it never happens without something on screen saying so. The peek toggle puts the fakes
 back in the titles too — a peek is for seeing the page exactly as claude.ai
 renders it. **A run working the matter does not**: while a run is moving, its
 chats' *messages* show the fakes and their **titles keep their real names**.
@@ -2317,8 +2314,8 @@ taking anything away:
 - **No cleaner behind it.** The cleaner is a write-side tool — you type a
   paragraph and paste back what it hands you — so it only ever runs on a key
   that knows the whole case. A distilled key would swap the parties, return
-  everything else verbatim, and *look* cleaned. The badge says so and offers no
-  cleaner at all.
+  everything else verbatim, and *look* cleaned. The key button says so and
+  offers no cleaner at all.
 
 **It outlives the keys it came from**, which is the point — and which means real
 case names sit in this browser's storage after the spreadsheet is gone. So the
@@ -2327,6 +2324,59 @@ emptying **sticks**: the library those cases came from is still sitting there,
 and a store that quietly refilled itself on the next restart would be a button
 that appeared to work. Loading a case's key again after emptying is you asking
 for that case back, and brings it back.
+
+### The key button
+
+Everything the pseudonym feature does on the page is behind one control: a
+**key**, first in the button row beside claude.ai's own sidebar toggle, to the
+**left of Save**. It is an alternative to reaching for the extension popup, not
+a replacement — the popup keeps all of it, and is where you go when the page
+itself won't load.
+
+It replaced the floating badge outright. That badge said the right things and
+said them from a draggable lozenge sitting over claude.ai's page: one more
+thing to move out of the way of the thing you were reading.
+
+**The button carries the count**, and that is not decoration. The badge existed
+for one invariant — *a real name on screen always has something on screen
+saying why* — and a panel that has to be opened would have quietly ended it. So
+the button shows how many values are restored right now, goes quiet when
+nothing on the page is translated, and says `held` or `fakes` when a run or a
+peek has the display standing down. Its tooltip is the whole sentence.
+
+**And it is lit if and only if real names are on screen** — black and white the
+rest of the time. That is the same invariant turned into something you don't
+have to read: colour means this page is *not* saying what claude.ai says. A
+[peek](#pseudonym-translation) and a [run's
+hold](#while-a-run-is-working-the-messages-show-the-fakes) are monochrome like
+the off state, because in both of them the page is showing the fakes; they are
+told apart by the word on the button, not by a second colour that would dilute
+the first.
+
+The panel under it holds, in order:
+
+- **What is translating, and what it is doing** — the case this page is being
+  read in, how many names and titles are restored, and the **peek toggle**.
+  Where a run is holding the messages the toggle is disabled and says which run
+  and what ends it ([While a run is working](#while-a-run-is-working-the-messages-show-the-fakes)).
+- **This conversation** — attach a key to it, or detach. Attaching in a chat
+  that belongs to a **run** re-keys the whole case, exactly as the popup does:
+  the run, its group, and their chats all follow.
+- **The key library** — load a `pseudonym_key.xlsx` (parsed here, never
+  uploaded — and the [upload guard](#pseudonym-translation) leaves this one
+  picker alone, since it is the door keys come in by), or forget one, which
+  detaches it everywhere it was attached.
+- **The master key** — what its [20 cases](#the-master-key-the-last-20-cases)
+  are, and the one control that empties it.
+- **The cleaner** — type real names, read out the fakes, **Copy cleaned**. It
+  appears only where the key knows the whole case: a distilled master key would
+  swap the parties, hand back everything else verbatim, and look cleaned.
+
+The decisions it renders live where they always did. `src/pseudo-view.js` owns
+the keys, the sweep and the peek and publishes them; `src/pseudo.js` owns what a
+key is; `src/masterkey.js` owns the last 20 cases. The panel is the button and
+the storage writes, written against the same keys the popup writes, so a change
+made in one is the same change as a change made in the other.
 
 ### A copy that carries the real names
 
@@ -2431,9 +2481,8 @@ mid-step — is a failure like any other: past **five minutes** with no heartbea
 and no progress, the real names return. A run genuinely waiting an hour for a
 long answer keeps beating every twenty seconds, so it keeps its hold.
 
-The badge says which state it is in (`⏸ a run is working · the messages show
-the fakes · 2 titles still real`), and while a run holds the messages the **peek
-toggle** is disabled and says why —
+The key button says which state it is in, and while a run holds the messages
+the **peek toggle** is disabled and says why —
 pausing the run is one click, and pausing the run is exactly what this rule is
 waiting for. Everything that is *safety* rather than display stays on
 throughout: the composer warning, the typeahead swap, the upload guard, and the
