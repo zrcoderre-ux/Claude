@@ -99,10 +99,6 @@
         surface: trimmed(f.surface || (f.target && f.target.surface)) || null,
       },
       model: trimmed(f.model) || null,
-      // How much Claude may do unattended, in Cowork. On the chat rather than
-      // in `target`, because it is not part of the address: it is the same kind
-      // of per-turn setting as the model, and a step can override it.
-      approval: trimmed(f.approval) || null,
       // Start this chat in a conversation that already exists, rather than
       // opening a fresh one. Matter-specific like the papers are, so Start
       // hands it to the run and clears it from the template.
@@ -218,12 +214,6 @@
       // drafted by one model and criticised by another, which is the whole
       // point of being able to try combinations.
       model: trimmed(f.model) || null,
-      // How much Claude may do unattended on THIS step, in Cowork. Null means
-      // the chat's own choice, for the same reason the model works that way: a
-      // conversation that researches with the brakes off and then edits a
-      // filing wants a different answer at each end, and asked once of the
-      // chat, one answer had to cover both.
-      approval: trimmed(f.approval) || null,
       // Steps sharing a group id, and sitting next to each other, run at the
       // same time — see stepWaves.
       group: trimmed(f.group) || null,
@@ -1057,10 +1047,6 @@
     // leaves the chat on that model for the steps after it, exactly as it would
     // if you had picked it yourself.
     const on = new Map();
-    // The same bookkeeping for the approval mode, and for the same reason: a
-    // step that turns the brakes on leaves them on for the steps after it,
-    // exactly as it would if you had set it yourself.
-    const approvalOn = new Map();
     return steps.map((s, i) => {
       if (isPauseStep(s))
         return {
@@ -1084,8 +1070,6 @@
           modelOn: null,
           modelOverride: false,
           surface: null,
-          approval: null,
-          approvalOn: null,
           docIds: [],
           handsOn: false,
           marker: null,
@@ -1097,9 +1081,6 @@
       const was = on.get(s.chatId) || null;
       if (model) on.set(s.chatId, model);
       const surface = trimmed((chat.target && chat.target.surface) || "") || null;
-      const approval = trimmed(s.approval) || (firstInChat ? trimmed(chat.approval) : null) || null;
-      const approvalWas = approvalOn.get(s.chatId) || null;
-      if (approval) approvalOn.set(s.chatId, approval);
       // Does this step's reply get pasted into another chat? Only then is it
       // worth insisting on what the reply must be — a step whose answer stays
       // where it is can say anything it likes. In a wave, the step that reads
@@ -1156,11 +1137,6 @@
         // for a different chat. Sent on every step so a resumed run lands the
         // right way up, which costs one already-there check.
         surface: surface,
-        // Approval switches like the model does — only when it actually
-        // changes, since setting the mode you're on is a menu opened for
-        // nothing and one more thing to go wrong.
-        approval: approval && approval !== approvalWas ? approval : null,
-        approvalOn: approval || approvalWas || null,
         // A step that deliberately differs from its chat's own setting.
         modelOverride: !!trimmed(s.model),
         docIds: opening.concat(added),
@@ -1525,17 +1501,45 @@
     );
   }
 
+  // Settings a stored plan may still carry from a build that had them. A run
+  // does not go back through newChatSlot/newStep once it has started, so a run
+  // paused — or a template last saved — under the older build comes back with
+  // the old keys intact, and everything downstream would have to know a field
+  // it no longer sets can still turn up.
+  //
+  // `approval` is the one so far. Cowork's approval mode is sticky: it stays
+  // wherever the last person to touch it left it, so there was never anything
+  // for a send to do but leave it alone, and a stored "skip" is now a promise
+  // nothing keeps.
+  const RETIRED_FIELDS = ["approval"];
+
+  function withoutRetired(list) {
+    return (list || []).map((o) => {
+      if (!o || typeof o !== "object") return o;
+      if (!RETIRED_FIELDS.some((k) => k in o)) return o; // the ordinary case: no copy
+      const copy = Object.assign({}, o);
+      for (const k of RETIRED_FIELDS) delete copy[k];
+      return copy;
+    });
+  }
+
   // What a run is actually executing: its own snapshot if it has one, otherwise
   // the workflow (runs created before runs carried their own). Everything that
   // walks a run's steps goes through here, so a run edited mid-flight and a
-  // template edited behind it can't be confused for each other.
+  // template edited behind it can't be confused for each other — and so
+  // retired settings are dropped at ONE door, the one a stored plan re-enters
+  // through on a resume and on a re-run alike.
   function runSource(run, wf) {
     const plan = run && run.plan;
     if (plan && Array.isArray(plan.steps) && plan.steps.length)
-      return { chats: plan.chats || [], steps: plan.steps, docs: (run && run.docs) || [] };
+      return {
+        chats: withoutRetired(plan.chats || []),
+        steps: withoutRetired(plan.steps),
+        docs: (run && run.docs) || [],
+      };
     return {
-      chats: (wf && wf.chats) || [],
-      steps: (wf && wf.steps) || [],
+      chats: withoutRetired((wf && wf.chats) || []),
+      steps: withoutRetired((wf && wf.steps) || []),
       docs: ((wf && wf.docs) || []).concat((run && run.docs) || []),
     };
   }
