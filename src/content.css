@@ -1731,12 +1731,25 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 .cum-key-ico svg { width: 15px; height: 15px; display: block; }
 .cum-key-count { font-variant-numeric: tabular-nums; color: #6b6b6b; }
 .cum-key-count:empty { display: none; }
-/* Translating right now. */
-#cum-key-btn.cum-key-on { background: rgba(201, 100, 66, 0.14); }
-#cum-key-btn.cum-key-on .cum-key-count { color: #a24a2c; }
-/* A key is on but the display is standing down — a peek, or a run's hold.
-   Not the same state and it must not look like the same state. */
-#cum-key-btn.cum-key-off { background: rgba(0, 0, 0, 0.05); font-style: italic; }
+
+/* LIT IF AND ONLY IF REAL NAMES ARE ON SCREEN, and black and white the rest of
+   the time. That is the badge's old invariant turned into a colour: colour
+   means this page is not saying what claude.ai says, and the absence of colour
+   means it is. Anything subtler asks you to read a button before you trust
+   what is under it.
+
+   So the two stood-down states — a peek, and a run holding the messages — are
+   monochrome like the off state, because in both of them the page IS showing
+   the fakes. They are told apart by the word on the button ("fakes", "held")
+   and by the italic, not by a second colour that would dilute the first. */
+#cum-key-btn.cum-key-on {
+  color: #c96442;
+  border-color: rgba(201, 100, 66, 0.45);
+  background: rgba(201, 100, 66, 0.12);
+}
+#cum-key-btn.cum-key-on .cum-key-count { color: #c96442; }
+#cum-key-btn.cum-key-on:hover { background: rgba(201, 100, 66, 0.2); }
+#cum-key-btn.cum-key-off { font-style: italic; }
 
 .cum-key-panel {
   width: 312px; max-width: 312px; box-sizing: border-box;

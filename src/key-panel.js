@@ -20,9 +20,16 @@
  * THE BUTTON CARRIES THE COUNT, and that is not decoration. The badge existed
  * for one invariant — a real name on screen always has something on screen
  * saying why — and a panel that has to be opened would have quietly ended it.
- * So the button reads "🔑 12" while twelve values are showing, goes quiet when
+ * So the button reads "12" while twelve values are showing, goes quiet when
  * nothing is translated, and says so plainly when a peek or a run has the
  * display standing down.
+ *
+ * And it is COLOURED if and only if real names are on screen. That is the same
+ * invariant turned into something you do not have to read: colour means this
+ * page is not saying what claude.ai says, black and white means it is. A peek
+ * and a run's hold are therefore monochrome like the off state — in both of
+ * them the page is showing the fakes — and are told apart by the word on the
+ * button rather than by a second colour that would dilute the first.
  *
  * The decisions it renders are not here. src/pseudo-view.js owns the keys, the
  * sweep and the peek, and publishes state()/clean()/setPaused()/subscribe();
@@ -524,6 +531,10 @@
     if (btn) {
       const c = btn.querySelector(".cum-key-count");
       if (c) c.textContent = countText(st);
+      // Lit if and ONLY if real names are on screen — see content.css. A peek
+      // and a run's hold both leave the page showing the fakes, so both are
+      // monochrome like the off state and are told apart by the word on the
+      // button rather than by a second colour.
       btn.classList.toggle("cum-key-on", st.on && !st.paused && !st.hold);
       btn.classList.toggle("cum-key-off", st.on && (st.paused || !!st.hold));
       btn.title =

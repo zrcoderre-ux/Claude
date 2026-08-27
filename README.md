@@ -2344,6 +2344,15 @@ the button shows how many values are restored right now, goes quiet when
 nothing on the page is translated, and says `held` or `fakes` when a run or a
 peek has the display standing down. Its tooltip is the whole sentence.
 
+**And it is lit if and only if real names are on screen** — black and white the
+rest of the time. That is the same invariant turned into something you don't
+have to read: colour means this page is *not* saying what claude.ai says. A
+[peek](#pseudonym-translation) and a [run's
+hold](#while-a-run-is-working-the-messages-show-the-fakes) are monochrome like
+the off state, because in both of them the page is showing the fakes; they are
+told apart by the word on the button, not by a second colour that would dilute
+the first.
+
 The panel under it holds, in order:
 
 - **What is translating, and what it is doing** — the case this page is being
