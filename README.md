@@ -2220,6 +2220,11 @@ same map:
 
 - **The chat's own title** in the header of the conversation you're in.
 - **Every chat in the sidebar**, in recents, and in search results.
+- **The Recents page, a project's own page, and the Chats and Tasks margin** —
+  the lists a case actually gets *found* in. Those rows are not always links to
+  a conversation (a row can be a button, or a div with a click handler), so
+  they are reached by a different route: see [Lists reached the other
+  way](#lists-reached-the-other-way).
 - **The browser tab**, with claude.ai's own ` - Claude` tail left as written.
 
 Nothing is written back to claude.ai. The swap is this tab's rendering, exactly
@@ -2286,7 +2291,9 @@ nothing to be unique by.
 Three deliberate limits, and each one is why this can be switched on without
 taking anything away:
 
-- **Titles only, never messages.** A distilled key knows four names out of a
+- **Titles only, never messages** — but *every* title, including the list rows
+  that aren't links at all ([Lists reached the other
+  way](#lists-reached-the-other-way)). A distilled key knows four names out of a
   key that had hundreds. Run over a brief it would swap the caption and leave
   every declarant, witness and address in the fakes — a document half in one
   language and half in the other, with nothing on screen saying which half you
@@ -2309,6 +2316,45 @@ emptying **sticks**: the library those cases came from is still sitting there,
 and a store that quietly refilled itself on the next restart would be a button
 that appeared to work. Loading a case's key again after emptying is you asking
 for that case back, and brings it back.
+
+### Lists reached the other way
+
+The four rules above find a title by being **told where one is**: the header
+controls, and links whose `href` *is* a conversation. That covers the chat
+you're in and a sidebar row that happens to be an anchor — and it misses every
+list claude.ai builds some other way. The **Recents** page, a **project's own
+page**, the **Chats and Tasks margin**: a row there can be a button, a div with
+a click handler, or a link to somewhere that isn't `/chat/`. Those are exactly
+the lists a case gets found in, and they were the ones still reading in the
+fakes.
+
+Naming those shapes would be guessing at unversioned markup and would go stale
+the same way. So the **rest of the page is swept as a whole**, with the
+[master key](#the-master-key-the-last-20-cases) — which is the one matcher that
+doesn't need to know which row belongs to which case, because it holds all
+twenty at once and each row comes out in its own case's real name from a single
+pass.
+
+Four limits keep a page-wide pass honest:
+
+- **One claimant per row.** The targeted rules get that from the key library;
+  here it is asked of each **text node**, which in a list *is* a row. Without
+  it a case binding the fake `Doe` would rename a chat called `Doe hours` that
+  has nothing to do with the matter.
+- **Rendered turns are pruned.** A message belongs to the message sweep under
+  that chat's own full key; a distilled key never gets near one.
+- **Title-length text only.** A chat title is capped at 100 characters and a
+  paragraph is not, so the ceiling keeps this about names in lists rather than
+  prose a turn selector happened to miss.
+- **It stands down with the messages, not with the titles.** The targeted rules
+  keep translating through a run's hold because their targets are *provably*
+  titles. This pass *believes* it has a title — and while a run is moving,
+  something merely believed to be a title is something a hand-off might read.
+
+The library isn't merged in beside the master key, and doesn't need to be:
+every key you load is folded **into** the master key already, so the twenty
+cases here are the library's own plus the ones whose spreadsheets have since
+gone.
 
 ### While a run is working, the messages show the fakes
 
