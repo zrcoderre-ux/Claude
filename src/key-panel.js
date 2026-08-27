@@ -123,8 +123,17 @@
     draw();
   }
 
-  /** Which conversation this tab IS, in the spelling every reader uses. */
+  /**
+   * The conversation this tab IS, in the spelling every reader uses — and ""
+   * on a page that is not a conversation.
+   *
+   * The strict one, deliberately: everything this panel does with it is a
+   * WRITE. A key attached to "/new" is a key attached to every new page ever
+   * opened, and the next matter's blank composer would come up wearing the
+   * last one's names.
+   */
   function convKey() {
+    if (P.conversationFromUrl) return P.conversationFromUrl(location.href);
     const W = window.CUMWorkflow;
     return W && W.conversationKey
       ? W.conversationKey(location.href)
@@ -316,7 +325,7 @@
         "p",
         "cum-key-line",
         !conv
-          ? "Open a conversation to attach a key to it."
+          ? "This page is not a conversation — open a chat or a Cowork session to attach a key to it."
           : attached && keys[attached]
           ? "Attached: " + keyLabel(keys[attached])
           : ids.length

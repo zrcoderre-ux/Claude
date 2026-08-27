@@ -46,6 +46,7 @@ const WARN_KEY = "cum_warn"; // usage-pace warnings already fired (see usagewarn
 const WARN_CFG_KEY = "cum_warn_cfg"; // { enabled, dailyShare } — enabled defaults on
 const PSEUDO_KEYS_KEY = "cum_pseudo_keys"; // id -> parsed key (see popup.js)
 const MASTER_KEY = "cum_pseudo_master"; // { cases: [...] } — see masterkey.js
+const PSEUDO_CHATS_KEY = "cum_pseudo_chats"; // conversation key -> key id
 const KEEPALIVE = "cum-ac-keepalive";
 const TIME_ALARM = "cum-job-time";
 const RESET_ALARM = "cum-job-reset";
@@ -2873,6 +2874,38 @@ async function refreshMasterKey() {
   }
 }
 
+// ---- attachments that were never a conversation --------------------------
+//
+// A key is attached per CONVERSATION, and the identity used to be whatever
+// conversationKeyFromUrl made of the address — which for a page that is not a
+// conversation is its path. So a key attached from "/new", "/cowork" or
+// "/recents" was filed under that page, and every page of that shape from then
+// on came up wearing it: the last matter's names over the next one's blank
+// composer.
+//
+// Nothing can write one of those any more (P.conversationFromUrl decides it
+// now, at both attach controls). This is for the ones already stored, since a
+// rule that only stops new mistakes leaves the operator with the old one and
+// no idea what to detach.
+async function sweepChatKeys() {
+  const P = self.CUMPseudo;
+  if (!P || !P.isConversationKey) return;
+  try {
+    const res = await get(PSEUDO_CHATS_KEY);
+    const chats = res[PSEUDO_CHATS_KEY];
+    if (!chats || typeof chats !== "object") return;
+    let dropped = 0;
+    const kept = {};
+    for (const conv of Object.keys(chats)) {
+      if (P.isConversationKey(conv)) kept[conv] = chats[conv];
+      else dropped++;
+    }
+    if (dropped) await set({ [PSEUDO_CHATS_KEY]: kept });
+  } catch (e) {
+    /* the next start tries again; nothing here is load-bearing for a send */
+  }
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes[PSEUDO_KEYS_KEY]) refreshMasterKey();
@@ -2907,6 +2940,7 @@ seedWorkflows();
 // hears the writes it is awake for — so the library is folded in on every
 // start as well. It writes nothing when nothing changed.
 refreshMasterKey();
+sweepChatKeys();
 migrateRuns().then(migrateSettings).then(reschedule);
 reschedule();
 ensureStatusAlarm(null);

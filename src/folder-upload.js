@@ -494,9 +494,7 @@
     const keys = store.data[KEYS_KEY] || {};
     const chats = store.data[CHATS_KEY] || {};
     const P = window.CUMPseudo;
-    const conv = W.conversationKey
-      ? W.conversationKey(location.href)
-      : P && P.conversationKeyFromUrl(location.href);
+    const conv = P && P.conversationFromUrl ? P.conversationFromUrl(location.href) : "";
     const attachedId = (conv && chats[conv]) || "";
     const plan = F.planHere({
       root: root,
@@ -574,11 +572,13 @@
   async function attachKeyHere(keyId) {
     const P = window.CUMPseudo;
     if (!P || !keyId) return false;
-    // The key the READER uses, not one of our own devising: pseudo-view keys
-    // this map by W.conversationKey where it can and P.conversationKeyFromUrl
-    // where it can't (a Cowork session has no uuid, so both fall back to the
-    // path). A key filed under any other spelling is a key nothing finds.
-    const conv = W.conversationKey
+    // The key the READER uses, not one of our own devising — and the STRICT
+    // one, which is the same rule the popup and the key panel now attach by: a
+    // key filed under a page rather than a conversation is a key every page of
+    // that shape comes up wearing.
+    const conv = P.conversationFromUrl
+      ? P.conversationFromUrl(location.href)
+      : W.conversationKey
       ? W.conversationKey(location.href)
       : P.conversationKeyFromUrl(location.href);
     if (!conv) return false;

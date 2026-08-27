@@ -2161,6 +2161,17 @@ the file itself has no way of knowing which folder it came out of. Picking it
 out of a different case folder renames it to that one. All of it is local UI —
 none of these labels is ever sent.
 
+**A key attaches to a CONVERSATION, and only to one.** `/chat/<uuid>` and
+`/cowork/cse_<id>` — never `/new`, `/cowork`, `/recents`, `/projects`, or a
+project's own page (whose address carries a uuid that makes it look exactly like
+a chat's; the path is what tells them apart). The identity the rest of the
+extension uses falls back to a page's *path*, which is right for saying which
+page you are on and wrong for attaching to: a key filed under `/new` is a key
+every new page comes up wearing, so the next matter's blank composer arrives
+carrying the last one's names. Both attach controls now decide it the same way,
+and any attachment already stored against a page rather than a conversation is
+swept on the next extension start.
+
 **Attaching it.** Three ways, matching where work happens:
 
 - **A chat** — open the conversation, open the popup, **Attach to this chat**.
