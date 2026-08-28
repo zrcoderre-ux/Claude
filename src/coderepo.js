@@ -343,19 +343,73 @@
     return -1;
   }
 
+  // ---- the owner everything shares ------------------------------------------
+
+  /**
+   * The owner to leave off the rows, or null. A list of a dozen sessions on
+   * `zrcoderre-ux/…` spends its first eleven characters saying nothing eleven
+   * times; the owner is only worth reading where it DIFFERS, so the one that
+   * dominates the list comes off and every other row keeps its owner and
+   * stands out for it.
+   *
+   * Two rows at least, so a single repo is never abbreviated into a bare word,
+   * and strictly the most common, so a tie is left alone rather than settled
+   * by whichever came first — an arbitrary trim is a list that reads
+   * differently on each render.
+   */
+  function sharedOwner(repos) {
+    if (!Array.isArray(repos)) return null;
+    const count = new Map();
+    for (const r of repos) {
+      const repo = normRepo(r);
+      if (!repo) continue;
+      const owner = repo.split("/")[0];
+      count.set(owner, (count.get(owner) || 0) + 1);
+    }
+    let best = null;
+    let top = 0;
+    let tied = false;
+    for (const [owner, n] of count) {
+      if (n > top) {
+        top = n;
+        best = owner;
+        tied = false;
+      } else if (n === top) tied = true;
+    }
+    if (top < 2 || tied) return null;
+    return best;
+  }
+
+  /**
+   * What a row says: the repo, less an owner every other row is also on. A
+   * repo on any other owner keeps it, which is the whole point — the row that
+   * is not on your usual account is the one you need to see is different.
+   */
+  function repoLabel(repo, owner) {
+    const full = normRepo(repo);
+    if (!full) return null;
+    if (!owner) return full;
+    const parts = full.split("/");
+    return parts[0] === owner ? parts[1] : full;
+  }
+
   /**
    * The button. The word names the STATE — what the list is showing right now
    * — the way the fakes toggle's does, so what is under it reads without
    * pressing it.
    */
-  function buttonState(on, unknown) {
+  function buttonState(on, unknown, owner) {
     const missing = Math.max(0, unknown | 0);
+    const shared = typeof owner === "string" && owner ? owner : null;
     return {
       on: !!on,
       lit: !!on,
       label: on ? "Repos" : "Titles",
       title: on
         ? "Recents is showing each session's repo." +
+          // What was taken off is said, not just done: a bare `Claude` should
+          // never leave you wondering whose.
+          (shared ? " Rows on " + shared + "/ are shown by name alone." : "") +
           (missing
             ? " " + missing + " row" + (missing === 1 ? " has" : "s have") +
               " no repo known yet — those keep their titles, dimmed."
@@ -378,6 +432,8 @@
     repoFor: repoFor,
     isTitleish: isTitleish,
     pickTitle: pickTitle,
+    sharedOwner: sharedOwner,
+    repoLabel: repoLabel,
     buttonState: buttonState,
     CAP: CAP,
   };
