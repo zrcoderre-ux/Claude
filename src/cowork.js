@@ -422,6 +422,51 @@
     return NOT_PROJECTS.indexOf(t) === -1;
   }
 
+  // The placeholder captions Cowork mounts while it fetches the project list,
+  // plus the furniture that sits around them (a heading, the search box's own
+  // label). Longest first: the strip below takes the first that fits, and
+  // "project" eaten out of "projects" would leave an "s" behind and turn a
+  // still-loading menu into a menu that answered.
+  const LOADING_WORDS = [
+    "searchprojects",
+    "loadingprojects",
+    "yourprojects",
+    "projects",
+    "loading",
+    "project",
+    "search",
+  ];
+
+  /**
+   * Whether a project menu is still fetching rather than showing what it has.
+   * Cowork's picker renders skeleton rows captioned "Loading" while the list
+   * comes off the server, and in that moment the menu has no rows to match, no
+   * filter box to type into, and nothing to say for itself. A live run read it
+   * exactly there and stood down with 'no row named "Draft Tentative Rulings"
+   * among ""' while the menu's own text was "Loading" twelve times over — the
+   * list wasn't missing, it was late. Text that is empty counts as loading too:
+   * a menu that has rendered nothing is not a menu that has answered.
+   *
+   * Only ever consulted when no row matched, so a project genuinely named
+   * "Loading" is found before this is asked.
+   */
+  function menuStillLoading(menuText) {
+    let t = squash(menuText);
+    if (!t) return true;
+    if (t.indexOf("loading") === -1) return false; // it says something else
+    for (let cut = true; cut && t; ) {
+      cut = false;
+      for (const w of LOADING_WORDS) {
+        if (t.indexOf(w) === 0) {
+          t = t.slice(w.length);
+          cut = true;
+          break;
+        }
+      }
+    }
+    return t === "";
+  }
+
   // ---- the parallel send path --------------------------------------------
   //
   // Cowork is not Chat with a different address, and nothing built for Chat is
@@ -585,6 +630,7 @@
     nameFromRenameSession,
     titleNames,
     isProjectRow,
+    menuStillLoading,
     coworkPhases,
     attachOutcome,
     nameSeen,

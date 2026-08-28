@@ -196,6 +196,29 @@ test("the two rows that navigate away are not projects", () => {
   assert.equal(K.isProjectRow(""), false);
 });
 
+test("a menu still saying Loading is a late list, not an empty one", () => {
+  // Exactly what the live run's report carried: twelve skeleton rows, no
+  // filter box, and a stand-down that blamed the project.
+  assert.equal(K.menuStillLoading("Loading".repeat(12)), true);
+  assert.equal(K.menuStillLoading("Loading Loading Loading"), true);
+  assert.equal(K.menuStillLoading("Loading projects"), true);
+  assert.equal(K.menuStillLoading("Search projects Loading Loading"), true);
+  // A menu that has rendered nothing at all has not answered either.
+  assert.equal(K.menuStillLoading(""), true);
+  assert.equal(K.menuStillLoading("   "), true);
+  assert.equal(K.menuStillLoading(null), true);
+});
+
+test("a menu that has something to say is done loading, whatever it says", () => {
+  assert.equal(K.menuStillLoading("Draft Tentative RulingsCutlistCreate new project"), false);
+  assert.equal(K.menuStillLoading("No matches"), false);
+  assert.equal(K.menuStillLoading("No projects"), false);
+  // One real row among the placeholders is a list that has started arriving.
+  assert.equal(K.menuStillLoading("LoadingLoadingDraft Tentative Rulings"), false);
+  // A project whose own name carries the word is not a placeholder.
+  assert.equal(K.menuStillLoading("Loading Dock Redesign"), false);
+});
+
 test("a cowork session and an ordinary conversation live at different endpoints", () => {
   const org = "00000000-0000-4000-8000-000000000001";
   assert.equal(
