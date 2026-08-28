@@ -65,6 +65,9 @@
   // reversible after any number of re-renders.
   const swapped = new Map();
   const marked = new Set();
+  // Headings whose collapse trigger the button cannot be placed outside of
+  // without dropping onto a line of its own. See place().
+  const inside = new WeakSet();
 
   function storageGet(keys) {
     return new Promise((resolve) => {
@@ -299,12 +302,21 @@
       '<path d="M18 11.4c0 3-2.4 4.2-5 4.2H8.4"/>' +
       "</svg></span>" +
       '<span class="cum-repos-txt"></span>';
-    btn.addEventListener("click", () => {
-      on = !on;
-      storageSet({ [ON_KEY]: on });
-      if (!on) restoreAll();
-      apply();
+    // The fallback: this only ever runs if the window-level capture below
+    // failed to register, since that one stops the press before it gets here.
+    btn.addEventListener("click", (e) => {
+      swallow(e);
+      press();
     });
+    // The heading is a DISCLOSURE: claude.ai's caret collapses Recents, and
+    // the handler for it sits on an ancestor of the word "Recents". A press on
+    // a button of ours that bubbles into it collapses the very list this
+    // button is for — reported as "it takes multiple clicks to get where I
+    // want", which is exactly what it looks like from the outside.
+    //
+    // anchorFor() keeps the button OUT of that control where it can, and the
+    // press is stopped at the top of the event path where it cannot — see
+    // the window-level capture at the bottom of this file.
     return btn;
   }
 
@@ -318,18 +330,107 @@
     btn.classList.toggle("cum-repos-on", st.lit);
   }
 
-  function place(head) {
-    const b = build();
-    if (!head || !head.parentElement) {
-      if (b.parentNode) b.remove();
-      return;
+  function press() {
+    on = !on;
+    storageSet({ [ON_KEY]: on });
+    if (!on) restoreAll();
+    apply();
+  }
+
+  function swallow(e) {
+    try {
+      e.stopPropagation();
+      e.preventDefault();
+    } catch (err) {
+      /* ignore */
     }
-    if (b.parentElement !== head.parentElement || b.previousElementSibling !== head) {
+  }
+  function stopOnly(e) {
+    try {
+      e.stopPropagation();
+    } catch (err) {
+      /* ignore */
+    }
+  }
+  // What claude.ai has made pressable. `aria-expanded` and `data-state` are
+  // the disclosure's own tells; the rest are the shapes a row of furniture is
+  // built out of.
+  const PRESSABLE = 'button,summary,a,[role="button"],[aria-expanded],[data-state]';
+
+  /**
+   * Where the button goes: AFTER the control the heading lives inside, never
+   * inside it. The word "Recents" is the label of a collapse trigger, so a
+   * button placed beside the word is a button inside the trigger, and pressing
+   * it collapses the list.
+   *
+   * The climb stops at the first ancestor that also contains the ROWS — that
+   * one is the section, not the trigger, and hanging the button off it would
+   * put it somewhere else entirely. A <summary> is the one control that cannot
+   * be stepped out of (anything after it is the collapsed content), so there
+   * the button stays beside the word and the window-level capture below is
+   * what keeps the press off the disclosure.
+   */
+  function anchorFor(head, rows) {
+    let node = head;
+    let best = head;
+    for (let i = 0; node && i < 5; i++) {
+      // The current node is judged BEFORE the climb, because the control we
+      // are looking for is the one whose PARENT holds the rows — it sits
+      // beside the list, not around it, and testing after the climb walked
+      // straight past it.
       try {
-        head.parentElement.insertBefore(b, head.nextSibling);
+        if (node !== head && node.matches(PRESSABLE)) best = node;
       } catch (e) {
         /* ignore */
       }
+      const parent = node.parentElement;
+      if (!parent) break;
+      if (rows.some((r) => parent.contains(r.el))) break;
+      node = parent;
+    }
+    if (best !== head && best.tagName === "SUMMARY") return head;
+    return best;
+  }
+
+  function insertAfter(b, at) {
+    if (b.parentElement === at.parentElement && b.previousElementSibling === at) return true;
+    try {
+      at.parentElement.insertBefore(b, at.nextSibling);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** On the same line as the word, or pushed onto one of its own? */
+  function wrapped(b, head) {
+    try {
+      const r = b.getBoundingClientRect();
+      const h = head.getBoundingClientRect();
+      if (r.height < 1 || h.height < 1) return false; // nothing measurable to judge
+      return r.top >= h.bottom - 1;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function place(head, rows) {
+    const b = build();
+    const at = inside.has(head) ? head : anchorFor(head, rows);
+    if (!at || !at.parentElement) {
+      if (b.parentNode) b.remove();
+      return;
+    }
+    if (!insertAfter(b, at)) return;
+    // Outside the trigger is the right place to BE and the wrong place to be
+    // SEEN, if that trigger is a row in a column: the button lands under the
+    // word instead of beside it, which is not what was asked for. Measured
+    // rather than assumed, and remembered per heading so it is settled once
+    // instead of re-judged on every tick. Beside the word, the swallowed
+    // events are what keep the press off claude.ai's caret.
+    if (at !== head && wrapped(b, head)) {
+      inside.add(head);
+      insertAfter(b, head);
     }
   }
 
@@ -344,7 +445,7 @@
       if (swapped.size || marked.size) restoreAll();
       return;
     }
-    place(head);
+    place(head, rows);
     if (!on) {
       if (swapped.size || marked.size) restoreAll();
       paint();
@@ -485,6 +586,64 @@
     });
   } catch (e) {
     /* ignore */
+  }
+
+  // ---- the press stops here ------------------------------------------------
+  //
+  // The heading is a DISCLOSURE: claude.ai's caret collapses Recents, and the
+  // handler for it is on an ancestor of the word. A press on a button of ours
+  // that reaches it collapses the very list the button is for — which is what
+  // "it takes multiple clicks to get where I want" was.
+  //
+  // Stopping it on the button itself is not enough. A handler in the CAPTURE
+  // phase runs on the way DOWN, before the event reaches our button at all,
+  // and a listener of ours on the button cannot stop what has already fired.
+  // Measured, not assumed: a mock trigger with a capture-phase collapse
+  // swallowed the whole list on one press.
+  //
+  // So the press is taken at the top of the path, where nothing in the page
+  // has seen it yet: one capture listener on the window, which acts only on
+  // events aimed at OUR button and leaves every other press on the page
+  // untouched. It has to do the toggling as well as the stopping, because
+  // stopping a captured event keeps it from reaching the button's own
+  // listener too — that listener stays as the fallback for a window this
+  // could not be registered on.
+  //
+  // Every event of the gesture, not just the click: a collapse can as easily
+  // be wired to the press as to the release.
+  const ours = (e) => {
+    try {
+      const t = e.target;
+      return !!t && !!t.closest && !!t.closest("#" + ID);
+    } catch (err) {
+      return false;
+    }
+  };
+  try {
+    window.addEventListener(
+      "click",
+      (e) => {
+        if (!ours(e)) return;
+        swallow(e);
+        try {
+          e.stopImmediatePropagation();
+        } catch (err) {
+          /* ignore */
+        }
+        press();
+      },
+      true
+    );
+    for (const type of ["pointerdown", "pointerup", "mousedown", "mouseup", "keydown", "keyup"])
+      window.addEventListener(
+        type,
+        (e) => {
+          if (ours(e)) stopOnly(e);
+        },
+        true
+      );
+  } catch (e) {
+    /* the button's own listener still works; only a captured collapse gets through */
   }
 
   // A list claude.ai re-renders (a session finishing, a filter, a route change)
