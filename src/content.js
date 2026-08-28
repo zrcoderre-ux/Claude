@@ -1951,6 +1951,7 @@
       applyReading(p.data);
     }
     if (p.projects) mergeProjects(p.projects, p.full);
+    if (p.codeSessions) mergeCodeSessions(p.codeSessions);
     if (p.homeActivityAt != null && (lastHomeActivityAt == null || p.homeActivityAt > lastHomeActivityAt))
       lastHomeActivityAt = p.homeActivityAt;
     if (p.homeWeighted != null) lastHomeWeighted = p.homeWeighted;
@@ -1962,6 +1963,25 @@
     }
     if (p.streamDone) noteActivity("end");
   });
+
+  // Fold the repo of each Claude Code session the page just listed into the map
+  // the Recents toggle reads (src/code-recents.js). Learned only — a session
+  // claude.ai has stopped listing keeps its entry, because the toggle's job is
+  // to name the repo of a row that is on screen, and a row can come back.
+  // src/coderepo.js does the folding, the capping and the "nothing changed"
+  // answer that keeps a list render from being a storage write.
+  function mergeCodeSessions(found) {
+    const R = window.CUMCodeRepo;
+    if (!R || !Array.isArray(found) || !found.length) return;
+    try {
+      chrome.storage?.local.get("cum_code_session_repos", (res) => {
+        const next = R.mergeRepos((res && res.cum_code_session_repos) || {}, found);
+        if (next) chrome.storage.local.set({ cum_code_session_repos: next });
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }
 
   // Fold harvested projects (from the page's own API) into the cached list the
   // scheduling picker reads, keyed by uuid. A partial capture (DOM scrape, a

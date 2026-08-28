@@ -120,6 +120,33 @@
     if (t != null) post({ homeActivityAt: t });
   }
 
+  // ---- Claude Code sessions ----------------------------------------------
+  // The Recents toggle (src/code-recents.js) shows each session's REPO in
+  // place of its title, and a title is all the list itself renders. The repo
+  // is in the JSON claude.ai fetched to draw that list — so it is read here,
+  // from the page's own traffic, rather than scraped back out of markup that
+  // never had it. What counts as a session record, and what counts as a repo,
+  // is src/coderepo.js: nothing about the response's shape is assumed, because
+  // this endpoint is as unversioned as the rest of them.
+  const CR = window.CUMCodeRepo;
+  function maybeEmitCodeSessions(url, text) {
+    if (!CR || !text || text.length > 2000000) return;
+    if (!CR.looksLikeSessionsUrl(url)) return;
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      return;
+    }
+    let sessions;
+    try {
+      sessions = CR.extractSessions(json);
+    } catch (e) {
+      return;
+    }
+    if (sessions && sessions.length) post({ codeSessions: sessions });
+  }
+
   // A URL is a good "usage baseline" candidate if it looks account/limit shaped
   // rather than a per-message completion stream.
   function looksLikeUsageUrl(url) {
@@ -138,6 +165,7 @@
       if (H.hasData(bodyData)) emit(source + ":body", bodyData, url);
       maybeEmitProjects(url, text);
       maybeEmitConversations(url, text);
+      maybeEmitCodeSessions(url, text);
     } catch (e) {
       /* ignore */
     }
@@ -215,6 +243,7 @@
                   if (H && H.hasData(bodyData)) emit("fetch:body", bodyData, url);
                   maybeEmitProjects(url, text);
                   maybeEmitConversations(url, text);
+                  maybeEmitCodeSessions(url, text);
                   // Reading the whole body resolves exactly when the stream
                   // closes — the assistant's turn is over. This is the only
                   // authoritative "done" signal available: it comes from the

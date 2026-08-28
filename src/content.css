@@ -2045,3 +2045,55 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
     border-color: rgba(255, 255, 255, 0.18);
   }
 }
+
+/* ---- the Repos toggle beside Recents (src/code-recents.js) ---------------
+   Sits in claude.ai's own heading row, so it borrows that row's ground and
+   colour rather than drawing a button on top of it. Lit means the list is
+   NOT saying what claude.ai says — the same claim the fakes toggle's colour
+   makes, in the same colour, because it is the same kind of claim. */
+#cum-repos {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 0 8px;
+  padding: 3px 9px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  vertical-align: middle;
+  align-self: center;
+  cursor: pointer;
+}
+#cum-repos:hover { background: rgba(0, 0, 0, 0.06); }
+#cum-repos.cum-repos-on {
+  color: #c96442;
+  border-color: rgba(201, 100, 66, 0.45);
+  background: rgba(201, 100, 66, 0.12);
+}
+#cum-repos.cum-repos-on:hover { background: rgba(201, 100, 66, 0.2); }
+.cum-repos-ico {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.cum-repos-ico svg {
+  width: 1.05em;
+  height: 1.05em;
+  display: block;
+}
+/* A row whose repo nothing here knows keeps its TITLE, and says so by being
+   dimmed: the list must never look like it is naming a repo it isn't. An
+   attribute rather than a class of ours, because a `cum-` class on claude.ai's
+   own element is how every scanner in this extension knows OUR elements — see
+   src/code-recents.js. */
+[data-cum-repos="unknown"] { opacity: 0.55; }
+
+@media (prefers-color-scheme: dark) {
+  #cum-repos { border-color: rgba(255, 255, 255, 0.22); }
+  #cum-repos:hover { background: rgba(255, 255, 255, 0.08); }
+}
