@@ -177,6 +177,37 @@ test("furniture is not a name", () => {
   assert.equal(R.isTitleish("x".repeat(200)), false, "prose is not a title");
 });
 
+// ---- the owner every row shares ---------------------------------------------
+
+test("an owner the list is mostly on comes off the rows", () => {
+  // A dozen rows on zrcoderre-ux/ spend their first eleven characters saying
+  // nothing, a dozen times.
+  const list = ["zrcoderre-ux/Claude", "zrcoderre-ux/notes", "anthropics/claude-code"];
+  const owner = R.sharedOwner(list);
+  assert.equal(owner, "zrcoderre-ux");
+  assert.equal(R.repoLabel("zrcoderre-ux/Claude", owner), "Claude");
+  assert.equal(
+    R.repoLabel("anthropics/claude-code", owner),
+    "anthropics/claude-code",
+    "the row on another owner keeps it — that is the row you need to see is different"
+  );
+});
+
+test("nothing is trimmed where trimming would be arbitrary", () => {
+  assert.equal(R.sharedOwner(["a/x"]), null, "one repo has no repetition to hide");
+  assert.equal(R.sharedOwner(["a/x", "b/y"]), null);
+  assert.equal(R.sharedOwner(["a/x", "a/y", "b/z", "b/w"]), null, "a tie is left alone");
+  assert.equal(R.sharedOwner([]), null);
+  assert.equal(R.sharedOwner(null), null);
+  assert.equal(R.sharedOwner(["a/x", "a/y", null, "junk"]), "a", "rows with no repo do not vote");
+});
+
+test("a label with no owner to drop is the repo itself", () => {
+  assert.equal(R.repoLabel("o/n", null), "o/n");
+  assert.equal(R.repoLabel("o/n", "other"), "o/n");
+  assert.equal(R.repoLabel("junk", "o"), null);
+});
+
 // ---- the button --------------------------------------------------------------
 
 test("the word names what the list is showing, not what the press would do", () => {
@@ -184,6 +215,12 @@ test("the word names what the list is showing, not what the press would do", () 
   assert.equal(R.buttonState(true, 0).label, "Repos");
   assert.equal(R.buttonState(true, 0).lit, true, "colour means the list is not saying what claude.ai says");
   assert.equal(R.buttonState(false, 3).lit, false);
+});
+
+test("the button says which owner it took off", () => {
+  assert.match(R.buttonState(true, 0, "zrcoderre-ux").title, /zrcoderre-ux\/ are shown by name alone/);
+  assert.doesNotMatch(R.buttonState(true, 0, null).title, /name alone/);
+  assert.doesNotMatch(R.buttonState(false, 0, "zrcoderre-ux").title, /name alone/);
 });
 
 test("rows with no repo known are counted out loud", () => {

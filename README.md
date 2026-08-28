@@ -56,7 +56,8 @@ bottom-right corner of [claude.ai](https://claude.ai).
   Pressed, every row in the list says the **repo that session is on** in place
   of its title, so "which session last touched this repo" is a glance instead
   of a hunt through names. Off by default, remembered, and it never guesses: a
-  row whose repo isn't known keeps its title, dimmed. See
+  row whose repo isn't known keeps its title, dimmed, and the owner the list is
+  mostly on is left off the rows that are on it. See
   [Recents, by repo](#recents-by-repo).
 - **Where your usage goes** (Options) — a pie of your weekly usage across
   **Chat**, **Cowork** and **Claude Code**. See
@@ -2920,6 +2921,22 @@ small **Repos** button:
 The switch is remembered across pages and tabs, and nothing is written back to
 claude.ai — this is your tab's rendering of a list, like the pseudonym
 translation, and the titles come back the moment you press it again.
+
+### The owner it leaves off
+
+A dozen rows on `zrcoderre-ux/…` spend their first eleven characters saying
+nothing, a dozen times. So the owner **the list is mostly on comes off**, and
+those rows read `Claude`, `notes`, `usage-meter`. A row on any *other* owner
+keeps its owner (`anthropics/claude-code`) — that is the row you need to see is
+different, and hiding what makes it different would be the one thing this
+switch must not do.
+
+Two rules keep it from being arbitrary: an owner has to hold **at least two**
+rows to be dropped (one repo has no repetition to hide), and a **tie is left
+alone** rather than settled by whichever came first, so the list does not read
+differently on each render. The button's tooltip names what came off — `Rows on
+zrcoderre-ux/ are shown by name alone` — so a bare `Claude` never leaves you
+wondering whose.
 
 ### Where the button appears
 

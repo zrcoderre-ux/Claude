@@ -60,6 +60,9 @@
   let btn = null;
   let heading = null;
   let unknown = 0;
+  // The owner the list is mostly on, left off the rows that are on it. Held
+  // here only so the button can say what it took off.
+  let owner = null;
   // node → { orig, shown }. The original is what claude.ai wrote; `shown` is
   // what we wrote over it, and the two together are what makes the switch
   // reversible after any number of re-renders.
@@ -257,6 +260,7 @@
     for (const el of marked) unmark(el);
     marked.clear();
     unknown = 0;
+    owner = null;
   }
 
   function mark(el, isUnknown) {
@@ -322,7 +326,7 @@
 
   function paint() {
     if (!btn) return;
-    const st = R.buttonState(on, unknown);
+    const st = R.buttonState(on, unknown, owner);
     const txt = btn.querySelector(".cum-repos-txt");
     if (txt) txt.textContent = st.label;
     btn.title = st.title;
@@ -451,17 +455,26 @@
       paint();
       return;
     }
+    // READ THE WHOLE LIST BEFORE WRITING ANY OF IT. What a row says depends on
+    // what the other rows say: an owner every row shares is an owner no row
+    // needs to spend its width on. So the repos are collected first and the
+    // labels decided once, rather than each row being written as it is read.
     const live = new Set();
+    const found = [];
     let missing = 0;
     for (const row of rows) {
       live.add(row.el);
       const repo = repoForRow(row);
-      if (!repo) {
-        missing++;
-        mark(row.el, true);
+      if (!repo) missing++;
+      found.push({ row: row, repo: repo });
+    }
+    owner = R.sharedOwner(found.map((f) => f.repo));
+    for (const f of found) {
+      if (!f.repo) {
+        mark(f.row.el, true);
         // Its title stays exactly as claude.ai wrote it — including one we
         // had written a repo over before the map changed under us.
-        for (const n of textNodes(row.el)) {
+        for (const n of textNodes(f.row.el)) {
           const rec = swapped.get(n);
           if (rec && n.nodeValue === rec.shown) {
             try {
@@ -474,11 +487,11 @@
         }
         continue;
       }
-      mark(row.el, false);
-      const nodes = textNodes(row.el);
+      mark(f.row.el, false);
+      const nodes = textNodes(f.row.el);
       const idx = R.pickTitle(nodes.map(original));
       if (idx < 0) continue; // nothing in this row reads as a name; leave it be
-      show(nodes[idx], repo);
+      show(nodes[idx], R.repoLabel(f.repo, owner));
     }
     // Rows claude.ai has since dropped: forget their marks, keep nobody's text.
     for (const el of Array.from(marked))
