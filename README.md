@@ -2463,6 +2463,24 @@ the off state, because in both of them the page is showing the fakes; they are
 told apart by the word on the button, not by a second colour that would dilute
 the first.
 
+**A key that is merely *available* lights nothing.** Two things light the
+button — this conversation having a key **attached**, or real names being on
+screen **now** — and the [master key](#the-master-key-the-last-20-cases)
+standing by is neither. It stands by on every page in the browser, so a blank
+composer, which has no conversation to attach a key to at all, was lighting
+both this button and the [fakes toggle](#the-fakes-toggle-beside-upload-folder)
+and naming a case, while the panel one click away said *this page is not a
+conversation*. Both statements were true and together they were a
+contradiction; the button is the half people read.
+
+So: nothing translated and nothing attached is **quiet**, whatever keys the
+library holds. And where the master key *is* reading the chat names in the
+lists back — which is real names on screen, and lights the button properly —
+the button says `(not attached here)` and the tooltips say **no key is attached
+to this page**, because a key on this conversation and a key on the names in a
+list are different facts and only one of them can be true on a page that is not
+a conversation.
+
 The panel under it holds, in order:
 
 - **What is translating, and what it is doing** — the case this page is being

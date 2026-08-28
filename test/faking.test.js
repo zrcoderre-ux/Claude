@@ -90,3 +90,18 @@ test("nothing at all is answered for a state that never arrived", () => {
   assert.equal(b.disabled, false);
   assert.equal(b.label, K.REAL);
 });
+
+test("a key that is not attached here says so", () => {
+  // Lit on a page with no conversation to attach to would otherwise read as an
+  // attachment that cannot exist — which is what the panel, one click away,
+  // was busy denying.
+  const b = K.buttonState(on({ attached: false, names: 0, titles: 3 }));
+  assert.equal(b.lit, true, "real names ARE on screen — in the chat names");
+  assert.match(b.title, /No key is attached to this page/);
+  assert.match(b.title, /chat names on this page/);
+});
+
+test("an attached key says nothing of the sort", () => {
+  const b = K.buttonState(on({ attached: true }));
+  assert.doesNotMatch(b.title, /not attached|No key is attached/);
+});

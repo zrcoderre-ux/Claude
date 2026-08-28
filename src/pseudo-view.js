@@ -499,7 +499,9 @@
     if (active && !translationOff()) {
       for (const turn of document.querySelectorAll(MSG_SEL)) total += swapIn(turn, active.compiled);
     }
-    const titles = titlesOff() ? 0 : sweepTitles();
+    let titles = 0;
+    if (titlesOff()) titleKeyId = null; // a peek translates no titles and has no owner
+    else titles = sweepTitles();
     if (total !== shown || titles !== titleShown) {
       shown = total;
       titleShown = titles;
@@ -833,7 +835,12 @@
     const doc = sweepDocTitle();
     total += doc;
     if (doc && !owner) owner = docMemo && docMemo.id;
-    if (owner) titleKeyId = owner;
+    // Cleared when this pass found nobody, not just set when it found someone.
+    // It is a statement about what is on screen NOW: a page whose titles have
+    // gone (a sidebar closed, a list re-rendered, a blank composer opened) but
+    // whose owner stayed behind left the button lit and naming a case with
+    // nothing on the page translated at all.
+    titleKeyId = owner || null;
     return total;
   }
 
@@ -981,10 +988,29 @@
    */
   function viewState() {
     const disp = displayKey();
-    if (!disp) return { on: false, names: 0, titles: 0, paused: paused, hold: null };
+    const held = hold ? { name: hold.name || "", via: hold.via || "" } : null;
+    // Attachment or evidence — P.keyInPlay owns that rule, and it is the same
+    // rule for the key button and the fakes toggle because they make the same
+    // claim. A key that is merely AVAILABLE (the master key stands by on every
+    // page there is) lights neither.
+    const inPlay =
+      !!disp &&
+      P.keyInPlay({
+        attached: !!active,
+        names: shown,
+        titles: titleShown,
+        paused: paused,
+        held: !!hold,
+      });
+    if (!inPlay) return { on: false, names: 0, titles: 0, paused: paused, hold: held };
     return {
       on: true,
       id: disp.id,
+      // Attached to THIS conversation, as against a key that is only reading
+      // the chat names in the lists back. The panel says which; so must the
+      // button, or a lit button on a page with no conversation to attach to
+      // reads as an attachment that cannot exist.
+      attached: !!active,
       // What this key is CALLED (P.keyTitle): the case folder it was picked
       // from where there is one, the case hint where there isn't. With two
       // cases open in two tabs, every key file is named pseudonym_key.xlsx and
@@ -997,7 +1023,7 @@
       names: shown,
       titles: titleShown,
       paused: paused,
-      hold: hold ? { name: hold.name || "", via: hold.via || "" } : null,
+      hold: held,
       // A distilled key must never be pointed at the write side (see
       // displayKey), so the panel is told whether there is a cleaner at all
       // rather than being left to work it out.

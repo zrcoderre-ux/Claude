@@ -1203,3 +1203,34 @@ test("a stored key that is plainly a PAGE is not a conversation", () => {
   for (const bad of ["/new", "/", "/cowork", "/recents", "/projects", "", null])
     assert.equal(P.isConversationKey(bad), false, String(bad));
 });
+
+// ---- what lights the key button and the fakes toggle ------------------------
+
+test("a key merely AVAILABLE lights nothing", () => {
+  // The bug: on a blank composer — a page with no conversation to attach a key
+  // to — both buttons were lit and naming a case, because the master key
+  // stands by on every page in the browser. The panel one click away said
+  // "this page is not a conversation." Both were true; together they were a
+  // contradiction, and the button is the half people read.
+  assert.equal(P.keyInPlay({ attached: false, names: 0, titles: 0 }), false);
+  assert.equal(P.keyInPlay({}), false);
+  assert.equal(P.keyInPlay(null), false);
+});
+
+test("an attachment lights it, matched or not", () => {
+  // A key attached to this conversation is a fact about the CHAT, not about
+  // what happens to be rendered in it.
+  assert.equal(P.keyInPlay({ attached: true, names: 0, titles: 0 }), true);
+});
+
+test("real names on screen light it, attached or not", () => {
+  assert.equal(P.keyInPlay({ attached: false, names: 4, titles: 0 }), true);
+  assert.equal(P.keyInPlay({ attached: false, names: 0, titles: 2 }), true, "the chat names in a list count");
+});
+
+test("a peek and a run's hold keep the switch on screen", () => {
+  // Both are states you get OUT of with that button; a switch that vanishes
+  // while the thing it switches is still on is worse than one that stays.
+  assert.equal(P.keyInPlay({ attached: false, names: 0, titles: 0, paused: true }), true);
+  assert.equal(P.keyInPlay({ attached: false, names: 0, titles: 0, held: true }), true);
+});

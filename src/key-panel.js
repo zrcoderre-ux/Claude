@@ -232,6 +232,15 @@
         titles
       );
     if (st.paused) return "Paused — this page is showing exactly what claude.ai renders." + titles;
+    // Nothing is attached here: what is lit is the chat names in the lists
+    // being read back, not a key on this page. Said plainly, because the two
+    // are different facts and only one of them can be true on a page that is
+    // not a conversation at all.
+    if (st.attached === false)
+      return bits.length
+        ? bits.join(" and ") +
+            " read back in the lists on this page. No key is attached to this page itself."
+        : "No key is attached to this page.";
     return bits.length
       ? bits.join(" and ") + " restored to the real values on this page."
       : "This key is on, and nothing on this page has matched it yet.";
@@ -656,7 +665,9 @@
       btn.classList.toggle("cum-key-off", st.on && (st.paused || !!st.hold));
       btn.title =
         (st.on
-          ? st.name + " — " + statusLine(st)
+          ? st.name +
+            (st.attached === false ? " (not attached here)" : "") +
+            " — " + statusLine(st)
           : "Pseudonym key: nothing on this page is translated.") +
         " Display only: Claude still holds — and only ever sees — the fakes. " +
         "Click for the key, the peek, the cleaner and the master key.";
