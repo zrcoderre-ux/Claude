@@ -427,10 +427,39 @@
         ok: false,
         why: "the project menu never opened — " + attempts.join(" · "),
       };
+    // The menu's own words, read straight off it — the one reading that can't
+    // be fooled by rows wearing no menu role.
+    const menuText = () => {
+      try {
+        return norm(box.textContent);
+      } catch (e) {
+        return "";
+      }
+    };
+    // An open menu is not a loaded one. Cowork fetches the project list from
+    // the server and mounts skeleton rows captioned "Loading" while it waits;
+    // read in that moment the menu has no rows, no filter box, and nothing to
+    // match. The run that taught this stood down after two and a half seconds
+    // with 'no row named "Draft Tentative Rulings" among ""' while the menu was
+    // saying "Loading" twelve times over. So the wait comes FIRST, and every
+    // read below — the filter box included, since it mounts with the list —
+    // happens on a settled menu. See K.menuStillLoading.
+    const LOAD_WAIT_MS = 20000;
+    const waitStarted = Date.now();
+    while (K.menuStillLoading(menuText()) && Date.now() - waitStarted < LOAD_WAIT_MS)
+      await sleep(250);
+    const waited = Math.round((Date.now() - waitStarted) / 1000);
     // A long list renders only what fits, so the filter isn't a nicety: a
     // project far down it is not in the page to be clicked until typing brings
     // it there.
-    const filter = box.querySelector('input:not([type="hidden"]), [contenteditable="true"]');
+    // Polled, not read once: the box mounts WITH the list, so a menu that has
+    // only just stopped saying "Loading" can be a beat short of having one.
+    const findFilter = () => box.querySelector('input:not([type="hidden"]), [contenteditable="true"]');
+    let filter = findFilter();
+    for (let i = 0; i < 8 && !filter; i++) {
+      await sleep(250);
+      filter = findFilter();
+    }
     // What the search box actually holds — read back, never assumed. A live
     // run showed the menu at "No matches" straight through the clear-and-retry
     // pass: a React-controlled input takes execCommand's edits into the DOM
@@ -528,11 +557,22 @@
       return clickable && box.contains(clickable) && clickable !== box ? clickable : best;
     };
     let row = rowOf();
-    for (let i = 0; i < 12 && !row; i++) {
-      await sleep(200);
+    for (let i = 0; i < 20 && !row; i++) {
+      await sleep(250);
       row = rowOf();
     }
     if (!row) row = wideRowOf();
+    // No filter box means no clear-and-retry pass below, and a menu that only
+    // just stopped saying "Loading" renders its rows a beat after it. Without
+    // this the unfiltered path was the SHORTEST one on the page — the least
+    // patience given to exactly the menu that had least to show.
+    if (!row && !filter) {
+      for (let i = 0; i < 10 && !row; i++) {
+        await sleep(500);
+        row = rowOf();
+      }
+      if (!row) row = wideRowOf();
+    }
     // A filter that left NOTHING is evidence against the box's contents, not
     // against the list. Clear it — through the controlled-input write, and
     // VERIFIED, because an unverified clear once left "No matches" standing
@@ -556,24 +596,32 @@
       // What the menu actually displayed, read straight off it — the report
       // that can't be fooled by rows wearing no role. If this still fails,
       // the note carries the menu's own words instead of a guess.
-      let menuText = "";
-      try {
-        menuText = norm(box.textContent).slice(0, 160);
-      } catch (e) {
-        /* the rest of the report stands */
-      }
+      const full = menuText();
+      const shown = full.slice(0, 160);
       // ...and what the search box was left holding, read off the element.
       // "" after a verified clear plus a menu still saying nothing means the
       // LIST is the problem; the name still sitting there means the clear is.
       const held = readBox();
+      // A menu still showing placeholders never got as far as having rows, and
+      // saying "no row named X" of it blames the project for the list's
+      // lateness. Name what actually happened, so the next run's fix is a
+      // longer wait rather than a hunt for a project that was always there.
+      const stalled = K.menuStillLoading(full);
       C.closeMenu();
       return {
         ok: false,
-        why:
-          "no row named " + JSON.stringify(name) + " among " +
-          JSON.stringify(lastSeen.join(" | ")) +
-          (filter ? " (filtered, then cleared — the box was left holding " + JSON.stringify(held) + ")" : " (no filter box found)") +
-          " — the menu's own text: " + JSON.stringify(menuText),
+        why: stalled
+          ? "the project menu never finished loading — still placeholders after " +
+            Math.round((Date.now() - waitStarted) / 1000) +
+            "s; the menu's own text: " + JSON.stringify(shown)
+          : "no row named " + JSON.stringify(name) + " among " +
+            JSON.stringify(lastSeen.join(" | ")) +
+            (filter
+              ? " (filtered, then cleared — the box was left holding " + JSON.stringify(held) + ")"
+              : " (no filter box found" +
+                (waited ? "; the menu stopped saying Loading after " + waited + "s" : "") +
+                ")") +
+            " — the menu's own text: " + JSON.stringify(shown),
       };
     }
     C.robustClick(row);

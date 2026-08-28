@@ -533,6 +533,14 @@ Three things about it shape how this works, and none of them is obvious:
   `/cowork/project/{uuid}` instead would mean arriving with no way to set
   either, so `targetUrl` sends a Cowork job to `/new` and the project is chosen
   from the menu there, by name.
+- **An open project menu is not a loaded one.** The list comes off the server,
+  and Cowork mounts skeleton rows captioned *Loading* while it waits — no rows
+  to match, and not even a search box, because that mounts with the list. A run
+  that read the menu in that moment stood down with `no row named "Draft
+  Tentative Rulings" among ""` while the menu's own text was `Loading` twelve
+  times over. So the driver waits for the placeholders to clear (up to 20s)
+  before it looks for anything, and a menu that never clears is reported as a
+  list that never arrived rather than as a project that isn't there.
 
 The surface field defaults to **leave as-is**, the same contract the model
 picker has: a job that never mentions the surface never touches it, so nothing
