@@ -42,6 +42,7 @@
       "js": [
         "src/harvest.js",
         "src/weights.js",
+        "src/coderepo.js",
         "src/inject.js"
       ],
       "run_at": "document_start",
@@ -73,6 +74,7 @@
         "src/folderup.js",
         "src/faking.js",
         "src/cowork.js",
+        "src/coderepo.js",
         "src/panelbar.js",
         "src/nag.js",
         "src/usagewarn.js",
@@ -101,7 +103,8 @@
         "src/fake-toggle.js",
         "src/copy-ruling.js",
         "src/stamps.js",
-        "src/incognito-watch.js"
+        "src/incognito-watch.js",
+        "src/code-recents.js"
       ],
       "css": [
         "src/content.css"

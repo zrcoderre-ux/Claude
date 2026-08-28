@@ -52,6 +52,12 @@ bottom-right corner of [claude.ai](https://claude.ai).
   passes **50%, 75% and 90%**. On by default, with its own switch and an
   adjustable daily share in the popup. See
   [Usage-pace warnings](#usage-pace-warnings).
+- **Recents, by repo** — a **Repos** toggle beside **Recents** on Claude Code.
+  Pressed, every row in the list says the **repo that session is on** in place
+  of its title, so "which session last touched this repo" is a glance instead
+  of a hunt through names. Off by default, remembered, and it never guesses: a
+  row whose repo isn't known keeps its title, dimmed. See
+  [Recents, by repo](#recents-by-repo).
 - **Where your usage goes** (Options) — a pie of your weekly usage across
   **Chat**, **Cowork** and **Claude Code**. See
   [Where your usage goes](#where-your-usage-goes-chat-cowork-code).
@@ -2895,6 +2901,76 @@ failing even that they float at the bottom left. Never loose at the top right:
 that's where Share lives, and a Save button covering Share is worse than no Save
 button at all.
 
+## Recents, by repo
+
+Recents on Claude Code is a list of **titles**. A title says what a session was
+about; it does not say what it **touched**, and *which conversation last edited
+this repo* is a question that list cannot answer however long you read it.
+
+So the list gets a switch. Beside claude.ai's own **Recents** heading sits a
+small **Repos** button:
+
+- **Off** (the default) — the list is claude.ai's, untouched. The button reads
+  `Titles`, because the word names what is on screen rather than what pressing
+  it would do.
+- **On** — every row says its **repo** (`owner/name`) in place of its title.
+  The button reads `Repos` and is coloured, the way the fakes toggle is
+  coloured: colour means this page is not saying what claude.ai says.
+
+The switch is remembered across pages and tabs, and nothing is written back to
+claude.ai — this is your tab's rendering of a list, like the pseudonym
+translation, and the titles come back the moment you press it again.
+
+### Where the button appears
+
+Not at an address — on **evidence**: a `Recents` heading with at least one
+Claude Code session link (`/code/<id>`) under it. claude.ai moving that list
+somewhere else keeps working, and a Recents heading with no sessions in it
+(Home's own) never gets the button. Rows that aren't links have no session to
+name and are left exactly as drawn.
+
+### How a session's repo is known
+
+There is no documented place to read one from, so three sources are tried, in
+the order they are trusted:
+
+1. **The page's own API.** claude.ai fetches its session list as JSON, and the
+   MAIN-world interceptor already watches that traffic for usage and projects.
+   A session record carries its repo under *some* key; which key is not ours to
+   know, so a record counts when it has a **session id and something
+   repo-shaped near it** rather than when it matches a shape we named. That is
+   the one pair this feature needs and the pair least likely to be renamed out
+   from under it.
+2. **A session you opened.** Its repo is on screen — a github link, or the
+   control claude.ai labels as the repository — so every session you visit
+   teaches its own row, and the map fills as you work.
+3. **The row's own text**, under a rule (below) that keeps it honest.
+
+What each source learns goes into one map of session → repo, capped at 500 and
+oldest-out, and a list render that learns nothing writes nothing.
+
+### The trap this feature is built around
+
+A Claude Code branch is `claude/some-slug`, which is **exactly** the shape of
+`owner/name`. A row labelled with its *branch* under a toggle that says *repo*
+is a wrong answer wearing a right answer's clothes — and worse than no answer,
+because you would act on it.
+
+So a bare `a/b` token in a row is believed **only** when it names a repo
+already known: one in the scheduler's harvested repo list (`cum_repos`), or one
+the first two sources already learned. A full `github.com` URL is believed
+outright, since a branch never appears as one. A control claude.ai has
+**labelled** as the repository is believed on its own text, because the label
+is what says the text is a repo.
+
+### A row it cannot name
+
+**Keeps its title, and is dimmed.** Blanking it would cost you the row; naming
+a repo it doesn't know would make the list say something untrue about which
+session touched what. The button's tooltip counts them (`2 rows have no repo
+known yet`), so a list that is mostly dim is a fact you can see rather than a
+mystery — open one of those sessions once and its row is named from then on.
+
 ## Where your usage goes: Chat, Cowork, Code
 
 **Options → Chat vs Cowork vs Claude Code** is a pie of which surface your weekly
@@ -3227,6 +3303,8 @@ src/xlsxread.js        Minimal .xlsx reader — enough for the pseudonym key (pu
 src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards, run hold, chat titles, case-number gate (pure)
 src/pseudo-view.js     Shows real names for the fakes — messages and chat titles — warns, guards the key file
 src/faking.js          The fakes toggle: its word, its colour, whether it may be pressed (pure)
+src/coderepo.js        Which repo a Claude Code session is on: what counts as evidence (pure)
+src/code-recents.js    The Repos toggle beside Recents, and the swap it makes
 src/fake-toggle.js     That toggle in the composer row, to the right of Folder
 src/popup.html/js/css  Toolbar popup (status + toggles + manual endpoint)
 test/harvest.test.js   Unit tests for the parsing heuristics
@@ -3245,6 +3323,7 @@ test/tentative.test.js Unit tests for the ruling's start and end boundaries
 test/xlsxread.test.js  Unit tests for the .xlsx reader (zip + sheet XML)
 test/pseudo.test.js    Unit tests for the pseudonym key logic
 test/folderup.test.js  Unit tests for the case folder taken into a new chat
+test/coderepo.test.js  Unit tests for the repo behind a Recents row (branch traps included)
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only
 scripts/dl-probe.js    Paste at the DevTools console: what a reply really holds
