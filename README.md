@@ -2929,6 +2929,16 @@ somewhere else keeps working, and a Recents heading with no sessions in it
 (Home's own) never gets the button. Rows that aren't links have no session to
 name and are left exactly as drawn.
 
+**Recents is a disclosure**, and the word is the label of its caret — so a
+button beside the word is a button inside the control that collapses the list,
+and pressing it hid the very thing it was for. Two answers, both in place: the
+button is put **after** that control rather than inside it wherever that still
+leaves it on the same line as the word, and the press is taken at the **top of
+the event path**, so nothing in the page sees it however the collapse is
+wired — a handler in the capture phase included, which fires before anything
+on the button itself could stop it. claude.ai's own caret still collapses
+Recents exactly as it did.
+
 ### How a session's repo is known
 
 There is no documented place to read one from, so three sources are tried, in
