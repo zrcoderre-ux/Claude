@@ -19,15 +19,23 @@
  *      an id and something repo-shaped rather than for a shape we named.
  *   2. A SESSION YOU OPENED. Its repo is on screen in the repo control, so
  *      every session you visit teaches its own row.
- *   3. THE ROW'S OWN TEXT — and only when it names a repo we already know.
- *      This is the source that must not be trusted on its face: a Claude
- *      Code branch is `claude/some-slug`, which is exactly the shape of
- *      `owner/name`, and a row labelled with its BRANCH under a "repo"
- *      toggle would be a wrong answer that looks like a right one. A bare
- *      token is therefore believed only when it matches a repo already in
- *      the picker's harvested list (`cum_repos`) or in the map the first
- *      two sources built. A full github.com URL is believed outright — a
- *      branch never appears as one.
+ *   3. THE ROW'S OWN TEXT — and only when it names a repo ALREADY LEARNED
+ *      by the first two. This is the source that must not be trusted on its
+ *      face: a Claude Code branch is `claude/some-slug`, which is exactly
+ *      the shape of `owner/name`, and a row labelled with its BRANCH under
+ *      a "repo" toggle would be a wrong answer that looks like a right one.
+ *      A full github.com URL is believed outright — a branch never appears
+ *      as one.
+ *
+ * The shape of a value never says what it IS; only where it came from does.
+ * That is one rule and it is load-bearing in three places: the API reader
+ * takes a repo from keys that NAME one and refuses branch keys at any depth,
+ * a weak key has to prove itself with an address, and the row-text fallback
+ * recognises nothing it has not already learned some other way. It is written
+ * three times because it was got wrong twice: rows came back named after
+ * their branch, first from a record's own nested fields and then from a
+ * "known repos" list filled by a scraper that sweeps a page for anything with
+ * a slash in it.
  *
  * A row whose repo none of the three can supply KEEPS ITS TITLE and is dimmed.
  * Blanking it, or guessing, would make the list say something untrue about
@@ -55,6 +63,16 @@
    * a sentence — is null, because a wrong repo on a row is worse than none.
    */
   function normRepo(value) {
+    const p = parseRepo(value);
+    return p ? p.repo : null;
+  }
+
+  /**
+   * As normRepo, but says HOW it knew: `fromUrl` means a github/gitlab/
+   * bitbucket address proved it, which is the difference between a value that
+   * can only be a repo and a bare `a/b` that could as easily be a branch.
+   */
+  function parseRepo(value) {
     if (typeof value !== "string") return null;
     let s = value.trim();
     if (!s || s.length > MAX_LEN) return null;
@@ -82,7 +100,7 @@
     if (!/[A-Za-z]/.test(s)) return null; // 12/25 is a date, not a repo
     const parts = s.split("/");
     if (parts[0].length > 100 || parts[1].length > 100) return null;
-    return s;
+    return { repo: s, fromUrl: fromUrl };
   }
 
   /** The known repos, lowercased, from any mix of list and id→record map. */
@@ -110,8 +128,9 @@
 
   /**
    * The repo named in a row's text, or null. A full URL is believed on sight;
-   * a bare `a/b` token only when it is a repo we already know, because the
-   * branch a Claude Code session runs on has the very same shape.
+   * a bare `a/b` token only when it is a repo already LEARNED — never merely
+   * one that some list claims — because the branch a Claude Code session runs
+   * on has the very same shape.
    */
   function repoInText(text, known) {
     if (typeof text !== "string" || !text) return null;
@@ -185,18 +204,43 @@
     );
   }
 
-  // Keys that MEAN a repo, and keys that merely might carry one. The strong
-  // ones win, so a record with both `repo` and some unrelated `url` is read
-  // the way it was written.
+  // A repo is reached through keys that NAME one, and through nothing else.
+  //
+  // The first version of this walked into any object a record held and read a
+  // bare `a/b` out of whatever it found, on the theory that a session record
+  // keeps its repo somewhere and the key it keeps it under is not ours to
+  // know. A session record also keeps its BRANCH — `claude/some-slug`, the
+  // very shape being looked for — and rows started coming back named after
+  // one. The theory was wrong in the one way that matters: the shape does not
+  // tell you what a value IS, so the key has to.
+  //
+  //   STRONG keys name a repo outright, and a bare `owner/name` under one is
+  //   taken as written.
+  //   WEAK keys might carry one, so they have to PROVE it: only a github (or
+  //   gitlab/bitbucket) address counts there, never a bare token.
+  //   BRANCH keys are refused wherever they appear, at any depth, even inside
+  //   something a strong key holds.
+  //   CONTAINERS are walked into, because a repo is as often an object as a
+  //   string — but only these, so an unrelated corner of a record is never
+  //   rummaged through for anything that happens to have a slash in it.
   const STRONG = [
     "repo", "repos", "repository", "repositories", "reponame", "repositoryname",
     "repofullname", "repositoryfullname", "fullname", "gitrepo", "githubrepo",
-    "repourl", "repositoryurl",
+    "repourl", "repositoryurl", "repofull", "githubrepository",
   ];
   const WEAK = ["source", "sources", "sourceurl", "remoteurl", "cloneurl", "giturl", "htmlurl", "url", "git", "origin"];
+  const BRANCH = [
+    "branch", "branches", "gitbranch", "headbranch", "basebranch", "defaultbranch",
+    "outcomebranch", "sourcebranch", "targetbranch", "ref", "refs", "headref",
+    "baseref", "gitref", "revision", "sourcerevision", "worktree",
+  ];
+  const CONTAINERS = ["repo", "repos", "repository", "repositories", "source", "sources", "git", "project", "workspace"];
+  // Inside something a repo key holds, these read as the repo's own name.
+  const INNER = ["name", "fullname", "path", "slug", "url", "htmlurl", "cloneurl"];
   const ID_KEYS = ["uuid", "id", "sessionid", "sessionuuid", "session"];
 
   const key = (k) => String(k).toLowerCase().replace(/[^a-z]/g, "");
+  const isBranchKey = (k) => BRANCH.indexOf(k) !== -1;
 
   function idOf(obj) {
     for (const k of Object.keys(obj)) {
@@ -209,34 +253,61 @@
     return null;
   }
 
-  /** A repo anywhere in (or one or two levels under) a record. */
-  function repoOf(obj, keys, depth) {
-    if (!obj || typeof obj !== "object" || depth > 2) return null;
-    const entries = Array.isArray(obj)
-      ? obj.map((v) => ["", v])
-      : Object.keys(obj).map((k) => [key(k), obj[k]]);
-    // Strings under a naming key first...
-    for (const [k, v] of entries) {
-      if (typeof v !== "string") continue;
-      if (keys.indexOf(k) === -1 && k !== "") continue;
-      const r = normRepo(v);
-      if (r) return r;
+  /** `{ owner: "o", name: "n" }` — a repo written as two halves. */
+  function composed(node) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return null;
+    let name = null;
+    let owner = null;
+    for (const k of Object.keys(node)) {
+      const kk = key(k);
+      const v = node[k];
+      if (isBranchKey(kk)) continue;
+      if (typeof v === "string") {
+        if (!name && (kk === "name" || kk === "reponame" || kk === "repositoryname")) name = v;
+        if (!owner && (kk === "owner" || kk === "org" || kk === "organization" || kk === "login" || kk === "namespace"))
+          owner = v;
+      } else if (v && typeof v === "object" && !owner && (kk === "owner" || kk === "org" || kk === "organization")) {
+        for (const k2 of Object.keys(v)) {
+          const kk2 = key(k2);
+          if (typeof v[k2] === "string" && !owner && (kk2 === "login" || kk2 === "name" || kk2 === "slug")) owner = v[k2];
+        }
+      }
     }
-    // ...then inside whatever those keys hold instead of a string.
+    if (!name || !owner) return null;
+    return normRepo(String(owner).trim() + "/" + String(name).trim());
+  }
+
+  /**
+   * A repo under `keys` in a record, or null. `strict` is what separates the
+   * two passes: a strong key may say `owner/name` plainly, a weak one has to
+   * bring an address.
+   */
+  function repoOf(node, keys, strict, depth) {
+    if (!node || typeof node !== "object" || depth > 2) return null;
+    const entries = Array.isArray(node)
+      ? node.map((v) => ["", v])
+      : Object.keys(node).map((k) => [key(k), node[k]]);
     for (const [k, v] of entries) {
-      if (!v || typeof v !== "object") continue;
-      if (keys.indexOf(k) === -1 && k !== "" && depth > 0) continue;
-      const r = repoOf(v, keys.concat(["name", "fullname", "path", "url"]), depth + 1);
+      if (typeof v !== "string" || isBranchKey(k)) continue;
+      // An array's elements answer to the key the array itself was under.
+      if (k !== "" && keys.indexOf(k) === -1) continue;
+      const p = parseRepo(v);
+      if (p && (!strict || p.fromUrl)) return p.repo;
+    }
+    for (const [k, v] of entries) {
+      if (!v || typeof v !== "object" || isBranchKey(k)) continue;
+      if (k !== "" && keys.indexOf(k) === -1 && CONTAINERS.indexOf(k) === -1) continue;
+      const r = repoOf(v, keys.concat(INNER), strict, depth + 1) || (strict ? null : composed(v));
       if (r) return r;
     }
     return null;
   }
 
   /**
-   * Every {id, repo} a parsed API body can be made to yield. Nothing is
-   * required of the response's SHAPE: a record counts when it has a session id
-   * and something repo-shaped near it, which is the only pair this feature
-   * needs and the pair least likely to be renamed out from under it.
+   * Every {id, repo} a parsed API body can be made to yield. Little is
+   * required of the response's SHAPE — a record counts when it has a session
+   * id and a repo NAMED near it — but the naming is required, because a
+   * session record carries its branch too and a branch is the same shape.
    */
   function extractSessions(json) {
     const out = [];
@@ -250,7 +321,8 @@
       }
       const id = idOf(node);
       if (id && !seen.has(id)) {
-        const repo = repoOf(node, STRONG, 0) || repoOf(node, WEAK, 0);
+        // Named outright first; then the keys that have to prove it.
+        const repo = repoOf(node, STRONG, false, 0) || repoOf(node, WEAK, true, 0);
         if (repo) {
           seen.add(id);
           out.push({ id: id, repo: repo });
@@ -421,6 +493,7 @@
 
   const api = {
     normRepo: normRepo,
+    parseRepo: parseRepo,
     knownSet: knownSet,
     repoInText: repoInText,
     repoInLabelled: repoInLabelled,

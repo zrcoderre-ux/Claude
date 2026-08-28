@@ -131,7 +131,13 @@
   const CR = window.CUMCodeRepo;
   function maybeEmitCodeSessions(url, text) {
     if (!CR || !text || text.length > 2000000) return;
-    if (!CR.looksLikeSessionsUrl(url)) return;
+    // The URL is the cheap tell and not the only one: an endpoint whose
+    // address says nothing about sessions still says `session_` in its body,
+    // and one substring scan is cheaper than the guess about claude.ai's
+    // routing that a URL-only gate would be making. What comes back is safe to
+    // widen to now — a record has to NAME a repo to yield one, so a body that
+    // merely mentions sessions and has no repos in it produces nothing.
+    if (!CR.looksLikeSessionsUrl(url) && text.indexOf("session_") === -1) return;
     let json;
     try {
       json = JSON.parse(text);

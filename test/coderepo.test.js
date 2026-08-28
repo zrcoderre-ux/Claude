@@ -53,9 +53,14 @@ test("a control labelled as the repository is believed on its own text", () => {
   assert.equal(R.repoInLabelled("x".repeat(400) + " a/b"), null, "that is a page, not a control");
 });
 
-test("the known repos can come from the picker's list or the session map", () => {
+test("the known repos are the ones already learned", () => {
+  // The list the row-text fallback is measured against is the session map —
+  // repos learned from the API, an address, or a labelled control. A list
+  // scraped off the page for anything with a slash in it is not knowledge:
+  // it carries branch chips too, and trusting one put branches in the rows.
   const map = { session_aaa111aaa: { repo: "o/n", at: 1 } };
-  assert.equal(R.repoInText("touched o/n today", [["x/y"], map]), "o/n");
+  assert.equal(R.repoInText("touched o/n today", [map]), "o/n");
+  assert.equal(R.repoInText("claude/some-slug", [map]), null);
   assert.ok(R.knownSet(["o/n", "not a repo", "https://github.com/a/b"]).has("a/b"));
 });
 
@@ -105,6 +110,52 @@ test("a record counts when it has a session id and a repo — never by its shape
     { id: "session_aaa111aaa", repo: "o/n" },
     { id: "session_bbb222bbb", repo: "a/b" },
   ]);
+});
+
+test("a branch is never read as a repo, wherever a record keeps it", () => {
+  // The bug this rewrite exists for: rows came back named after the branch
+  // the session was running on, because the reader walked into whatever a
+  // record held and took the first thing shaped like `owner/name`. The shape
+  // never says what a value IS — the key has to.
+  const branchOnly = [
+    { id: "session_aaa111aaa", branch: "claude/some-slug-x1" },
+    { id: "session_bbb222bbb", git_branch: "claude/some-slug-x2" },
+    { id: "session_ccc333ccc", branch: { name: "claude/some-slug-x3" } },
+    { id: "session_ddd444ddd", tags: ["claude/some-slug-x4"] },
+    { id: "session_eee555eee", head_ref: "claude/some-slug-x5" },
+    { id: "session_fff666fff", outcome_branch: "claude/some-slug-x6" },
+  ];
+  assert.deepEqual(R.extractSessions(branchOnly), [], "no repo named, so no repo claimed");
+  // And a record that carries both comes back with the repo, not the branch —
+  // including a branch nested inside the repo's own object.
+  assert.deepEqual(
+    R.extractSessions([
+      { id: "session_ggg777ggg", repo: "o/n", git_branch: "claude/some-slug" },
+      { id: "session_hhh888hhh", repository: { full_name: "a/b", branch: "claude/other-slug" } },
+    ]),
+    [
+      { id: "session_ggg777ggg", repo: "o/n" },
+      { id: "session_hhh888hhh", repo: "a/b" },
+    ]
+  );
+});
+
+test("a key that only MIGHT hold a repo has to prove it with an address", () => {
+  // `source: "claude/some-slug"` is not evidence of anything; the same key
+  // holding a github address is.
+  assert.deepEqual(R.extractSessions([{ id: "session_aaa111aaa", source: "claude/some-slug" }]), []);
+  assert.deepEqual(R.extractSessions([{ id: "session_aaa111aaa", source: { url: "https://github.com/o/n" } }]), [
+    { id: "session_aaa111aaa", repo: "o/n" },
+  ]);
+});
+
+test("a repo written as two halves is put back together", () => {
+  assert.deepEqual(
+    R.extractSessions([
+      { id: "session_aaa111aaa", repository: { name: "Claude", owner: { login: "zrcoderre-ux" }, branch: "claude/x" } },
+    ]),
+    [{ id: "session_aaa111aaa", repo: "zrcoderre-ux/Claude" }]
+  );
 });
 
 test("a naming key wins over a generic url on the same record", () => {

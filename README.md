@@ -2963,15 +2963,17 @@ the order they are trusted:
 
 1. **The page's own API.** claude.ai fetches its session list as JSON, and the
    MAIN-world interceptor already watches that traffic for usage and projects.
-   A session record carries its repo under *some* key; which key is not ours to
-   know, so a record counts when it has a **session id and something
-   repo-shaped near it** rather than when it matches a shape we named. That is
-   the one pair this feature needs and the pair least likely to be renamed out
-   from under it.
+   A record counts when it has a **session id and a repo *named* beside it** —
+   under a key that says repo (`repo`, `repository`, `full_name`, an
+   `owner`+`name` pair), or a github address under a key that merely might
+   carry one. Keys that name a **branch** are refused at any depth, even inside
+   the repo's own object.
 2. **A session you opened.** Its repo is on screen — a github link, or the
-   control claude.ai labels as the repository — so every session you visit
-   teaches its own row, and the map fills as you work.
-3. **The row's own text**, under a rule (below) that keeps it honest.
+   control claude.ai labels as the repository (never one that mentions a
+   branch) — so every session you visit teaches its own row, and the map fills
+   as you work.
+3. **The row's own text**, and only where it names a repo **already learned**
+   by the first two.
 
 What each source learns goes into one map of session → repo, capped at 500 and
 oldest-out, and a list render that learns nothing writes nothing.
@@ -2983,12 +2985,28 @@ A Claude Code branch is `claude/some-slug`, which is **exactly** the shape of
 is a wrong answer wearing a right answer's clothes — and worse than no answer,
 because you would act on it.
 
-So a bare `a/b` token in a row is believed **only** when it names a repo
-already known: one in the scheduler's harvested repo list (`cum_repos`), or one
-the first two sources already learned. A full `github.com` URL is believed
-outright, since a branch never appears as one. A control claude.ai has
-**labelled** as the repository is believed on its own text, because the label
-is what says the text is a repo.
+**The shape of a value never says what it is; only where it came from does.**
+That one rule is written in three places, because it was got wrong twice and
+rows came back named after the branch they were running on:
+
+- The **API reader** takes a repo only from keys that name one, and refuses
+  branch keys wherever they appear. A key that merely *might* carry a repo has
+  to prove it with a github address; a bare `a/b` under one is not evidence.
+- The **row-text fallback** recognises nothing it has not already learned some
+  other way. It used to also trust the scheduler's harvested repo list
+  (`cum_repos`) — which is filled by a scraper that sweeps a Claude Code page
+  for anything shaped like `owner/name`, **branch chips included**. A list of
+  "known repos" that cannot tell a branch from a repo is not knowledge, it is
+  the same guess one step removed, and it is no longer consulted here.
+- A full `github.com` URL is believed outright, since a branch never appears as
+  one, and a control claude.ai has **labelled** as the repository is believed
+  on its own text — unless the label mentions a branch, in which case it is
+  evidence about a branch.
+
+The stored map was versioned along with that fix (`cum_code_repos_v2`): there
+is no telling from the outside which entries the old reader had been talked
+into, so the old ones are dropped rather than carried forward, and the map
+fills again in a page or two.
 
 ### A row it cannot name
 

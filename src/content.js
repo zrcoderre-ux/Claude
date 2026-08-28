@@ -1974,9 +1974,9 @@
     const R = window.CUMCodeRepo;
     if (!R || !Array.isArray(found) || !found.length) return;
     try {
-      chrome.storage?.local.get("cum_code_session_repos", (res) => {
-        const next = R.mergeRepos((res && res.cum_code_session_repos) || {}, found);
-        if (next) chrome.storage.local.set({ cum_code_session_repos: next });
+      chrome.storage?.local.get("cum_code_repos_v2", (res) => {
+        const next = R.mergeRepos((res && res.cum_code_repos_v2) || {}, found);
+        if (next) chrome.storage.local.set({ cum_code_repos_v2: next });
       });
     } catch (e) {
       /* ignore */
