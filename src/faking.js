@@ -104,6 +104,18 @@
       );
     if (!st.on)
       return "Nothing on this page is translated." + SAFETY;
+    // A key ATTACHED to this conversation and a key merely reading the chat
+    // names in the lists back are different facts, and the button has to say
+    // which: lit on a page with no conversation to attach to (a blank
+    // composer) otherwise reads as an attachment that cannot exist, while the
+    // panel one click away says the page is not a conversation.
+    if (st.on && st.attached === false)
+      return (
+        "Showing the real names in the chat names on this page" +
+        (st.name ? ", from " + st.name : "") +
+        ". No key is attached to this page. Click to see it exactly as claude.ai renders it." +
+        SAFETY
+      );
     return (
       "Showing the real names" +
       (st.name ? " from " + st.name : "") +

@@ -238,6 +238,37 @@
     return hint || name || "pseudonym key";
   }
 
+  /**
+   * Whether the key button and the fakes toggle have anything to be about on
+   * this page — the rule both of them are lit by, in one place because they
+   * are one claim: THIS PAGE IS NOT SAYING WHAT CLAUDE.AI SAYS.
+   *
+   * Two things can make that true, and nothing else may:
+   *
+   *   AN ATTACHMENT. This conversation has a key. It is lit even with nothing
+   *   matched yet, because the key is a fact about the chat rather than about
+   *   what happens to be rendered in it.
+   *
+   *   REAL NAMES ON SCREEN. A name, a title, anything actually swapped.
+   *
+   * What may NOT light it is a key merely being AVAILABLE. The master key
+   * stands by on every page in the browser; a blank composer that has no
+   * conversation to attach a key to was lighting both buttons and naming a
+   * case, while the panel one click away said "this page is not a
+   * conversation". Both were true and together they were a contradiction, and
+   * the button is the half people read.
+   *
+   * A peek or a run's hold keeps it in play with nothing on screen: both are
+   * states you get OUT of with that button, and a switch that vanishes while
+   * the thing it switches is still on is worse than one that stays.
+   */
+  function keyInPlay(st) {
+    const s = st || {};
+    if (s.attached) return true;
+    if ((s.names || 0) > 0 || (s.titles || 0) > 0) return true;
+    return !!s.paused || !!s.held;
+  }
+
   // The same, with the size that tells a full key from a half-loaded one.
   function keyLabel(key) {
     const k = key || {};
@@ -1179,6 +1210,7 @@
     sameCaseKey,
     libraryIdFor,
     keyTitle,
+    keyInPlay,
     keyLabel,
     keepKeyFacts,
     RECENT_KEYS,
