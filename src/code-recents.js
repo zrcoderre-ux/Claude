@@ -42,9 +42,14 @@
   if (!R) return;
 
   const ID = "cum-repos";
-  const MAP_KEY = "cum_code_session_repos"; // { [sessionId]: { repo, at } }
+  // { [sessionId]: { repo, at } }. The `2` is a clean break from the first
+  // version of the map: it was filled by a reader that could be talked into a
+  // BRANCH, and there is no telling from the outside which of its entries are
+  // repos — so the old key is dropped rather than carried forward, and the map
+  // fills again in a page or two from the API and the sessions you open.
+  const MAP_KEY = "cum_code_repos_v2";
+  const OLD_MAP_KEY = "cum_code_session_repos";
   const ON_KEY = "cum_code_repos_on"; // the switch, off by default
-  const KNOWN_KEY = "cum_repos"; // the picker's harvested repo list
   const TICK_MS = 1200;
   // A DATA ATTRIBUTE, never a class of ours. Everything in this extension
   // knows its own work by `[id^="cum-"],[class*="cum-"]` — this file included,
@@ -56,7 +61,6 @@
 
   let on = false;
   let map = {};
-  let known = [];
   let btn = null;
   let heading = null;
   let unknown = 0;
@@ -274,8 +278,21 @@
 
   // ---- the repo a row is on ------------------------------------------------
 
+  /**
+   * The repos this page is entitled to recognise in a row's text: the ones
+   * already LEARNED, from the API, a github address, or a labelled control.
+   *
+   * `cum_repos` — the scheduler's harvested repo list — is deliberately NOT
+   * among them, though it was. It is filled by a scraper that sweeps a Claude
+   * Code page for anything shaped like `owner/name` (src/composer.js,
+   * scrapeRepos), and on that page the branch chips are shaped exactly like
+   * that. Trusting it put branches in this list's rows — the very thing this
+   * file was built to refuse — because a list of "known repos" that cannot
+   * tell a branch from a repo is not knowledge, it is the same guess one step
+   * removed.
+   */
   function knownRepos() {
-    return [known, map];
+    return [map];
   }
 
   function repoForRow(row) {
@@ -527,12 +544,19 @@
       // because the label says so, so a bare token is evidence here.
       try {
         for (const el of document.querySelectorAll(
-          '[aria-label*="repositor" i],[title*="repositor" i],[data-testid*="repo" i]'
+          '[aria-label*="repositor" i],[title*="repositor" i],[data-testid*="repositor" i]'
         )) {
           if (isOurs(el)) continue;
-          const t = ((el.textContent || "") + " " + (el.getAttribute("aria-label") || "")).trim();
+          const said =
+            (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "") +
+            " " + (el.getAttribute("data-testid") || "");
+          // A control that mentions a branch is not evidence about a repo,
+          // whatever else its label says — and a branch is the one wrong
+          // answer here that looks exactly like a right one.
+          if (/branch|ref\b/i.test(said)) continue;
+          const t = (el.textContent || "").trim();
           if (t.length > 300) continue;
-          repo = R.repoInText(t, knownRepos()) || R.repoInLabelled(el.textContent || "");
+          repo = R.repoInText(t, knownRepos()) || R.repoInLabelled(t);
           if (repo) break;
         }
       } catch (e) {
@@ -568,10 +592,14 @@
     }
   }
 
-  storageGet([MAP_KEY, ON_KEY, KNOWN_KEY]).then((res) => {
+  storageGet([MAP_KEY, ON_KEY]).then((res) => {
     map = (res && res[MAP_KEY]) || {};
-    known = (res && res[KNOWN_KEY]) || [];
     on = !!(res && res[ON_KEY]);
+    try {
+      chrome.storage.local.remove(OLD_MAP_KEY);
+    } catch (e) {
+      /* ignore */
+    }
     tick();
   });
 
@@ -581,10 +609,6 @@
       let touched = false;
       if (changes[MAP_KEY]) {
         map = changes[MAP_KEY].newValue || {};
-        touched = true;
-      }
-      if (changes[KNOWN_KEY]) {
-        known = changes[KNOWN_KEY].newValue || [];
         touched = true;
       }
       if (changes[ON_KEY]) {
