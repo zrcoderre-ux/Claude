@@ -46,13 +46,42 @@
   // own Copy button out of the running; preferring one that FOLLOWS the message
   // in document order keeps the preceding user message's Copy out of it too,
   // for the widths of scope where both are in view.
-  function findCopyButton(msgEl) {
-    if (!msgEl) return null;
+  //
+  // The walk climbs, and what it finds four levels up is no longer certainly
+  // the reply's own bar. A live run copied an open verification report — a .md
+  // file in Cowork's document pane, which has a Copy control of its own — and
+  // handed that to the next chat as though Claude had said it. So a candidate
+  // is VOUCHED FOR by its neighbours: the reply's bar carries Retry, the rating
+  // controls, Read aloud; a document pane's toolbar carries none of them. A
+  // vouched control anywhere in the walk beats an unvouched one nearer the
+  // message, and the unvouched pass still runs afterwards, because a surface
+  // whose bar has no other captions must still be copyable.
+  function inReplyActionBar(btn) {
+    let scope = btn && btn.parentElement;
+    for (let i = 0; i < 3 && scope; i++) {
+      let near;
+      try {
+        near = Array.from(scope.querySelectorAll('button,[role="button"]'));
+      } catch (e) {
+        return false;
+      }
+      for (const b of near) {
+        if (b === btn || C.isOurs(b)) continue;
+        for (const v of [b.getAttribute("aria-label"), b.getAttribute("title"), b.textContent])
+          if (W.isReplyActionLabel(v) && !W.isCopyLabel(v)) return true;
+      }
+      scope = scope.parentElement;
+    }
+    return false;
+  }
+
+  function searchOut(msgEl, vouchedOnly) {
     let scope = msgEl.parentElement;
     for (let i = 0; i < 4 && scope; i++) {
-      const btns = Array.from(scope.querySelectorAll('button,[role="button"]')).filter(
+      let btns = Array.from(scope.querySelectorAll('button,[role="button"]')).filter(
         (b) => !msgEl.contains(b) && copyish(b)
       );
+      if (vouchedOnly) btns = btns.filter(inReplyActionBar);
       if (btns.length) {
         const following = btns.find(
           (b) =>
@@ -63,6 +92,11 @@
       scope = scope.parentElement;
     }
     return null;
+  }
+
+  function findCopyButton(msgEl) {
+    if (!msgEl) return null;
+    return searchOut(msgEl, true) || searchOut(msgEl, false);
   }
   // The action bar can be hover-revealed; nudge the message first.
   function hover(el) {
@@ -111,5 +145,5 @@
   }
 
 
-  root.CUMReplyCopy = { copyish, findCopyButton, hover, copyViaButton, COPY_WAIT_MS };
+  root.CUMReplyCopy = { copyish, inReplyActionBar, findCopyButton, hover, copyViaButton, COPY_WAIT_MS };
 })(typeof globalThis !== "undefined" ? globalThis : this);

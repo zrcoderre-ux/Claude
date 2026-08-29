@@ -1165,7 +1165,19 @@ part unrenderable travels as its prose — handing the shells to the next chat a
 the report to revise would produce confident work built on nothing.
 
 The copy is rejected outright if it comes back **implausibly short**, which
-usually means a code block's own Copy button answered instead of the message's.
+usually means a code block's own Copy button answered instead of the message's —
+and it is rejected just as firmly if it comes back **not carrying the reply's own
+ending**, which is how a long wrong copy is caught. Cowork's copy control has
+been seen handing back the turn's *tool prompts*, and a run has been seen
+carrying an **open .md document** — a verification report in Cowork's file pane,
+which has a Copy control of its own — into the next chat as though Claude had
+said it. Two guards, both of them written down once: the copy control is
+identified by **the company it keeps** (the reply's action bar carries Retry and
+the rating controls; a document pane's toolbar carries none of them), and
+whatever comes back has to contain the last of what the page actually rendered,
+however little that is. A reply that renders one line above a file it just wrote
+is exactly the case the old *"too short to judge, believe it"* rule waved
+through.
 It then falls back to the conversation payload from claude.ai's API, which takes
 the prose **and any artifacts** (an artifact is a tool call whose payload is the
 answer; a report written into one would otherwise be dropped). Thinking and tool
@@ -1181,7 +1193,16 @@ that never changes, while the answer sits in the conversation the whole time. So
 once the response stream has closed (or the page has been unhelpful for ninety
 seconds) the run **asks claude.ai's API directly**, comparing what the
 conversation says is the latest reply against what it said before the message
-went out. That comparison works whether or not the page is showing anything. The
+went out. That comparison works whether or not the page is showing anything — and when it
+**can't** be made, the failure says which way it failed: the org list refused,
+an HTTP status from each org that was asked, a body that wasn't JSON, or a round
+trip that never came back. It used to say only *"the Cowork session API was
+asked and didn't answer"*, which covers all four and points at none of them; a
+step that waited out two hours on a session whose reply had landed an hour
+earlier is what that sentence cost. The timeout report also counts the turns on
+the page — assistant turns now against at the send, and your own — which
+separates *the page never drew the answer* from *the page never took the
+message*. The
 transcript is also kept scrolled to the bottom — but **only while the tab is
 hidden**. The pin stands in for the person a hidden tab doesn't have, keeping
 the newest reply mounted; in a tab you are actually looking at, the scroll bar

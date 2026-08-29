@@ -130,7 +130,7 @@
     ".font-user-message",
     '[data-testid="human-message"]',
   ];
-  function lastHuman() {
+  function humanMessages() {
     for (const sel of HUMAN_SELECTORS) {
       let nodes;
       try {
@@ -139,9 +139,13 @@
         continue;
       }
       const list = Array.from(nodes).filter((el) => !C.isOurs(el));
-      if (list.length) return list[list.length - 1];
+      if (list.length) return list;
     }
-    return null;
+    return [];
+  }
+  function lastHuman() {
+    const list = humanMessages();
+    return list.length ? list[list.length - 1] : null;
   }
 
   // Which element is claiming the page is generating. On this surface that
@@ -289,34 +293,50 @@
     return streamConvId || fromPath;
   }
   let reqSeq = 0;
-  function fetchConversation(uuid, timeoutMs) {
+  //
+  // The whole answer, not just the conversation: { data, error, tried }. A read
+  // that fails has a reason, and the reason used to die here — `data || null`
+  // threw away the error and the list of what was tried, and left the run
+  // saying only that the API "didn't answer". See W.conversationFetchWhy.
+  function fetchConversationDetail(uuid, timeoutMs) {
     return new Promise((resolve) => {
       const reqId = "wf" + ++reqSeq + "-" + Date.now();
+      const ms = timeoutMs || 15000;
       let settled = false;
-      const finish = (data) => {
+      const finish = (payload) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         window.removeEventListener("message", onMsg);
-        resolve(data || null);
+        resolve(payload || {});
       };
       function onMsg(event) {
         if (event.source !== window) return;
         const m = event.data;
         const p = m && m.__channel === C.CHANNEL ? m.payload : null;
-        if (p && p.conversation && p.conversation.reqId === reqId) finish(p.conversation.data || null);
+        if (p && p.conversation && p.conversation.reqId === reqId) finish(p.conversation);
       }
       window.addEventListener("message", onMsg);
-      const timer = setTimeout(() => finish(null), timeoutMs || 15000);
+      // Nothing came back at all — which is a different failure from a request
+      // that came back refused, and has to read as one.
+      const timer = setTimeout(
+        () => finish({ error: "the page never answered within " + Math.round(ms / 1000) + "s" }),
+        ms
+      );
       try {
         window.postMessage(
           { __channel: C.CHANNEL, command: { type: "fetchConversation", uuid, reqId } },
           window.location.origin
         );
       } catch (e) {
-        finish(null);
+        finish({ error: "could not reach the page: " + String((e && e.message) || e) });
       }
     });
+  }
+  /** Just the conversation, for the callers that have nothing to say about a miss. */
+  async function fetchConversation(uuid, timeoutMs) {
+    const got = await fetchConversationDetail(uuid, timeoutMs);
+    return (got && got.data) || null;
   }
 
   // Give this conversation the run's name. Best-effort in every direction: it
@@ -471,7 +491,7 @@
       : !W.plausibleCopy(copied, rendered)
       ? "the copy was too short to be the reply"
       : !W.copyCarriesEnd(copied, prose)
-      ? "the copy did not carry the reply's ending — Cowork's copy control sometimes copies the turn's tool prompts instead of the answer"
+      ? "the copy did not carry the reply's ending — Cowork's copy control sometimes hands back the turn's tool prompts, or an open document, instead of the answer"
       : "";
 
     // The copy box stays first choice — Claude's own markdown, minus the
@@ -825,7 +845,8 @@
             // a shape nothing recognises, the report carries that shape so
             // it can be wired in from one paste.
             const cse = /^cse_/.test(uuid);
-            const conv = await fetchConversation(uuid, 20000);
+            const got = await fetchConversationDetail(uuid, 20000);
+            const conv = got.data || null;
             const apiText = W.stripPlaceholders(
               cse ? W.coworkReplyText(conv) : W.lastAssistantText(conv)
             );
@@ -835,10 +856,14 @@
               // page is still a candidate answer.
               api = conv
                 ? { apiAnswered: true, coworkShape: W.payloadShape(conv) }
-                : { apiFailed: true };
+                : { apiFailed: true, apiWhy: W.conversationFetchWhy(got) };
             } else {
               const fresh = apiText && apiText !== (before.apiText || "");
-              api = { apiChars: apiText.length, apiAnswered: !!conv };
+              api = {
+                apiChars: apiText.length,
+                apiAnswered: !!conv,
+                apiWhy: conv ? null : W.conversationFetchWhy(got),
+              };
               if (fresh && W.looksInterrupted(apiText)) {
                 // Cut off part-way. Where a ruling is expected this is the exact
                 // case a Continue fixes, so ask before giving up on it.
@@ -958,7 +983,21 @@
             // anyone was looking.
             watched: watched || before.count === -1,
           });
-          last = { fresh, generating, streamDone, chars: text.length, stablePolls, marker };
+          last = {
+            fresh,
+            generating,
+            streamDone,
+            chars: text.length,
+            stablePolls,
+            marker,
+            // What the page is showing, counted. "19795 chars, NOT recognised
+            // as new" leaves the important question open: did the page never
+            // draw the answer, or did it never even take our message? The turn
+            // counts answer both at a glance.
+            turns: list.length,
+            turnsBefore: before.count,
+            humans: humanMessages().length,
+          };
           // The turn is over and nothing new can be read. Waiting out the rest
           // of the hour cannot change that: the stream for THIS message closed,
           // the page is idle, and the text hasn't moved in fifteen minutes.
@@ -1344,16 +1383,24 @@
         ? "no assistant message ever appeared"
         : (s.chars || 0) + " chars, " +
           (s.fresh ? "recognised as new" : "NOT recognised as new (same as before the send)") + ", " +
+          (typeof s.turns === "number"
+            ? s.turns + " assistant turn" + (s.turns === 1 ? "" : "s") +
+              (typeof s.turnsBefore === "number" && s.turnsBefore >= 0
+                ? " (" + s.turnsBefore + " at the send)"
+                : "") +
+              (typeof s.humans === "number" ? " and " + s.humans + " of yours" : "") + ", "
+            : "") +
           (s.generating ? "page still says generating (" + stopDescription() + ")" : "page says idle") + ", " +
           (s.streamDone ? "response stream closed" : anyStreamSeen ? "no completion stream seen for this turn" : "no stream events at all") +
           (typeof s.apiChars === "number"
             ? ", the conversation itself last showed " + s.apiChars + " chars" +
-              (s.apiAnswered ? "" : " (it never answered)")
+              (s.apiAnswered ? "" : " (it never answered — " + (s.apiWhy || "no reason given") + ")")
             : s.coworkShape
             ? ", the Cowork session answered but no reply was recognised in its payload (" +
               s.coworkShape + ") — paste this so the shape can be wired in"
             : s.apiFailed
-            ? ", the Cowork session API was asked and didn't answer"
+            ? ", the Cowork session API was asked and didn't answer (" +
+              (s.apiWhy || "no reason given") + ")"
             : s.noConvId
             ? ", and this tab's URL (" + s.path + ") holds no conversation id, so the " +
               "conversation itself was never asked"
