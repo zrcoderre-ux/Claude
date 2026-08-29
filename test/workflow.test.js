@@ -3488,10 +3488,58 @@ test("a copy is believed only when it carries the reply's own ending", () => {
   assert.equal(W.plausibleCopy(toolPrompts, report), true, "length alone waves it through — the bug");
 });
 
-test("too little rendered text to judge by is not a conviction", () => {
-  assert.equal(W.copyCarriesEnd("anything at all", "Done."), true);
+test("a short reply still has to be in the copy — the hole a whole file walked through", () => {
+  // The live failure: a Cowork turn whose answer was a file it had just
+  // written rendered one line of prose, and the copy control handed back the
+  // OPEN DOCUMENT. Under the old floor (fewer than twenty letters, believe the
+  // copy) the report travelled to the next chat as Claude's own words.
+  const short = "Done.";
+  assert.equal(W.copyCarriesEnd("Done.", short), true);
+  assert.equal(W.copyCarriesEnd("**Done.**", short), true, "markdown around it is still it");
+  assert.equal(
+    W.copyCarriesEnd("# Verification report\n\nEvery cite in the ruling checks out.", short),
+    false
+  );
+  // Nothing rendered at all is a different thing: no reply on the page to
+  // compare against, so this test has nothing to say and stands aside.
   assert.equal(W.copyCarriesEnd("anything", ""), true);
   assert.equal(W.copyCarriesEnd("", "a long enough rendered reply to actually judge against"), false);
+});
+
+test("the reply's action bar is known by the company it keeps", () => {
+  assert.equal(W.isReplyActionLabel("Retry"), true);
+  assert.equal(W.isReplyActionLabel("Good response"), true);
+  assert.equal(W.isReplyActionLabel("Bad response"), true);
+  assert.equal(W.isReplyActionLabel("Read aloud"), true);
+  assert.equal(W.isReplyActionLabel("Copy"), true);
+  // A document pane's toolbar, which is what got copied instead of the reply.
+  assert.equal(W.isReplyActionLabel("Download"), false);
+  assert.equal(W.isReplyActionLabel("Share"), false);
+  assert.equal(W.isReplyActionLabel("Open in new tab"), false);
+  assert.equal(W.isReplyActionLabel(""), false);
+  assert.equal(W.isReplyActionLabel("Retry the request if it fails, then report back to the user"), false);
+});
+
+test("a conversation read that fails says which way it failed", () => {
+  assert.equal(
+    W.conversationFetchWhy({
+      error: "no org served this conversation (2 tried)",
+      tried: ["/api/organizations/1234abcd\u2026/conversations/cse_01 → HTTP 404"],
+    }),
+    "no org served this conversation (2 tried) — tried /api/organizations/1234abcd\u2026/conversations/cse_01 → HTTP 404"
+  );
+  assert.equal(
+    W.conversationFetchWhy({ error: "the page never answered within 20s" }),
+    "the page never answered within 20s"
+  );
+  // Four attempts are enough to see a pattern; the rest are counted, not listed.
+  const many = ["a → HTTP 403", "b → HTTP 403", "c → HTTP 403", "d → HTTP 403", "e → HTTP 403"];
+  assert.equal(
+    W.conversationFetchWhy({ error: "none", tried: many }),
+    "none — tried a → HTTP 403; b → HTTP 403; c → HTTP 403; d → HTTP 403 (+1 more)"
+  );
+  assert.equal(W.conversationFetchWhy({}), "no reason given");
+  assert.equal(W.conversationFetchWhy(null), "no reason given");
 });
 
 // ---- the run console's redraw decision -------------------------------------

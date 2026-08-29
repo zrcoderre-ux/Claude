@@ -3416,8 +3416,42 @@
     const r = lettersOf(renderedProse);
     if (!c) return false;
     const tail = r.slice(-80);
-    if (tail.length < 20) return true; // too little rendered to judge by
+    // Nothing rendered at all — every block was one this page couldn't draw.
+    // There is no reply text to compare against, so this test has nothing to
+    // say and plausibleCopy's length comparison is the guard that stands.
+    if (!tail) return true;
+    // However LITTLE was rendered, the copy has to carry it. The old floor here
+    // — fewer than twenty letters and the copy was believed — is the hole a
+    // whole document walked through: a Cowork turn whose answer is a file it
+    // just wrote renders a line or two of prose, and the copy control handed
+    // back the open file instead of the reply. A run carried the verification
+    // report to the next chat as though Claude had said it. A copy that carries
+    // none of the reply's own words is not a copy of the reply.
     return c.indexOf(tail) !== -1;
+  }
+
+  // The other controls that sit in a reply's action bar. Nothing here is
+  // clicked: they are how the RIGHT Copy is told from a stranger. An icon-only
+  // Copy is unidentifiable on its own, and the run that made this worth writing
+  // copied an open .md file — the file viewer has a Copy too, and the walk
+  // outward from the message found it. The reply's own bar has these beside it;
+  // a document pane's toolbar has Download and Share and no opinion on whether
+  // the answer was any good.
+  const REPLY_ACTION_LABELS = [
+    "retry",
+    "good response",
+    "bad response",
+    "read aloud",
+    "copy",
+    "copy message",
+    "copy response",
+  ];
+  function isReplyActionLabel(text) {
+    const t = str(text).replace(/\s+/g, " ").trim().toLowerCase().replace(/[.:]+$/, "");
+    if (!t || t.length > 40) return false;
+    if (REPLY_ACTION_LABELS.indexOf(t) !== -1) return true;
+    // The rating controls are captioned both ways in the wild.
+    return /^(thumbs\s+(up|down)|(like|dislike) (this )?response|regenerate)$/.test(t);
   }
 
   // Is what's on screen now a NEW reply, rather than the one that was already
@@ -3426,6 +3460,34 @@
   // count sits at 1 however many replies arrive. Either the count growing or the
   // text differing from what was last there means a new answer — and a step that
   // waits on the count alone would hang until it timed out.
+  /**
+   * Why a conversation read came back with nothing, in the words a run's report
+   * can carry. The page-world fetch (src/inject.js) answers with an error and a
+   * list of what it tried; both halves matter, and neither used to survive the
+   * trip: the runner kept `payload.data || null` and threw the rest away, so
+   * every failure — a 403, a 404 on the wrong org, a body that wasn't JSON, a
+   * network error, a round trip that never came back — reached the user as the
+   * single sentence "asked and didn't answer". The live step that made this
+   * worth fixing waited out two hours on a Cowork session whose reply had
+   * landed an hour before, with nothing in the report to say which of those
+   * five it was.
+   */
+  function conversationFetchWhy(payload) {
+    const p = payload || {};
+    const parts = [];
+    const err = str(p.error).trim();
+    if (err) parts.push(err);
+    const tried = Array.isArray(p.tried) ? p.tried.map(str).filter(Boolean) : [];
+    // Four is enough to see a pattern; an account in a dozen orgs would
+    // otherwise bury the error under its own address book.
+    if (tried.length)
+      parts.push(
+        "tried " + tried.slice(0, 4).join("; ") +
+          (tried.length > 4 ? " (+" + (tried.length - 4) + " more)" : "")
+      );
+    return parts.join(" — ") || "no reason given";
+  }
+
   function isNewReply(sample) {
     const s = sample || {};
     const text = trimmed(s.text);
@@ -3835,7 +3897,9 @@
     isDownloadLabel,
     plausibleCopy,
     copyCarriesEnd,
+    isReplyActionLabel,
     isNewReply,
+    conversationFetchWhy,
     settleReason,
     turnSettled,
     consoleRun,

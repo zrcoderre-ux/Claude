@@ -453,22 +453,44 @@
   // The workflow runner needs the text of Claude's last reply to hand it to the
   // next chat. Its first choice is the page's own copy control (hooked below);
   // this is the fallback, and it's the same payload the context meter reads.
+  // Every request this made and what came back, so a read that fails says
+  // WHICH way it failed. A live workflow step waited out two hours on a Cowork
+  // session whose reply had landed an hour earlier, and all its report could
+  // say was "the Cowork session API was asked and didn't answer" — a sentence
+  // that covers a 403, a 404 on the wrong org, an unparseable body and a
+  // network error equally, and points at none of them. The org id is cut short
+  // in these notes: enough to tell two orgs apart, not enough to be an account
+  // identifier travelling through a bug report.
+  const briefUrl = (u) =>
+    String(u || "").replace(/organizations\/([0-9a-zA-Z-]{8})[0-9a-zA-Z-]*/, "organizations/$1…");
+
   function fetchConversation(uuid, reqId) {
     const reply = (obj) => post({ conversation: Object.assign({ reqId }, obj) });
-    if (!origFetch || !knownConversationId(uuid)) return reply({ error: "unavailable" });
+    if (!origFetch) return reply({ error: "the page's own fetch was never captured" });
+    if (!knownConversationId(uuid))
+      return reply({ error: "id " + JSON.stringify(String(uuid || "")) + " is of no known shape" });
     const ids = new Set();
+    const tried = [];
     origFetch("/api/organizations", { credentials: "include" })
-      .then((r) => (r.ok ? r.clone().text() : ""))
+      .then((r) => {
+        if (r.ok) return r.clone().text();
+        tried.push("/api/organizations → HTTP " + r.status);
+        return "";
+      })
       .then((t) => {
         probeOrgIds(t, ids);
         const orgs = Array.from(ids);
-        if (!orgs.length) return reply({ error: "no organization" });
+        if (!orgs.length) return reply({ error: "no organization id could be read", tried: tried });
         // Try each org in turn — an account can belong to more than one, and
         // only the owning org answers for this conversation.
         return (function next(i) {
-          if (i >= orgs.length) return reply({ error: "conversation not found" });
+          if (i >= orgs.length)
+            return reply({
+              error: "no org served this conversation (" + orgs.length + " tried)",
+              tried: tried,
+            });
           const base = conversationApiPath(orgs[i], uuid);
-          if (!base) return reply({ error: "unavailable" });
+          if (!base) return reply({ error: "no api path for this id", tried: tried });
           // The tree/rendering params are chat_conversations' own; a Cowork
           // session is asked for plainly rather than with parameters invented
           // for it.
@@ -476,21 +498,29 @@
             ? base + "?tree=True&rendering_mode=messages"
             : base;
           return origFetch(url, { credentials: "include", headers: { accept: "*/*" } })
-            .then((res) => (res.ok ? res.clone().text() : ""))
+            .then((res) => {
+              if (res.ok) return res.clone().text();
+              tried.push(briefUrl(url) + " → HTTP " + res.status);
+              return "";
+            })
             .then((text) => {
               if (!text) return next(i + 1);
               let json;
               try {
                 json = JSON.parse(text);
               } catch (e) {
+                tried.push(briefUrl(url) + " → " + text.length + " chars that aren't JSON");
                 return next(i + 1);
               }
-              reply({ data: json });
+              reply({ data: json, tried: tried });
             })
-            .catch(() => next(i + 1));
+            .catch((e) => {
+              tried.push(briefUrl(url) + " → " + String((e && e.message) || e));
+              return next(i + 1);
+            });
         })(0);
       })
-      .catch((e) => reply({ error: String((e && e.message) || e) }));
+      .catch((e) => reply({ error: String((e && e.message) || e), tried: tried }));
   }
 
   // ---- Naming a conversation ---------------------------------------------
