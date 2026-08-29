@@ -209,6 +209,18 @@ test("a menu still saying Loading is a late list, not an empty one", () => {
   assert.equal(K.menuStillLoading(null), true);
 });
 
+test("placeholders in a background tab are not a menu to wait on", () => {
+  // Confirmed live: the list loads with the tab in front and never behind, so
+  // this pair is the one state where patience is the wrong answer.
+  assert.equal(K.menuNeedsTheTab("hidden", "Loading".repeat(12)), true);
+  assert.equal(K.menuNeedsTheTab("prerender", "Loading"), true);
+  assert.equal(K.menuNeedsTheTab("", "Loading"), true);
+  // In front, a slow list is just a slow list — waiting is exactly right.
+  assert.equal(K.menuNeedsTheTab("visible", "Loading".repeat(12)), false);
+  // And a menu with rows in it needs nothing at all.
+  assert.equal(K.menuNeedsTheTab("hidden", "Draft Tentative RulingsCutlist"), false);
+});
+
 test("a menu that has something to say is done loading, whatever it says", () => {
   assert.equal(K.menuStillLoading("Draft Tentative RulingsCutlistCreate new project"), false);
   assert.equal(K.menuStillLoading("No matches"), false);

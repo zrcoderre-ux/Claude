@@ -2505,6 +2505,42 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // waited minutes for fractions of a second. The worker is not a page and is
   // not throttled. Capped, and the page races this against its own timer, so
   // the worst case is the throttled wait it would have had anyway.
+  // Make the asking tab the VISIBLE tab of its own window — never by taking the
+  // screen. Cowork's project menu mounts twelve "Loading" rows and never
+  // resolves them while its tab is in the background; the send that found this
+  // waited thirty-three seconds on placeholders and stood down rather than post
+  // outside its project. A tab that is the active tab of an UNFOCUSED window is
+  // visibilityState "visible" — which is all the page wants — and nothing the
+  // user is looking at moves. The window you are actually working in is not
+  // ours to rearrange, so there the answer is no, and the caller says so rather
+  // than switching your tab out from under you.
+  if (msg && msg.type === "cum-show-tab") {
+    (async () => {
+      const tab = sender && sender.tab;
+      if (!tab || tab.id == null) return { ok: false, error: "no tab to show" };
+      if (tab.active) return { ok: true, why: "already the visible tab in its window" };
+      let focused = null;
+      try {
+        focused = await chrome.windows.getLastFocused();
+      } catch (e) {
+        /* treated as "nothing is focused", which is the cautious way round */
+      }
+      if (focused && focused.focused && focused.id === tab.windowId)
+        return {
+          ok: false,
+          error: "it is in the window you're working in, and switching your tab is not ours to do",
+        };
+      try {
+        await chrome.tabs.update(tab.id, { active: true });
+      } catch (e) {
+        return { ok: false, error: String((e && e.message) || e) };
+      }
+      return { ok: true, why: "made it the visible tab of its own window" };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
   if (msg && msg.type === "cum-wait") {
     const ms = Math.max(0, Math.min(25000, Math.floor(msg.ms) || 0));
     setTimeout(() => {

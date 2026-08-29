@@ -438,6 +438,20 @@
   ];
 
   /**
+   * A menu still showing placeholders in a tab that is not the visible one.
+   *
+   * Confirmed live, twice: the project list loads when the tab is in front and
+   * NEVER while it is behind. The second run stood down after thirty-three
+   * seconds of "Loading" twelve rows deep — the honest report the first fix
+   * bought, and the answer it gave was that patience is not the remedy. This
+   * state is not "wait longer", it is "this tab has to be looked at", and every
+   * second spent waiting it out is a second the send is not going to survive.
+   */
+  function menuNeedsTheTab(visibility, menuText) {
+    return String(visibility || "") !== "visible" && menuStillLoading(menuText);
+  }
+
+  /**
    * Whether a project menu is still fetching rather than showing what it has.
    * Cowork's picker renders skeleton rows captioned "Loading" while the list
    * comes off the server, and in that moment the menu has no rows to match, no
@@ -631,6 +645,7 @@
     titleNames,
     isProjectRow,
     menuStillLoading,
+    menuNeedsTheTab,
     coworkPhases,
     attachOutcome,
     nameSeen,
