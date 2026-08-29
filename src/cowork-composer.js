@@ -362,6 +362,43 @@
   }
 
   /**
+   * Ask the worker to make this tab the visible one in its own window.
+   *
+   * Only the worker can do it, and only it knows whether doing it would take
+   * the screen from you: a window that isn't focused can change its visible tab
+   * with nothing moving in front of anyone. Answers always — `{ ok, why }` or
+   * `{ ok: false, error }` — because a caller that cannot tell "no" from
+   * "no answer" reports neither.
+   */
+  function showThisTab() {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (r) => {
+        if (done) return;
+        done = true;
+        resolve(r);
+      };
+      // The worker can be asleep; it wakes on the message, but a send that
+      // never lands must not hold the phase open.
+      setTimeout(() => finish({ ok: false, error: "the extension's worker didn't answer" }), 8000);
+      try {
+        chrome.runtime.sendMessage({ type: "cum-show-tab" }, (res) => {
+          if (chrome.runtime.lastError || !res)
+            return finish({
+              ok: false,
+              error:
+                (chrome.runtime.lastError && chrome.runtime.lastError.message) ||
+                "the extension's worker didn't answer",
+            });
+          finish(res);
+        });
+      } catch (e) {
+        finish({ ok: false, error: String((e && e.message) || e) });
+      }
+    });
+  }
+
+  /**
    * Choose a project from Cowork's menu, the wide way. The Chat driver's
    * version looked at literal <button> elements only; when claude.ai stops
    * rendering one, that version reports an empty page and the job sails on
@@ -413,10 +450,12 @@
     // composer's own editor and type the project's name into the prompt.
     let box = null;
     const attempts = [];
+    let openedWith = null;
     for (const t of triggers) {
       const got = await openProjectMenu(t);
       if (got.box) {
         box = got.box;
+        openedWith = t;
         break;
       }
       attempts.push(JSON.stringify(caption(t) || "(uncaptioned)") + " " + got.why);
@@ -444,10 +483,49 @@
     // saying "Loading" twelve times over. So the wait comes FIRST, and every
     // read below — the filter box included, since it mounts with the list —
     // happens on a settled menu. See K.menuStillLoading.
-    const LOAD_WAIT_MS = 20000;
     const waitStarted = Date.now();
-    while (K.menuStillLoading(menuText()) && Date.now() - waitStarted < LOAD_WAIT_MS)
-      await sleep(250);
+    const untilLoaded = async (ms) => {
+      const until = Date.now() + ms;
+      while (Date.now() < until && K.menuStillLoading(menuText())) await sleep(250);
+      return !K.menuStillLoading(menuText());
+    };
+    // A list that is merely slow arrives inside this.
+    let loaded = await untilLoaded(6000);
+    // …and one that is behind a hidden tab never does. The second run to hit
+    // this waited thirty-three seconds on twelve "Loading" rows: the list loads
+    // when the tab is in front and NEVER while it is behind, so the remedy is
+    // to be looked at, not to wait longer. The worker makes this tab the
+    // visible one in its OWN window — which is enough for the page, since a
+    // window that isn't focused still has a visible tab — and refuses outright
+    // where that window is the one you are working in. See K.menuNeedsTheTab.
+    let tabNote = "";
+    if (!loaded && K.menuNeedsTheTab(document.visibilityState, menuText())) {
+      const shown = await showThisTab();
+      tabNote = shown.ok
+        ? "the tab was in the background, so it was brought to the front of its own window (" +
+          (shown.why || "shown") + ")"
+        : "the tab was in the background and could not be brought forward — " +
+          (shown.error || "no reason given");
+      if (shown.ok) {
+        // Being visible is not instant, and the page has to see it happen.
+        for (let i = 0; i < 16 && document.visibilityState !== "visible"; i++) await sleep(250);
+        loaded = await untilLoaded(6000);
+        // Still placeholders with the tab in front: the query this menu is
+        // waiting on was never going to start. Close it and open it again —
+        // a fresh mount asks again, which waiting cannot.
+        if (!loaded && openedWith) {
+          C.closeMenu();
+          await sleep(600);
+          const again = await openProjectMenu(openedWith);
+          if (again.box) box = again.box;
+          tabNote += "; the menu was closed and opened again";
+          loaded = await untilLoaded(12000);
+        }
+      }
+    }
+    // Whatever happened above, give a list that is still arriving its last few
+    // seconds before anything is read off the menu.
+    if (!loaded) await untilLoaded(8000);
     const waited = Math.round((Date.now() - waitStarted) / 1000);
     // A long list renders only what fits, so the filter isn't a nicety: a
     // project far down it is not in the page to be clicked until typing brings
@@ -612,8 +690,9 @@
         ok: false,
         why: stalled
           ? "the project menu never finished loading — still placeholders after " +
-            Math.round((Date.now() - waitStarted) / 1000) +
-            "s; the menu's own text: " + JSON.stringify(shown)
+            Math.round((Date.now() - waitStarted) / 1000) + "s" +
+            (tabNote ? " (" + tabNote + ")" : "") +
+            "; the menu's own text: " + JSON.stringify(shown)
           : "no row named " + JSON.stringify(name) + " among " +
             JSON.stringify(lastSeen.join(" | ")) +
             (filter

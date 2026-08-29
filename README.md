@@ -538,9 +538,19 @@ Three things about it shape how this works, and none of them is obvious:
   to match, and not even a search box, because that mounts with the list. A run
   that read the menu in that moment stood down with `no row named "Draft
   Tentative Rulings" among ""` while the menu's own text was `Loading` twelve
-  times over. So the driver waits for the placeholders to clear (up to 20s)
-  before it looks for anything, and a menu that never clears is reported as a
-  list that never arrived rather than as a project that isn't there.
+  times over. So the driver waits for the placeholders to clear before it looks
+  for anything, and a menu that never clears is reported as a list that never
+  arrived rather than as a project that isn't there.
+- **…and it only ever loads in a tab you can see.** That honest report came back
+  a day later saying *still placeholders after 33s*, which answered the
+  question: the list arrives when the tab is in front and never while it is
+  behind, so waiting is the one remedy that cannot work. The driver now asks the
+  worker to make its tab **the visible one in its own window** — a window that
+  isn't focused still has a visible tab, so nothing you are looking at moves —
+  and then opens the menu again, because a query that never started does not
+  start just because the tab woke up. Where the tab is in **the window you are
+  working in**, the answer is no: switching your tab out from under you is not
+  the extension's to do, and the send says that instead of doing it.
 
 The surface field defaults to **leave as-is**, the same contract the model
 picker has: a job that never mentions the surface never touches it, so nothing
