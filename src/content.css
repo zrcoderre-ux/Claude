@@ -2097,3 +2097,93 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   #cum-repos { border-color: rgba(255, 255, 255, 0.22); }
   #cum-repos:hover { background: rgba(255, 255, 255, 0.08); }
 }
+
+/* ---- The files you uploaded ------------------------------------------------
+   A button in the tray beside Save (src/up-files.js) and the panel it opens,
+   listing the files you sent to this conversation with the download control
+   claude.ai never gave them. Styled as the key panel is — same width as the
+   native sidebar's 312, same dark ground — so the row reads as one set of
+   controls rather than three designs. */
+#cum-upf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  flex: 0 0 auto;
+  background: #ffffff;
+  color: #1f1f1f;
+}
+#cum-upf-btn:hover { background: #f2f0ea; }
+#cum-upf-btn.cum-upf-open { border-color: rgba(0, 0, 0, 0.4); }
+.cum-upf-ico { display: inline-flex; align-items: center; }
+.cum-upf-ico svg { width: 1.05em; height: 1.05em; display: block; }
+.cum-upf-count { font-variant-numeric: tabular-nums; opacity: 0.72; }
+.cum-upf-count:empty { display: none; }
+/* Its own corner, for a page that gave us neither the tray nor Save. */
+#cum-upf-btn.cum-upf-loose {
+  position: fixed; top: 8px; right: 220px; z-index: 2147483644;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+.cum-upf-panel.cum-upf-hang {
+  position: fixed; top: 44px; right: 12px; z-index: 2147483644;
+}
+.cum-upf-panel {
+  width: 312px; max-width: 312px; box-sizing: border-box;
+  background: #2a2a28; color: #f0efea;
+  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 12px;
+  font: 12.5px/1.45 system-ui, sans-serif;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  max-height: calc(100vh - 120px); display: flex; flex-direction: column;
+}
+.cum-upf-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 10px 7px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.cum-upf-title { font-weight: 700; }
+.cum-upf-body { padding: 10px 12px 12px; overflow-y: auto; }
+.cum-upf-line { margin: 0 0 10px; }
+.cum-upf-dim { margin: 0 0 10px; color: #c9c7c0; font-size: 11.5px; }
+.cum-upf-note { margin: 10px 0 0; color: #d9e7d9; }
+.cum-upf-list { display: flex; flex-direction: column; gap: 8px; }
+.cum-upf-row {
+  padding: 7px 8px; border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12); background: #232321;
+}
+/* A file claude.ai kept nothing of is still listed — dimmed, because the panel
+   must never show fewer files than the chat plainly contains. */
+.cum-upf-row.cum-upf-dead { opacity: 0.6; }
+.cum-upf-rowhead { display: flex; align-items: center; gap: 8px; }
+.cum-upf-name {
+  flex: 1 1 auto; font-weight: 600; word-break: break-word; min-width: 0;
+}
+.cum-upf-meta { margin-top: 2px; color: #c9c7c0; font-size: 11.5px; }
+.cum-upf-said { margin-top: 5px; word-break: break-word; }
+.cum-upf-said.cum-upf-bad { color: #ffb4a8; }
+.cum-upf-b {
+  font: inherit; border-radius: 8px; padding: 4px 9px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.25); background: #1f1f1e; color: #f0efea;
+  flex: 0 0 auto;
+}
+.cum-upf-b:hover { background: #34332f; }
+.cum-upf-b:disabled { cursor: not-allowed; opacity: 0.55; }
+.cum-upf-alt { margin-top: 6px; }
+.cum-upf-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cum-upf-primary { border-color: #c96442; background: #c96442; color: #fff; }
+.cum-upf-primary:hover { background: #b85838; }
+.cum-upf-x { border: none; background: none; padding: 2px 6px; }
+.cum-upf-x:hover { background: rgba(255, 255, 255, 0.1); }
+
+@media (prefers-color-scheme: dark) {
+  #cum-upf-btn {
+    background: #2a2a28; color: #f0efea; border-color: rgba(255, 255, 255, 0.18);
+  }
+  #cum-upf-btn:hover { background: #34332f; }
+}
