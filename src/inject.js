@@ -415,6 +415,8 @@
       fetchConversation(c.uuid, c.reqId);
     } else if (c.type === "renameConversation" && typeof c.uuid === "string") {
       renameConversation(c.uuid, c.name, c.reqId);
+    } else if (c.type === "fetchFile" && Array.isArray(c.urls)) {
+      fetchFile(c.urls, c.reqId);
     }
   });
 
@@ -521,6 +523,82 @@
         })(0);
       })
       .catch((e) => reply({ error: String((e && e.message) || e), tried: tried }));
+  }
+
+  // ---- Fetching a file you uploaded ---------------------------------------
+  // claude.ai gives a file you sent it no download control of any kind, so the
+  // bytes have to be asked for directly. That request has to come from HERE:
+  // it is the page's own session that is allowed to read the asset, and the
+  // page's own fetch — captured before the app could patch it — is what the
+  // rest of this file already uses for exactly that reason.
+  //
+  // Several candidate URLs, tried in order, because claude.ai names its assets
+  // under keys that move (src/upfiles.js builds the list). Every attempt is
+  // recorded and handed back: a download that quietly does nothing is the one
+  // outcome this extension will not have, and "couldn't download" without
+  // saying what answered what is the same thing wearing a label.
+  //
+  // The bytes go back to the content script rather than being saved here. The
+  // page's own CSP governs this world and not that one, and the ISOLATED side
+  // is where every other file this extension writes gets written.
+  //
+  // The same-origin rule below is src/upfiles.js's safeUrl(), which cannot be
+  // read from this world. The two must agree: a URL out of a JSON payload is
+  // not somewhere the session's cookies may be sent just because it was in the
+  // payload.
+  const MAX_FILE_BYTES = 80 * 1024 * 1024;
+  function ourUrl(u) {
+    const s = String(u || "").trim();
+    if (!s || s.slice(0, 2) === "//") return "";
+    if (s.charAt(0) === "/") return s;
+    return /^https:\/\/(?:[a-z0-9-]+\.)*claude\.ai(?:[/?#]|$)/i.test(s) ? s : "";
+  }
+
+  function fetchFile(urls, reqId) {
+    const reply = (obj) => post({ upfile: Object.assign({ reqId }, obj) });
+    const list = (Array.isArray(urls) ? urls : []).map(ourUrl).filter(Boolean).slice(0, 8);
+    if (!origFetch) return reply({ error: "the page's own fetch was never captured", tried: [] });
+    if (!list.length) return reply({ error: "no claude.ai url to fetch it from", tried: [] });
+    const tried = [];
+    (function next(i) {
+      if (i >= list.length) return reply({ error: "nothing answered with the file", tried: tried });
+      const url = list[i];
+      let type = "";
+      return origFetch(url, { credentials: "include", headers: { accept: "*/*" } })
+        .then((res) => {
+          if (!res.ok) {
+            tried.push({ url: url, what: "HTTP " + res.status });
+            return null;
+          }
+          type = res.headers && res.headers.get ? res.headers.get("content-type") || "" : "";
+          // An HTML answer is the app's own page saying "no such thing" with a
+          // 200 — the one failure that would otherwise land on disk as a file.
+          if (/^text\/html/i.test(type)) {
+            tried.push({ url: url, what: "claude.ai's own page, not the file" });
+            return null;
+          }
+          return res.clone().arrayBuffer();
+        })
+        .then((buf) => {
+          if (!buf) return next(i + 1);
+          if (!buf.byteLength) {
+            tried.push({ url: url, what: "an empty answer" });
+            return next(i + 1);
+          }
+          if (buf.byteLength > MAX_FILE_BYTES) {
+            tried.push({
+              url: url,
+              what: Math.round(buf.byteLength / (1024 * 1024)) + " MB, past the ceiling",
+            });
+            return next(i + 1);
+          }
+          reply({ ok: true, url: url, type: type, bytes: buf.byteLength, buf: buf, tried: tried });
+        })
+        .catch((e) => {
+          tried.push({ url: url, what: String((e && e.message) || e) });
+          return next(i + 1);
+        });
+    })(0);
   }
 
   // ---- Naming a conversation ---------------------------------------------

@@ -75,6 +75,13 @@ bottom-right corner of [claude.ai](https://claude.ai).
 - **Save chat** — a button in claude.ai's own header, in with the file and share
   controls, that saves the whole conversation as a **Markdown file** you can hand
   to the next chat. See [Saving a chat](#saving-a-chat).
+- **Files you uploaded** — claude.ai gives a file *you* sent it no download
+  control at all, so when the local copy goes the chat is holding the only copy
+  and holding it away from you. A **Files** button in the tray beside Save lists
+  what you uploaded to this conversation and downloads any of it again — never a
+  thumbnail dressed as the original, never a PDF's extracted text pretending to
+  be the PDF, and never a failure that doesn't say which URLs were tried. See
+  [Getting back a file you uploaded](#getting-back-a-file-you-uploaded).
 - **Upload folder** — on a conversation that doesn't exist yet, chat **or
   Cowork**, a button that takes a **case folder** apart into it: the
   pseudonymized text under `Text Files` goes up as **one combined file**, the
@@ -1879,6 +1886,66 @@ quietly claim to be more than it is:
 Where it goes is [the header slot](#the-header-slot), which it shares with the
 table of contents' toggle.
 
+## Getting back a file you uploaded
+
+claude.ai hands you back a file it *produced* — every such reply carries a
+download control, and [Auto-downloading what Claude
+produces](#auto-downloading-what-claude-produces) exists to press it for you. A
+file **you** uploaded has no control at all: the chip in your own message opens
+a preview and that is the end of it. When the local copy is the one that has
+gone — a folder cleared, a laptop swapped, a case worked on from somewhere else
+— the chat is holding the only copy and holding it away from you.
+
+**Files** sits in the tray beside Save. It lists what you uploaded to this
+conversation, with a count on the button so you can see the chat is holding
+files without opening anything, and gives each one the download claude.ai
+never did.
+
+The list is built from the conversation **payload**, not the page: claude.ai
+unmounts messages that scroll out of view, so a list read from the DOM would
+cover the last few turns and quietly shorten as you scrolled.
+
+Three things it will not do, each of them a way of *appearing* to work:
+
+- **It never hands over a thumbnail as your file.** claude.ai publishes a small
+  copy beside the real one; saved under the uploaded name, that is a fraction of
+  the picture you sent wearing its label. Thumbnails are excluded as a source —
+  they are read only for what they reveal about where the full asset lives, one
+  path segment away.
+- **It never calls an extract the original.** A text file (`.txt`, `.md`,
+  `.csv`) is stored with its text, and that text *is* the file. A PDF's or a
+  `.docx`'s extracted content is not: it is the words with the document thrown
+  away. Those come back as `brief.pdf.txt`, labelled in the row as extracted
+  text, because a `brief.pdf` that no PDF reader will open is worse than an
+  honest `.txt`.
+- **It never fails quietly.** claude.ai's asset URLs are unversioned and move,
+  so each file carries several candidates, tried in order; a row that couldn't
+  be fetched says which URLs were tried and what each answered. What comes back
+  is checked before anything is written — an HTML page returned with a cheerful
+  `200` is the app saying "no such thing", and would otherwise land on your disk
+  as a PDF. Where the bytes won't come but claude.ai kept the text, the row
+  offers that instead rather than leaving you with a button that does nothing.
+
+**Download all** takes the batch in order, spaced so the browser keeps up, and
+says how many landed. Names are made unique across the whole batch — the same
+document uploaded to two turns is the ordinary case, and two files called
+`brief.pdf` is one file plus a rename you have to open to identify.
+
+The fetch itself runs in the page's own context (`src/inject.js`), because it is
+your claude.ai session that is allowed to read the asset; the bytes come back to
+the extension to be written. Only claude.ai's own URLs are ever requested: a URL
+that arrived inside a JSON payload is not somewhere the session's cookies may be
+sent just because the payload put it there.
+
+Two limits worth knowing:
+
+- **An incognito chat has nothing to fetch from.** claude.ai never saved it, so
+  the panel says that rather than showing an empty list as "you uploaded
+  nothing".
+- **Cowork is not confirmed.** Cowork keeps its uploads somewhere this has not
+  been confirmed to read, so on a Cowork session an empty list says so out loud
+  instead of claiming you sent nothing.
+
 ## Uploading a case folder into a chat
 
 A run takes a case folder apart ([A case folder is taken apart, not
@@ -3390,6 +3457,8 @@ src/headerslot.js      Finds the file/share cluster and puts our buttons in it
 src/panelbar.js        Tray, console and card geometry on claude.ai's page (pure)
 src/tray.js            The Save/Bookmark/Run tray, panels opening in line
 src/save-chat.js       The Save button in claude.ai's header
+src/upfiles.js         The files you uploaded: whose, where the bytes are, what's honest (pure)
+src/up-files.js        The Files button and panel — downloads them again
 src/folderup.js        A case folder into a new chat: what goes up, what it's called (pure)
 src/folder-upload.js   The Upload folder button on a new conversation
 src/replycopy.js       claude.ai's copy box: where it is, and what it wrote
@@ -3425,6 +3494,7 @@ test/tentative.test.js Unit tests for the ruling's start and end boundaries
 test/xlsxread.test.js  Unit tests for the .xlsx reader (zip + sheet XML)
 test/pseudo.test.js    Unit tests for the pseudonym key logic
 test/folderup.test.js  Unit tests for the case folder taken into a new chat
+test/upfiles.test.js   Unit tests for getting an uploaded file back
 test/coderepo.test.js  Unit tests for the repo behind a Recents row (branch traps included)
 icons/                 Generated PNG icons (16/48/128)
 scripts/make_icons.py  Regenerates the icons with the Python stdlib only

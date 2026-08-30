@@ -37,8 +37,8 @@ function contentScripts() {
 }
 
 /** Run every content script in order; answer the shared window and any error. */
-function loadAll() {
-  const win = makeStub();
+function loadAll(opts) {
+  const win = makeStub(opts);
   const ctx = vm.createContext(win);
   // The scripts are written for a browser global object, so `window`, `self`
   // and the bare global all have to be the same thing — which is what the
@@ -58,6 +58,16 @@ function loadAll() {
 }
 
 const loaded = loadAll();
+// ...and the same again on a CONVERSATION, for the buttons that only exist
+// where there is a chat to act on. A page with no conversation is the state
+// most of them are asked to stay out of, so it cannot be the only page tested.
+const CHAT_ID = "0192f3fc-9b35-7715-b2cc-b227512b5459";
+const inChat = loadAll({
+  location: {
+    href: "https://claude.ai/chat/" + CHAT_ID,
+    pathname: "/chat/" + CHAT_ID,
+  },
+});
 
 test("every content script runs its top-level body without throwing", () => {
   assert.deepEqual(loaded.errors, [], "content scripts threw while loading:\n" + loaded.errors.join("\n"));
@@ -79,6 +89,7 @@ test("each module publishes the global the next one reads", () => {
     "CUMTray",
     "CUMPseudoView",
     "CUMFaking",
+    "CUMUpFiles",
   ];
   const missing = wanted.filter((g) => !loaded.win[g]);
   assert.deepEqual(missing, [], "never published: " + missing.join(", "));
@@ -119,11 +130,51 @@ test("the tray holds a slot for every button that asks for one", () => {
   const m = src.match(/const ORDER = \[([^\]]*)\]/);
   assert.ok(m, "tray.js no longer declares ORDER");
   const order = m[1].split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
-  for (const slot of ["key", "save", "toc", "run", "folder"])
+  for (const slot of ["key", "save", "files", "toc", "run", "folder"])
     assert.ok(order.includes(slot), "no tray slot for " + slot);
   // The key leads the row, which is what puts it to the LEFT of Save.
   assert.equal(order[0], "key");
   assert.ok(order.indexOf("key") < order.indexOf("save"));
+});
+
+test("the Files button is loaded after everything it reads", () => {
+  // It reads CUMUpFiles, CUMComposer, CUMWorkflow and CUMConv on its first
+  // lines and returns quietly if any is missing — a button that is silently
+  // not there, which is what this file exists to catch. Manifest order is what
+  // makes them present, so it is asserted rather than assumed.
+  const order = contentScripts();
+  const at = (f) => order.indexOf(f);
+  assert.ok(at("src/up-files.js") !== -1, "the Files button is not in the manifest");
+  for (const dep of ["src/upfiles.js", "src/composer.js", "src/workflow.js", "src/conv.js", "src/tray.js"])
+    assert.ok(at(dep) !== -1 && at(dep) < at("src/up-files.js"), dep + " loads too late for it");
+  // Its own decisions load after the two modules they defer to.
+  for (const dep of ["src/workflow.js", "src/mdexport.js"])
+    assert.ok(at(dep) < at("src/upfiles.js"), dep + " loads too late for src/upfiles.js");
+});
+
+test("every content script runs on a conversation page too", () => {
+  assert.deepEqual(inChat.errors, [], "content scripts threw while loading:\n" + inChat.errors.join("\n"));
+});
+
+test("the Files button lands in the tray on a conversation, and only there", () => {
+  // The control that gives an uploaded file the download claude.ai never did.
+  // It is asked to be ABSENT with no conversation open — there is nothing to
+  // list — so both halves are asserted: absent on /new, present on a chat.
+  const trayOf = (win) => {
+    const t = win.document.body.children.find((c) => c.id === "cum-tray");
+    assert.ok(t, "the tray was never put on the page");
+    return t;
+  };
+  const slotOf = (win, name) =>
+    trayOf(win).children.find((s) => s.dataset && s.dataset.slot === name);
+  assert.ok(slotOf(loaded.win, "files"), "no tray slot for the Files button");
+  assert.ok(
+    !slotOf(loaded.win, "files").children.find((c) => c.id === "cum-upf-btn"),
+    "the Files button drew itself on a page with no conversation to list"
+  );
+  const btn = slotOf(inChat.win, "files").children.find((c) => c.id === "cum-upf-btn");
+  assert.ok(btn, "the files slot is empty — the button was built and never placed");
+  assert.ok(btn.isConnected, "the Files button was placed but is not connected");
 });
 
 test("the key button actually lands in the tray", () => {

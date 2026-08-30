@@ -22,7 +22,11 @@
  */
 "use strict";
 
-function makeStub() {
+// `opts.location` overrides the page the stub pretends to be on. The default
+// is claude.ai's new-chat page, which is where most buttons are asked to be
+// absent; a test about a button that only exists ON a conversation has to be
+// able to say so.
+function makeStub(opts) {
   const listeners = [];
 
   class ClassList {
@@ -298,13 +302,16 @@ function makeStub() {
   };
 
   const win = {
-    location: {
-      href: "https://claude.ai/new",
-      pathname: "/new",
-      origin: "https://claude.ai",
-      hostname: "claude.ai",
-      search: "",
-    },
+    location: Object.assign(
+      {
+        href: "https://claude.ai/new",
+        pathname: "/new",
+        origin: "https://claude.ai",
+        hostname: "claude.ai",
+        search: "",
+      },
+      (opts && opts.location) || {}
+    ),
     innerWidth: 1440,
     innerHeight: 900,
     devicePixelRatio: 1,
