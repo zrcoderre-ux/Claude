@@ -1,5 +1,5 @@
 /**
- * Claude Usage Meter — the master key: the last 20 cases, in title form (pure).
+ * Claude Usage Meter — the master key: every case, in title form (pure).
  *
  * The sidebar is where a case is FOUND, and a list of "8.11.26 Strangeways
  * MSJ" is a list you cannot navigate. src/pseudo-view.js already translates
@@ -11,10 +11,20 @@
  *
  * So this is the standing digest underneath that. Every pseudonym key that
  * passes through the extension is distilled, automatically, down to the part a
- * TITLE needs — the case number, the parties, and nothing else — and the last
- * twenty cases are kept. Nothing to upload, nothing to download, no spreadsheet
- * to keep track of: load a case's key once, for anything, and its rows in
- * Recents read in the real case name from then on.
+ * TITLE needs — the case number, the parties, and nothing else — and every
+ * case is kept, newest first, with no ceiling. Nothing to upload, nothing to
+ * download, no spreadsheet to keep track of: load a case's key once, for
+ * anything, and its rows in Recents read in the real case name from then on.
+ *
+ * There used to be a ceiling (the last twenty cases, two dozen pairs each),
+ * and it existed for one reason: pseudonym generation could mint the same
+ * fake surname for two different matters, and the more cases shared one
+ * matcher the likelier two of them disagreed about a fake and retired a pair
+ * that mattered. Generation now guarantees a fake is never reused across
+ * cases, so piling up cases no longer costs the cases already held anything —
+ * and a cap that only ever threw away real case names had nothing left to
+ * pay for. The retirement below stays, as the backstop for keys minted
+ * before that guarantee.
  *
  * What it is deliberately NOT:
  *
@@ -31,8 +41,9 @@
  *
  *   NOT A GUESS. Two cases whose keys bind the same fake to different real
  *   values retire that fake here exactly as parseKey retires an ambiguous one:
- *   a row that could be either case gets neither. Twenty cases in one matcher
- *   is precisely where that collision becomes likely, and the wrong case's name
+ *   a row that could be either case gets neither. Generation no longer mints
+ *   the same fake twice, so this should never fire on new keys — but a key
+ *   from before that guarantee can still collide, and the wrong case's name
  *   over a chat is the one failure this path cannot have.
  *
  * Filed by the REAL CASE NUMBER, which is what makes two cases two cases: the
@@ -60,19 +71,6 @@
   const fold = (v) => norm(v).toLowerCase();
 
   const P = () => root.CUMPseudo || null;
-
-  /** How many cases the master key holds. The oldest falls off the end. */
-  const CAP = 20;
-
-  /**
-   * How many pairs one case may contribute.
-   *
-   * A key runs to hundreds of rows; a caption runs to a number and two parties.
-   * The cap is what keeps twenty cases a small matcher rather than a merged
-   * library — and a title that needs the twenty-fifth row of a key is a title
-   * this was never going to translate anyway.
-   */
-  const MAX_PAIRS = 24;
 
   // ---- one case, distilled --------------------------------------------------
 
@@ -126,11 +124,11 @@
    *
    * That last word matters. Where the caption is known there is no reason to
    * carry the witnesses, the declarants and the addresses: they cannot tell
-   * you which case a row in Recents is, twenty cases' worth of them is what
-   * turns this from a small matcher into a merged library, and every extra
-   * name is another chance for two cases to bind the same fake and retire a
-   * pair that mattered. So a case contributes its number and its parties, and
-   * that is all.
+   * you which case a row in Recents is, and a library's worth of them is what
+   * turns this from a title matcher into a merged library — the translator
+   * for messages this must never become. So a case contributes its number and
+   * its parties, and that is all. What qualifies is filtered; how many
+   * qualify is not.
    *
    * Longest real first inside each rank, so a full name is kept over the bare
    * surname it contains.
@@ -153,7 +151,7 @@
       ranked.push({ rank: rank, real: real, fake: fake });
     }
     ranked.sort((a, b) => a.rank - b.rank || b.real.length - a.real.length);
-    return ranked.slice(0, MAX_PAIRS).map((r) => ({ fake: r.fake, real: r.real }));
+    return ranked.map((r) => ({ fake: r.fake, real: r.real }));
   }
 
   /**
@@ -197,7 +195,7 @@
     return "";
   }
 
-  // ---- the twenty ------------------------------------------------------------
+  // ---- the cases -------------------------------------------------------------
 
   function cases(master) {
     const m = master || {};
@@ -206,7 +204,8 @@
 
   /**
    * Put a case at the front. Newest first, one entry per real case number, and
-   * the oldest past CAP falls off.
+   * nothing falls off the end: a case leaves only by forget() or clear(), the
+   * operator's own hand, never by another case arriving.
    *
    * Re-seeing a case REPLACES its entry rather than merging with it: a key
    * reloaded after a correction is the corrected key, and a master key holding
@@ -217,7 +216,7 @@
     if (!entry || !entry.caseNo) return { cases: cases(master) };
     const want = fold(entry.caseNo);
     const kept = cases(master).filter((c) => fold(c && c.caseNo) !== want);
-    return { cases: [entry].concat(kept).slice(0, CAP) };
+    return { cases: [entry].concat(kept) };
   }
 
   /** Drop one case, by its real case number. */
@@ -303,7 +302,7 @@
     return { master: out, added: added, refreshed: refreshed, skipped: skipped };
   }
 
-  // ---- the twenty, as a key --------------------------------------------------
+  // ---- the cases, as a key ---------------------------------------------------
 
   /**
    * The master key as a PSEUDONYM KEY — the same shape parseKey builds, so
@@ -312,9 +311,10 @@
    * is nothing to translate with.
    *
    * A fake bound to two different real values across two cases is RETIRED, the
-   * fail-safe parseKey applies within one key applied across twenty. Twenty
-   * cases sharing one matcher is exactly where that collision becomes likely,
-   * and a coin flip between two matters puts the wrong case's name over a chat.
+   * fail-safe parseKey applies within one key applied across all of them.
+   * Generation no longer reuses a fake across cases, so on new keys this never
+   * fires — it stays for keys minted before that guarantee, because a coin
+   * flip between two matters puts the wrong case's name over a chat.
    */
   function asKey(master) {
     const list = cases(master);
@@ -345,8 +345,8 @@
       rows: pairs.length,
       pairs: pairs,
       // The forward direction, for the composer warning and the cleaner: a real
-      // name typed into a chat on one of these twenty cases is still a leak,
-      // and the master key knows the fake to use instead.
+      // name typed into a chat on any of these cases is still a leak, and the
+      // master key knows the fake to use instead.
       warn: pairs.map((p) => ({ real: p.real, fake: p.fake })),
       master: true,
       caseCount: list.length,
@@ -375,9 +375,7 @@
       count(list.length, "case") +
       " (" +
       count((k && k.rows) || 0, "name") +
-      "), newest first, up to " +
-      CAP +
-      "." +
+      "), newest first — every case ever loaded, none falls off." +
       retired +
       " It reads Recents back in the real case names on its own — no key file to load, and no " +
       "real name ever leaves this browser."
@@ -395,8 +393,6 @@
   }
 
   const api = {
-    CAP,
-    MAX_PAIRS,
     caseNumbersOf,
     caseNameOf,
     titlePairs,

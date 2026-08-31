@@ -2250,7 +2250,7 @@ select that can't represent its own current value silently reports a different
 one the moment anything reads it back. The rest aren't gone: the library never
 evicts, the count is said out loud (`… 9 older keys not shown`), and any of them
 is one folder-pick away from being recent again. Reading an old case back needs
-none of this — that's what the [master key](#the-master-key-the-last-20-cases)
+none of this — that's what the [master key](#the-master-key-every-case-distilled)
 is for.
 
 **Keys are case-specific, and several live side by side.** Every attachment
@@ -2433,8 +2433,8 @@ tab happens to be showing. The sidebar is a list of *different matters*:
 3. **Two keys claiming it differently gets neither**, and the title keeps the
    fake. A *wrong* case name over a chat is worse than the pseudonym it
    replaced.
-4. **Failing all of those, the [master key](#the-master-key-the-last-20-cases)** —
-   the last 20 cases, distilled automatically out of every key you have ever
+4. **Failing all of those, the [master key](#the-master-key-every-case-distilled)** —
+   every case, distilled automatically out of every key you have ever
    loaded, so a case whose spreadsheet is no longer in the library still reads
    back by name.
 
@@ -2491,7 +2491,7 @@ The decision — the word, the colour, whether it may be pressed — is
 `src/faking.js`, pure and tested; `src/fake-toggle.js` is the button and the
 docking.
 
-### The master key: the last 20 cases
+### The master key: every case, distilled
 
 Rule 2 above needs the case's `pseudonym_key.xlsx` to be **in the library right
 now**, and rule 3 gets stricter the more keys are in it. Neither holds for long:
@@ -2502,8 +2502,13 @@ Every pseudonym key that passes through the extension — loaded from the popup,
 picked in the run editor, or found beside the papers by [Upload
 folder](#uploading-a-case-folder-into-a-chat) — is **automatically distilled
 down to what a title needs**: the case's real **case number** and its
-**parties**, and nothing else. The last **20 cases** are kept, newest first,
-filed by real case number, and the twenty-first pushes the oldest off the end.
+**parties**, and nothing else. **Every case is kept**, newest first, filed by
+real case number; none ever falls off, and a case leaves only when you forget
+it or empty the store. (It used to keep just the last twenty, because
+generated fakes could collide across cases and every extra case made the
+matcher likelier to retire a name two matters disagreed about. Fakes are now
+minted **unique across cases**, so the collision the cap guarded against
+cannot happen on new keys and the cap only ever threw real case names away.)
 There is nothing to upload and nothing to download: load a case's key **once,
 for anything**, and its chats read back by name in Recents from then on.
 
@@ -2571,7 +2576,7 @@ the first.
 
 **A key that is merely *available* lights nothing.** Two things light the
 button — this conversation having a key **attached**, or real names being on
-screen **now** — and the [master key](#the-master-key-the-last-20-cases)
+screen **now** — and the [master key](#the-master-key-every-case-distilled)
 standing by is neither. It stands by on every page in the browser, so a blank
 composer, which has no conversation to attach a key to at all, was lighting
 both this button and the [fakes toggle](#the-fakes-toggle-beside-upload-folder)
@@ -2602,7 +2607,7 @@ The panel under it holds, in order:
   is the door keys come in by), or forget one, which detaches it everywhere it
   was attached. The picker offers the **three most recent** keys and says how
   many older ones it isn't showing.
-- **The master key** — what its [20 cases](#the-master-key-the-last-20-cases)
+- **The master key** — what its [cases](#the-master-key-every-case-distilled)
   are, and the one control that empties it.
 - **The cleaner** — type real names, read out the fakes, **Copy cleaned**. It
   appears only where the key knows the whole case: a distilled master key would
@@ -2610,7 +2615,7 @@ The panel under it holds, in order:
 
 The decisions it renders live where they always did. `src/pseudo-view.js` owns
 the keys, the sweep and the peek and publishes them; `src/pseudo.js` owns what a
-key is; `src/masterkey.js` owns the last 20 cases. The panel is the button and
+key is; `src/masterkey.js` owns the distilled cases. The panel is the button and
 the storage writes, written against the same keys the popup writes, so a change
 made in one is the same change as a change made in the other.
 
@@ -2649,9 +2654,9 @@ fakes.
 
 Naming those shapes would be guessing at unversioned markup and would go stale
 the same way. So the **rest of the page is swept as a whole**, with the
-[master key](#the-master-key-the-last-20-cases) — which is the one matcher that
-doesn't need to know which row belongs to which case, because it holds all
-twenty at once and each row comes out in its own case's real name from a single
+[master key](#the-master-key-every-case-distilled) — which is the one matcher that
+doesn't need to know which row belongs to which case, because it holds every
+case at once and each row comes out in its own case's real name from a single
 pass.
 
 Four limits keep a page-wide pass honest:
@@ -2671,7 +2676,7 @@ Four limits keep a page-wide pass honest:
   something merely believed to be a title is something a hand-off might read.
 
 The library isn't merged in beside the master key, and doesn't need to be:
-every key you load is folded **into** the master key already, so the twenty
+every key you load is folded **into** the master key already, so the
 cases here are the library's own plus the ones whose spreadsheets have since
 gone.
 

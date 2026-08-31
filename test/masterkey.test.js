@@ -1,5 +1,5 @@
 /**
- * Tests for src/masterkey.js — the last 20 cases, in title form.
+ * Tests for src/masterkey.js — every case, in title form.
  * Run with: node --test test/masterkey.test.js
  *
  * pseudo.js is required FIRST so the module reads the real one off the global:
@@ -69,8 +69,8 @@ test("the pairs kept are the ones a caption is made of", () => {
   assert.ok(fakes.includes("24STCV09876"), "the case number");
   assert.ok(fakes.includes("Doe") && fakes.includes("Roe"), "the parties");
   // The witness is in the key and not in the case's name — a title carrying
-  // her would be a coincidence, and carrying her along costs twenty cases
-  // twenty witnesses.
+  // her would be a coincidence, and carrying every case's witnesses is what
+  // would turn this into a translator for messages.
   assert.ok(!fakes.includes("Marlowe Quenby"), "not the witness");
 });
 
@@ -121,7 +121,7 @@ test("a key with no case number is not filed, and says why", () => {
 test("a known caption is the whole of what a case contributes", () => {
   // Sixty rows, and only the number and the two parties are in the caption.
   // The rest are witnesses and addresses: they cannot tell you which case a
-  // row in Recents is, and twenty cases' worth of them is a merged library
+  // row in Recents is, and a library's worth of them is a merged library
   // rather than a digest.
   const many = [["24STCV09876", "23STCV12345"]];
   for (let i = 0; i < 60; i++) many.push(["Fakename" + i, "Realname" + i]);
@@ -129,17 +129,19 @@ test("a known caption is the whole of what a case contributes", () => {
   assert.deepEqual(got.pairs.map((p) => p.fake), ["24STCV09876", "Fakename0", "Fakename1"]);
 });
 
-test("more pairs than a title could ever need are cut to the cap", () => {
+test("every distinctive pair is kept — the count is not capped, only what qualifies", () => {
   // No folder, so there is no caption to measure against and rank 3 is all
-  // there is. The cap is what stops one key from being the whole matcher.
+  // there is. Fakes are minted unique across cases now, so keeping them all
+  // costs the other cases nothing — and a pair thrown away was a title that
+  // would have kept its fake.
   const many = [["24STCV09876", "23STCV12345"]];
   for (let i = 0; i < 60; i++) many.push(["Fakename" + i, "Realname" + i]);
   const got = M.distil(key(many, { savedAt: 1 }));
-  assert.equal(got.pairs.length, M.MAX_PAIRS);
+  assert.equal(got.pairs.length, 61);
   assert.equal(got.pairs[0].fake, "24STCV09876");
 });
 
-// ---- the twenty ------------------------------------------------------------
+// ---- the cases -------------------------------------------------------------
 
 test("cases come back newest first, one per case number", () => {
   let m = { cases: [] };
@@ -172,10 +174,11 @@ test("re-seeing a case REPLACES it — a correction is not a second spelling", (
   assert.ok(!reals.includes("Cabot"), "the old spelling is gone, not merged");
 });
 
-test("the twenty-first case pushes the oldest off the end", () => {
+test("no case ever falls off the end — only forget() and clear() remove one", () => {
   let m = { cases: [] };
   const real = (i) => 20 + i + "STCV" + (10000 + i);
-  for (let i = 0; i < M.CAP + 3; i++) {
+  const N = 40; // twice the old cap of 20, to prove the cap is gone
+  for (let i = 0; i < N; i++) {
     m = M.remember(
       m,
       M.distil(
@@ -186,9 +189,9 @@ test("the twenty-first case pushes the oldest off the end", () => {
       )
     );
   }
-  assert.equal(m.cases.length, M.CAP);
-  assert.equal(m.cases[0].caseNo, real(M.CAP + 2));
-  assert.ok(!m.cases.some((c) => c.caseNo === real(0)), "the oldest fell off");
+  assert.equal(m.cases.length, N);
+  assert.equal(m.cases[0].caseNo, real(N - 1), "newest first");
+  assert.ok(m.cases.some((c) => c.caseNo === real(0)), "the oldest is still held");
 });
 
 test("forgetting a case takes it out and leaves the rest", () => {
@@ -248,7 +251,7 @@ test("keys that cannot be filed are counted, not swallowed", () => {
   assert.equal(got.master.cases.length, 1);
 });
 
-// ---- the twenty, as a key --------------------------------------------------
+// ---- the cases, as a key ---------------------------------------------------
 
 test("the master key is a pseudonym key, and translates a title like one", () => {
   const P = require("../src/pseudo.js");
@@ -283,7 +286,9 @@ test("a fake two cases disagree about is retired, never guessed at", () => {
     savedAt: 1,
   });
   // A second matter whose key happened to invent the same surname for someone
-  // else. One matcher, two answers — so this one answers neither.
+  // else. Generation no longer does this, but a key minted before that
+  // guarantee still can. One matcher, two answers — so this one answers
+  // neither.
   const two = key([["22SMCV01111", "21STCV54321"], ["Doe", "Strangeways"]], {
     folder: "21STCV54321 Strangeways v. Holloway",
     savedAt: 2,
@@ -308,7 +313,7 @@ test("an empty master key is nothing rather than an empty matcher", () => {
 test("what it holds is sayable, and listable", () => {
   const m = M.remember({ cases: [] }, M.distil(CABOT()));
   assert.match(M.describe(m), /holds 1 case/);
-  assert.match(M.describe(m), /up to 20/);
+  assert.match(M.describe(m), /none falls off/);
   const list = M.caseList(m);
   assert.equal(list.length, 1);
   assert.equal(list[0].caseNo, "23STCV12345");

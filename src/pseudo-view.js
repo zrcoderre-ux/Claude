@@ -62,7 +62,7 @@
 
   const KEYS_KEY = "cum_pseudo_keys"; // id -> parsed key (see popup.js)
   const CHATS_KEY = "cum_pseudo_chats"; // conversation key -> key id
-  const MASTER_KEY = "cum_pseudo_master"; // the last 20 cases (see masterkey.js)
+  const MASTER_KEY = "cum_pseudo_master"; // every case, distilled (see masterkey.js)
   // The id the master key answers to. Not a library id — nothing is stored
   // under it — so every lookup into `keys` has to go through masterOr().
   const MASTER_ID = "cum-master-key";
@@ -537,8 +537,8 @@
 
   // ---- the master key --------------------------------------------------------
   //
-  // The last 20 cases, distilled to what a chat title needs and kept up to
-  // date by the worker off the library's own writes (src/masterkey.js). It is
+  // Every case ever loaded, distilled to what a chat title needs and kept up
+  // to date by the worker off the library's own writes (src/masterkey.js). It is
   // what makes Recents readable once a case's spreadsheet is no longer in the
   // library — the case it names is a case whose key you loaded once, for
   // anything, and never had to keep.
@@ -710,7 +710,7 @@
   // Naming those shapes would be guessing at unversioned markup and would go
   // stale the same way. So the rest of the page is swept as a whole, with the
   // MASTER KEY, which is the one matcher that does not need to know which row
-  // belongs to which case — it holds all twenty at once, so each row comes out
+  // belongs to which case — it holds every case at once, so each row comes out
   // in its own case's real name from a single pass.
   //
   // Four limits keep a page-wide pass honest:
@@ -737,8 +737,8 @@
   //
   // The library is not merged in beside the master key, and does not need to
   // be: the worker folds every library key INTO the master key already, so
-  // the twenty cases here are the library's own cases plus the ones whose
-  // spreadsheets have since gone. Merging twenty full keys would put every
+  // the cases here are the library's own cases plus the ones whose
+  // spreadsheets have since gone. Merging the full keys would put every
   // declarant and address in one matcher, which is the merged library
   // src/masterkey.js exists to avoid being.
   const LOOSE_PRUNE_SEL =
@@ -1198,7 +1198,7 @@
       hits = hits.concat(found);
     }
     const warn = P.copyWarning(hits, {
-      // The master key is twenty cases at once, so it cannot name the one this
+      // The master key is many cases at once, so it cannot name the one this
       // value belongs to — and "for master key · 3 recent cases" would be a
       // worse sentence than no name at all.
       caseName: owner && !owner.master && P.keyTitle ? P.keyTitle(owner) : "",
