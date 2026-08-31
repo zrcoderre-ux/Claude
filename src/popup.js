@@ -506,7 +506,7 @@
 
     let keys = {};
     let chats = {};
-    let master = null; // { cases: [...] } — the last 20, see masterkey.js
+    let master = null; // { cases: [...] } — every case, see masterkey.js
     let tabConv = null; // conversation key of the active tab, if it's a chat
     let tabTitle = "";
 

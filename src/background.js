@@ -2878,7 +2878,7 @@ chrome.alarms.onAlarm.addListener((a) => {
 
 // ---- the master key ------------------------------------------------------
 //
-// The last 20 cases, distilled to what a chat TITLE needs, so Recents reads
+// Every case ever loaded, distilled to what a chat TITLE needs, so Recents reads
 // back in the real case names without every case's spreadsheet having to be
 // sitting in the library. Kept up to date from the library's own storage
 // writes: the popup, the run editor and the Folder button all load keys, and

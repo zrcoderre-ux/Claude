@@ -296,8 +296,8 @@
   // rest are one file-pick away from being the last few again.
   //
   // Reading an old case back does not need this at all — that is what the
-  // master key is for (src/masterkey.js keeps the last twenty cases in title
-  // form). This is only about ATTACHING, which is a thing you do to the matter
+  // master key is for (src/masterkey.js keeps every case in title form).
+  // This is only about ATTACHING, which is a thing you do to the matter
   // in front of you.
   const RECENT_KEYS = 3;
 

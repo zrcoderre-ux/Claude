@@ -43,7 +43,7 @@
  *
  * The decisions it renders are not here. src/pseudo-view.js owns the keys, the
  * sweep and the peek, and publishes state()/clean()/setPaused()/subscribe();
- * src/pseudo.js owns what a key IS; src/masterkey.js owns the last 20 cases.
+ * src/pseudo.js owns what a key IS; src/masterkey.js owns the distilled cases.
  * This file is the button, the panel, and the storage writes the popup's own
  * controls make — written the same way, against the same keys, so a change
  * made here and a change made there are the same change.
