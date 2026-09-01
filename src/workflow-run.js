@@ -722,11 +722,21 @@
     // answering all along, and pointed diagnosis at the wrong half of the code.
     let last = { fresh: false, noMessage: true };
     let api = {};
-    // A reply that matches the marker but may still be growing. The marker is
-    // the ruling's FIRST line, so seeing it proves the ruling has started, not
-    // that it has finished — see CUMWorkflow.rulingReady.
-    let candidate = null;
-    let candidateAt = 0;
+    // A reply that may still be growing, and how long it has held still. Kept
+    // per SOURCE, because the two sources never read the same text: the page
+    // carries the turn's thinking and tool captions and the conversation API
+    // doesn't. Sharing one slot had each reading reset the other's clock every
+    // twelve seconds, so neither ever reached the quiet a ruling has to prove
+    // — the reply was finished and the step sat there until it timed out.
+    const quietSlots = { dom: { text: null, at: 0 }, api: { text: null, at: 0 } };
+    const quietMs = (src, text, now) => {
+      const slot = quietSlots[src];
+      if (text !== slot.text) {
+        slot.text = text;
+        slot.at = now;
+      }
+      return now - slot.at;
+    };
     // Whether this step has already asked the chat to carry on. Once, and only
     // once: a chat told twice what to produce isn't going to be argued into it.
     let nudged = false;
@@ -766,16 +776,19 @@
 
     // A reply that matches the marker, held until it stops moving. Returns true
     // when it has been quiet long enough to be the finished thing.
-    const settledOnMarker = (text, now) => {
-      if (text !== candidate) {
-        candidate = text;
-        candidateAt = now;
-      }
-      return W.rulingReady({
-        generating: stillGoing(),
-        unchangedMs: now - candidateAt,
-      });
-    };
+    const settledOnMarker = (src, text, now) =>
+      W.rulingReady({ generating: stillGoing(), unchangedMs: quietMs(src, text, now) });
+
+    // …and the same question asked of a reply that DOESN'T match: may this one
+    // be told to carry on? A turn that has gone quiet to run a skill reads, on
+    // the page, as a finished reply that forgot to write the ruling — the text
+    // is the block's caption ("Used a skill", "Ran skill: record-verification")
+    // and it holds still for as long as the skill takes. Nudging there spends a
+    // turn interrupting work that was going perfectly well. So furniture is not
+    // a reply, and a real one has to have stopped for as long as a matching
+    // reply must before it counts — see CUMWorkflow.nudgeReady.
+    const readyToNudge = (src, text, now) =>
+      W.nudgeReady({ text, generating: stillGoing(), unchangedMs: quietMs(src, text, now) });
 
     // Ask the chat to carry on. The commonest reason a step's reply isn't the
     // ruling is the turn ending at the tool-use limit part-way through it, and
@@ -795,8 +808,8 @@
       // stream signals, its text, and the clock this step is running against.
       since = Date.now();
       deadline = Math.max(deadline, since + (timeoutMs || W.STEP_TIMEOUT_MS));
-      candidate = null;
-      candidateAt = 0;
+      quietSlots.dom = { text: null, at: 0 };
+      quietSlots.api = { text: null, at: 0 };
       lastText = null;
       lastChangeAt = since;
       stablePolls = 0;
@@ -879,9 +892,14 @@
               if (fresh && W.hasMarker(apiText, marker)) {
                 // The marker is the ruling's first line, so this may be a ruling
                 // that is still being written. Wait for it to hold still.
-                if (settledOnMarker(apiText, now))
+                if (settledOnMarker("api", apiText, now))
                   return { el: el, apiText: apiText, canceled: false, via: "api" };
                 api = Object.assign({}, api, { holding: "waiting for the ruling to finish" });
+              } else if (fresh && !skipped.has(apiText) && !readyToNudge("api", apiText, now)) {
+                // Not the ruling — but not finished either, as far as anything
+                // here can tell. Leave it alone: it is still this step's answer
+                // arriving, and the nudge below would land on top of it.
+                api = Object.assign({}, api, { holding: "waiting to see if the reply is finished" });
               } else if (fresh && !skipped.has(apiText)) {
                 // A finished reply that isn't the one being waited for. Ask it to
                 // carry on, once; a second one that still isn't the ruling is a
@@ -1022,6 +1040,17 @@
             // clicks Continue in the meantime; the reply that follows is the
             // one that counts.)
             if (marker && !W.hasMarker(text, marker)) {
+              // Before spending a turn on it, make the reply prove it is one and
+              // that it has stopped. The page's thinking and tool captions settle
+              // the moment they are drawn and then sit still for as long as the
+              // call runs, which is exactly what a finished non-ruling reply
+              // looks like from here — and telling a chat to "continue" while it
+              // is three minutes into a skill is the report this fixes.
+              if (!readyToNudge("dom", text, now)) {
+                last.holding = "waiting to see if the reply is finished";
+                await C.sleep(POLL_MS);
+                continue;
+              }
               if (!skipped.has(text)) {
                 skipped.add(text);
                 last.skipped = skipped.size;
@@ -1049,7 +1078,7 @@
             // Settled AND it says what it was meant to say — but the marker is
             // the ruling's first line, so give the rest of it room to arrive
             // before taking this as the finished thing.
-            if (marker && !settledOnMarker(text, now)) {
+            if (marker && !settledOnMarker("dom", text, now)) {
               last.holding = "waiting for the ruling to finish";
               await C.sleep(POLL_MS);
               continue;

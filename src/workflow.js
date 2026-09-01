@@ -141,11 +141,100 @@
    * a whole run and being late costs a minute.
    */
   const RULING_QUIET_MS = 60000;
-  function rulingReady(state) {
+  function quietEnough(state, defaultQuietMs) {
     const s = state || {};
     if (s.generating || s.streamOpen) return false;
-    const quiet = typeof s.quietMs === "number" ? s.quietMs : RULING_QUIET_MS;
+    const quiet = typeof s.quietMs === "number" ? s.quietMs : defaultQuietMs;
     return (s.unchangedMs || 0) >= quiet;
+  }
+  function rulingReady(state) {
+    return quietEnough(state, RULING_QUIET_MS);
+  }
+
+  /**
+   * The page's own mid-turn furniture — NOT a word Claude wrote to you.
+   *
+   * A collapsed thinking block shows a caption while it runs ("Thinking",
+   * "Thought for 12s"), and a skill or tool call leaves a line behind it ("Used
+   * a skill", "Ran skill: record-verification"). Read off the page, that IS the
+   * whole of the turn's text for as long as the call takes — minutes, for a
+   * skill that verifies authority by live retrieval — and it holds perfectly
+   * still the entire time. A run that reads stillness as a finished answer then
+   * takes the caption for a reply that came out wrong and tells the chat to
+   * carry on, mid-turn, over the top of the work it is still doing.
+   *
+   * So the captions are matched and REMOVED rather than read line by line: the
+   * page glues them together with no whitespace between ("Used a skillRan
+   * skill: record-verification"), so there are no lines to read. What is left
+   * once they are gone is the reply — and if nothing is left, there is no reply
+   * here yet.
+   *
+   * Removal is also what makes this safe on real prose. Only text that is
+   * ENTIRELY furniture qualifies; a reply that happens to mention a skill still
+   * has all its other words, and they are what the length test sees.
+   */
+  const CHATTER_RES = [
+    // A skill or tool call, with or without the name it ran under.
+    /\b(?:used|using|ran|running)\s+(?:an?|the)?\s*(?:skill|tool|connector)s?\b\s*:?\s*[\w./-]*/gi,
+    /\b(?:skill|tool)\s*:\s*[\w./-]+/gi,
+    // The thinking block's caption, and the control that folds it away.
+    /\bthinking\b/gi,
+    /\bthought\s+for\s+[\d.]+\s*(?:s|sec|secs|seconds|m|min|mins|minutes)?\b/gi,
+    /\b(?:show|hide)\s+(?:thinking|working|details|steps)\b/gi,
+    // Search furniture, which reads the same way.
+    /\b(?:searched|searching)\s+(?:the\s+)?(?:web|for)\b/gi,
+    /\bweb\s+search\b/gi,
+  ];
+  // What may be left over and still count as nothing: the punctuation and the
+  // counters the page hangs off these captions ("·", "3 steps", an ellipsis).
+  const CHATTER_LEFTOVER_MAX = 12;
+  // The page concatenates its captions with NOTHING between them, so the only
+  // seam left is the case change where one ends and the next begins ("Used a
+  // skillRan skill: …"). Put a break back at that seam before matching, or the
+  // word boundary the patterns need never exists. Harmless on prose: it is only
+  // ever counting what is left over.
+  function unglue(text) {
+    return str(text).replace(/([a-z0-9.)\]])([A-Z])/g, "$1\n$2");
+  }
+  function isToolChatter(text) {
+    const t = unglue(stripPlaceholders(text));
+    if (!trimmed(t)) return false; // nothing at all is not the same as furniture
+    let rest = t;
+    let matched = false;
+    for (const re of CHATTER_RES) {
+      re.lastIndex = 0;
+      if (!re.test(rest)) continue;
+      matched = true;
+      re.lastIndex = 0;
+      rest = rest.replace(re, " ");
+    }
+    if (!matched) return false;
+    return rest.replace(/[^a-z0-9]/gi, "").length <= CHATTER_LEFTOVER_MAX;
+  }
+
+  /**
+   * May this reply be told to carry on?
+   *
+   * The nudge costs a Claude turn and lands in the chat as a message, so being
+   * early with it is expensive twice over: the turn it interrupts is still
+   * being written, and the turn it buys is spent answering a question the chat
+   * had already started answering. Two things have to be true first.
+   *
+   * There has to be a reply at all — page furniture is not one (isToolChatter),
+   * and neither is a blank.
+   *
+   * And it has to have STOPPED: nothing generating, no completion stream open,
+   * and the text unmoved for as long as a matching reply must hold still before
+   * it counts as finished. The same standard, for the same reason — a turn that
+   * has gone quiet to run a tool looks exactly like a turn that has ended, and
+   * only time tells them apart.
+   */
+  const NUDGE_QUIET_MS = RULING_QUIET_MS;
+  function nudgeReady(state) {
+    const s = state || {};
+    if (!trimmed(s.text)) return false;
+    if (isToolChatter(s.text)) return false;
+    return quietEnough(s, NUDGE_QUIET_MS);
   }
 
   /**
@@ -3524,6 +3613,11 @@
   function settleReason(sample) {
     const s = sample || {};
     if (!trimmed(s.text)) return null;
+    // The page's mid-turn furniture, holding still while a skill runs. Stillness
+    // is the whole argument in every branch below, and here it is an argument
+    // about a caption rather than about an answer — so there is nothing to
+    // settle on, however long it sits there.
+    if (isToolChatter(s.text)) return null;
     const unchanged = s.unchangedMs || 0;
 
     // The response stream for THIS message closed. Authoritative, and
@@ -3761,8 +3855,11 @@
     SETTINGS_VERSION,
     hasMarker,
     rulingReady,
+    isToolChatter,
+    nudgeReady,
     continuePrompt,
     RULING_QUIET_MS,
+    NUDGE_QUIET_MS,
     DEFAULT_OUTPUT_MARKER,
     startChats,
     seedPlan,

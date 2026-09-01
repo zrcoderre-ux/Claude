@@ -852,6 +852,21 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   with its phase intact, so Resume waits for a fresh reply rather than re-sending:
   finish the ruling in the chat yourself and that is the reply it takes.
 
+  **The request waits until the reply has actually stopped.** A turn that has
+  gone quiet to run a skill looks, from the page, exactly like a finished reply
+  that forgot to write the ruling: the only text the turn is showing is the
+  block's own caption — *Used a skill*, *Ran skill: record-verification* — and it
+  holds perfectly still for as long as the call takes. Nudging there spends a
+  turn interrupting work that was going perfectly well — which is what it had
+  been doing. So two things have to be true before the sentence goes out. The reply has to *be* a reply:
+  the page's thinking and tool captions are furniture, and a turn showing nothing
+  but furniture has not answered yet — it can't settle, it isn't skipped, and it
+  is never handed to the next chat. And it has to have stopped: nothing
+  generating, no completion stream open, and the text unmoved for **a minute** —
+  the same window a matching reply must prove before it counts as finished, for
+  the same reason. A clarifying question therefore gets its nudge a minute later
+  than it used to, which is the whole cost.
+
   **And finding the phrase does not end the wait.** `NATURE OF PROCEEDINGS` is a
   ruling's *first line*. A step that took the reply the moment it saw those words
   would be taking a heading and whatever had been written in the second since. So
