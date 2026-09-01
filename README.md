@@ -91,6 +91,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
   exists the papers still go up and the key is still attached, but the chat
   keeps its name. Nothing is typed and nothing is sent; that half stays yours.
   See [Uploading a case folder into a chat](#uploading-a-case-folder-into-a-chat).
+- **A folder marked `LEAKS` never uploads** — put a spreadsheet called `LEAKS`
+  in a folder and nothing from it goes up, through any door: the Upload folder
+  button, a scheduled send's files, a workflow's documents. The whole folder,
+  refused out loud, whatever the marker is buried under. See [A folder marked
+  LEAKS never uploads](#a-folder-marked-leaks-never-uploads).
 - **Copy ruling** — a second copy button in claude.ai's own action bar, beside
   the one that copies the whole reply. It copies **only the tentative ruling**:
   NATURE OF PROCEEDINGS through the end of the CONCLUSION, without the note
@@ -959,6 +964,10 @@ The same folder goes into a chat you drive yourself through the **Upload
 folder** button — same split, same key diversion, same refusals. See
 [Uploading a case folder into a chat](#uploading-a-case-folder-into-a-chat).
 
+A folder holding a spreadsheet called **`LEAKS`** is refused whole, before any
+of this runs — see [A folder marked LEAKS never
+uploads](#a-folder-marked-leaks-never-uploads).
+
 This is **gated on the name and only on the name**. A folder whose name carries
 no case number is handed over whole, exactly as it always was — the rules in
 this section, nothing removed. And the gate is the same reader the
@@ -975,6 +984,46 @@ A folder over 100 files comes back **whole**, which is worth stating because
 the browser API hands folder contents back a hundred at a time and expects to
 be asked again — read once, a folder of 140 papers silently becomes 100. The
 scheduled-send form's drop zone runs the same module and the same rules.
+
+### A folder marked LEAKS never uploads
+
+Some folders hold papers that must not reach claude.ai at all — not
+pseudonymized, not under `Text Files`, not as one combined file. **Put a
+spreadsheet called `LEAKS` in the folder and nothing from it goes up**, through
+any door this extension owns: the **Upload folder** button on a chat or a Cowork
+session, a scheduled send's files, a workflow's documents.
+
+- **The marker is a spreadsheet named `LEAKS`** — `LEAKS.xlsx`, `LEAKS.csv`,
+  `LEAKS.ods`, any case. A copy of it still marks the folder (`LEAKS (1).xlsx`,
+  `LEAKS copy.xlsx`, `LEAKS 2024.xlsx`), because a marker that stopped working
+  the moment the folder was duplicated would be a bar that failed silently.
+  `LEAKS.txt` marks nothing, and neither does `leaks-analysis.xlsx`.
+- **It bars the whole picked folder**, not the subfolder it happens to sit in.
+  A marker four levels down bars everything at the top: marking a matter's
+  discovery folder is marking the matter.
+- **Nothing from it is taken** — not the `Text Files`, not one paper. A gate
+  that lets most of a folder through is not a gate.
+- **Each folder is judged on its own.** Drop two folders and a marker in one is
+  not a bar on the other. A marker dropped *loose* bars the loose files it came
+  with, which is the same rule with the drop itself as the folder.
+- **The refusal is loud and it names things** — *"Nothing was uploaded from
+  Smith v. Jones: it holds LEAKS.xlsx, and a folder marked LEAKS never uploads.
+  14 files were held back."* An operator who has to work out why a pick did
+  nothing will pick it again.
+- **If the gate itself is not loaded, the pick is refused** rather than allowed.
+  A bar against papers reaching claude.ai that fails open is not a bar; the cost
+  of failing closed is one reload.
+
+It bars **uploads**, and only uploads. Loading a **pseudonym key** out of a
+marked folder still works from [the key button](#the-key-button) — the key is
+parsed into the extension and attached, and the `.xlsx` itself never reaches a
+composer. That is the whole point of a key: to make the papers that *do* go up
+unreadable.
+
+The bar is applied **when the folder is picked**, which is the only moment the
+folder is still known — a run holds files, not the folder they came out of. A
+run built before you marked a folder is holding files that were allowed in at
+the time; delete them from the run.
 
 ### Steps that run at the same time
 
@@ -1968,6 +2017,10 @@ uploaded](#a-case-folder-is-taken-apart-not-uploaded)) and then does everything
 else too — types the prompt, sends it, waits, hands the reply on. Most work
 isn't a run. **Upload folder** is the first half of that on its own, for the
 chats you drive yourself.
+
+A folder holding a spreadsheet called **`LEAKS`** is refused whole here too,
+before the folder is taken apart and before its key is read — see [A folder
+marked LEAKS never uploads](#a-folder-marked-leaks-never-uploads).
 
 It sits **in claude.ai's own composer row**, wherever there is a composer to put
 papers into:

@@ -186,6 +186,7 @@
     const J = root.CUMJobs;
     const K = root.CUMCowork;
     const DD = root.CUMDropDir; // a dropped folder, taken apart
+    const L = root.CUMLeaks; // a folder marked LEAKS never uploads
 
     // A <select>'s markup from one of cowork.js's option lists. The unset entry
     // carries its own wording per control, since "Leave as-is" beside three
@@ -649,7 +650,13 @@
     // is said rather than left to be noticed.
     function takeFolder(res) {
       if (!res) return;
-      addFiles(res.files.map((x) => x.file));
+      // On the walked entries rather than the files: only the paths say which
+      // folder a file came out of, and they are gone by the time addFiles sees
+      // a File. A barred pick stops here — nothing is added, and the walk's own
+      // summary is not said, because nothing was taken to summarize.
+      const gated = leaksHeld(res.files);
+      if (!gated || gated.hit) return;
+      addFiles(gated.files.map((x) => x.file));
       const said = DD ? DD.summarize(res) : "";
       if (said) flash(said);
     }
@@ -669,7 +676,13 @@
     // can hand it to the ordinary walk instead.
     function takeCaseFolder(files) {
       if (!DD || !DD.splitCaseFolder) return false;
-      const split = DD.splitCaseFolder(files, { isCaseName: isCaseFolderName });
+      // A case folder marked LEAKS is refused whole — its Text Files, its
+      // originals and its key alike. Answered as HANDLED rather than "not a
+      // case folder", so the caller does not hand the same pick to the
+      // ordinary walk and take it apart by the other door.
+      const gated = leaksHeld(files);
+      if (!gated || gated.hit) return true;
+      const split = DD.splitCaseFolder(gated.files, { isCaseName: isCaseFolderName });
       if (!split.ok) return false;
       addFiles(split.docs.map((x) => x.file));
       flash(DD.summarizeCase(split));
@@ -702,7 +715,33 @@
       return String(f.name || "") + ":" + (f.size || 0);
     }
 
+    // A folder marked LEAKS never uploads (src/leaks.js). Asked at every door
+    // into a workflow's documents, and before anything else is done with a
+    // pick — a workflow uploads what it is holding on its own schedule, so a
+    // paper that got in here goes out with nobody watching.
+    //
+    // With the gate itself missing the pick is refused rather than allowed: a
+    // bar against papers reaching claude.ai that fails open is not a bar.
+    function leaksHeld(entries) {
+      if (!L) {
+        flash(
+          "The LEAKS upload gate is not loaded, so nothing was added — a folder could not be " +
+            "checked for a LEAKS spreadsheet. Reload this page and pick it again.",
+          true
+        );
+        return null;
+      }
+      const res = L.gate(entries);
+      if (res.hit) flash(L.describe(res), true);
+      return res;
+    }
+
     function addFiles(list) {
+      // Before the spreadsheet diversion below, which would otherwise read the
+      // marker itself as a candidate pseudonym key.
+      const gated = leaksHeld(Array.from(list || []));
+      if (!gated) return;
+      list = gated.files;
       const incoming = [];
       const have = new Set((wf.docs || []).map(docKey));
       let dupes = 0;

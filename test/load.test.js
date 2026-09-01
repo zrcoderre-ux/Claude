@@ -90,6 +90,7 @@ test("each module publishes the global the next one reads", () => {
     "CUMPseudoView",
     "CUMFaking",
     "CUMUpFiles",
+    "CUMLeaks",
   ];
   const missing = wanted.filter((g) => !loaded.win[g]);
   assert.deepEqual(missing, [], "never published: " + missing.join(", "));
@@ -121,6 +122,27 @@ test("the fakes toggle is loaded after everything it reads", () => {
     assert.ok(at(dep) !== -1 && at(dep) < at("src/fake-toggle.js"), dep + " loads too late for it");
   // And after the Folder button, which is the thing it docks itself beside.
   assert.ok(at("src/folder-upload.js") < at("src/fake-toggle.js"));
+});
+
+test("the LEAKS gate loads before every door that has to consult it", () => {
+  // src/leaks.js bars an upload out of a folder marked LEAKS. Every door reads
+  // it by name — src/folder-upload.js on its first lines, the two forms when
+  // they are built — and a door that finds it missing refuses the pick. So a
+  // gate loading too late is not a silent hole, it is every folder pick in the
+  // extension refused, and it is manifest order that keeps it early.
+  const order = contentScripts();
+  const at = (f) => order.indexOf(f);
+  assert.ok(at("src/leaks.js") !== -1, "the LEAKS gate is not in the manifest");
+  for (const door of ["src/jobform.js", "src/folder-upload.js"])
+    assert.ok(at("src/leaks.js") < at(door), "src/leaks.js loads too late for " + door);
+  // The run editor and the workflow editor live on the options page instead,
+  // so that list is asserted on its own — the same gate, the other page.
+  const html = fs.readFileSync(path.join(ROOT, "src/options.html"), "utf8");
+  const scripts = Array.from(html.matchAll(/<script src="([^"]+)"/g)).map((m) => m[1]);
+  const opt = (f) => scripts.indexOf(f);
+  assert.ok(opt("leaks.js") !== -1, "the LEAKS gate is not on the options page");
+  for (const door of ["jobform.js", "workflowform.js"])
+    assert.ok(opt("leaks.js") < opt(door), "leaks.js loads too late for " + door);
 });
 
 test("the tray holds a slot for every button that asks for one", () => {

@@ -64,6 +64,11 @@
   const DD = window.CUMDropDir;
   const F = window.CUMFolderUp;
   const PB = window.CUMPanelBar;
+  // The LEAKS gate (src/leaks.js). Read separately from the four above and
+  // NOT in the guard below on purpose: a missing gate must not take the button
+  // off the page quietly — it must be there and refuse, which is what handle()
+  // does with it.
+  const L = window.CUMLeaks;
   if (!C || !W || !DD || !F) return;
 
   const norm = (v) => String(v == null ? "" : v).replace(/\s+/g, " ").trim();
@@ -313,6 +318,44 @@
     // to be REACHED, and 300 files into a matter's originals is not far enough
     // in. Only what the split hands back is capped.
     const scan = DD.fromPicked(list, { maxFiles: DD.MAX_SCAN });
+
+    // A folder marked LEAKS never uploads, and it is asked FIRST — before the
+    // folder is taken apart, before a key is read out of it, before a name is
+    // worked out. Everything downstream of here is machinery for getting
+    // papers to claude.ai, and the whole point of the marker is that these
+    // papers do not go.
+    //
+    // With the gate itself missing the pick is refused rather than allowed: a
+    // bar against papers reaching claude.ai that fails open is not a bar, and
+    // the cost of failing closed is one reload.
+    if (!L) {
+      say(
+        [
+          "The LEAKS upload gate is not loaded on this page, so nothing was uploaded — " +
+            "this folder could not be checked for a LEAKS spreadsheet. Reload the page and " +
+            "pick it again.",
+        ],
+        true
+      );
+      return;
+    }
+    const barred = L.gate(scan.files);
+    if (barred.hit) {
+      // Any wait armed by an earlier pick goes too: the note on screen is
+      // about a folder that was refused, and a chat named after the last one
+      // would be the wrong matter's name on it.
+      pending = null;
+      say(
+        [
+          L.describe(barred),
+          "Its pseudonym key was not read either — this button only reads one on its way to " +
+            "an upload. Load it from the key button if you need it.",
+        ],
+        true
+      );
+      return;
+    }
+
     const split = DD.splitCaseFolder(scan.files, { isCaseName: isCaseFolderName });
     if (!split.ok) {
       say(
