@@ -3060,6 +3060,94 @@ test("the quiet window is much longer than an ordinary settle", () => {
   assert.ok(W.RULING_QUIET_MS >= 30000, "generous on purpose");
 });
 
+test("the page's own thinking and tool captions are not a reply", () => {
+  // What the page shows while a skill runs. This IS the whole of the turn's
+  // text for as long as the call takes, and it holds perfectly still.
+  assert.equal(W.isToolChatter("Used a skill"), true);
+  assert.equal(W.isToolChatter("Ran skill: record-verification"), true);
+  assert.equal(W.isToolChatter("Thinking"), true);
+  assert.equal(W.isToolChatter("Thought for 12s"), true);
+  assert.equal(W.isToolChatter("Show thinking"), true);
+  assert.equal(W.isToolChatter("Searched the web"), true);
+  // The page glues them together with nothing in between — which is how they
+  // were read off a live turn, and why they are matched rather than split.
+  assert.equal(W.isToolChatter("Used a skillRan skill: record-verification"), true);
+  assert.equal(
+    W.isToolChatter("ThinkingUsed a skillRan skill: record-verificationThought for 3m"),
+    true
+  );
+  // A counter or a separator hanging off one of them is still furniture.
+  assert.equal(W.isToolChatter("Ran skill: record-verification · 3 steps"), true);
+
+  // Prose is not, however much of the vocabulary it happens to use.
+  assert.equal(
+    W.isToolChatter("I ran skill: record-verification and two of the cites do not check out."),
+    false
+  );
+  assert.equal(
+    W.isToolChatter("Which exhibit did you mean? I don't see Exhibit C with the declaration."),
+    false
+  );
+  assert.equal(
+    W.isToolChatter("NATURE OF PROCEEDINGS\n\nPlaintiff moves to compel further responses."),
+    false
+  );
+  // Nothing at all is not furniture — it is nothing, and the callers say so
+  // themselves.
+  assert.equal(W.isToolChatter(""), false);
+  assert.equal(W.isToolChatter("   "), false);
+  assert.equal(W.isToolChatter(null), false);
+});
+
+test("a turn cannot settle on the page's furniture, however long it sits there", () => {
+  const chatter = "Used a skillRan skill: record-verification";
+  // Every settle branch there is, handed the strongest evidence each one takes.
+  assert.equal(
+    W.settleReason({ text: chatter, streamDone: true, unchangedMs: 600000, watched: true }),
+    null,
+    "a stream that closed for a tool call must not release a caption"
+  );
+  assert.equal(
+    W.settleReason({
+      text: chatter,
+      unchangedMs: 600000,
+      stablePolls: 99,
+      watched: true,
+    }),
+    null
+  );
+  assert.equal(
+    W.settleReason({ text: chatter, generating: true, unchangedMs: 60 * 60000, watched: true }),
+    null
+  );
+  // The same evidence, over a real reply, does settle — so it is the caption
+  // being refused, not the sample.
+  assert.equal(
+    W.settleReason({ text: "a real answer", streamDone: true, unchangedMs: 600000, watched: true }),
+    "stream"
+  );
+});
+
+test("a reply is not told to carry on until it has stopped", () => {
+  const quiet = W.NUDGE_QUIET_MS;
+  const ask = "Which exhibit did you mean?";
+  // Furniture is never nudged: the turn behind it is still running.
+  assert.equal(W.nudgeReady({ text: "Ran skill: record-verification", unchangedMs: quiet * 3 }), false);
+  assert.equal(W.nudgeReady({ text: "", unchangedMs: quiet * 3 }), false);
+  // A real reply that isn't the ruling still has to hold still first — a turn
+  // gone quiet for a tool reads exactly like one that has ended.
+  assert.equal(W.nudgeReady({ text: ask, unchangedMs: 6000 }), false);
+  assert.equal(W.nudgeReady({ text: ask, unchangedMs: quiet - 1 }), false);
+  assert.equal(W.nudgeReady({ text: ask, unchangedMs: quiet }), true);
+  assert.equal(W.nudgeReady({ text: ask, generating: true, unchangedMs: quiet * 3 }), false);
+  assert.equal(W.nudgeReady({ text: ask, streamOpen: true, unchangedMs: quiet * 3 }), false);
+  assert.equal(W.nudgeReady({}), false);
+  // A caller may shorten the window, which is how these run in a second.
+  assert.equal(W.nudgeReady({ text: ask, unchangedMs: 40, quietMs: 30 }), true);
+  // As generous as the window a matching reply must prove, for the same reason.
+  assert.ok(W.NUDGE_QUIET_MS >= 30000, "being early spends a turn interrupting live work");
+});
+
 test("the continue prompt asks for the whole thing, and names the marker", () => {
   const p = W.continuePrompt("NATURE OF PROCEEDINGS");
   assert.ok(/^Continue from exactly where you stopped/.test(p));
