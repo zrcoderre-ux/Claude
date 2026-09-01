@@ -38,7 +38,7 @@ changing behaviour.
 The layout that matters for testing: logic with no DOM/`chrome` dependency lives
 in its own module under `src/` and is `require`-able from `test/`
 (`harvest.js`, `estimate.js`, `log.js`, `predict.js`, `daily.js`, `usagewarn.js`, `weights.js`,
-`split.js`, `jobstore.js`, `status.js`, `workflow.js`, `wfusage.js`, `wfexport.js`, `dropdir.js`, `folderup.js`, `masterkey.js`, `toc.js`, `mdexport.js`, `incognito.js`, `cowork.js`, `xlsxread.js`, `pseudo.js`, `faking.js`). Everything
+`split.js`, `jobstore.js`, `status.js`, `workflow.js`, `wfusage.js`, `wfexport.js`, `dropdir.js`, `folderup.js`, `masterkey.js`, `toc.js`, `mdexport.js`, `incognito.js`, `cowork.js`, `xlsxread.js`, `pseudo.js`, `faking.js`, `leaks.js`). Everything
 else — `content.js`,
 `background.js`, `inject.js`, `options.js`, `popup.js` — is wiring around them.
 When adding a decision worth testing, put the decision in a pure module rather

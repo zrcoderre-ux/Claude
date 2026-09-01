@@ -120,6 +120,7 @@
     opts = opts || {};
     const J = root.CUMJobs;
     const DD = root.CUMDropDir; // a dropped folder, taken apart
+    const L = root.CUMLeaks; // a folder marked LEAKS never uploads
     const doc = container.ownerDocument || document;
     injectStyles(doc);
 
@@ -189,7 +190,33 @@
     // ---- files ----
     let files = [];
     const key = (f) => (f.webkitRelativePath || f.name) + ":" + f.size;
+    // A folder marked LEAKS never uploads (src/leaks.js), so nothing out of one
+    // is allowed into a run's files — a run uploads whatever it is holding,
+    // days later, with nobody watching. Asked at BOTH doors: here, where a
+    // picked folder's files still carry their webkitRelativePath and a loose
+    // marker can be seen, and in takeFolder below, where a dropped folder's
+    // walked paths are what say which folder a file came out of.
+    //
+    // With the gate itself missing the pick is refused rather than allowed: a
+    // bar against papers reaching claude.ai that fails open is not a bar.
+    function leaksHeld(entries) {
+      if (!L) {
+        flash(
+          "The LEAKS upload gate is not loaded, so nothing was added — a folder could not be " +
+            "checked for a LEAKS spreadsheet. Reload this page and pick it again.",
+          true
+        );
+        return null;
+      }
+      const res = L.gate(entries);
+      if (res.hit) flash(L.describe(res), true);
+      return res;
+    }
+
     function addFiles(list) {
+      const gated = leaksHeld(Array.from(list || []));
+      if (!gated) return;
+      list = gated.files;
       const have = new Set(files.map(key));
       for (const f of list || []) {
         if (have.has(key(f))) continue;
@@ -225,7 +252,14 @@
     // itself. What the walk left out is said rather than left to be noticed.
     function takeFolder(res) {
       if (!res) return;
-      addFiles(res.files.map((x) => x.file));
+      // The gate first, on the walked entries rather than the files: only the
+      // paths say which folder a file came out of, and they are gone by the
+      // time addFiles sees a File. A barred pick stops here — nothing is added
+      // and the walk's own summary is not said, because there is nothing to
+      // summarize.
+      const gated = leaksHeld(res.files);
+      if (!gated || gated.hit) return;
+      addFiles(gated.files.map((x) => x.file));
       const said = DD ? DD.summarize(res) : "";
       if (said) flash(said);
     }
