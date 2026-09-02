@@ -199,13 +199,14 @@ test("sameConversationUrl matches the same chat across query/hash/slash and PWA"
 test("a job says nothing about the surface unless it was asked to", () => {
   const j = J.newJob({ name: "x" }, "id", NOW);
   assert.equal(j.surface, null);
-  assert.equal(j.approval, undefined, "the approval mode is left to claude.ai");
+  assert.equal(j.approval, null);
   assert.equal(J.surfaceLabel(j), "");
 });
 
 test("a cowork job goes to the composer home even when it has a project", () => {
-  // The toggle and the project menu both live there and nowhere else —
-  // arriving at the project page means arriving with no way to set either.
+  // The toggle, the approval control and the project menu all live there and
+  // nowhere else — arriving at the project page means arriving with no way to
+  // set any of the three.
   const j = J.newJob(
     { surface: "cowork", projectHref: "/cowork/project/abc", projectName: "Cutlist" },
     "id",
@@ -229,9 +230,13 @@ test("a cowork job with no destination reads as a Cowork session", () => {
   assert.equal(J.targetLabel(J.newJob({ surface: "chat" }, "id", NOW)), "New chat");
 });
 
-test("the surface chip names the surface, and says nothing else", () => {
+test("the surface chip names the approval mode only where there is one", () => {
   require("../src/cowork.js");
-  assert.equal(J.surfaceLabel(J.newJob({ surface: "chat" }, "i", NOW)), "Chat");
+  assert.equal(J.surfaceLabel(J.newJob({ surface: "chat", approval: "skip" }, "i", NOW)), "Chat");
+  assert.equal(
+    J.surfaceLabel(J.newJob({ surface: "cowork", approval: "skip" }, "i", NOW)),
+    "Cowork · Skip all approvals"
+  );
   assert.equal(J.surfaceLabel(J.newJob({ surface: "cowork" }, "i", NOW)), "Cowork");
 });
 

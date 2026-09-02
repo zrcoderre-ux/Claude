@@ -12,6 +12,10 @@
   const STATUS_KEY = "cum_status";
   const STATUS_CFG_KEY = "cum_status_cfg";
   const WARN_CFG_KEY = "cum_warn_cfg";
+  // The Cowork defaults: the approval mode a send applies when its job names
+  // none, and the switch that lets a project menu borrow focus. Read by the
+  // Cowork driver and the worker; the shape is CUMCowork.coworkSettings.
+  const COWORK_KEY = "cum_cowork";
 
   const S = window.CUMStatus;
 
@@ -31,6 +35,8 @@
     estimateDecimals: document.getElementById("estimate-decimals"),
     autoContinue: document.getElementById("auto-continue"),
     allowOnce: document.getElementById("allow-once"),
+    coworkApproval: document.getElementById("cowork-approval"),
+    coworkFocus: document.getElementById("cowork-focus"),
     acMax: document.getElementById("ac-max"),
     autoDownload: document.getElementById("auto-download"),
     dlMax: document.getElementById("dl-max"),
@@ -142,6 +148,7 @@
   let dlCfg = { enabled: false, max: 20, catchUp: false, lookbackMin: 10 };
   let statusCfg = { warn: true, holdSends: true, defaultModel: "" };
   let warnCfg = { enabled: true, dailyShare: null };
+  let coworkCfg = { approval: "", borrowFocus: false };
 
   function saveWarnCfg(msg) {
     chrome.storage.local.set({ [WARN_CFG_KEY]: warnCfg }, () => msg && flash(msg));
@@ -161,8 +168,12 @@
       STATUS_KEY,
       STATUS_CFG_KEY,
       WARN_CFG_KEY,
+      COWORK_KEY,
     ],
     (res) => {
+      coworkCfg = Object.assign(coworkCfg, (res && res[COWORK_KEY]) || {});
+      el.coworkApproval.value = coworkCfg.approval || "";
+      el.coworkFocus.checked = coworkCfg.borrowFocus === true;
       render(res && res[STORAGE_KEY]);
       if (res && res[MANUAL_URL_KEY]) el.endpoint.value = res[MANUAL_URL_KEY];
       el.showOverage.checked = !!(res && res[OVERAGE_KEY]);
@@ -265,6 +276,25 @@
   el.allowOnce.addEventListener("change", () => {
     acCfg.allowOnce = el.allowOnce.checked;
     saveAc(acCfg.allowOnce ? 'Auto-clicking "Allow once"' : "Auto-allow off");
+  });
+
+  function saveCowork(msg) {
+    chrome.storage.local.set({ [COWORK_KEY]: coworkCfg }, () => msg && flash(msg));
+  }
+
+  el.coworkApproval.addEventListener("change", () => {
+    coworkCfg.approval = el.coworkApproval.value || "";
+    const label = el.coworkApproval.options[el.coworkApproval.selectedIndex];
+    saveCowork(
+      coworkCfg.approval
+        ? "Cowork sends default to " + ((label && label.textContent) || coworkCfg.approval)
+        : "Cowork approvals left as-is"
+    );
+  });
+
+  el.coworkFocus.addEventListener("change", () => {
+    coworkCfg.borrowFocus = el.coworkFocus.checked;
+    saveCowork(coworkCfg.borrowFocus ? "A Cowork project list may borrow focus" : "Focus is never borrowed");
   });
 
   el.acMax.addEventListener("change", () => {

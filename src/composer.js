@@ -997,10 +997,8 @@
     );
   }
 
-  // The approval control. It exists in Cowork and nowhere else, which makes
-  // finding it the last-resort answer to "which surface is this?" — and the
-  // anchor the Upload folder button sits beside. Read, never clicked: the mode
-  // is sticky and the extension has no business moving it.
+  // The approval control. Its own aria-label is the mode in force, which makes
+  // it both the trigger to click and the answer to "which mode is this?".
   function findApprovalTrigger() {
     const k = K();
     if (!k) return null;
@@ -1009,6 +1007,13 @@
       if (b && !isOurs(b)) return b;
     }
     return null;
+  }
+
+  /** The approval mode in force, or "" where there is no such control. */
+  function currentApproval() {
+    const k = K();
+    const t = findApprovalTrigger();
+    return k && t ? k.modeFromLabel(t.getAttribute("aria-label")) : "";
   }
 
   /**
@@ -1270,12 +1275,12 @@
       }
     }
 
-    // A Cowork project is Cowork furniture, and Cowork sends never reach this
-    // function — the driver above takes them. A job carrying one onto the Chat
-    // path is on the wrong surface, and quietly obliging would mean hunting for
-    // a menu this page doesn't have. Said, never silent.
-    if (o.coworkProject)
-      notes.push("Cowork project ignored — this send is on Chat");
+    // Approval modes and projects are Cowork furniture, and Cowork sends never
+    // reach this function — the driver above takes them. A job carrying either
+    // onto the Chat path is on the wrong surface, and quietly obliging would
+    // mean hunting for controls this page doesn't have. Said, never silent.
+    if (o.approval || o.coworkProject)
+      notes.push("Cowork settings (approval/project) ignored — this send is on Chat");
 
     if (o.codeRepo) {
       try {
@@ -1413,6 +1418,7 @@
     currentSurface,
     selectSurface,
     findApprovalTrigger,
+    currentApproval,
     menuItems,
     openMenu,
     closeMenu,
