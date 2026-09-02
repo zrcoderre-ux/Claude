@@ -455,6 +455,7 @@
           )
           .join("");
         const surfaceOpts = optionsFor(K ? K.surfaceOptions() : [], "Surface: leave as-is");
+        const approvalOpts = optionsFor(K ? K.modeOptions() : [], "Approvals: leave as-is");
         card.innerHTML =
           `<div class="cumwf-card-head"><span class="cumwf-card-title">Chat ${esc(
             "ABCDEF"[i] || i + 1
@@ -465,6 +466,7 @@
           `<option value="code">New Claude Code chat (pick a repo)</option></select>` +
           `<select class="wf-chat-model">${modelOpts}</select>` +
           `<select class="wf-chat-surface" title="Which surface this chat opens on">${surfaceOpts}</select>` +
+          `<select class="wf-chat-approval" title="How much Claude may do unattended, in Cowork">${approvalOpts}</select>` +
           `</div>` +
           `<input class="wf-chat-repo" type="text" placeholder="owner/name" value="${esc(
             (chat.target && chat.target.codeRepo) || ""
@@ -486,9 +488,15 @@
         if (!targetEl.value) targetEl.value = "new";
         modelEl.value = chat.model || "";
         const surfaceEl = card.querySelector(".wf-chat-surface");
+        const approvalEl = card.querySelector(".wf-chat-approval");
         surfaceEl.value = (chat.target && chat.target.surface) || "";
+        approvalEl.value = chat.approval || "";
         const syncRepo = () => (repoEl.hidden = targetEl.value !== "code");
+        // Approvals belong to Cowork. Offering the choice on a Chat conversation
+        // would be promising something the send has no control to keep.
+        const syncApproval = () => (approvalEl.hidden = surfaceEl.value !== "cowork");
         syncRepo();
+        syncApproval();
 
         nameEl.addEventListener("input", () => {
           chat.name = nameEl.value;
@@ -527,7 +535,19 @@
         surfaceEl.addEventListener("change", () => {
           chat.target = chat.target || {};
           chat.target.surface = surfaceEl.value || null;
+          // A chat that leaves Cowork keeps no approval mode: it would be a
+          // setting with nothing to act on, waiting to surprise whoever turns
+          // Cowork back on months later.
+          if (surfaceEl.value !== "cowork") {
+            chat.approval = null;
+            approvalEl.value = "";
+          }
+          syncApproval();
           renderSteps(); // the steps' inherit labels just changed
+        });
+        approvalEl.addEventListener("change", () => {
+          chat.approval = approvalEl.value || null;
+          renderSteps();
         });
         const startEl = card.querySelector(".wf-chat-start");
         startEl.addEventListener("input", () => (chat.startUrl = startEl.value.trim() || null));
@@ -1022,6 +1042,17 @@
               : `<option value="">Model: ${esc(inherited)}</option>`
           )
           .join("");
+        // Per-step approvals, on the same terms as the model: blank inherits
+        // the chat's, and naming one here leaves the conversation on it for the
+        // steps after — so a chat can research with the brakes off and then
+        // edit a filing with them on.
+        const coworkChat = (chat.target && chat.target.surface) === "cowork";
+        const inheritedApproval =
+          K && chat.approval ? K.describeMode(chat.approval) : "whatever the chat is on";
+        const stepApprovalOpts = optionsFor(
+          K ? K.modeOptions() : [],
+          "Approvals: " + inheritedApproval
+        );
         card.setAttribute("data-step-id", step.id);
         card.innerHTML =
           `<div class="cumwf-card-head">` +
@@ -1034,6 +1065,9 @@
             : "") +
           `<select class="wf-step-chat" style="width:auto">${chatOpts}</select>` +
           `<select class="wf-step-model" style="width:auto" title="Which model answers this step">${stepModelOpts}</select>` +
+          `<select class="wf-step-approval" style="width:auto" title="How much Claude may do unattended on this step"${
+            coworkChat ? "" : " hidden"
+          }>${stepApprovalOpts}</select>` +
           `<button class="cumwf-btn mini wf-up" type="button" title="Move up">↑</button>` +
           `<button class="cumwf-btn mini wf-down" type="button" title="Move down">↓</button>` +
           // Add HERE, rather than at the bottom and then dragged up. Next to
@@ -1103,6 +1137,11 @@
         const stepModelEl = card.querySelector(".wf-step-model");
         stepModelEl.value = step.model || "";
         stepModelEl.addEventListener("change", () => (step.model = stepModelEl.value || null));
+        const stepApprovalEl = card.querySelector(".wf-step-approval");
+        if (stepApprovalEl) {
+          stepApprovalEl.value = step.approval || "";
+          stepApprovalEl.addEventListener("change", () => (step.approval = stepApprovalEl.value || null));
+        }
         wirePromptComplete(card.querySelector(".wf-step-prompt"), card.querySelector(".cumwf-ac"), step);
         // Changing a step's chat can make the carry control appear or vanish
         // (two steps in one chat never paste), so redraw rather than leave a

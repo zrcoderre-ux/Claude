@@ -35,6 +35,14 @@ bottom-right corner of [claude.ai](https://claude.ai).
   *Allow for this chat* — so nothing is granted beyond the single call in front of
   it. You are approving those calls sight-unseen, which is why it's off by
   default and has its own switch rather than riding on auto-continue's.
+- **Approvals on Cowork sends** — the approval mode every Cowork send applies
+  when its job or step names none, because Cowork does not keep the mode between
+  sessions. Leave as-is by default. See [Cowork](#cowork).
+- **Borrow focus to load a Cowork project list** (opt-in, separate toggle) —
+  lets a Cowork send bring its own window in front for a bounded time when its
+  project list will not load in a tab that is merely visible, and give the
+  screen back afterwards. Off by default because it takes the screen. See
+  [Cowork](#cowork).
 - **Auto-download files Claude produces** (opt-in, separate toggle) — when a
   reply hands you a file, its **Download** button is clicked for you once the
   answer has finished, so a produced document lands in your Downloads folder
@@ -512,17 +520,19 @@ Cowork is the other half of claude.ai's composer — the **Chat / Cowork** toggl
 on the home screen, which swaps in a Project menu and a control saying how much
 Claude may do without asking: **Manually approve**, **Automatically approve**,
 **Skip all approvals**. A scheduled send and a workflow chat can each name a
-surface.
+surface, and a Cowork one can name an approval mode.
 
-**The approval mode is not one of the extension's settings.** It is sticky —
-whatever it was last set to by hand is what every new tab comes up on — so
-there was never anything for a send to do but leave it alone. The three labels
-are still read, because a page carrying one of them is how the extension knows
-it is looking at Cowork, and they are still what the Upload folder button sits
-beside; nothing here ever clicks that control. Runs and templates saved back
-when it *was* a setting are scrubbed of it the moment they are read, so a run
-paused under the older build resumes with nothing to say about approvals
-either.
+**The approval mode is set because Cowork does not keep it.** It was removed as
+a setting once, on the belief that the control was sticky — that a new tab came
+up on whatever was last chosen by hand. The owner's finding is that it is not
+kept between sessions, so a send that says nothing lands on whatever claude.ai
+chose. So it is back: a job or a workflow step can name its mode, and the
+popup's **Approvals on Cowork sends** is the default every Cowork send applies
+when its job names none (a job that chose still wins). Set that to **Skip all
+approvals** and every unattended session runs with the brakes off. The switch
+is made on the composer home before the message goes, verified off the
+control's own label, and a switch that cannot be verified **fails the send**
+rather than posting under a mode nobody chose.
 
 Three things about it shape how this works, and none of them is obvious:
 
@@ -530,9 +540,8 @@ Three things about it shape how this works, and none of them is obvious:
   leaves `/new` as `/new`. A send only lands somewhere distinctive *after* it
   goes — `/cowork/cse_…`, whose id isn't a uuid, so `conversationId` has its own
   arm for it and `settledUrl` its own test. Reading the surface off the DOM is
-  the only honest answer, and the page gives one: the approval control exists
-  in Cowork and nowhere else, and its own `aria-label` is one of those three
-  fixed phrases.
+  the only honest answer, and the page gives one: the approval control's own
+  `aria-label` **is** the mode in force.
 - **The choice is remembered for the whole account, not the tab.** Set Cowork in
   one window and the next window you open comes up in Cowork, whatever else is
   already open. So a 3am job that switches surfaces changes what you find in the
@@ -540,11 +549,11 @@ Three things about it shape how this works, and none of them is obvious:
   gone — and where it can't (the toggle lives on the composer home, which the
   send navigates away from), it says so in the job's note rather than leaving
   you to notice.
-- **A Cowork job goes to `/new`, even when it has a Project.** The toggle and
-  the project menu both live on the composer home. Arriving at
-  `/cowork/project/{uuid}` instead would mean arriving with no way to set
-  either, so `targetUrl` sends a Cowork job to `/new` and the project is chosen
-  from the menu there, by name.
+- **A Cowork job goes to `/new`, even when it has a Project.** The toggle, the
+  approval control and the project menu all live on the composer home. Arriving
+  at `/cowork/project/{uuid}` instead would mean arriving with no way to set any
+  of the three, so `targetUrl` sends a Cowork job to `/new` and the project is
+  chosen from the menu there, by name.
 - **An open project menu is not a loaded one.** The list comes off the server,
   and Cowork mounts skeleton rows captioned *Loading* while it waits — no rows
   to match, and not even a search box, because that mounts with the list. A run
@@ -561,16 +570,36 @@ Three things about it shape how this works, and none of them is obvious:
   isn't focused still has a visible tab, so nothing you are looking at moves —
   and then opens the menu again, because a query that never started does not
   start just because the tab woke up. Where the tab is in **the window you are
-  working in**, the answer is no: switching your tab out from under you is not
-  the extension's to do, and the send says that instead of doing it.
+  working in**, switching your tab out from under you is still not the
+  extension's to do — so the worker **moves the tab out into a window of its
+  own**, unfocused, behind yours. Your window keeps its tab; the send's tab
+  becomes visible somewhere else. (The first version of this fix refused here,
+  and the send stood down with *the tab was in the background and could not be
+  brought forward*.)
+- **…and sometimes only in a tab that has focus.** The report after that was
+  the owner's: the list comes when the tab is focused. Focus takes the screen,
+  so it is the ladder's last rung and an **opt-in** one — the popup's **Borrow
+  focus to load a Cowork project list**, off by default. With it on, a tab that
+  is on screen and still showing placeholders asks the worker for the screen
+  for up to 25 seconds; the menu is closed and opened again with focus; and
+  focus is **given back** the moment the project phase ends (by the page), or
+  when the loan's ceiling passes (by the worker, for a page that died
+  mid-phase). It never switches the tab of the window you are working in, and
+  it is never taken back from something you have since clicked into. With the
+  switch off, the send says exactly that in its note rather than failing
+  silently: *borrowing focus was not done: off — the popup's switch is not on*.
 
-The surface field defaults to **leave as-is**, the same contract the model
-picker has: a job that never mentions the surface never touches it, so nothing
-that predates this behaves differently.
+Both fields default to **leave as-is**, the same contract the model picker has:
+a job that never mentions the surface never touches it, so nothing that predates
+this behaves differently. And a mode asked for on a page with no approval
+control is **not** quietly treated as satisfied — the send reports that it was
+ignored, because "it must have worked" is exactly the assumption that gets a
+message sent under a mode nobody chose.
 
-In a workflow the surface belongs to the **chat** rather than to a step — a
-conversation can't be half in Cowork — and every step carries it, so a resumed
-run lands the right way up.
+In a workflow the surface belongs to the **chat** (a conversation can't be half
+in Cowork) and the approval mode works like the model: set on the chat, and
+overridable **per step**, leaving the conversation on it for the steps after —
+so one chat can research with the brakes off and then edit a filing with them on.
 
 [Upload folder](#uploading-a-case-folder-into-a-chat) works on a new Cowork
 session too, on Cowork's own terms — it borrows this driver's attachment
@@ -590,15 +619,16 @@ chip selectors counted zero on a composer that was visibly holding the files.
 So a Cowork send goes through `src/cowork-composer.js`, a parallel driver that
 borrows from the Chat one only what is surface-agnostic mechanics (clicks,
 menus, sleeping in a hidden tab) or has been confirmed on Cowork itself (the
-Chat/Cowork toggle, the model menu). Everything else is its
+Chat/Cowork toggle, the approval menu, the model menu). Everything else is its
 own: choosing the project (a wider net than literal `<button>`s, with the
 navigating rows still excluded by name), confirming attachments by what the
 composer **visibly carries** — chips or the filenames themselves, truncation
 tolerated — and proving the send by Cowork's own evidence (the address becoming
 `/cowork/cse_…`, a new human turn, the editor emptying). Every phase reports,
 and a phase that fails **fails the send loudly** — a message posted into the
-wrong project is worse than one that waits. The decisions live in
-`src/cowork.js`, pure and tested; the driver holds only the wiring.
+wrong project, or under an approval mode nobody chose, is worse than one that
+waits. The decisions live in `src/cowork.js`, pure and tested; the driver holds
+only the wiring.
 
 ## Workflows
 
@@ -3511,7 +3541,7 @@ src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/wfexport.js        Workflow export/import bundles: what travels (pure)
 src/dropdir.js         A dropped folder, taken apart: walk, skips, caps, case folders (pure)
-src/cowork.js          Chat/Cowork surface, read off the page (pure)
+src/cowork.js          Chat/Cowork surface + approval modes (pure)
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown
 src/content.css        Floating-button styles (light + dark)

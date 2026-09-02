@@ -73,6 +73,7 @@ const RUN_WINDOW_H = 2304;
 const J = self.CUMJobs;
 const S = self.CUMStatus;
 const W = self.CUMWorkflow;
+const CW = self.CUMCowork;
 const U = self.CUMWfUsage;
 const G = self.CUMIncognito;
 const UW = self.CUMUsageWarn;
@@ -959,6 +960,33 @@ async function keepingFocus(fn) {
   }
 }
 
+// A focus loan out to a Cowork page (cum-borrow-focus): where the screen was,
+// and the timer that gives it back if the page never says it is done. Held in
+// memory only — the page echoes the loan back, so a worker restarted mid-loan
+// can still give focus back from what the page carries.
+let focusLoan = null;
+
+async function returnFocus(echoed, reason) {
+  const loan = focusLoan || echoed;
+  if (focusLoan && focusLoan.timer) clearTimeout(focusLoan.timer);
+  focusLoan = null;
+  if (!loan) return { ok: true, why: "nothing was borrowed" };
+  if (!loan.fromFocused) return { ok: true, why: "Chrome was not in front before, so there was nothing to give back" };
+  try {
+    // Only where the borrowed window still has the screen. If the user has
+    // since clicked into something else, "giving back" would be taking.
+    const now = await chrome.windows.getLastFocused();
+    if (now && now.focused && now.id !== loan.windowId)
+      return { ok: true, why: "the screen had already moved on, so it was left where it was" };
+    if (loan.from == null || !(await windowExists(loan.from)))
+      return { ok: true, why: "the window it came from is gone" };
+    await chrome.windows.update(loan.from, { focused: true });
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+  return { ok: true, why: "given back" + (reason ? " — " + reason : "") };
+}
+
 // Below this, claude.ai serves its compact client, which cannot render some
 // block types — it shows "This block is not supported on your current device"
 // where the content should be, and the copy box then copies that notice into
@@ -1289,8 +1317,8 @@ async function stepTab(run, savedUrl, chat) {
       projectUuid: (chat.target && chat.target.projectUuid) || null,
       codeRepo: (chat.target && chat.target.codeRepo) || null,
       // targetUrl sends a Cowork chat to the composer home rather than to its
-      // project, because the toggle and the project menu are both there and
-      // nowhere else.
+      // project, because the toggle, the approval control and the project menu
+      // are all there and nowhere else.
       surface: (chat.target && chat.target.surface) || null,
     });
   // Reuse only where the address is a conversation this run already has. A
@@ -1579,6 +1607,7 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
     // Only on the way in. Once a conversation exists the toggle isn't on the
     // page any more, and the project menu is the composer home's.
     surface: !saved.url ? m.surface || null : null,
+    approval: m.approval || null,
     coworkProject:
       m.surface === "cowork" && m.firstInChat && !saved.url
         ? (chat.target && chat.target.projectName) || null
@@ -1885,6 +1914,7 @@ async function driveRun(runId, opts) {
         codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
         // Only on the way in — see the wave payload for why.
         surface: !saved.url ? step.surface || null : null,
+        approval: step.approval || null,
         coworkProject:
           step.surface === "cowork" && step.firstInChat && !saved.url
             ? (chat.target && chat.target.projectName) || null
@@ -2499,44 +2529,127 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
     return true;
   }
-  // A page borrowing this worker's clock. Chrome throttles timers in a tab that
-  // isn't on screen — about one wake-up a minute — and a run's tabs are behind
-  // whatever you're doing by design, so a page that waited on its own clock
-  // waited minutes for fractions of a second. The worker is not a page and is
-  // not throttled. Capped, and the page races this against its own timer, so
-  // the worst case is the throttled wait it would have had anyway.
-  // Make the asking tab the VISIBLE tab of its own window — never by taking the
-  // screen. Cowork's project menu mounts twelve "Loading" rows and never
-  // resolves them while its tab is in the background; the send that found this
-  // waited thirty-three seconds on placeholders and stood down rather than post
-  // outside its project. A tab that is the active tab of an UNFOCUSED window is
-  // visibilityState "visible" — which is all the page wants — and nothing the
-  // user is looking at moves. The window you are actually working in is not
-  // ours to rearrange, so there the answer is no, and the caller says so rather
-  // than switching your tab out from under you.
+  // A page asks to be looked at. Cowork's project menu fetches its list only in
+  // a tab that is on screen — the send that found this waited thirty-three
+  // seconds on placeholders and stood down rather than post outside its
+  // project. The ladder, decided by CW.tabRemedy:
+  //   - a tab in a window that is NOT the one being worked in (or Chrome is
+  //     not in front at all) becomes that window's visible tab. A visible tab
+  //     of an unfocused window is visibilityState "visible", and nothing the
+  //     user is looking at moves.
+  //   - a tab BEHIND the one being worked in is moved out into a window of its
+  //     own, unfocused — the first fix refused here ("switching your tab is
+  //     not ours to do"), and it still is: the user's window keeps its tab,
+  //     and this one becomes visible somewhere else.
+  // Focus is a separate, opt-in rung (cum-borrow-focus, below).
   if (msg && msg.type === "cum-show-tab") {
     (async () => {
       const tab = sender && sender.tab;
       if (!tab || tab.id == null) return { ok: false, error: "no tab to show" };
-      if (tab.active) return { ok: true, why: "already the visible tab in its window" };
       let focused = null;
       try {
         focused = await chrome.windows.getLastFocused();
       } catch (e) {
         /* treated as "nothing is focused", which is the cautious way round */
       }
-      if (focused && focused.focused && focused.id === tab.windowId)
+      const remedy = CW.tabRemedy(tab, focused);
+      if (remedy === "none") return { ok: true, why: "already the visible tab in its window" };
+      if (remedy === "activate") {
+        try {
+          await chrome.tabs.update(tab.id, { active: true });
+        } catch (e) {
+          return { ok: false, error: String((e && e.message) || e) };
+        }
+        return { ok: true, why: "made it the visible tab of its own window" };
+      }
+      // own-window. Maximized where Chrome will take it — claude.ai serves a
+      // compact client below its breakpoint — and plain where it won't; the
+      // window opens unfocused, and keepingFocus puts the screen back if the
+      // window manager raised it anyway.
+      let win = null;
+      try {
+        win = await keepingFocus(async () => {
+          try {
+            return await chrome.windows.create({ tabId: tab.id, focused: false, state: "maximized" });
+          } catch (e) {
+            return await chrome.windows.create({ tabId: tab.id, focused: false });
+          }
+        });
+      } catch (e) {
         return {
           ok: false,
-          error: "it is in the window you're working in, and switching your tab is not ours to do",
+          error:
+            "it is behind the tab you're working in, and moving it into a window of its own failed — " +
+            String((e && e.message) || e),
         };
+      }
+      return {
+        ok: true,
+        why: "moved out from behind the tab you're working in into a window of its own, behind yours",
+        windowId: win && win.id != null ? win.id : null,
+      };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
+  // The rung above visibility. The owner's report after the first fix was
+  // that the list arrives when the tab has FOCUS, so a page whose tab is on
+  // screen and whose menu still shows placeholders may ask for the screen —
+  // for a bounded time, only when the popup's switch allows it, never by
+  // switching the tab of the window being worked in, and with focus handed
+  // back afterwards (by the page when it is done, by a ceiling here if the
+  // page never says).
+  if (msg && msg.type === "cum-borrow-focus") {
+    (async () => {
+      const tab = sender && sender.tab;
+      if (!tab || tab.id == null) return { ok: false, error: "no tab to focus" };
+      const cfg = CW.coworkSettings((await get(CW.COWORK_KEY))[CW.COWORK_KEY]);
+      if (!cfg.borrowFocus)
+        return {
+          ok: false,
+          error:
+            'off — the popup\'s "Borrow focus to load a Cowork project list" switch is not on',
+        };
+      let before = null;
+      try {
+        before = await chrome.windows.getLastFocused();
+      } catch (e) {
+        /* nothing to give back to, then */
+      }
+      if (CW.tabRemedy(tab, before) === "own-window")
+        return {
+          ok: false,
+          error: "it is behind the tab you're working in, and switching your tab is not ours to do",
+        };
+      if (focusLoan) await returnFocus(null, "a new loan replaced it");
+      const ms = Math.max(1000, Math.min(30000, Math.floor(msg.ms) || 20000));
       try {
         await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
       } catch (e) {
         return { ok: false, error: String((e && e.message) || e) };
       }
-      return { ok: true, why: "made it the visible tab of its own window" };
+      const loan = {
+        from: before && before.id != null ? before.id : null,
+        fromFocused: !!(before && before.focused),
+        windowId: tab.windowId,
+      };
+      focusLoan = Object.assign({ timer: setTimeout(() => returnFocus(null, "its ceiling passed"), ms) }, loan);
+      return {
+        ok: true,
+        why:
+          "brought in front for up to " + Math.round(ms / 1000) + "s" +
+          (loan.fromFocused ? ", then given back" : " (Chrome was not in front before, so there is nothing to give back to)"),
+        loan: loan,
+      };
     })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
+  if (msg && msg.type === "cum-return-focus") {
+    returnFocus(msg.loan || null, "the page finished")
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;

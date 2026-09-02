@@ -160,6 +160,35 @@
       this off if you want to read each prompt. Stops after 100 clicks per page
       load; toggle off/on to resume.</p>
 
+    <label class="toggle" for="cowork-approval">
+      <span>Approvals on Cowork sends</span>
+    </label>
+    <select id="cowork-approval" class="pseudo-select">
+      <option value="">Leave as-is</option>
+      <option value="manual">Manually approve</option>
+      <option value="auto">Automatically approve</option>
+      <option value="skip">Skip all approvals</option>
+    </select>
+    <p class="hint">Leave as-is by default. Cowork does not keep its approval
+      mode between sessions, so a scheduled send or workflow step that names no
+      mode lands on whatever claude.ai chose. Set one here and every Cowork send
+      that says nothing applies it; a job or step that names its own mode still
+      wins. <b>Skip all approvals</b> lets Claude act unattended for the whole
+      session.</p>
+
+    <label class="toggle">
+      <input id="cowork-focus" type="checkbox" />
+      <span>Borrow focus to load a Cowork project list</span>
+    </label>
+    <p class="hint">Off by default. Cowork's project menu only loads its list in
+      a tab that is being looked at. A send first makes its tab visible without
+      touching yours (moving it into a window of its own when it sits behind the
+      tab you're in). When that is still not enough, this lets it bring its
+      window in front for up to 25 seconds and then give the screen back. It
+      never switches the tab of the window you're working in. Keys you press in
+      that moment land in the Cowork tab, so leave this off if you type through
+      your sends.</p>
+
     <label class="toggle">
       <input id="auto-download" type="checkbox" />
       <span>Auto-download files Claude produces</span>

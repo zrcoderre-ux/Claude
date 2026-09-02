@@ -3210,14 +3210,14 @@ function coworkWorkflow() {
     {
       name: "Cowork",
       chats: [
-        { id: "a", name: "Research", surface: "cowork" },
-        { id: "b", name: "Drafting", surface: "cowork" },
+        { id: "a", name: "Research", surface: "cowork", approval: "skip" },
+        { id: "b", name: "Drafting", surface: "cowork", approval: "manual" },
       ],
       steps: [
         { id: "s1", chatId: "a", prompt: "dig" },
         { id: "s2", chatId: "a", prompt: "dig more" },
         { id: "s3", chatId: "b", prompt: "write it" },
-        { id: "s4", chatId: "b", prompt: "check it" },
+        { id: "s4", chatId: "b", prompt: "check it", approval: "skip" },
       ],
     },
     idgen("c"),
@@ -3228,6 +3228,7 @@ function coworkWorkflow() {
 test("a chat's surface survives newChatSlot from either shape", () => {
   const wf = coworkWorkflow();
   assert.equal(wf.chats[0].target.surface, "cowork");
+  assert.equal(wf.chats[0].approval, "skip");
   // And from an already-nested target, which is how a saved workflow comes back.
   const again = W.newWorkflow({ chats: [{ id: "a", target: { surface: "cowork" } }] }, idgen("d"), NOW);
   assert.equal(again.chats[0].target.surface, "cowork");
@@ -3236,25 +3237,22 @@ test("a chat's surface survives newChatSlot from either shape", () => {
 test("a workflow that says nothing about the surface still says nothing", () => {
   const wf = twoChatWorkflow();
   assert.equal(wf.chats[0].target.surface, null);
+  assert.equal(wf.chats[0].approval, null);
+  assert.equal(wf.steps[0].approval, null);
 });
 
-test("the approval mode is not the extension's business, at any level", () => {
-  // It is sticky — a new tab comes up on whatever was last chosen by hand — so
-  // there is nothing to carry and nothing to set, however a stored workflow
-  // (or one saved before this) spells it.
-  const wf = W.newWorkflow(
-    {
-      chats: [{ id: "a", name: "A", surface: "cowork", approval: "skip" }],
-      steps: [{ id: "s1", chatId: "a", prompt: "go", approval: "manual" }],
-    },
-    idgen("v"),
-    NOW
-  );
-  assert.equal(wf.chats[0].approval, undefined);
-  assert.equal(wf.steps[0].approval, undefined);
-  const plan = W.planRun(wf);
-  assert.equal(plan[0].approval, undefined);
-  assert.equal(plan[0].approvalOn, undefined);
+test("approval is set on the first step in a chat and not again after", () => {
+  const plan = W.planRun(coworkWorkflow());
+  assert.equal(plan[0].approval, "skip", "step 1 opens the chat, so it sets the mode");
+  assert.equal(plan[1].approval, null, "step 2 is already on it — no menu opened for nothing");
+  assert.equal(plan[1].approvalOn, "skip", "but it still reports what it will run under");
+});
+
+test("a step that overrides approval sets it, and the chat stays there", () => {
+  const plan = W.planRun(coworkWorkflow());
+  assert.equal(plan[2].approval, "manual", "the drafting chat opens on its own mode");
+  assert.equal(plan[3].approval, "skip", "and this step asked for something different");
+  assert.equal(plan[3].approvalOn, "skip");
 });
 
 test("every step carries its chat's surface, so a resumed run lands right way up", () => {
@@ -3262,10 +3260,10 @@ test("every step carries its chat's surface, so a resumed run lands right way up
   assert.deepEqual(plan.map((p) => p.surface), ["cowork", "cowork", "cowork", "cowork"]);
 });
 
-test("a pause step has no surface to set", () => {
+test("a pause step has no surface and no approval to set", () => {
   const wf = W.newWorkflow(
     {
-      chats: [{ id: "a", name: "A", surface: "cowork" }],
+      chats: [{ id: "a", name: "A", surface: "cowork", approval: "skip" }],
       steps: [
         { id: "s1", chatId: "a", prompt: "go" },
         { id: "s2", kind: "pause", pauseMinutes: 0 },
@@ -3278,72 +3276,18 @@ test("a pause step has no surface to set", () => {
   const plan = W.planRun(wf);
   const pause = plan.find((p) => p.kind === "pause");
   assert.equal(pause.surface, null);
+  assert.equal(pause.approval, null);
 });
 
-test("a run paused under the old build resumes with no approvals to worry about", () => {
-  // Exactly the shape storage still holds: a plan snapshotted when chats and
-  // steps carried an approval mode. Nothing re-normalises a started run, so
-  // runSource is the door it comes back through — and it drops the field for
-  // the planner, the run editor and everything else that walks these steps.
-  const run = {
-    id: "r-old",
-    stepIndex: 1,
-    status: "waiting",
-    docs: [],
-    plan: {
-      chats: [{ id: "a", name: "Research", target: { surface: "cowork" }, approval: "skip" }],
-      steps: [
-        { id: "s1", chatId: "a", prompt: "dig", approval: "skip" },
-        { id: "s2", chatId: "a", prompt: "write", approval: "manual" },
-      ],
-    },
-  };
-  const src = W.runSource(run, null);
-  for (const c of src.chats) assert.equal("approval" in c, false);
-  for (const s of src.steps) assert.equal("approval" in s, false);
-  const plan = W.planRun(src);
-  assert.equal(plan[0].approval, undefined);
-  assert.equal(plan[1].approvalOn, undefined);
-  // The surface still travels — only the retired field went.
-  assert.deepEqual(plan.map((p) => p.surface), ["cowork", "cowork"]);
-  // And the stored run itself is left as it was; the scrub is on the way out.
-  assert.equal(run.plan.steps[0].approval, "skip");
-});
-
-test("a template last saved under the old build is scrubbed on the same door", () => {
-  const wf = {
-    chats: [{ id: "a", name: "A", target: { surface: "cowork" }, approval: "manual" }],
-    steps: [{ id: "s1", chatId: "a", prompt: "go", approval: "skip" }],
-    docs: [],
-  };
-  const src = W.runSource({ id: "r", docs: [] }, wf);
-  assert.equal("approval" in src.chats[0], false);
-  assert.equal("approval" in src.steps[0], false);
-});
-
-test("a re-run of an old run carries no approvals into the new template", () => {
-  const run = {
-    id: "r-old",
-    name: "Smith v. Jones",
-    docs: [],
-    plan: {
-      chats: [{ id: "a", name: "A", target: { surface: "cowork" }, approval: "skip" }],
-      steps: [{ id: "s1", chatId: "a", prompt: "go", approval: "skip" }],
-    },
-  };
-  const wf = W.workflowFromRun(run, null, "w-new", NOW, idgen("n"));
-  assert.equal(wf.chats[0].approval, undefined);
-  assert.equal(wf.steps[0].approval, undefined);
-  assert.equal(wf.chats[0].target.surface, "cowork");
-});
-
-test("a run takes its own copy of the surface", () => {
+test("a run takes its own copy of the surface and approvals", () => {
   const wf = coworkWorkflow();
   const run = W.newRun(wf, "r1", NOW, { type: "now" }, []);
   assert.equal(run.plan.chats[0].target.surface, "cowork");
+  assert.equal(run.plan.chats[0].approval, "skip");
+  assert.equal(run.plan.steps[3].approval, "skip");
   // Editing the template afterwards must not reach the run.
-  wf.chats[0].target.surface = "chat";
-  assert.equal(run.plan.chats[0].target.surface, "cowork");
+  wf.chats[0].approval = "manual";
+  assert.equal(run.plan.chats[0].approval, "skip");
 });
 
 test("a cowork session id is a conversation id even though it isn't a uuid", () => {

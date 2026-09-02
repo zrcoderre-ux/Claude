@@ -12,10 +12,13 @@
  * surface-agnostic mechanics (sleep, robustClick, menu open/close, visibility)
  * or has been confirmed working on Cowork itself:
  *   - the Chat/Cowork toggle (selectSurface — built for and proved on Cowork),
+ *   - the approval control's FINDERS (findApprovalTrigger/currentApproval —
+ *     the label read is also part of surface evidence); the SWITCHING lives
+ *     here, with a why on every exit, after a live run failed it with a bare
+ *     "(failed)" that said nothing about which step died. It is switched
+ *     because Cowork does not keep the mode between sessions — a send that
+ *     names none applies the popup's default,
  *   - the model menu (selectModel — seen switching models on a live Cowork run).
- * The approval control is READ (its label is part of the surface evidence) and
- * never touched: the mode is sticky, so leaving it alone is leaving it on
- * whatever was last chosen by hand.
  * Everything else — choosing the project, attaching files, confirming the
  * attachments, typing the prompt, pressing send, and proving the message left —
  * is done here, with Cowork's own evidence, and reported phase by phase so a
@@ -370,7 +373,7 @@
    * `{ ok: false, error }` — because a caller that cannot tell "no" from
    * "no answer" reports neither.
    */
-  function showThisTab() {
+  function askWorker(type, extra, timeoutMs) {
     return new Promise((resolve) => {
       let done = false;
       const finish = (r) => {
@@ -380,9 +383,12 @@
       };
       // The worker can be asleep; it wakes on the message, but a send that
       // never lands must not hold the phase open.
-      setTimeout(() => finish({ ok: false, error: "the extension's worker didn't answer" }), 8000);
+      setTimeout(
+        () => finish({ ok: false, error: "the extension's worker didn't answer" }),
+        timeoutMs || 8000
+      );
       try {
-        chrome.runtime.sendMessage({ type: "cum-show-tab" }, (res) => {
+        chrome.runtime.sendMessage(Object.assign({ type: type }, extra || {}), (res) => {
           if (chrome.runtime.lastError || !res)
             return finish({
               ok: false,
@@ -398,6 +404,25 @@
     });
   }
 
+  function showThisTab() {
+    return askWorker("cum-show-tab");
+  }
+
+  /** The popup's Cowork settings — the approval default and the focus switch. */
+  function coworkSettings() {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get(K.COWORK_KEY, (res) => {
+          void chrome.runtime.lastError;
+          resolve(K.coworkSettings(res && res[K.COWORK_KEY]));
+        });
+      } catch (e) {
+        resolve(K.coworkSettings(null));
+      }
+    });
+  }
+
+
   /**
    * Choose a project from Cowork's menu, the wide way. The Chat driver's
    * version looked at literal <button> elements only; when claude.ai stops
@@ -412,6 +437,27 @@
    * not a near miss, it is the end of the run. Returns { ok, why }.
    */
   async function selectProject(name) {
+    // Focus, if the project menu had to borrow it, goes back the moment this
+    // phase ends — whichever way it ends. The worker's ceiling stands behind
+    // this for a page that dies mid-phase.
+    const ctx = { loan: null };
+    let r;
+    try {
+      r = await chooseProject(name, ctx);
+    } catch (e) {
+      r = { ok: false, why: String((e && e.message) || e) };
+    }
+    if (ctx.loan) {
+      const back = await askWorker("cum-return-focus", { loan: ctx.loan });
+      r.why =
+        (r.why || "") +
+        " — focus " +
+        (back.ok ? back.why || "given back" : "could not be given back: " + (back.error || "no reason given"));
+    }
+    return r;
+  }
+
+  async function chooseProject(name, ctx) {
     // A stored name can carry an old scrape's debris ("…Toggle chats for …");
     // matching forgives that, but the FILTER doesn't — typing the corrupted
     // string filters the list down to nothing. So the cleaned name is what
@@ -502,8 +548,7 @@
     if (!loaded && K.menuNeedsTheTab(document.visibilityState, menuText())) {
       const shown = await showThisTab();
       tabNote = shown.ok
-        ? "the tab was in the background, so it was brought to the front of its own window (" +
-          (shown.why || "shown") + ")"
+        ? "the tab was in the background, so it was shown (" + (shown.why || "shown") + ")"
         : "the tab was in the background and could not be brought forward — " +
           (shown.error || "no reason given");
       if (shown.ok) {
@@ -526,6 +571,35 @@
     // Whatever happened above, give a list that is still arriving its last few
     // seconds before anything is read off the menu.
     if (!loaded) await untilLoaded(8000);
+    // On screen and STILL placeholders. Being seen was the first fix's whole
+    // answer, and the report after it said the list comes when the tab has
+    // FOCUS. That takes the screen, so it is the last rung and an opt-in one:
+    // the worker lends focus only when the popup's switch is on, for a bounded
+    // time, never by switching the tab of the window you are working in, and
+    // it is given back the moment this phase ends (ctx.loan) — or by the
+    // worker's own ceiling if this page never gets to say so.
+    if (!loaded && K.menuNeedsFocus(document.visibilityState, menuText())) {
+      const loan = await askWorker("cum-borrow-focus", { ms: 25000 });
+      if (loan.ok) {
+        ctx.loan = loan.loan || {};
+        tabNote += (tabNote ? "; " : "") + "focus was borrowed (" + (loan.why || "lent") + ")";
+        for (let i = 0; i < 12 && !document.hasFocus(); i++) await sleep(250);
+        loaded = await untilLoaded(4000);
+        if (!loaded && openedWith) {
+          C.closeMenu();
+          await sleep(600);
+          const again = await openProjectMenu(openedWith);
+          if (again.box) box = again.box;
+          tabNote += "; the menu was closed and opened again with focus";
+          loaded = await untilLoaded(12000);
+        }
+      } else {
+        tabNote +=
+          (tabNote ? "; " : "") +
+          "the tab was on screen and the list still never came — borrowing focus was not done: " +
+          (loan.error || "no reason given");
+      }
+    }
     const waited = Math.round((Date.now() - waitStarted) / 1000);
     // A long list renders only what fits, so the filter isn't a nicety: a
     // project far down it is not in the page to be clicked until typing brings
@@ -719,6 +793,108 @@
     return { ok: false, why: "clicked the row but no control came to read " + JSON.stringify(name) };
   }
 
+  // ---- the approval mode ---------------------------------------------------
+
+  /**
+   * Put Cowork's approval control on `mode`, saying WHY on every exit. The
+   * old switcher answered a live failure with a bare "(failed)" — three
+   * different failures wearing one face: the menu not opening, the row not
+   * matching, and the click not verifiably taking are different problems with
+   * different fixes, and the report is the only witness an unattended run has.
+   *
+   * Two other lessons applied here: a dispatched click is untrusted and does
+   * not run activation behaviour everywhere (the toggle taught that — #170),
+   * so the method click is the fallback; and a hidden Cowork tab renders LATE,
+   * so the old two-second verification window could time out on a switch that
+   * had actually taken — the windows here are longer, the row marking itself
+   * checked counts as the page's word too, and there is one last look after
+   * the menu closes. Returns { ok, why }.
+   */
+  async function selectApproval(mode) {
+    const wanted = K.modeFromLabel(mode);
+    if (!wanted) return { ok: true, why: "nothing asked for" };
+    if (C.currentApproval() === wanted) return { ok: true, why: "already on it" };
+    const trigger = C.findApprovalTrigger();
+    if (!trigger) return { ok: false, why: "no approval control on this page" };
+
+    const trouble = await C.openMenu(trigger, C.menuItems());
+    if (trouble) {
+      C.closeMenu();
+      return { ok: false, why: "the menu: " + trouble };
+    }
+
+    const rowFor = () =>
+      C.menuItems().find((el) => !C.isOurs(el) && K.rowIsMode(el.textContent, wanted)) || null;
+    let row = rowFor();
+    for (let i = 0; i < 12 && !row; i++) {
+      await sleep(200);
+      row = rowFor();
+    }
+    if (!row) {
+      const saw = C.menuItems()
+        .map((el) => norm(el.textContent).slice(0, 32))
+        .filter(Boolean)
+        .join(" | ");
+      C.closeMenu();
+      return {
+        ok: false,
+        why: "no row for " + K.labelForMode(wanted) + " — saw " + JSON.stringify(saw),
+      };
+    }
+
+    const took = async (tries) => {
+      for (let i = 0; i < tries; i++) {
+        await sleep(400);
+        const t = C.findApprovalTrigger();
+        let checked = false;
+        try {
+          checked =
+            row.getAttribute("aria-checked") === "true" ||
+            row.getAttribute("data-state") === "checked";
+        } catch (e) {
+          /* a detached row answers nothing; the trigger still can */
+        }
+        if (
+          K.approvalTook(
+            { triggerLabel: t && t.getAttribute("aria-label"), rowChecked: checked },
+            wanted
+          )
+        )
+          return true;
+      }
+      return false;
+    };
+
+    C.robustClick(row);
+    if (await took(8)) {
+      C.closeMenu();
+      return { ok: true, why: "clicked the row" };
+    }
+    try {
+      if (typeof row.click === "function") row.click();
+    } catch (e) {
+      /* the final report says what the trigger reads */
+    }
+    if (await took(8)) {
+      C.closeMenu();
+      return { ok: true, why: "clicked the row (el.click())" };
+    }
+    C.closeMenu();
+    // One last look. A switch that took after the window closed is still a
+    // switch that took, and failing the send over a slow re-render would stop
+    // a run whose page is in exactly the state it asked for.
+    await sleep(600);
+    const t = C.findApprovalTrigger();
+    if (K.approvalTook({ triggerLabel: t && t.getAttribute("aria-label") }, wanted))
+      return { ok: true, why: "took after the menu closed" };
+    return {
+      ok: false,
+      why:
+        "clicked the row both ways and the trigger still reads " +
+        JSON.stringify((t && t.getAttribute("aria-label")) || "nothing"),
+    };
+  }
+
   // ---- attaching, with Cowork's evidence -----------------------------------
 
   /**
@@ -828,8 +1004,8 @@
    * One composed Cowork message, end to end. Same contract as the Chat
    * driver's sendMessage — { ok, error?, halted?, notes } — but every phase
    * reports, and a phase that fails fails the SEND, loudly, rather than
-   * leaving a note and sailing on: a message sent into the wrong project is
-   * worse than one that waits.
+   * leaving a note and sailing on: a message sent into the wrong project, or
+   * under an approval mode nobody chose, is worse than one that waits.
    */
   async function send(o) {
     const j = o || {};
@@ -870,8 +1046,15 @@
     // The toggle only exists on the composer home; inside a conversation there
     // is no surface to choose and no project menu to open.
     const onHome = !!C.findSurfaceGroup();
+    // The approval mode: the job's own, else the popup's default. Cowork does
+    // not keep the mode between sessions, so a send that says nothing lands
+    // on whatever claude.ai chose — which is why the default exists.
+    const prefs = await coworkSettings();
+    const approval = K.effectiveApproval(j.approval, prefs.approval);
+    const approvalFrom = approval && !K.modeFromLabel(j.approval) ? " (the popup's default)" : "";
     const phases = K.coworkPhases({
       onSession: !onHome,
+      approval: !!approval,
       project: !!project,
       model: !!j.model,
       files: !!files.length,
@@ -901,6 +1084,19 @@
         say("surface", surfaceWas ? "switched from " + surfaceWas : "on Cowork");
         // Switching re-renders the composer; a handle held across it is stale.
         editor = (await C.waitFor(C.findEditor, 15000)) || editor;
+      } else if (phase === "approval") {
+        let r;
+        try {
+          r = await selectApproval(approval);
+        } catch (e) {
+          r = { ok: false, why: String((e && e.message) || e) };
+        }
+        if (!r.ok)
+          return fail(
+            "could not set approval to " + K.describeMode(approval) + approvalFrom + " — " + r.why +
+              " — not sent: a session that runs under a mode nobody chose is worse than one that waits"
+          );
+        say("approval", K.describeMode(approval) + approvalFrom + " (" + r.why + ")");
       } else if (phase === "project") {
         const r = await selectProject(project);
         if (!r.ok)

@@ -3,40 +3,39 @@
  *
  * Cowork is not a page. Toggling into it leaves /new as /new, and a sent
  * message lands on /cowork/cse_<id>, where the id is not a uuid. So there is
- * nothing in an address to tell a scheduled send which mode it woke up in, and
- * the mode is sticky: a brand-new tab comes up in whatever was last used.
+ * nothing in an address to tell a scheduled send which mode it woke up in.
  *
- * That makes reading the surface off the page the only honest answer, and the
- * page gives one: the approval control exists in Cowork and nowhere else, and
- * its own aria-label is one of three fixed phrases ("Manually approve" /
- * "Automatically approve" / "Skip all approvals"). This module holds those
- * phrases so a change to claude.ai's wording is one edit here rather than an
- * investigation.
+ * That makes reading the mode off the page the only honest answer, and the page
+ * happens to say it plainly — the approval control's own aria-label IS the mode
+ * in force ("Manually approve" / "Automatically approve" / "Skip all
+ * approvals"). This module holds the mapping between that label, the storage
+ * key a job carries, and the menu row that changes it, so a change to any of
+ * claude.ai's wording is one edit here rather than an investigation.
  *
- * The extension does NOT set the approval mode. It is sticky — whatever was
- * last chosen is what a new tab comes up on — so there is nothing for a
- * scheduled send to do but leave it alone; the labels are kept only because
- * they are how a page says it is Cowork.
+ * The mode is NOT kept between sessions (the owner's finding, September 2026 —
+ * a new session comes up on whatever claude.ai chooses, not on what was last
+ * set), which is why a send sets it: from the job's own field, else from the
+ * popup's default. The setting was removed once on the belief that it was
+ * sticky, and came back when that turned out to be wrong.
  *
- * Pure: no DOM, no chrome. The finding lives in composer.js.
+ * Pure: no DOM, no chrome. The finding and clicking live in composer.js.
  */
 (function (root) {
   "use strict";
 
-  // The three approval modes, in the order the menu lists them. Not settings —
-  // read only: `label` is the trigger's aria-label and the menu row's opening
-  // words, and `short` is what the trigger renders when there's no room
-  // ("Auto"). Seeing any of them is how a page proves it is Cowork.
+  // The three approval modes, in the order the menu lists them. `key` is what a
+  // job stores; `label` is the trigger's aria-label and the menu row's opening
+  // words; `short` is what the trigger renders when there's no room ("Auto").
   const MODES = [
     { key: "manual", label: "Manually approve", short: "Manual" },
     { key: "auto", label: "Automatically approve", short: "Auto" },
     { key: "skip", label: "Skip all approvals", short: "Skip" },
   ];
 
-  // "Nothing asked for". A job that stores "" means "whatever the page is
-  // already on" — the same contract job.model has, and for the same reason:
-  // acting on the user's behalf is opt-in, so an unset field must never move a
-  // control.
+  // Cowork's own default, and the one the extension leaves alone. A job that
+  // stores "" means "whatever the page is already on" — the same contract
+  // job.model has, and for the same reason: acting on the user's behalf is
+  // opt-in, so an unset field must never move a control.
   const INHERIT = "";
 
   // The two halves of the Chat/Cowork control, which claude.ai calls "Surface"
@@ -59,11 +58,10 @@
   }
 
   /**
-   * The mode a label names — which is to say, whether this label belongs to the
-   * approval control at all. Accepts the trigger's aria-label, a menu row's
-   * full text (which runs the name into its description — "Manually
-   * approveClaude pauses so you can approve each action"), the short form, or a
-   * mode key. Returns a mode key, or "" for anything it doesn't recognise.
+   * The mode a label names. Accepts the trigger's aria-label, a menu row's full
+   * text (which runs the name into its description — "Manually approveClaude
+   * pauses so you can approve each action"), the short form, or a stored key.
+   * Returns a mode key, or "" for anything it doesn't recognise.
    *
    * Prefix, not equality: the row text carries its description with no
    * separator, so an exact match would never fire and a substring match would
@@ -77,6 +75,71 @@
     for (const m of MODES) if (t.indexOf(m.label.toLowerCase()) === 0) return m.key;
     for (const m of MODES) if (t === m.short.toLowerCase()) return m.key;
     return INHERIT;
+  }
+
+  /** The aria-label claude.ai uses for a mode, for finding its trigger or row. */
+  function labelForMode(key) {
+    const m = modeByKey(key);
+    return m ? m.label : "";
+  }
+
+  /** What to show a person: the label, or a word saying we won't touch it. */
+  function describeMode(key) {
+    const m = modeByKey(key);
+    return m ? m.label : "Leave as-is";
+  }
+
+  /** Every label, for building a picker. Unset first, matching the model select. */
+  function modeOptions() {
+    return [{ value: INHERIT, label: "Leave as-is" }].concat(
+      MODES.map((m) => ({ value: m.key, label: m.label }))
+    );
+  }
+
+  /**
+   * Whether a menu row is the one for `key`. The row's text opens with the
+   * mode's name and continues into its description, so this is the prefix test
+   * that `modeFromLabel` would apply, asked the other way round.
+   */
+  function rowIsMode(rowText, key) {
+    const m = modeByKey(key);
+    if (!m) return false;
+    return lower(rowText).indexOf(m.label.toLowerCase()) === 0;
+  }
+
+  /**
+   * What to do about the mode, given what the job asked for and what the page
+   * is on. Returns one of:
+   *
+   *   "inherit"  — the job didn't ask, so nothing is touched
+   *   "ok"       — the page is already on it
+   *   "set"      — click through to `wanted`
+   *   "unknown"  — the job asked, but this page has no approval control at all,
+   *                which means it isn't in Cowork
+   *
+   * The last one is the one that matters. The mode is sticky and invisible in
+   * the URL, so a job that asked for an approval mode and landed somewhere
+   * without the control has NOT quietly got its way — it has been ignored, and
+   * the caller is expected to say so rather than send anyway.
+   */
+  function reconcile(wanted, current) {
+    const want = modeFromLabel(wanted);
+    if (!want) return "inherit";
+    const have = modeFromLabel(current);
+    if (!have) return "unknown";
+    return want === have ? "ok" : "set";
+  }
+
+  /** A note worth carrying back on the send, or "" when there's nothing to say. */
+  function reconcileNote(wanted, current) {
+    switch (reconcile(wanted, current)) {
+      case "set":
+        return "approval set to " + describeMode(wanted);
+      case "unknown":
+        return "asked for " + describeMode(wanted) + " but this page isn't in Cowork — sent as-is";
+      default:
+        return "";
+    }
   }
 
   // ---- the surface itself ------------------------------------------------
@@ -154,8 +217,7 @@
   }
 
   /**
-   * What to do about the Chat/Cowork toggle, given what the job asked for and
-   * what the page is on: "inherit", "ok", "set" or "unknown".
+   * The same four answers as `reconcile`, about the Chat/Cowork toggle.
    *
    * "unknown" means the toggle isn't on this page at all, which is the ordinary
    * case rather than a failure: the control only exists on the composer home,
@@ -168,6 +230,17 @@
     const have = surfaceFromLabel(current);
     if (!have) return "unknown";
     return want === have ? "ok" : "set";
+  }
+
+  /**
+   * Whether a job asking for `wanted` should be touching the approval control
+   * at all. Approval modes belong to Cowork; in Chat there is no such control,
+   * and a job that carries one from an earlier edit shouldn't go hunting for it.
+   */
+  function approvalApplies(surfaceWanted, surfaceCurrent) {
+    const want = surfaceFromLabel(surfaceWanted);
+    if (want) return want === "cowork";
+    return surfaceFromLabel(surfaceCurrent) === "cowork";
   }
 
   /**
@@ -452,6 +525,64 @@
   }
 
   /**
+   * A menu still showing placeholders in a tab that IS visible. Being seen was
+   * the first fix's whole answer, and it is not always enough: the owner's
+   * report after it was that the list comes when the tab has FOCUS. So this is
+   * the rung after menuNeedsTheTab — the tab is in front of its window and the
+   * list still never came — and the remedy it names is borrowing focus, which
+   * takes the screen and so is the driver's to ask for only when the popup's
+   * switch allows it.
+   */
+  function menuNeedsFocus(visibility, menuText) {
+    return String(visibility || "") === "visible" && menuStillLoading(menuText);
+  }
+
+  /**
+   * How the worker gets a page's tab looked at, given the tab and the window
+   * last focused (chrome.windows.getLastFocused, which also says whether Chrome
+   * has the screen at all). One of:
+   *
+   *   "none"       — already the visible tab of its window; nothing to do
+   *   "activate"   — its window is not the one being worked in (or Chrome is
+   *                  not in front at all), so making it that window's visible
+   *                  tab moves nothing the user is looking at
+   *   "own-window" — it sits BEHIND the tab being worked in. Switching that
+   *                  tab is not ours to do; moving this one out into a window
+   *                  of its own, unfocused, is — it becomes visible there and
+   *                  the user's window keeps its tab.
+   */
+  function tabRemedy(tab, focused) {
+    const t = tab || {};
+    if (t.active) return "none";
+    const f = focused || {};
+    if (f.focused && f.id != null && f.id === t.windowId) return "own-window";
+    return "activate";
+  }
+
+  // The popup's Cowork settings. `approval` is the mode a send applies when
+  // the job names none; `borrowFocus` allows the project-list ladder's last
+  // rung, which takes the screen for a few seconds and so is opt-in.
+  const COWORK_KEY = "cum_cowork";
+
+  /** The popup's Cowork settings, normalised from whatever storage holds. */
+  function coworkSettings(stored) {
+    const s = stored && typeof stored === "object" ? stored : {};
+    return {
+      approval: modeFromLabel(s.approval) || INHERIT,
+      borrowFocus: s.borrowFocus === true,
+    };
+  }
+
+  /**
+   * The approval mode a send applies: the job's own, else the popup's default,
+   * else nothing. Returns a mode key or "" — the same contract the job field
+   * has, so an unset default moves nothing.
+   */
+  function effectiveApproval(jobApproval, defaultApproval) {
+    return modeFromLabel(jobApproval) || modeFromLabel(defaultApproval) || INHERIT;
+  }
+
+  /**
    * Whether a project menu is still fetching rather than showing what it has.
    * Cowork's picker renders skeleton rows captioned "Loading" while the list
    * comes off the server, and in that moment the menu has no rows to match, no
@@ -501,6 +632,7 @@
     const j = job || {};
     const out = [];
     if (!j.onSession) out.push("surface");
+    if (j.approval) out.push("approval");
     if (j.project && !j.onSession) out.push("project");
     if (j.model) out.push("model");
     if (j.files) out.push("attach");
@@ -603,6 +735,20 @@
     return "";
   }
 
+  /**
+   * Whether the approval switch demonstrably took. The trigger's own
+   * aria-label IS the mode in force, so it coming round to the wanted mode is
+   * the page's word; the menu row marking itself checked is the same word said
+   * earlier. A menu merely closing is neither — that is as true of Escape.
+   */
+  function approvalTook(ev, wanted) {
+    const want = modeByKey(lower(wanted));
+    if (!want) return false;
+    const e = ev || {};
+    if (modeFromLabel(e.triggerLabel) === want.key) return true;
+    return !!e.rowChecked;
+  }
+
   /** Whether two titles are the same name, letters and digits only — the
    * comparison that survives the invisible characters this markup carries. */
   function sameTitle(a, b) {
@@ -626,8 +772,15 @@
     surfaceOptions,
     reconcileSurface,
     surfaceFromEvidence,
+    approvalApplies,
     surfaceLeftNote,
     modeFromLabel,
+    labelForMode,
+    describeMode,
+    modeOptions,
+    rowIsMode,
+    reconcile,
+    reconcileNote,
     sessionId,
     conversationApiPath,
     isCoworkUrl,
@@ -646,9 +799,15 @@
     isProjectRow,
     menuStillLoading,
     menuNeedsTheTab,
+    menuNeedsFocus,
+    tabRemedy,
+    COWORK_KEY,
+    coworkSettings,
+    effectiveApproval,
     coworkPhases,
     attachOutcome,
     nameSeen,
+    approvalTook,
     isSendCaption,
     sentEvidence,
     sameTitle,
