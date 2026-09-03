@@ -87,13 +87,21 @@
   // can retire live ones and leave a real name unrestored."
   //
   // This module read every header-bearing sheet, pinned tab included, and put
-  // its rows in the reversal map beside the applied ones. That is exactly the
-  // failure the macro's comment describes, and it showed up where a chat title
-  // is minted: the forward map took whichever row came first in workbook order,
-  // so a party bound on BOTH tabs went into the title wearing its PINNED fake —
-  // a fake the reversal map cannot undo, because the applied row it collided
-  // with had just been retired as ambiguous. The title read back in fakes and
-  // nothing on the page could say why.
+  // its rows in the reversal map beside the applied ones — the failure the
+  // macro's comment describes. Two shapes, and they are worth telling apart:
+  //
+  //   A PINNED ROW ON AN APPLIED FAKE (different reals) retires both, exactly
+  //   as the macro says, and the applied party then reverses NOWHERE: a chat
+  //   title carrying it read back in the fake with nothing on the page able to
+  //   say why. This is the break.
+  //
+  //   A PINNED ROW ON THE SAME REAL under its own fake retires nothing — the
+  //   grouping is by fake, so the two sit in different groups and both used to
+  //   survive into `pairs`. What it did instead was quieter: the forward map is
+  //   first-seen per real, so with the pinned tab first in workbook order a
+  //   chat title went out wearing a fake that appears in NO export. It read
+  //   back, but it named the case by something Claude had never been shown, and
+  //   it put a binding that was never applied into the master key.
   //
   // So the tabs are told apart here, the macro's way. Pinned rows still ride
   // along for the WARNING — a pinned party's real name typed into a chat is a

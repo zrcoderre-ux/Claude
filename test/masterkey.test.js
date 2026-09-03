@@ -217,6 +217,25 @@ test("the whole library folds in, newest key on top", () => {
   );
 });
 
+test("staleCases names the cases a reader fix could not reach", () => {
+  const lib = { a: CABOT(), b: STRANGEWAYS() };
+  const built = M.rebuild({ cases: [] }, lib).master;
+  // Freshly distilled: every case carries the reader that made it.
+  assert.deepEqual(M.staleCases(built), []);
+  // What an older build left behind — and what nothing can re-distil, since
+  // rebuild() only walks the library and that case's key has gone.
+  const aged = {
+    cases: built.cases.map((c) =>
+      c.caseNo === "23STCV12345" ? Object.assign({}, c, { parsed: undefined }) : c
+    ),
+  };
+  assert.deepEqual(M.staleCases(aged), [
+    { caseNo: "23STCV12345", real: "23STCV12345 Cabot v. Reyes" },
+  ]);
+  // Still in the library, so a re-read reaches it and the mark clears.
+  assert.deepEqual(M.staleCases(M.rebuild(aged, lib, { force: true }).master), []);
+});
+
 test("a forced rebuild re-reads a held case under the same stamp", () => {
   // A library re-read under a newer parser writes the same keys back under the
   // same savedAt, so the ordinary "only where the key is newer" rule would sit

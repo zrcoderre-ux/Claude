@@ -716,6 +716,24 @@
       for (const c of list.slice(0, 6)) ul.appendChild(el("li", null, c.real || c.caseNo));
       if (list.length > 6) ul.appendChild(el("li", "cum-key-dim", "…and " + (list.length - 6) + " more"));
       box.appendChild(ul);
+      // A case held here after its key left the library can never be distilled
+      // again — rebuild() walks the library, and there is nothing left to read.
+      // So a reader fix reaches every case whose key is still loaded and no
+      // others, and the ones it could not reach are named rather than left
+      // translating a Recents row by rules that were wrong.
+      const behind = M.staleCases ? M.staleCases(master) : [];
+      if (behind.length)
+        box.appendChild(
+          el(
+            "p",
+            "cum-key-line cum-key-warn-text",
+            (behind.length === 1 ? "One case here was" : behind.length + " cases here were") +
+              " distilled by an older reader and their keys have left the library, so they " +
+              "could not be re-read: " +
+              behind.map((c) => c.real).join(", ") +
+              ". Load that case's pseudonym_key.xlsx once and it is corrected."
+          )
+        );
       box.appendChild(
         button("Empty the master key", "cum-key-warn", async () => {
           // Emptied outright rather than case by case: this is the "take the

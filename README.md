@@ -2364,11 +2364,15 @@ row can bind a real value the applied sheet also binds, *under a different
 fake*, so loading both makes two rows claim one pseudonym and the ambiguity
 guard retires **both**. Reading the pinned tab doesn't merely add dead rows —
 it retires live ones. The extension had been reading every sheet with the
-header on it, and the damage showed up exactly where a name is minted without
-anyone watching: a party bound on both tabs went into a **chat title** wearing
-its pinned fake, which the reversal map could not undo because the applied row
-it collided with had just been retired. The title read back in fakes and
-nothing on the page could say why. Now the tabs are told apart: pinned rows
+header on it, and that lands two different ways. A pinned row **on an applied
+row's fake** retires both, and the applied party then reverses nowhere at all —
+a chat title carrying it read back in the fake with nothing on the page able to
+say why. A pinned row **on the same real** under its own fake retires nothing,
+since the grouping is by fake; what it did instead was quieter, because the
+forward map is first-seen and with the pinned tab first in workbook order a
+title went out wearing a fake that appears in **no export** — readable, but
+naming the case by something Claude was never shown, and putting a binding that
+was never applied into the master key. Now the tabs are told apart: pinned rows
 still ride along for the **warning** — a pinned party's real name is exactly
 what must not be typed — and take no part in the reversal, in the ambiguity
 grouping, or in naming the case. Where both tabs bind one real, the **applied**
@@ -2393,6 +2397,16 @@ rows. A key whose workbook was **not** kept — too big, or loaded before that
 store existed — can't be healed that way, so the key panel **names those cases**
 and asks for the spreadsheet again rather than leaving one to read back in
 fakes quietly.
+
+The [master key](#the-master-key-every-case-distilled) follows the library, and
+only the library. A case whose key is still loaded is re-distilled from the
+corrected rows — the case entry is replaced outright, so nothing of the old
+reading survives it. A case whose key has since **left** the library is kept
+here (that is the whole point of the store) and has nothing left to distil
+from, so a reader fix cannot reach it. Those cases are marked with the reader
+that made them and **named in the panel**, because the remedy is one thing —
+load that case's `pseudonym_key.xlsx` once — and a Recents row that quietly
+still reads in the fakes is the failure this whole section is about.
 
 **A possessive is the
 same party** (PDF-Linker's own rule): a bare row covers the possessive —
