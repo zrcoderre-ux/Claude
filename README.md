@@ -2626,6 +2626,18 @@ tab happens to be showing. The sidebar is a list of *different matters*:
    loaded, so a case whose spreadsheet is no longer in the library still reads
    back by name.
 
+**A key that is attached and matching nothing says so.** The button lights for
+the attachment as well as for a swap — the key is a fact about the chat, not
+about what happens to be rendered in it — which means a chat where the key is
+working and a chat where it matches *nothing* look identical from the outside,
+and the second is a translation silently not happening. So when a key is
+attached and the page's count is zero, the panel says which of the three it is:
+nothing carrying a name yet (ordinary), a key with **no reversible rows** at all
+(its warning side and cleaner still work, but nothing it mints can be put back),
+or the **wrong case attached** — for which it prints three of that key's own
+pseudonyms, since a fake is what claude.ai already holds and seeing another
+matter's names there settles it in one glance.
+
 The key button counts titles beside names, and **lights up for titles alone**
 on a page where no chat has a key attached — a sidebar reading in real names is
 still translation, and it never happens without something on screen saying so. The peek toggle puts the fakes

@@ -355,6 +355,22 @@
           : "No key loaded yet."
       )
     );
+    // A key that is attached and matching NOTHING looks exactly like a key that
+    // is working — the button lights for the attachment either way — and that
+    // is a translation silently not happening. So it is said, with a few of
+    // this key's own pseudonyms, which is what makes "the wrong case is
+    // attached" visible in one glance. A fake is what claude.ai already holds,
+    // so showing three of them reveals nothing a chat doesn't.
+    if (attached && keys[attached] && P.matchNothingNote) {
+      const why = P.matchNothingNote({
+        attached: true,
+        names: state.names || 0,
+        titles: state.titles || 0,
+        pairs: (keys[attached].pairs || []).length,
+        sample: P.sampleFakes ? P.sampleFakes(keys[attached], 3) : [],
+      });
+      if (why) box.appendChild(el("p", "cum-key-line cum-key-warn-text", why));
+    }
     // The last few, newest first — and whatever is attached here, whatever its
     // age, or the select could not show its own current value.
     const offered = P.recentKeys ? P.recentKeys(keys, { keep: attached }) : ids;

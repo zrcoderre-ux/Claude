@@ -159,6 +159,65 @@
     );
   }
 
+  // ---- attached, and matching nothing ---------------------------------------
+  //
+  // The key button lights for an ATTACHMENT as well as for a swap, deliberately:
+  // the key is a fact about the chat rather than about what happens to be
+  // rendered in it. But that makes two very different pages look the same — a
+  // chat where the key is working and a chat where the key is attached and
+  // matches NOTHING — and the second one is a translation that silently is not
+  // happening, which is the failure this whole feature exists to not have.
+  //
+  // It has a small number of causes, and they are worth saying rather than
+  // leaving to be worked out:
+  //
+  //   NOTHING TO MATCH YET. A chat whose turns carry no party name and whose
+  //   title claude.ai has not written yet. Ordinary, and not a fault.
+  //   NO REVERSIBLE ROWS. The key parsed, its warning side works and its
+  //   cleaner works, but every binding was dropped from the reversal. Then the
+  //   forward direction mints a fake nothing can put back.
+  //   THE WRONG KEY. It is attached, it compiled, and its pseudonyms belong to
+  //   another matter. Nothing will ever match, and the sample below is what
+  //   makes that visible in one glance — a fake is what claude.ai already
+  //   holds, so showing a few of them reveals nothing a chat doesn't.
+  //
+  // `st`: { attached, names, titles, pairs, sample, master }.
+  function matchNothingNote(st) {
+    const s = st || {};
+    if (!s.attached) return "";
+    if ((s.names || 0) > 0 || (s.titles || 0) > 0) return "";
+    if (!s.pairs)
+      return (
+        "This key has no reversible rows at all — its warning side and its cleaner still " +
+        "work, but nothing it minted can be put back. Load the pseudonym_key.xlsx again; " +
+        "if it reads the same, the spreadsheet has no usable Real Value / Replacement pairs."
+      );
+    const sample = (s.sample || []).filter(Boolean);
+    return (
+      "Attached, and nothing on this page matched it yet. " +
+      (sample.length
+        ? "This key's pseudonyms are " +
+          sample.join(", ") +
+          " — if this case's papers don't use those, the wrong key is attached and the key " +
+          "picker above switches it. "
+        : "") +
+      "Otherwise there is simply nothing here carrying a name yet."
+    );
+  }
+
+  /**
+   * A few of this key's FAKE values, longest first — the ones a caption would
+   * carry. Safe to show: a fake is what claude.ai already holds.
+   */
+  function sampleFakes(key, max) {
+    const n = typeof max === "number" && max > 0 ? max : 3;
+    return ((key && key.pairs) || [])
+      .map((p) => trim(p && p.fake))
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)
+      .slice(0, n);
+  }
+
   function isPinnedSheet(sheet) {
     return fold(sheet && sheet.name) === PINNED_SHEET_NAME;
   }
@@ -1396,6 +1455,8 @@
     PARSE_VERSION,
     keyNeedsReparse,
     staleNote,
+    matchNothingNote,
+    sampleFakes,
     headerIndex,
     isKeepCell,
     parseKey,

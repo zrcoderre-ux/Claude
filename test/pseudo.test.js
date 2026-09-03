@@ -227,6 +227,36 @@ test("staleNote names the cases whose key could not be re-read", () => {
   assert.match(two, /those cases/);
 });
 
+test("matchNothingNote tells an attached key that matched nothing from a working one", () => {
+  const working = { attached: true, names: 4, titles: 1, pairs: 40, sample: ["Marlow"] };
+  assert.strictEqual(P.matchNothingNote(working), "");
+  // Titles alone count: a sidebar reading back IS the key working.
+  assert.strictEqual(P.matchNothingNote(Object.assign({}, working, { names: 0 })), "");
+  // Nothing attached is not this note's business — the panel says that itself.
+  assert.strictEqual(P.matchNothingNote({ attached: false, names: 0, titles: 0, pairs: 40 }), "");
+  const quiet = P.matchNothingNote(Object.assign({}, working, { names: 0, titles: 0 }));
+  assert.match(quiet, /nothing on this page matched it/);
+  assert.match(quiet, /Marlow/); // the sample is what shows the wrong case at a glance
+  // A key with no reversible rows is a different fault and gets its own words.
+  const dead = P.matchNothingNote({ attached: true, names: 0, titles: 0, pairs: 0 });
+  assert.match(dead, /no reversible rows/);
+  assert.ok(dead.indexOf("wrong key") === -1);
+});
+
+test("sampleFakes shows the longest fakes, and only fakes", () => {
+  const key = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 12],
+    ["person", "Rasho", "Strangeways", "", "", "", 30],
+    ["case-number", "23STCV12345", "24STCV99999", "", "", "", 5],
+  ]);
+  // Longest first, so a full name leads; ties keep the key's own order.
+  assert.deepStrictEqual(P.sampleFakes(key, 2), ["Ingrid Strangeways", "Strangeways"]);
+  assert.deepStrictEqual(P.sampleFakes(key, 1), ["Ingrid Strangeways"]);
+  // No real value ever rides along in it.
+  for (const f of P.sampleFakes(key, 9)) assert.ok(!/Rasho|23STCV12345/.test(f));
+  assert.deepStrictEqual(P.sampleFakes(null), []);
+});
+
 test("a row mapping a value onto itself is dropped", () => {
   const key = keyOf([["entity", "M & M", "M & M", "", "", "", 1]]);
   assert.strictEqual(key.pairs.length, 0);
