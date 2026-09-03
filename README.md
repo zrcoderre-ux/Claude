@@ -2359,7 +2359,8 @@ rather than guessed at** — the macro's own fail-safe.
 fix.** PDF-Linker writes two tabs: `Pseudonym Key`, the bindings that were
 applied to the exports, and `Pinned (never in text)`, bindings no export ever
 carried — a party pinned so a later run reuses the same fake. `DeAnonymize.bas`
-finds the first **by name** and never reads the second, and says why: a pinned
+finds the first **by name**, falls back to the **first** tab that is not the
+pinned one, and then STOPS — one sheet, never a set — and says why: a pinned
 row can bind a real value the applied sheet also binds, *under a different
 fake*, so loading both makes two rows claim one pseudonym and the ambiguity
 guard retires **both**. Reading the pinned tab doesn't merely add dead rows —
@@ -2372,7 +2373,12 @@ since the grouping is by fake; what it did instead was quieter, because the
 forward map is first-seen and with the pinned tab first in workbook order a
 title went out wearing a fake that appears in **no export** — readable, but
 naming the case by something Claude was never shown, and putting a binding that
-was never applied into the master key. Now the tabs are told apart: pinned rows
+was never applied into the master key. Now the tabs are told apart, and the reversible rows come off **one sheet**,
+which is the macro's rule and not a detail. Taking every tab that is not named
+exactly `Pinned (never in text)` means a reserved tab under any *other* name —
+a PDF-Linker that words it differently, an operator's own scratch tab — is read
+as applied, collides with the live rows, and retires them. The macro cannot
+have that bug, because it stops at the first sheet it accepts. Pinned rows
 still ride along for the **warning** — a pinned party's real name is exactly
 what must not be typed — and take no part in the reversal, in the ambiguity
 grouping, or in naming the case. Where both tabs bind one real, the **applied**
@@ -2634,7 +2640,9 @@ and the second is a translation silently not happening. So when a key is
 attached and the page's count is zero, the panel says which of the three it is:
 nothing carrying a name yet (ordinary), a key with **no reversible rows** at all
 (its warning side and cleaner still work, but nothing it mints can be put back),
-or the **wrong case attached** — for which it prints three of that key's own
+or the **wrong case attached**. It names **which tab** the bindings were read
+off, since every key file is called `pseudonym_key.xlsx` and every one of them
+has more than one tab in it; for the wrong-case reading it prints three of that key's own
 pseudonyms, since a fake is what claude.ai already holds and seeing another
 matter's names there settles it in one glance.
 
