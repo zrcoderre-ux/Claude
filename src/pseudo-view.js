@@ -1356,7 +1356,18 @@
 
   // Replace the just-typed real (and whatever `tail` should follow it — the
   // space, on the autocorrect path) with the fake, in place.
-  function swapIn(ed, hit, tail) {
+  // NOT the display sweep's swapIn above. This one drives the EDITOR: it types
+  // the fake over the real name the caret just finished. The two were both
+  // called swapIn, at the top level of one IIFE, and a function declaration
+  // does not scope — the later one simply replaced the earlier for every call
+  // site in the file. So every sweep called this with (element, compiled),
+  // read hit.matched.length off a compiled matcher, threw, and the whole
+  // display translation stopped: no messages, no titles, no tab title, on
+  // every page, while the key button went on lighting for the attachment and
+  // saying nothing was matched. Names inside one scope are one namespace;
+  // test/load.test.js now fails on a repeat rather than leaving it to be found
+  // by a chat that would not read back.
+  function typeOverCaret(ed, hit, tail) {
     const sel = window.getSelection();
     for (let i = 0; i < hit.matched.length; i++) sel.modify("extend", "backward", "character");
     ed.focus();
@@ -1371,7 +1382,7 @@
   function swapAtCaret() {
     const at = hitAtCaret();
     if (!at || !tipHit || P.fold(at.hit.real) !== P.fold(tipHit.real)) return false;
-    swapIn(at.ed, at.hit, "");
+    typeOverCaret(at.ed, at.hit, "");
     return true;
   }
 
@@ -1380,7 +1391,7 @@
   function spaceAtCaret() {
     const at = hitAtCaret();
     if (!at || at.sig === tipDismissed || !P.swapsOnSpace(at.hit)) return false;
-    swapIn(at.ed, at.hit, " ");
+    typeOverCaret(at.ed, at.hit, " ");
     return true;
   }
 

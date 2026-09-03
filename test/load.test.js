@@ -238,3 +238,39 @@ test("the key button actually lands in the tray", () => {
   assert.ok(btn, "the key slot is empty — the button was built and never placed");
   assert.ok(btn.isConnected, "the key button was placed but is not connected");
 });
+
+test("no file declares one function name twice in one scope", () => {
+  // A function declaration does not scope to where it is written: two of them
+  // sharing a name at the top level of one IIFE are ONE binding, and the later
+  // one silently replaces the earlier for every call site in the file — no
+  // error, no warning, at load or at call.
+  //
+  // src/pseudo-view.js had two `swapIn`s, the display sweep's and the
+  // typeahead's, added a year apart. Every sweep called the typeahead's with a
+  // compiled matcher where it wanted a hit, threw on the first turn, and the
+  // whole display translation stopped — no messages, no titles, no tab title,
+  // on every page — while the key button went on lighting for the attachment
+  // and reporting nothing matched. Nothing in the suite could see it, because
+  // every module still LOADED and every pure decision was still right.
+  //
+  // Checked at ONE depth: every file here is a single IIFE, so a declaration
+  // indented two spaces is a module-level helper and two of them sharing a
+  // name share a binding. Deeper declarations are skipped deliberately — two
+  // Promise executors each with their own onMsg are two scopes that happen to
+  // sit at one indent, and flagging those would be noise standing in front of
+  // the real thing. Module-level is where the helpers that everything calls
+  // live, and it is where this went wrong.
+  const offenders = [];
+  for (const rel of contentScripts()) {
+    const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
+    const seen = new Map(); // name -> first line
+    src.split("\n").forEach((line, i) => {
+      const m = line.match(/^  function\s+([A-Za-z_$][\w$]*)\s*\(/);
+      if (!m) return;
+      if (seen.has(m[1]))
+        offenders.push(rel + ": " + m[1] + "() at lines " + seen.get(m[1]) + " and " + (i + 1));
+      else seen.set(m[1], i + 1);
+    });
+  }
+  assert.deepStrictEqual(offenders, [], "a later declaration silently replaces the earlier one");
+});
