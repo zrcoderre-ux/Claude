@@ -17,7 +17,7 @@
  *                 ambiguous — retired from reversal rather than guessed at —
  *                 and the bindings come off the APPLIED sheet, never the
  *                 "Pinned (never in text)" tab, which the macro refuses to read
- *                 for a reason that bit here too (see appliedSheets).
+ *                 for a reason that bit here too (see appliedSheet).
  *   - compile / translate:  fake → real for DISPLAY. Longest fake first so a
  *                 bare surname token never rewrites part of a longer full
  *                 name; whole words only; case-insensitive with an ALL-CAPS
@@ -120,7 +120,10 @@
   //
   //   2  the pinned tab is out of the reversal, and a fake claimed by one
   //      name's own casing pair is no longer retired as ambiguous.
-  const PARSE_VERSION = 2;
+  //   3  the applied rows come off ONE sheet, the macro's own FindKeySheet
+  //      rule — not off every tab that isn't named exactly "Pinned (never in
+  //      text)", which let a differently named second tab retire live rows.
+  const PARSE_VERSION = 3;
 
   /** Was this stored key built by an older reader than the one running now? */
   function keyNeedsReparse(key) {
@@ -186,15 +189,19 @@
     const s = st || {};
     if (!s.attached) return "";
     if ((s.names || 0) > 0 || (s.titles || 0) > 0) return "";
+    const off = trim(s.sheet) ? ' (read off the "' + trim(s.sheet) + '" sheet)' : "";
     if (!s.pairs)
       return (
-        "This key has no reversible rows at all — its warning side and its cleaner still " +
-        "work, but nothing it minted can be put back. Load the pseudonym_key.xlsx again; " +
-        "if it reads the same, the spreadsheet has no usable Real Value / Replacement pairs."
+        "This key has no reversible rows at all" +
+        off +
+        " — its warning side and its cleaner still work, but nothing it minted can be put " +
+        "back. If that is not the tab your key's bindings are on, that is the fault: the " +
+        'reversible rows are taken off the tab named "Pseudonym Key", else the first tab ' +
+        "that is not the pinned one, which is the macro's own rule."
       );
     const sample = (s.sample || []).filter(Boolean);
     return (
-      "Attached, and nothing on this page matched it yet. " +
+      "Attached" + off + ", and nothing on this page matched it yet. " +
       (sample.length
         ? "This key's pseudonyms are " +
           sample.join(", ") +
@@ -223,16 +230,27 @@
   }
 
   /**
-   * The header-bearing sheets whose rows were APPLIED to the exports — the ones
-   * a draft's fakes can have come from. FindKeySheet's rule: the tab titled
-   * "Pseudonym Key" wherever it sits, else every header-bearing tab that is not
-   * the pinned one (which is what a key from an older PDF-Linker looks like —
-   * one sheet, no title). Never the pinned tab, even as the last fallback.
+   * The ONE sheet whose rows were APPLIED to the exports — the only sheet a
+   * draft's fakes can have come from — or null.
+   *
+   * FindKeySheet's rule exactly, and "exactly" is the point: the tab titled
+   * "Pseudonym Key" wherever it sits, else the FIRST header-bearing tab that is
+   * not the pinned one, else nothing. Never the pinned tab, not even as the
+   * last fallback.
+   *
+   * One sheet, not "every sheet that isn't the pinned one", which is where this
+   * first landed. The difference only shows on a key whose applied tab is not
+   * titled — an older PDF-Linker — and there it is the whole ballgame: taking
+   * every non-pinned tab means a second tab whose name is not the exact string
+   * below is read as applied, its rows collide with the real ones, and the
+   * ambiguity guard retires both. The macro cannot have that bug, because it
+   * stops at the first sheet it accepts. Neither can this now.
    */
-  function appliedSheets(sheets) {
+  function appliedSheet(sheets) {
     const withHeader = (sheets || []).filter((s) => headerIndex((s && s.rows) || []) !== -1);
-    const named = withHeader.filter((s) => fold(s && s.name) === KEY_SHEET_NAME);
-    return named.length ? named : withHeader.filter((s) => !isPinnedSheet(s));
+    for (const s of withHeader) if (fold(s && s.name) === KEY_SHEET_NAME) return s;
+    for (const s of withHeader) if (!isPinnedSheet(s)) return s;
+    return null;
   }
 
   // An operator KEEP typed into the Replacement cell — "no"/"never" (leave the
@@ -261,7 +279,7 @@
   /**
    * Key workbook → the map. `sheets` is what CUMXlsx.parseXlsx returns. Every
    * sheet carrying the header fingerprint is read, and the APPLIED ones are
-   * told from the pinned tab (appliedSheets, above): a pinned party's fake
+   * told from the pinned tab (appliedSheet, above): a pinned party's fake
    * can't appear in text written from these exports — so it is never reversed
    * and never collides with an applied row — but its REAL name is exactly what
    * the warning exists to catch, so the row still rides along for that.
@@ -276,12 +294,12 @@
   function parseKey(sheets, name) {
     const entries = [];
     let keeps = 0;
-    const applied = appliedSheets(sheets);
+    const applied = appliedSheet(sheets);
     for (const sheet of sheets || []) {
       const rows = (sheet && sheet.rows) || [];
       const hi = headerIndex(rows);
       if (hi === -1) continue;
-      const pinned = applied.indexOf(sheet) === -1;
+      const pinned = sheet !== applied;
       const heads = (rows[hi] || []).map(fold);
       const realCol = heads.indexOf("real value");
       const fakeCol = heads.indexOf("replacement");
@@ -326,7 +344,7 @@
     for (const d of derived) entries.push(d);
 
     // Reversal: exactly one row may own each fake. Pinned rows are out of this
-    // direction entirely (see appliedSheets) — their fakes are in no export, so
+    // direction entirely (see appliedSheet) — their fakes are in no export, so
     // searching for one is at best wasted work and at worst retires the applied
     // row it collides with. Alt-spelling rows never own either. What is left is
     // the macro's own guard: two CANONICAL rows claiming one fake, and the
@@ -404,6 +422,11 @@
     return {
       name: name || "",
       parsed: PARSE_VERSION,
+      // WHICH TAB the reversible rows came off, so the panel can say it. Every
+      // case's key file is called pseudonym_key.xlsx and every one of them has
+      // more than one tab in it; "which sheet did you read" was the question
+      // this feature could not answer about itself for three rounds of hunting.
+      sheet: (applied && trim(applied.name)) || "",
       rows: entries.length,
       pairs: pairs,
       warn: warn,
@@ -1451,7 +1474,7 @@
     isKeyFileName,
     sheetsLookLikeKey,
     isPinnedSheet,
-    appliedSheets,
+    appliedSheet,
     PARSE_VERSION,
     keyNeedsReparse,
     staleNote,
