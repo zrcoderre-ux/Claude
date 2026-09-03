@@ -367,6 +367,7 @@
         names: state.names || 0,
         titles: state.titles || 0,
         pairs: (keys[attached].pairs || []).length,
+        sheet: keys[attached].sheet || "",
         sample: P.sampleFakes ? P.sampleFakes(keys[attached], 3) : [],
       });
       if (why) box.appendChild(el("p", "cum-key-line cum-key-warn-text", why));

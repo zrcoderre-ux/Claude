@@ -166,19 +166,41 @@ test("a real bound on both tabs is cleaned to the APPLIED fake", () => {
   assert.strictEqual(P.translate(P.compile(key), fake).text, folder);
 });
 
-test("appliedSheets follows FindKeySheet: by name, never the pinned tab", () => {
+test("appliedSheet follows FindKeySheet: one sheet, by name, never the pinned tab", () => {
   const named = sheet("Pseudonym Key", [HEADERS, ["person", "A", "B", "", "", "", 1]]);
   const pinned = sheet("Pinned (never in text)", [HEADERS, ["person", "C", "D", "", "", "", 0]]);
   const other = sheet("Scratch", [HEADERS, ["person", "E", "F", "", "", "", 1]]);
+  const second = sheet("Reserved", [HEADERS, ["person", "G", "H", "", "", "", 0]]);
   const noHeader = sheet("Notes", [["just", "a", "note"]]);
   // The titled tab wins wherever it sits, and nothing else is applied beside it.
-  assert.deepStrictEqual(P.appliedSheets([pinned, other, named]), [named]);
-  // No titled tab (an older PDF-Linker wrote one sheet): every non-pinned one.
-  assert.deepStrictEqual(P.appliedSheets([pinned, other, noHeader]), [other]);
+  assert.strictEqual(P.appliedSheet([pinned, other, named]), named);
+  // No titled tab (an older PDF-Linker): the FIRST non-pinned one, and only it.
+  assert.strictEqual(P.appliedSheet([pinned, other, noHeader]), other);
+  // The case that made this one sheet rather than all of them: a second tab
+  // whose name is not the exact pinned string is still not the applied sheet.
+  assert.strictEqual(P.appliedSheet([other, second]), other);
   // Nothing but the pinned tab: nothing is applied — not even as a fallback.
-  assert.deepStrictEqual(P.appliedSheets([pinned]), []);
+  assert.strictEqual(P.appliedSheet([pinned]), null);
+  assert.strictEqual(P.appliedSheet([]), null);
   assert.ok(P.isPinnedSheet(pinned));
   assert.ok(!P.isPinnedSheet(named));
+});
+
+test("a second tab under any name cannot retire the applied rows", () => {
+  // The shape #296 still got wrong: PDF-Linker's reserved tab, named something
+  // this module had never heard of, read as applied and colliding on a fake.
+  const key = P.parseKey(
+    [
+      sheet("Pseudonym Key", [HEADERS, ["person", "Helen Rasho", "Marlow", "", "", "", 12]]),
+      sheet("Reserved names", [HEADERS, ["person", "Gregory Walton", "Marlow", "", "", "", 0]]),
+    ],
+    "pseudonym_key.xlsx"
+  );
+  assert.strictEqual(key.dropped.ambiguous, 0);
+  assert.deepStrictEqual(key.pairs, [{ fake: "Marlow", real: "Helen Rasho" }]);
+  assert.strictEqual(key.sheet, "Pseudonym Key");
+  // The reserved party still warns — it is a real name that must not be typed.
+  assert.deepStrictEqual(key.warn.map((w) => w.real), ["Helen Rasho", "Gregory Walton"]);
 });
 
 test("a casing pair on one fake restores, and is not ambiguous", () => {
@@ -241,6 +263,15 @@ test("matchNothingNote tells an attached key that matched nothing from a working
   const dead = P.matchNothingNote({ attached: true, names: 0, titles: 0, pairs: 0 });
   assert.match(dead, /no reversible rows/);
   assert.ok(dead.indexOf("wrong key") === -1);
+  // Which TAB it read is the thing that could not be asked for three rounds.
+  assert.match(
+    P.matchNothingNote({ attached: true, names: 0, titles: 0, pairs: 0, sheet: "Sheet1" }),
+    /read off the "Sheet1" sheet/
+  );
+  assert.match(
+    P.matchNothingNote(Object.assign({}, working, { names: 0, titles: 0, sheet: "Pseudonym Key" })),
+    /read off the "Pseudonym Key" sheet/
+  );
 });
 
 test("sampleFakes shows the longest fakes, and only fakes", () => {
