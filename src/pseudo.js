@@ -13,8 +13,11 @@
  *                 Replacement column ("no", "never", "[...]", "{...}") are
  *                 instructions rather than pseudonyms and are dropped, an
  *                 "alt spelling" row is forward-only (its fake belongs to the
- *                 canonical row), and a fake claimed by two canonical reals is
- *                 ambiguous — retired from reversal rather than guessed at.
+ *                 canonical row), a fake claimed by two canonical reals is
+ *                 ambiguous — retired from reversal rather than guessed at —
+ *                 and the bindings come off the APPLIED sheet, never the
+ *                 "Pinned (never in text)" tab, which the macro refuses to read
+ *                 for a reason that bit here too (see appliedSheets).
  *   - compile / translate:  fake → real for DISPLAY. Longest fake first so a
  *                 bare surname token never rewrites part of a longer full
  *                 name; whole words only; case-insensitive with an ALL-CAPS
@@ -66,6 +69,105 @@
     return false;
   }
 
+  // ---- which sheet the bindings live on -------------------------------------
+  //
+  // PDF-Linker writes TWO tabs, and only one of them is reversible:
+  //
+  //   "Pseudonym Key"           the bindings that were APPLIED to the exports.
+  //                             These are the fakes a draft written from those
+  //                             exports actually carries.
+  //   "Pinned (never in text)"  bindings no export ever carried — a party
+  //                             pinned so a later run reuses the same fake.
+  //
+  // DeAnonymize.bas reads the first by name and NEVER reads the second, and its
+  // own comment says why in terms that apply here word for word: "a pinned row
+  // can bind a real value the applied sheet also binds, under a different fake.
+  // Loaded together, two rows then claim one pseudonym and the ambiguity guard
+  // retires BOTH — so reading the pinned tab does not merely add dead rows, it
+  // can retire live ones and leave a real name unrestored."
+  //
+  // This module read every header-bearing sheet, pinned tab included, and put
+  // its rows in the reversal map beside the applied ones. That is exactly the
+  // failure the macro's comment describes, and it showed up where a chat title
+  // is minted: the forward map took whichever row came first in workbook order,
+  // so a party bound on BOTH tabs went into the title wearing its PINNED fake —
+  // a fake the reversal map cannot undo, because the applied row it collided
+  // with had just been retired as ambiguous. The title read back in fakes and
+  // nothing on the page could say why.
+  //
+  // So the tabs are told apart here, the macro's way. Pinned rows still ride
+  // along for the WARNING — a pinned party's real name typed into a chat is a
+  // leak like any other — and they take no part in the reversal (`pairs`), in
+  // the ambiguity grouping, or in naming the case (`hint`).
+  const KEY_SHEET_NAME = "pseudonym key";
+  const PINNED_SHEET_NAME = "pinned (never in text)";
+
+  // Which READER made a stored key. A parsed key outlives the code that parsed
+  // it — the library holds `pairs` and `warn`, not the workbook — so a fix to
+  // the rules above heals nothing already loaded, and the operator's live cases
+  // are exactly the ones that matter. The loaders keep each key's workbook
+  // beside the library (src/keyfile.js), so the worker can re-read them; this
+  // is what tells it which ones are behind. Bump it whenever a change here
+  // would parse the same workbook differently.
+  //
+  //   2  the pinned tab is out of the reversal, and a fake claimed by one
+  //      name's own casing pair is no longer retired as ambiguous.
+  const PARSE_VERSION = 2;
+
+  /** Was this stored key built by an older reader than the one running now? */
+  function keyNeedsReparse(key) {
+    return !key || key.parsed !== PARSE_VERSION;
+  }
+
+  /**
+   * What to say about keys the worker could not re-read (background.js,
+   * reparseKeys) — "" when there are none.
+   *
+   * A key still on an older reader still translates; it just translates by the
+   * rules that were wrong, and the case it belongs to is one whose chats may
+   * be sitting there in the fakes. That is precisely the silent half-working
+   * this feature cannot afford, so it is said, by name, with the one thing
+   * that fixes it.
+   *
+   * Read off the LIBRARY rather than off a list the worker keeps: a key still
+   * carrying an older `parsed` IS the stale one, so there is no second store to
+   * fall out of step with what the worker managed to heal.
+   */
+  function staleNote(keys) {
+    const lib = keys || {};
+    const names = Object.keys(lib)
+      .filter((id) => lib[id] && keyNeedsReparse(lib[id]))
+      .map((id) => keyTitle(lib[id]));
+    if (!names.length) return "";
+    return (
+      (names.length === 1 ? "One case's key was" : names.length + " cases' keys were") +
+      " loaded by an older reader and the spreadsheet is no longer kept here, so " +
+      (names.length === 1 ? "it could" : "they could") +
+      " not be re-read: " +
+      names.join(", ") +
+      ". Load the pseudonym_key.xlsx again — until then " +
+      (names.length === 1 ? "that case" : "those cases") +
+      " may read back in the fakes."
+    );
+  }
+
+  function isPinnedSheet(sheet) {
+    return fold(sheet && sheet.name) === PINNED_SHEET_NAME;
+  }
+
+  /**
+   * The header-bearing sheets whose rows were APPLIED to the exports — the ones
+   * a draft's fakes can have come from. FindKeySheet's rule: the tab titled
+   * "Pseudonym Key" wherever it sits, else every header-bearing tab that is not
+   * the pinned one (which is what a key from an older PDF-Linker looks like —
+   * one sheet, no title). Never the pinned tab, even as the last fallback.
+   */
+  function appliedSheets(sheets) {
+    const withHeader = (sheets || []).filter((s) => headerIndex((s && s.rows) || []) !== -1);
+    const named = withHeader.filter((s) => fold(s && s.name) === KEY_SHEET_NAME);
+    return named.length ? named : withHeader.filter((s) => !isPinnedSheet(s));
+  }
+
   // An operator KEEP typed into the Replacement cell — "no"/"never" (leave the
   // Real Value verbatim), "[bracketed]"/"{braced}" keep-specs. Not a pseudonym:
   // it never appeared in any export, so it reverses nothing — and the value it
@@ -90,24 +192,29 @@
   const POSS_MATCH_RE = /['’][sS]$/;
 
   /**
-   * Key workbook → the map. `sheets` is what CUMXlsx.parseXlsx returns; every
-   * sheet carrying the header fingerprint is read, which takes the pinned
-   * "Pinned (never in text)" sheet along — a pinned party's fake can't appear
-   * in text written from these exports, but its REAL name is exactly what the
-   * warning exists to catch.
+   * Key workbook → the map. `sheets` is what CUMXlsx.parseXlsx returns. Every
+   * sheet carrying the header fingerprint is read, and the APPLIED ones are
+   * told from the pinned tab (appliedSheets, above): a pinned party's fake
+   * can't appear in text written from these exports — so it is never reversed
+   * and never collides with an applied row — but its REAL name is exactly what
+   * the warning exists to catch, so the row still rides along for that.
    *
    * Returns { name, rows, pairs, warn, dropped }:
-   *   pairs — [{fake, real}] for display reversal, unambiguous owners only
-   *   warn  — [{real, fake}] real values that must not be typed, with the
-   *           stand-in to suggest instead
+   *   pairs — [{fake, real}] for display reversal, unambiguous APPLIED owners
+   *   warn  — [{real, fake, pinned}] real values that must not be typed, with
+   *           the stand-in to suggest instead. A real bound on BOTH tabs keeps
+   *           the APPLIED fake, whatever order the sheets came in: that is the
+   *           one a reader can reverse.
    */
   function parseKey(sheets, name) {
     const entries = [];
     let keeps = 0;
+    const applied = appliedSheets(sheets);
     for (const sheet of sheets || []) {
       const rows = (sheet && sheet.rows) || [];
       const hi = headerIndex(rows);
       if (hi === -1) continue;
+      const pinned = applied.indexOf(sheet) === -1;
       const heads = (rows[hi] || []).map(fold);
       const realCol = heads.indexOf("real value");
       const fakeCol = heads.indexOf("replacement");
@@ -128,6 +235,7 @@
           fake: fake,
           alt: statusCol !== -1 && fold(row[statusCol]) === ALT_STATUS,
           occ: isFinite(occ) && occ > 0 ? occ : 0,
+          pinned: pinned,
         });
       }
     }
@@ -146,15 +254,19 @@
       const baseFake = e.fake.replace(POSS_TAIL_RE, "");
       if (!baseReal || !baseFake || haveReal.has(fold(baseReal))) continue;
       haveReal.add(fold(baseReal));
-      derived.push({ real: baseReal, fake: baseFake, alt: e.alt, occ: 0 });
+      derived.push({ real: baseReal, fake: baseFake, alt: e.alt, occ: 0, pinned: e.pinned });
     }
     for (const d of derived) entries.push(d);
 
-    // Reversal: exactly one row may own each fake. Alt-spelling rows never
-    // own; two CANONICAL rows claiming one fake is ambiguous and the mapping
-    // is retired (the macro's fail-safe) rather than restored to a coin flip.
+    // Reversal: exactly one row may own each fake. Pinned rows are out of this
+    // direction entirely (see appliedSheets) — their fakes are in no export, so
+    // searching for one is at best wasted work and at worst retires the applied
+    // row it collides with. Alt-spelling rows never own either. What is left is
+    // the macro's own guard: two CANONICAL rows claiming one fake, and the
+    // mapping is retired rather than restored to a coin flip.
     const byFake = new Map();
     for (const e of entries) {
+      if (e.pinned) continue;
       const k = fold(e.fake);
       if (!byFake.has(k)) byFake.set(k, []);
       byFake.get(k).push(e);
@@ -166,7 +278,14 @@
       // A group that is ALL synthetic promotes one row, exactly as write_key
       // does — a fake with no owner at all would reverse to nothing.
       const own = owners.length ? owners : [group[0]];
-      if (own.length > 1) {
+      // Ambiguous only when the REALS actually differ, which is the macro's
+      // test (vbTextCompare) rather than a row count. Two rows on one fake are
+      // usually the casing pair of a single name — "GARDELLA" from the caption
+      // and "Gardella" from the body — and they restore identically, since the
+      // swap recases from the matched text. Retiring those took the caption's
+      // own parties out of the reversal, which is where a case folder's name
+      // comes from and why a chat title kept its fakes.
+      if (new Set(own.map((e) => fold(e.real))).size > 1) {
         ambiguous++;
         continue;
       }
@@ -175,24 +294,41 @@
       pairs.push({ fake: e.fake, real: e.real });
     }
 
-    // The warning list: every real value the key binds, alt spellings
-    // included — an OCR near-miss of a party's name is still that party.
+    // The warning list: every real value the key binds, alt spellings and
+    // pinned rows included — an OCR near-miss of a party's name is still that
+    // party, and a party this batch never mentioned is still a name that must
+    // not be typed into a chat.
+    //
+    // The FAKE beside it is the stand-in the cleaner offers and the chat title
+    // is minted from, so a real bound on both tabs takes the APPLIED row's:
+    // first-seen let workbook order decide, and where it landed on the pinned
+    // tab the extension minted a title out of a fake nothing could reverse.
     const warn = [];
-    const seenReal = new Set();
+    const seenReal = new Map();
     for (const e of entries) {
       const k = fold(e.real);
-      if (seenReal.has(k)) continue;
-      seenReal.add(k);
-      warn.push({ real: e.real, fake: e.fake });
+      const at = seenReal.get(k);
+      if (at === undefined) {
+        seenReal.set(k, warn.length);
+        warn.push({ real: e.real, fake: e.fake, pinned: !!e.pinned });
+        continue;
+      }
+      if (warn[at].pinned && !e.pinned) {
+        warn[at].fake = e.fake;
+        warn[at].pinned = false;
+      }
     }
 
     // Which CASE this key belongs to, said in one value: the real name the
     // exports used most. Every key is named pseudonym_key.xlsx, so the
     // filename can't tell two cases apart in a list — the lead party can.
+    // Off the APPLIED rows only: a pinned party is one these filings never
+    // mentioned, so naming the case after it would name it after the party it
+    // is least about.
     let hint = "";
     let hintOcc = -1;
     for (const e of entries) {
-      if (!e.alt && !isCommonReal(e.real) && e.occ > hintOcc) {
+      if (!e.pinned && !e.alt && !isCommonReal(e.real) && e.occ > hintOcc) {
         hint = e.real;
         hintOcc = e.occ;
       }
@@ -200,11 +336,16 @@
 
     return {
       name: name || "",
+      parsed: PARSE_VERSION,
       rows: entries.length,
       pairs: pairs,
       warn: warn,
       hint: hint,
-      dropped: { keeps: keeps, ambiguous: ambiguous },
+      dropped: {
+        keeps: keeps,
+        ambiguous: ambiguous,
+        pinned: entries.filter((e) => e.pinned).length,
+      },
     };
   }
 
@@ -620,10 +761,18 @@
 
   /**
    * FORWARD matcher: real → fake, the ReAnonymize direction, for the badge's
-   * cleaner box. Built from the same rows the warning watches (alt spellings
+   * cleaner box and for the chat titles a run and the Folder button mint
+   * (nameCleaner). Built from the same rows the warning watches (alt spellings
    * included — real→fake is exactly what they are for; keeps and common
    * words excluded), longest real first so a full name wins over its own
    * tokens. translate() runs it — same engine, opposite direction.
+   *
+   * What it emits has to be something compile() can put back, or a title goes
+   * out in a fake that reads back as a fake forever. parseKey holds that end
+   * up: where the applied sheet and the pinned tab both bind a real, the warn
+   * row carries the APPLIED fake — the one in `pairs`. A real the pinned tab
+   * alone binds still swaps, because its reserved fake beats its real name in
+   * a title even though nothing will reverse it.
    */
   function compileForward(key) {
     const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
@@ -1234,6 +1383,11 @@
   const api = {
     isKeyFileName,
     sheetsLookLikeKey,
+    isPinnedSheet,
+    appliedSheets,
+    PARSE_VERSION,
+    keyNeedsReparse,
+    staleNote,
     headerIndex,
     isKeepCell,
     parseKey,

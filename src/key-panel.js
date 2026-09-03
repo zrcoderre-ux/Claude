@@ -644,6 +644,12 @@
           "extension popup."
       )
     );
+    // A key the worker could not re-read under the current parser still
+    // translates — by the rules that were wrong — so the cases it covers are
+    // named here rather than left to read back in fakes with nothing on screen
+    // saying why. See background.js, reparseKeys.
+    const staleSaid = P.staleNote ? P.staleNote(keys) : "";
+    if (staleSaid) box.appendChild(el("p", "cum-key-line cum-key-warn-text", staleSaid));
     const row = el("div", "cum-key-row");
     // A FOLDER rather than the file. Every case's key is named
     // pseudonym_key.xlsx, so the file cannot say which matter it is — the
