@@ -2839,6 +2839,18 @@ The panel under it holds, in order:
   appears only where the key knows the whole case: a distilled master key would
   swap the parties, hand back everything else verbatim, and look cleaned.
 
+One name, one scope. The display sweep's `swapIn` and the typeahead's were
+both declared at the top level of this file's single IIFE, a year apart, and a
+function declaration does not scope to where it is written: the later one
+simply replaced the earlier for every call site in the file. So every sweep
+called the typeahead's with a compiled matcher where it wanted a hit, threw on
+the first turn, and **the whole display translation stopped** — no messages, no
+titles, no tab title, on every page — while the key button went on lighting for
+the attachment and reporting that nothing had matched. Nothing in the suite
+could see it: every module still loaded and every pure decision was still
+right. `test/load.test.js` now fails on a module-level name declared twice in
+one file, which is the only place this class of bug can hide.
+
 The decisions it renders live where they always did. `src/pseudo-view.js` owns
 the keys, the sweep and the peek and publishes them; `src/pseudo.js` owns what a
 key is; `src/masterkey.js` owns the distilled cases. The panel is the button and
