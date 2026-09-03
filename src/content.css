@@ -1815,6 +1815,9 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 .cum-key-primary { border-color: #c96442; background: #c96442; color: #fff; }
 .cum-key-primary:hover { background: #b85838; }
 .cum-key-warn { border-color: #7a3a3a; }
+/* A case whose key could not be re-read under the current parser. Said in the
+   panel's own warning colour: it still translates, by rules that were wrong. */
+.cum-key-warn-text { color: #e8a08a; }
 .cum-key-peek { margin-top: 2px; }
 .cum-key-x { border: none; background: none; padding: 2px 6px; }
 .cum-key-x:hover { background: rgba(255, 255, 255, 0.1); }

@@ -29,7 +29,12 @@ importScripts(
   // The master key is kept up to date HERE, from the library's own storage
   // writes, rather than at each of the three places a key can be loaded. One
   // implementation, and it catches the fourth place too.
-  "masterkey.js"
+  "masterkey.js",
+  // ...and for the same reason the library is RE-READ here when the parser
+  // changes: the workbooks are kept beside it, and reparseKeys needs both to
+  // heal a key loaded under an older reader. See reparseKeys.
+  "xlsxread.js",
+  "keyfile.js"
 );
 
 const CFG_KEY = "cum_autocontinue";
@@ -3003,13 +3008,13 @@ chrome.alarms.onAlarm.addListener((a) => {
 // gone and whose chats would otherwise go back to reading as fakes. Emptying
 // it is the popup's own control, and the only way it happens.
 let masterBusy = false;
-async function refreshMasterKey() {
+async function refreshMasterKey(opts) {
   const M = self.CUMMasterKey;
   if (!M || masterBusy) return;
   masterBusy = true;
   try {
     const res = await get([PSEUDO_KEYS_KEY, MASTER_KEY]);
-    const got = M.rebuild(res[MASTER_KEY], res[PSEUDO_KEYS_KEY] || {});
+    const got = M.rebuild(res[MASTER_KEY], res[PSEUDO_KEYS_KEY] || {}, opts);
     // Written only when it CHANGED: this runs off a storage write, and writing
     // back unconditionally would be a storage event answering a storage event.
     if (!got.added && !got.refreshed) return;
@@ -3018,6 +3023,82 @@ async function refreshMasterKey() {
     /* the next key load tries again; nothing here is load-bearing for a send */
   } finally {
     masterBusy = false;
+  }
+}
+
+// ---- a library read under an older reader --------------------------------
+//
+// A parsed key outlives the code that parsed it. The library stores `pairs`
+// and `warn`, not the workbook, so a fix to src/pseudo.js heals nothing
+// already loaded — and the cases already loaded are the ones being worked on.
+// The pinned-tab fix (P.PARSE_VERSION 2) is exactly that shape: every key
+// carrying a "Pinned (never in text)" tab had live mappings retired, and a
+// chat titled from one read back in fakes with nothing on the page to say why.
+//
+// The loaders keep each key's own workbook beside the library (keyfile.js), so
+// those keys can simply be read again. Under the SAME library id, which is
+// what makes every chat and run attached to one follow onto the new rows.
+//
+// A key whose workbook was never kept (too big, or loaded before the store
+// existed) cannot be healed here. It is left exactly as it is and COUNTED, so
+// the key panel can say which cases want their spreadsheet loaded again rather
+// than leaving the operator to notice a case that quietly still reads in
+// fakes. Silence is what this whole bug was made of.
+async function reparseKeys() {
+  const P = self.CUMPseudo;
+  const X = self.CUMXlsx;
+  const KF = self.CUMKeyFile;
+  if (!P || !P.keyNeedsReparse || !X || !X.parseXlsx || !KF) return;
+  try {
+    const res = await get([PSEUDO_KEYS_KEY, KF.FILES_KEY]);
+    const keys = res[PSEUDO_KEYS_KEY] || {};
+    const files = res[KF.FILES_KEY] || {};
+    // Tried ONCE per reader, not once per worker start. The auto-continue
+    // keepalive restarts this worker every 30 seconds, so a key that cannot be
+    // healed — no workbook kept, or one that no longer reads as a key — would
+    // otherwise be re-read and re-written twice a minute forever. The stamp
+    // rides on the entry, so loading the spreadsheet again (which replaces the
+    // entry outright) is what asks for another try.
+    const behind = Object.keys(keys).filter(
+      (id) => keys[id] && P.keyNeedsReparse(keys[id]) && keys[id].parseTried !== P.PARSE_VERSION
+    );
+    if (!behind.length) return;
+    let healed = 0;
+    for (const id of behind) {
+      const rec = KF.fileFor(files, id);
+      let next = null;
+      if (rec) {
+        try {
+          const wb = await X.parseXlsx(KF.base64ToBytes(rec.b64));
+          next = P.parseKey((wb && wb.sheets) || [], rec.name || keys[id].name);
+        } catch (e) {
+          next = null; // not a key any more, or not readable — said below
+        }
+      }
+      // A workbook that was never kept, or that no longer reads as a key, is
+      // not a reason to throw the entry away: the operator still has a
+      // translating key, made by an older reader. It keeps translating, and the
+      // key panel NAMES the case (P.staleNote) rather than letting it read back
+      // in fakes with nothing on screen saying why.
+      if (!next || !next.rows) {
+        keys[id] = Object.assign({}, keys[id], { parseTried: P.PARSE_VERSION });
+        continue;
+      }
+      // keepKeyFacts carries the case FOLDER across; savedAt is this side's and
+      // stays put — the picker and the master key order by it, and a re-read is
+      // not the operator loading anything.
+      keys[id] = Object.assign(P.keepKeyFacts(keys[id], next), {
+        savedAt: (keys[id] && keys[id].savedAt) || 0,
+      });
+      healed++;
+    }
+    await set({ [PSEUDO_KEYS_KEY]: keys });
+    // The distilled cases were built from the old reader's pairs and carry
+    // whatever it got wrong. They are re-read under the same savedAt, so only a
+    // forced refresh reaches them.
+    if (healed) await refreshMasterKey({ force: true });
+  } catch (e) {
+    /* the next start tries again; nothing here is load-bearing for a send */
   }
 }
 
@@ -3087,6 +3168,10 @@ seedWorkflows();
 // hears the writes it is awake for — so the library is folded in on every
 // start as well. It writes nothing when nothing changed.
 refreshMasterKey();
+// Before anything reads a key: a library left on an older parser is a library
+// with mappings retired that should not be. Its own write wakes every tab's
+// translation, so a chat sitting open comes right without a reload.
+reparseKeys();
 sweepChatKeys();
 migrateRuns().then(migrateSettings).then(reschedule);
 reschedule();

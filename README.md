@@ -2352,10 +2352,49 @@ not uploading — the file goes nowhere. The key is read the way
 an operator keep (`no`, `never`, `[bracketed]`, `{braced}`) in the Replacement
 cell is an instruction, not a pseudonym, and is skipped; an **alt spelling**
 row is forward-only (its real still warns, its fake belongs to the canonical
-row); a fake claimed by two canonical reals is **retired from reversal rather
-than guessed at** — the macro's own fail-safe; and the pinned
-"(never in text)" sheet rides along for the warning side, since a pinned
-party's real name is exactly what must not be typed. **A possessive is the
+row); and a fake claimed by two canonical reals is **retired from reversal
+rather than guessed at** — the macro's own fail-safe.
+
+**Which sheet the bindings come off is the macro's rule too, and it took a
+fix.** PDF-Linker writes two tabs: `Pseudonym Key`, the bindings that were
+applied to the exports, and `Pinned (never in text)`, bindings no export ever
+carried — a party pinned so a later run reuses the same fake. `DeAnonymize.bas`
+finds the first **by name** and never reads the second, and says why: a pinned
+row can bind a real value the applied sheet also binds, *under a different
+fake*, so loading both makes two rows claim one pseudonym and the ambiguity
+guard retires **both**. Reading the pinned tab doesn't merely add dead rows —
+it retires live ones. The extension had been reading every sheet with the
+header on it, and the damage showed up exactly where a name is minted without
+anyone watching: a party bound on both tabs went into a **chat title** wearing
+its pinned fake, which the reversal map could not undo because the applied row
+it collided with had just been retired. The title read back in fakes and
+nothing on the page could say why. Now the tabs are told apart: pinned rows
+still ride along for the **warning** — a pinned party's real name is exactly
+what must not be typed — and take no part in the reversal, in the ambiguity
+grouping, or in naming the case. Where both tabs bind one real, the **applied**
+fake is the one the cleaner and the title use, whatever order the workbook
+holds the sheets in, because that is the one a reader can reverse.
+
+The same fix corrected what counts as ambiguous. Two rows on one fake are
+ambiguous **only where the reals actually differ**, which is the macro's own
+test rather than a row count: a caption shouts its parties and the body does
+not, so `GARDELLA` and `Gardella` are two rows against one fake that restore
+identically (the swap recases from the matched text). Retiring those took the
+caption's own parties out of the reversal — and a case folder's name is made of
+exactly those.
+
+**A key already in the library is re-read** when the reader changes, since the
+library stores the parsed rows rather than the workbook and a fix would
+otherwise heal nothing already loaded. The kept workbook (`src/keyfile.js`) is
+parsed again on the worker's next start, under the same library id so every
+chat and run attached to it follows, and the [master
+key](#the-master-key-every-case-distilled) is re-distilled from the corrected
+rows. A key whose workbook was **not** kept — too big, or loaded before that
+store existed — can't be healed that way, so the key panel **names those cases**
+and asks for the spreadsheet again rather than leaving one to read back in
+fakes quietly.
+
+**A possessive is the
 same party** (PDF-Linker's own rule): a bare row covers the possessive —
 `Zachary → John` turns `Zachary's` into `John's`, the `'s` riding across as
 typed, straight or typographic apostrophe alike — and a possessive row

@@ -217,6 +217,25 @@ test("the whole library folds in, newest key on top", () => {
   );
 });
 
+test("a forced rebuild re-reads a held case under the same stamp", () => {
+  // A library re-read under a newer parser writes the same keys back under the
+  // same savedAt, so the ordinary "only where the key is newer" rule would sit
+  // the old reader's distilled case in front of the fix forever.
+  const lib = { a: CABOT(), b: STRANGEWAYS() };
+  const first = M.rebuild({ cases: [] }, lib);
+  // The party's fake, corrected the way the pinned-tab fix corrects one.
+  const healed = CABOT();
+  healed.pairs = healed.pairs.map((p) => (p.real === "Cabot" ? { fake: "Marlow", real: "Cabot" } : p));
+  const again = M.rebuild(first.master, { a: healed, b: STRANGEWAYS() }, { force: true });
+  assert.equal(again.refreshed, 2);
+  const cabot = again.master.cases.find((c) => c.caseNo === "23STCV12345");
+  const fakes = (cabot ? cabot.pairs : []).map((p) => p.fake);
+  assert.ok(fakes.includes("Marlow"), "the corrected fake reached the distilled case");
+  assert.ok(!fakes.includes("Doe"), "and the one it replaced is gone");
+  // Without the force it is exactly the no-op the ordinary rule promises.
+  assert.equal(M.rebuild(first.master, { a: healed, b: STRANGEWAYS() }).refreshed, 0);
+});
+
 test("a library write that changes nothing leaves the order alone", () => {
   const lib = { a: CABOT(), b: STRANGEWAYS() };
   const first = M.rebuild({ cases: [] }, lib);

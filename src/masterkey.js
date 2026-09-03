@@ -262,10 +262,18 @@
    * spreadsheet is the whole point of this, and the popup's own control is how
    * they leave.
    *
+   * `opts.force` refreshes a held case from its key whatever the stamps say.
+   * It is for the one caller that knows the RECORD is stale rather than the
+   * key: a library re-read under a newer parser (P.PARSE_VERSION) writes the
+   * same keys back under the same savedAt, and without this the distilled case
+   * — built from the old reader's pairs, and carrying whatever it got wrong —
+   * would sit in front of the fix forever.
+   *
    * Answers { master, added, refreshed, skipped } — skipped being the keys that
    * could not be filed, which the caller says out loud rather than swallowing.
    */
-  function rebuild(master, keys) {
+  function rebuild(master, keys, opts) {
+    const force = !!(opts && opts.force);
     const since = clearedAt(master);
     let out = { cases: cases(master), clearedAt: since };
     const lib = keys || {};
@@ -294,7 +302,7 @@
     let refreshed = 0;
     for (const entry of entries) {
       const prev = held.get(fold(entry.caseNo));
-      if (prev && (prev.at || 0) >= entry.at) continue;
+      if (prev && !force && (prev.at || 0) >= entry.at) continue;
       if (prev) refreshed++;
       else added++;
       out = Object.assign(remember(out, entry), { clearedAt: since });

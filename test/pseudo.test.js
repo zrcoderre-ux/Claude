@@ -101,6 +101,114 @@ test("the pinned sheet's reals ride along", () => {
   assert.deepStrictEqual(key.warn.map((w) => w.real), ["Rasho", "Gregory Walton"]);
 });
 
+test("a pinned row is never reversed — its fake is in no export", () => {
+  const pinned = sheet("Pinned (never in text)", [
+    HEADERS,
+    ["person", "Gregory Walton", "Lowther Rolleston", "", "no match", "spreadsheet", 0],
+  ]);
+  const key = keyOf([["person", "Rasho", "Strangeways", "", "", "", 3]], [pinned]);
+  assert.deepStrictEqual(key.pairs.map((p) => p.fake), ["Strangeways"]);
+  assert.strictEqual(key.dropped.pinned, 1);
+  // ...and it is not what the case is named after either.
+  assert.strictEqual(key.hint, "Rasho");
+});
+
+test("a pinned row never retires the applied row it collides with", () => {
+  // DeAnonymize.bas's own reason for never reading the pinned tab: a pinned
+  // row can bind a real the applied sheet also binds, under a different fake.
+  const pinned = sheet("Pinned (never in text)", [
+    HEADERS,
+    ["person", "Helen Rasho", "Lowther Rolleston", "", "no match", "spreadsheet", 0],
+  ]);
+  const key = keyOf([["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 12]], [pinned]);
+  assert.strictEqual(key.dropped.ambiguous, 0);
+  assert.deepStrictEqual(key.pairs, [{ fake: "Ingrid Strangeways", real: "Helen Rasho" }]);
+});
+
+test("a real bound on both tabs is cleaned to the APPLIED fake", () => {
+  // The pinned tab first in workbook order, which is what first-seen lost to:
+  // the title went out wearing a fake the reversal map could not undo.
+  const pinned = sheet("Pinned (never in text)", [
+    HEADERS,
+    ["person", "Rasho", "Rolleston", "", "no match", "spreadsheet", 0],
+  ]);
+  const sheets = [
+    pinned,
+    sheet("Pseudonym Key", [
+      HEADERS,
+      ["person", "Rasho", "Strangeways", "", "", "spreadsheet", 30],
+      ["case-number", "23STCV12345", "24STCV99999", "", "", "spreadsheet", 5],
+    ]),
+  ];
+  const key = P.parseKey(sheets, "pseudonym_key.xlsx");
+  const folder = "23STCV12345 Rasho v. County";
+  const fake = P.nameCleaner(key)(folder);
+  assert.strictEqual(fake, "24STCV99999 Strangeways v. County");
+  // The whole point: what the cleaner mints, the reader can put back.
+  assert.strictEqual(P.translate(P.compile(key), fake).text, folder);
+});
+
+test("appliedSheets follows FindKeySheet: by name, never the pinned tab", () => {
+  const named = sheet("Pseudonym Key", [HEADERS, ["person", "A", "B", "", "", "", 1]]);
+  const pinned = sheet("Pinned (never in text)", [HEADERS, ["person", "C", "D", "", "", "", 0]]);
+  const other = sheet("Scratch", [HEADERS, ["person", "E", "F", "", "", "", 1]]);
+  const noHeader = sheet("Notes", [["just", "a", "note"]]);
+  // The titled tab wins wherever it sits, and nothing else is applied beside it.
+  assert.deepStrictEqual(P.appliedSheets([pinned, other, named]), [named]);
+  // No titled tab (an older PDF-Linker wrote one sheet): every non-pinned one.
+  assert.deepStrictEqual(P.appliedSheets([pinned, other, noHeader]), [other]);
+  // Nothing but the pinned tab: nothing is applied — not even as a fallback.
+  assert.deepStrictEqual(P.appliedSheets([pinned]), []);
+  assert.ok(P.isPinnedSheet(pinned));
+  assert.ok(!P.isPinnedSheet(named));
+});
+
+test("a casing pair on one fake restores, and is not ambiguous", () => {
+  // The caption shouts the party and the body does not, so PDF-Linker writes
+  // both spellings against one fake. The macro compares the REALS
+  // case-insensitively and keeps them; a row count retired the caption's own
+  // parties, which is exactly what a case folder's name is made of.
+  const key = keyOf([
+    ["person", "GARDELLA", "Marlow", "", "", "", 4],
+    ["person", "Gardella", "Marlow", "", "", "", 19],
+  ]);
+  assert.strictEqual(key.dropped.ambiguous, 0);
+  assert.deepStrictEqual(key.pairs, [{ fake: "Marlow", real: "GARDELLA" }]);
+  // Recased from the matched text, so both spellings still read back right.
+  const c = P.compile(key);
+  assert.strictEqual(P.translate(c, "MARLOW v. County").text, "GARDELLA v. County");
+  assert.strictEqual(P.translate(c, "Marlow v. County").text, "Gardella v. County");
+});
+
+test("a stored key says which reader made it", () => {
+  const key = keyOf([["person", "Rasho", "Strangeways", "", "", "", 3]]);
+  assert.strictEqual(key.parsed, P.PARSE_VERSION);
+  assert.ok(!P.keyNeedsReparse(key));
+  // What the library actually holds after an older build wrote it.
+  assert.ok(P.keyNeedsReparse(Object.assign({}, key, { parsed: undefined })));
+  assert.ok(P.keyNeedsReparse(Object.assign({}, key, { parsed: 1 })));
+  assert.ok(P.keyNeedsReparse(null));
+});
+
+test("staleNote names the cases whose key could not be re-read", () => {
+  const keys = {
+    a: { folder: "23STCV12345 Rasho v. County", rows: 40 },
+    b: { folder: "21STCV54321 Cabot v. Reyes", rows: 12 },
+  };
+  const current = (k) => Object.assign({ parsed: P.PARSE_VERSION }, k);
+  // A library the worker healed says nothing at all.
+  assert.strictEqual(P.staleNote({ a: current(keys.a), b: current(keys.b) }), "");
+  assert.strictEqual(P.staleNote({}), "");
+  const one = P.staleNote({ a: keys.a, b: current(keys.b) });
+  assert.match(one, /One case's key was/);
+  assert.match(one, /23STCV12345 Rasho v\. County/);
+  assert.match(one, /Load the pseudonym_key\.xlsx again/);
+  assert.ok(one.indexOf("Cabot") === -1, "the healed case is not named");
+  const two = P.staleNote(keys);
+  assert.match(two, /^2 cases' keys were/);
+  assert.match(two, /those cases/);
+});
+
 test("a row mapping a value onto itself is dropped", () => {
   const key = keyOf([["entity", "M & M", "M & M", "", "", "", 1]]);
   assert.strictEqual(key.pairs.length, 0);
