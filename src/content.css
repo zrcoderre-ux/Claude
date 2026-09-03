@@ -1704,7 +1704,7 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   .cum-pseudo-guard-send { color: #ff9f9f; }
 }
 
-/* The as-you-type prompt at the caret: press → to swap the real name. */
+/* The as-you-type prompt at the caret: space or → swaps the real name. */
 .cum-pseudo-tip {
   position: fixed; z-index: 2147483003; max-width: 340px;
   background: #7a1f1f; color: #fff; border: 1px solid rgba(255, 255, 255, 0.25);

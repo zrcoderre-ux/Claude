@@ -713,15 +713,24 @@
    * (common English out), longest real first so "Helen Rasho" is offered
    * whole before its surname token, each carrying a regex that matches only
    * at the very END of the text — the word the caret just finished.
+   *
+   * `partial` marks a real that OPENS a longer real in the same key —
+   * "Helen" when the key also binds "Helen Rasho", "Cross River Bank" beside
+   * "Cross River Bank, LLC". The space bar cannot tell "Helen" the whole name
+   * from "Helen" the first half of one, so it never swaps a partial: the arrow
+   * still does, and the space simply types on toward the longer phrase, which
+   * is offered whole (and swapped by space) the moment it is finished.
    */
   function compileTypeahead(key) {
     const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
+    const folded = warn.map((w) => fold(w.real));
     return warn
       .slice()
       .sort((a, b) => b.real.length - a.real.length)
       .map((w) => ({
         real: w.real,
         fake: w.fake,
+        partial: isOpeningOfLonger(fold(w.real), folded),
         rx: new RegExp(
           "(?<![A-Za-z0-9_])" +
             escapeRe(w.real).replace(/ /g, "\\s+") +
@@ -732,12 +741,24 @@
       }));
   }
 
+  // Whether `f` (folded) begins some LONGER folded real in `all` at a word
+  // edge: "helen" opens "helen rasho"; it does not open "helena rasho".
+  function isOpeningOfLonger(f, all) {
+    if (!f) return false;
+    for (const other of all) {
+      if (other.length <= f.length || other.slice(0, f.length) !== f) continue;
+      if (!/[a-z0-9_]/i.test(other.charAt(f.length))) return true;
+    }
+    return false;
+  }
+
   /**
    * The real value `textBefore` ENDS with — the name just typed out, caret
    * hard against its last character — or null. `matched` is the text as the
    * user actually typed it, which is what the swap must remove and what the
-   * fake's casing mirrors. Each test runs against only the tail, so a long
-   * draft costs the same as a short one per keystroke.
+   * fake's casing mirrors. `partial` says the name may be the opening of a
+   * longer one in the key (see compileTypeahead). Each test runs against only
+   * the tail, so a long draft costs the same as a short one per keystroke.
    */
   function endingReal(ahead, textBefore) {
     const t = String(textBefore || "");
@@ -751,10 +772,20 @@
         let fake = e.fake;
         const mp = m[0].match(POSS_MATCH_RE);
         if (mp && !POSS_TAIL_RE.test(e.real)) fake = e.fake + mp[0];
-        return { real: e.real, fake: fake, matched: m[0] };
+        return { real: e.real, fake: fake, matched: m[0], partial: !!e.partial };
       }
     }
     return null;
+  }
+
+  /**
+   * Whether the space bar, pressed with `hit` under the caret, swaps the
+   * name — yes for a whole name, no for one that may be the opening of a
+   * longer real in the key. The arrow swaps either; this decides only what
+   * the autocorrect is allowed to do on its own.
+   */
+  function swapsOnSpace(hit) {
+    return !!hit && !hit.partial;
   }
 
   // A draft that opens with this header is the operator pasting pincites out
@@ -1226,6 +1257,7 @@
     COPY_WARN_MAX,
     compileTypeahead,
     endingReal,
+    swapsOnSpace,
     mirrorCase,
     caseShape,
     applyCase,

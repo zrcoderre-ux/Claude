@@ -361,6 +361,45 @@ test("endingReal fires only when the caret sits at the end of a just-typed real"
   assert.strictEqual(P.endingReal(ahead, ""), null);
 });
 
+test("the space bar swaps a whole name, never one that may open a longer name", () => {
+  const key = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 9],
+    ["person-token", "Helen", "Ingrid", "", "", "", 3],
+    ["person-token", "Rasho", "Strangeways", "", "", "", 20],
+    ["person", "Helena Voss", "Mira Quill", "", "", "", 2],
+    ["org", "Cross River Bank", "Zenith Holdings", "", "", "", 4],
+    ["org", "Cross River Bank, LLC", "Zenith Holdings, LLC", "", "", "", 6],
+  ]);
+  const ahead = P.compileTypeahead(key);
+  // "Helen" opens "Helen Rasho": the arrow is offered, the space types on.
+  const first = P.endingReal(ahead, "Plaintiff Helen");
+  assert.strictEqual(first.real, "Helen");
+  assert.strictEqual(first.partial, true);
+  assert.strictEqual(P.swapsOnSpace(first), false);
+  // The finished phrase is offered whole, and the space takes it.
+  const whole = P.endingReal(ahead, "Plaintiff Helen Rasho");
+  assert.strictEqual(whole.real, "Helen Rasho");
+  assert.strictEqual(whole.partial, false);
+  assert.strictEqual(P.swapsOnSpace(whole), true);
+  // A surname that ENDS the phrase opens nothing: space swaps it alone.
+  const last = P.endingReal(ahead, "served Rasho");
+  assert.strictEqual(last.partial, false);
+  assert.strictEqual(P.swapsOnSpace(last), true);
+  // "Helena Voss" does not make "Helen" partial by itself — a word edge is
+  // required — but a comma is one: the bare bank name opens the LLC.
+  assert.strictEqual(P.endingReal(ahead, "at Cross River Bank").partial, true);
+  assert.strictEqual(P.endingReal(ahead, "at Cross River Bank, LLC").partial, false);
+  const only = P.compileTypeahead(keyOf([
+    ["person", "Helen", "Ingrid", "", "", "", 3],
+    ["person", "Helena Voss", "Mira Quill", "", "", "", 2],
+  ]));
+  assert.strictEqual(P.endingReal(only, "Plaintiff Helen").partial, false);
+  // The possessive rides the space swap like the arrow's.
+  assert.strictEqual(P.endingReal(ahead, "It was Rasho's").fake, "Strangeways's");
+  // Nothing under the caret: nothing to swap.
+  assert.strictEqual(P.swapsOnSpace(null), false);
+});
+
 // ---- possessives are the same party -------------------------------------------
 
 test("a bare row covers the possessive: Zachary is John, so Zachary's is John's", () => {

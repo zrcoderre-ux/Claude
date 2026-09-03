@@ -2461,18 +2461,33 @@ swept on the next extension start.
    names](#a-copy-that-carries-the-real-names). The chat's **title** is translated the same
    way, in the header, the sidebar and the tab — see [The titles read back in
    the real name](#the-titles-read-back-in-the-real-name).
-2. **Catches a real name as you type it — press → to swap.** The moment the
-   caret finishes typing one of the key's real values, a small prompt appears
-   at the caret (`Rasho → Strangeways — press → to swap · Esc to keep`).
-   **ArrowRight** swaps the just-typed name for its pseudonym in place —
-   longest match first, so a full name swaps whole; casing mirrored, so
-   `HELEN RASHO` becomes `INGRID STRANGEWAYS`; and it goes through the
+2. **Catches a real name as you type it — space autocorrects it, → swaps it
+   too.** The moment the caret finishes typing one of the key's real values,
+   a small prompt appears at the caret (`Rasho → Strangeways — space or →
+   swaps · Esc to keep`). The **space bar** then swaps the just-typed name
+   for its pseudonym and lands the space after it, as an autocorrect would;
+   **ArrowRight** does the same swap without the space. Either way it is in
+   place — longest match first, so a full name swaps whole; casing mirrored,
+   so `HELEN RASHO` becomes `INGRID STRANGEWAYS`; and it goes through the
    composer's own typing path, so **Ctrl+Z brings the real name back**.
    Escape keeps the real name and stops asking at that spot; typing on
-   simply moves past it. The red **banner stays as the net** for everything
-   the caret is *not* on — pasted text, a dismissed prompt — without ever
-   doubling the value currently being offered. Nothing is rewritten without
-   the keypress: the composer is yours. One declared exception: a draft that
+   simply moves past it.
+
+   The space bar holds back on one kind of name: a real that **opens a longer
+   real in the same key** — `Helen` where the key also binds `Helen Rasho`,
+   `Cross River Bank` beside `Cross River Bank, LLC`. A space there may be
+   the middle of the longer name, so the prompt reads `press → to swap ·
+   space types on`: the arrow still swaps the short form, and the space just
+   keeps typing. Finish the phrase and it is offered whole — and the space
+   swaps it. A word that *ends* a phrase (`Rasho`) opens nothing, so its
+   space swaps it alone. The space swap does not wait for the prompt to draw:
+   it reads the caret when the key goes down, so a fast typist's space still
+   catches the name.
+
+   The red **banner stays as the net** for everything the caret is *not* on
+   — pasted text, a dismissed prompt — without ever doubling the value
+   currently being offered. Nothing is rewritten without a keypress the
+   composer would have taken anyway: the composer is yours. One declared exception: a draft that
    **begins** `PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS` is the operator
    pasting pincites out of Lexis — published citations, always safe — and the
    warning stands down for that draft. And **ordinary English is never
