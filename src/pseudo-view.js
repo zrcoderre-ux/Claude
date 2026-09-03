@@ -219,7 +219,7 @@
       compiledReals: P.compileReals(key),
       // real → fake, for the badge's cleaner box.
       forward: P.compileForward(key),
-      // the as-you-type prompt's entries (press → to swap).
+      // the as-you-type prompt's entries (space or → to swap).
       ahead: P.compileTypeahead(key),
       via: via,
     };
@@ -1251,16 +1251,28 @@
     /* the translation still works; only the warning is missing */
   }
 
-  // ---- the as-you-type prompt: finish a real name, press → for the fake -----
+  // ---- the as-you-type prompt: finish a real name, space or → for the fake --
   //
   // The moment the caret sits at the end of a just-typed REAL value, a small
-  // prompt appears at the caret offering the pseudonym; ArrowRight swaps it
-  // in place (via the selection + insertText, which ProseMirror handles as
-  // ordinary typing), Escape dismisses for that spot, and any other typing
-  // moves the caret past the word and the prompt goes on its own. The
-  // banner below stays as the net for everything the caret is NOT on —
-  // pasted text, a dismissed prompt — but never doubles the value currently
-  // being offered.
+  // prompt appears at the caret offering the pseudonym. The SPACE BAR swaps
+  // it as an autocorrect — the name goes, the fake and the space land — and
+  // ArrowRight swaps it too, both in place (via the selection + insertText,
+  // which ProseMirror handles as ordinary typing). Escape dismisses for that
+  // spot, and any other typing moves the caret past the word and the prompt
+  // goes on its own.
+  //
+  // One name the space bar leaves alone: a real that OPENS a longer real in
+  // the key ("Helen" beside "Helen Rasho"). A space there may be the middle
+  // of the longer name, so it only types on; the arrow still swaps the short
+  // one, and the whole phrase is offered — and space-swapped — the moment
+  // it is finished. The decision is P.swapsOnSpace, in the tested module.
+  //
+  // The space path recomputes from the caret rather than trusting the tip,
+  // which shows 80ms behind the keystrokes: a fast typist's space lands
+  // before the prompt for the word has drawn, and the swap still has to
+  // happen. The banner below stays as the net for everything the caret is
+  // NOT on — pasted text, a dismissed prompt — but never doubles the value
+  // currently being offered.
 
   let tipEl = null;
   let tipHit = null; // { real, fake, matched, at } while showing
@@ -1314,7 +1326,9 @@
     swap.textContent = hit.matched + " → " + P.mirrorCase(hit.matched, hit.fake);
     const how = document.createElement("span");
     how.className = "cum-pseudo-tip-how";
-    how.textContent = "  press → to swap · Esc to keep";
+    how.textContent = P.swapsOnSpace(hit)
+      ? "  space or → swaps · Esc to keep"
+      : "  press → to swap · space types on · Esc to keep";
     tipEl.append(swap, how);
     tipEl.hidden = false;
     // At the caret, just above the line; a collapsed caret still has a rect.
@@ -1329,27 +1343,59 @@
     tipTimer = setTimeout(updateTip, 80);
   }
 
-  function swapAtCaret() {
+  // The real name under the caret right now, fresh from the editor — or
+  // null. Not the tip's memory of it: the caret may have moved since.
+  function hitAtCaret() {
+    if (!active || !active.ahead || !active.ahead.length) return null;
     const ed = editorEl();
     const ctx = ed && caretContext(ed);
     const hit = ctx && P.endingReal(active.ahead, ctx.textBefore);
-    // Confirm against what's showing — the caret may have moved since.
-    if (!hit || !tipHit || P.fold(hit.real) !== P.fold(tipHit.real)) return false;
+    if (!hit) return null;
+    return { ed: ed, hit: hit, sig: ctx.textBefore.length + "|" + P.fold(hit.real) };
+  }
+
+  // Replace the just-typed real (and whatever `tail` should follow it — the
+  // space, on the autocorrect path) with the fake, in place.
+  function swapIn(ed, hit, tail) {
     const sel = window.getSelection();
     for (let i = 0; i < hit.matched.length; i++) sel.modify("extend", "backward", "character");
     ed.focus();
     // The same door composer.js types through — ProseMirror treats it as
     // ordinary input, so undo (Ctrl+Z) brings the real name back if wanted.
-    document.execCommand("insertText", false, P.mirrorCase(hit.matched, hit.fake));
+    document.execCommand("insertText", false, P.mirrorCase(hit.matched, hit.fake) + (tail || ""));
     hideTip();
+  }
+
+  // The arrow swaps only what the prompt is showing: hijacking a navigation
+  // key with nothing on screen to say why would be a caret that jumps.
+  function swapAtCaret() {
+    const at = hitAtCaret();
+    if (!at || !tipHit || P.fold(at.hit.real) !== P.fold(tipHit.real)) return false;
+    swapIn(at.ed, at.hit, "");
+    return true;
+  }
+
+  // The space bar swaps a whole name whether or not its prompt has drawn
+  // yet, and never one Escape dismissed at that spot, never a partial.
+  function spaceAtCaret() {
+    const at = hitAtCaret();
+    if (!at || at.sig === tipDismissed || !P.swapsOnSpace(at.hit)) return false;
+    swapIn(at.ed, at.hit, " ");
     return true;
   }
 
   window.addEventListener(
     "keydown",
     (ev) => {
-      if (!tipHit || !tipEl || tipEl.hidden) return;
       if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+      if (ev.key === " " || ev.key === "Spacebar") {
+        if (spaceAtCaret()) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+        }
+        return;
+      }
+      if (!tipHit || !tipEl || tipEl.hidden) return;
       if (ev.key === "ArrowRight") {
         if (swapAtCaret()) {
           ev.preventDefault();
