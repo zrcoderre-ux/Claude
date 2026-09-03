@@ -113,15 +113,33 @@ test("a pinned row is never reversed — its fake is in no export", () => {
   assert.strictEqual(key.hint, "Rasho");
 });
 
-test("a pinned row never retires the applied row it collides with", () => {
-  // DeAnonymize.bas's own reason for never reading the pinned tab: a pinned
-  // row can bind a real the applied sheet also binds, under a different fake.
+test("a pinned row on an applied fake no longer retires it", () => {
+  // DeAnonymize.bas's own reason for never reading the pinned tab, and the
+  // shape that actually broke: two rows claim one pseudonym, the ambiguity
+  // guard retires BOTH, and the applied party then reverses nowhere at all.
+  const pinned = sheet("Pinned (never in text)", [
+    HEADERS,
+    ["person", "Gregory Walton", "Marlow", "", "no match", "spreadsheet", 0],
+  ]);
+  const key = keyOf([["person", "Helen Rasho", "Marlow", "", "", "", 12]], [pinned]);
+  assert.strictEqual(key.dropped.ambiguous, 0);
+  assert.deepStrictEqual(key.pairs, [{ fake: "Marlow", real: "Helen Rasho" }]);
+  assert.strictEqual(P.translate(P.compile(key), "Marlow v. County").text, "Helen Rasho v. County");
+});
+
+test("a pinned row on the same real does not supply the title's fake", () => {
+  // Retires nothing — the grouping is by fake — but first-seen let workbook
+  // order pick the stand-in, and a title minted from the pinned tab names the
+  // case by something no export ever carried.
   const pinned = sheet("Pinned (never in text)", [
     HEADERS,
     ["person", "Helen Rasho", "Lowther Rolleston", "", "no match", "spreadsheet", 0],
   ]);
-  const key = keyOf([["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 12]], [pinned]);
-  assert.strictEqual(key.dropped.ambiguous, 0);
+  const key = P.parseKey(
+    [pinned, sheet("Pseudonym Key", [HEADERS, ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "", 12]])],
+    "pseudonym_key.xlsx"
+  );
+  assert.strictEqual(P.nameCleaner(key)("Helen Rasho v. County"), "Ingrid Strangeways v. County");
   assert.deepStrictEqual(key.pairs, [{ fake: "Ingrid Strangeways", real: "Helen Rasho" }]);
 });
 
