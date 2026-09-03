@@ -71,6 +71,7 @@
         "src/stamp.js",
         "src/xlsxread.js",
         "src/pseudo.js",
+        "src/keyfile.js",
         "src/masterkey.js",
         "src/folderup.js",
         "src/upfiles.js",

@@ -2344,8 +2344,10 @@ then on, everywhere a key is named. The popup's **Load pseudonym_key.xlsx…**
 still takes a loose file, for a key that has no folder.
 
 Either way it is parsed in the extension (`src/xlsxread.js` reads the workbook,
-`src/pseudo.js` reads the map) and only the parsed rows are stored in
-`chrome.storage.local`. Loading is not uploading — the file goes nowhere. The key is read the way
+`src/pseudo.js` reads the map) and the parsed rows are stored in
+`chrome.storage.local` — with the workbook itself kept beside them
+(`src/keyfile.js`) so the panel can [hand it back](#the-key-button). Loading is
+not uploading — the file goes nowhere. The key is read the way
 `DeAnonymize.bas` reads it: columns found by **header name**, never position;
 an operator keep (`no`, `never`, `[bracketed]`, `{braced}`) in the Replacement
 cell is an instruction, not a pseudonym, and is skipped; an **alt spelling**
@@ -2722,9 +2724,27 @@ The panel under it holds, in order:
 - **The key library** — load a key by picking the **case folder** it lives in
   (only the `pseudonym_key.xlsx` is read; parsed here, never uploaded — and the
   [upload guard](#pseudonym-translation) leaves this one picker alone, since it
-  is the door keys come in by), or forget one, which detaches it everywhere it
-  was attached. The picker offers the **three most recent** keys and says how
-  many older ones it isn't showing.
+  is the door keys come in by), **download the key file** again, or forget one,
+  which detaches it everywhere it was attached and drops the stored file with
+  it. The picker offers the **three most recent** keys and says how many older
+  ones it isn't showing; the download and the two buttons beside it all act on
+  whichever key that picker is showing.
+
+  **Download key file** hands back the workbook that was loaded — the same
+  bytes, under the same name, so it still round-trips through `DeAnonymize.bas`
+  — and it is the *bytes*, deliberately. What the library stores is the rows
+  the parser could read, which is less than the file was: keep rows and
+  ambiguous fakes are dropped on the way in ([Loading a
+  key](#pseudonym-translation)). A workbook rebuilt from those rows would look
+  like the original while quietly holding less than it, so this hands back what
+  was loaded or it says it cannot. A key loaded before this started keeping the
+  file has nothing to hand back: the button is disabled and the line above it
+  says so, and loading that key once more is what fixes it. The file is kept
+  beside the library rather than inside it (`cum_pseudo_keyfiles`, read only
+  when the panel is open), the twenty most recent, nothing over 8 MB. Every
+  door a key comes in by keeps it — this panel, the popup's loose-file load,
+  the [Folder button](#uploading-a-case-folder-into-a-chat) and the run
+  editor.
 - **The master key** — what its [cases](#the-master-key-every-case-distilled)
   are, and the one control that empties it.
 - **The cleaner** — type real names, read out the fakes, **Copy cleaned**. It
@@ -3595,6 +3615,7 @@ src/toc-panel.js       The floating table of contents itself
 src/run-panel.js       The workflow's own contents — every step, every chat
 src/xlsxread.js        Minimal .xlsx reader — enough for the pseudonym key (pure)
 src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards, run hold, chat titles, case-number gate (pure)
+src/keyfile.js         The loaded key WORKBOOK: base64, the bounded store, what the panel says about it (pure)
 src/pseudo-view.js     Shows real names for the fakes — messages and chat titles — warns, guards the key file
 src/faking.js          The fakes toggle: its word, its colour, whether it may be pressed (pure)
 src/coderepo.js        Which repo a Claude Code session is on: what counts as evidence (pure)

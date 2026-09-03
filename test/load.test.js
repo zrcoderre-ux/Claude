@@ -91,6 +91,7 @@ test("each module publishes the global the next one reads", () => {
     "CUMFaking",
     "CUMUpFiles",
     "CUMLeaks",
+    "CUMKeyFile",
   ];
   const missing = wanted.filter((g) => !loaded.win[g]);
   assert.deepEqual(missing, [], "never published: " + missing.join(", "));
@@ -143,6 +144,28 @@ test("the LEAKS gate loads before every door that has to consult it", () => {
   assert.ok(opt("leaks.js") !== -1, "the LEAKS gate is not on the options page");
   for (const door of ["jobform.js", "workflowform.js"])
     assert.ok(opt("leaks.js") < opt(door), "leaks.js loads too late for " + door);
+});
+
+test("the key-file store loads before every door that keeps a workbook", () => {
+  // src/keyfile.js is what makes a loaded key downloadable again. Every door a
+  // key comes in by reads it by name and shrugs when it is missing — which is
+  // a key that quietly cannot be handed back, months after the load that would
+  // have kept it. So the order is asserted on all three pages it lives on.
+  const order = contentScripts();
+  const at = (f) => order.indexOf(f);
+  assert.ok(at("src/keyfile.js") !== -1, "the key-file store is not in the manifest");
+  for (const door of ["src/folder-upload.js", "src/key-panel.js"])
+    assert.ok(at("src/keyfile.js") < at(door), "src/keyfile.js loads too late for " + door);
+  const scriptsIn = (file) =>
+    Array.from(
+      fs.readFileSync(path.join(ROOT, file), "utf8").matchAll(/<script src="([^"]+)"/g)
+    ).map((m) => m[1]);
+  const popup = scriptsIn("src/popup.html");
+  assert.ok(popup.indexOf("keyfile.js") !== -1, "the key-file store is not on the popup");
+  assert.ok(popup.indexOf("keyfile.js") < popup.indexOf("popup.js"));
+  const options = scriptsIn("src/options.html");
+  assert.ok(options.indexOf("keyfile.js") !== -1, "the key-file store is not on the options page");
+  assert.ok(options.indexOf("keyfile.js") < options.indexOf("workflowform.js"));
 });
 
 test("the tray holds a slot for every button that asks for one", () => {
