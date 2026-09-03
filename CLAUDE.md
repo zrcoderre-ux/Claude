@@ -71,7 +71,14 @@ than inline in the wiring.
   sleeps). The approval mode is NOT kept between sessions (owner's finding,
   September 2026) — it was removed as a setting once on the belief that it was
   sticky, and restored; a send sets it from the job, else from the popup's
-  default, and never guesses. Cowork's project list loads only in a tab that
+  default, and never guesses. A switch that FAILS does not stop the send
+  (owner's instruction, September 2026): the work not happening is worse than
+  the mode claude.ai already chose, so the send goes and its note says loudly
+  what was asked, why it failed, and what it ran under — do not restore that
+  gate. The approval control is found by everything it says about itself
+  (`findApprovalTrigger`: label, title, visible words, then any control whose
+  label merely says "approval"); an exact-`aria-label` search missed a control
+  the operator could see and stood a run down. Cowork's project list loads only in a tab that
   is looked at: visible first (the tab is moved into a window of its own when
   it sits behind the user's), focus last and only with the popup's opt-in
   switch, and always given back. Confirmed broken on Cowork: upload confirmations (its traffic runs

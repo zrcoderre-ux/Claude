@@ -757,3 +757,84 @@ test("the accordion icon's glyph never reaches the project menu's filter", () =>
   assert.equal(K.projectTriggerIs("Cutlist", "Cutlist"), true);
   assert.equal(K.projectRowMatches("Card Game Player", "Cutlist"), false);
 });
+
+test("a control's mode is read off everything it says, not just an exact label", () => {
+  // The known shape.
+  assert.equal(K.modeFromCaption({ ariaLabel: "Skip all approvals" }), "skip");
+  // A label that says MORE than the mode's name — the shape that lost a live
+  // send when only an exact aria-label counted.
+  assert.equal(K.modeFromCaption({ ariaLabel: "Approval mode: Skip all approvals" }), "skip");
+  assert.equal(K.modeFromCaption({ ariaLabel: "Skip all approvals, change" }), "skip");
+  // The title, and the visible words, including the short form it renders
+  // when there is no room.
+  assert.equal(K.modeFromCaption({ title: "Automatically approve" }), "auto");
+  assert.equal(K.modeFromCaption({ text: "Skip" }), "skip");
+  assert.equal(K.modeFromCaption({ ariaLabel: "", text: "Manually approve" }), "manual");
+  // A bare string is read as the label.
+  assert.equal(K.modeFromCaption("Manually approve"), "manual");
+  // The label outranks the words: the widened net never outvotes what
+  // claude.ai actually labelled the control.
+  assert.equal(K.modeFromCaption({ ariaLabel: "Skip all approvals", text: "Manual" }), "skip");
+  // Nothing to go on stays nothing.
+  assert.equal(K.modeFromCaption({ ariaLabel: "Send message" }), "");
+  assert.equal(K.modeFromCaption(null), "");
+});
+
+test("a caption naming two modes names neither", () => {
+  // Prose about approvals is not a control set to one of them.
+  assert.equal(
+    K.modeNamedWithin("Choose between Manually approve and Skip all approvals"),
+    ""
+  );
+  assert.equal(K.modeNamedWithin("Approval mode: Automatically approve"), "auto");
+  // ...and a whole rendered turn that mentions a mode is not a control either.
+  assert.equal(K.modeNamedWithin("x".repeat(200) + "Skip all approvals"), "");
+});
+
+test("a relabelled approval control is still the approval control", () => {
+  // Named modes, obviously.
+  assert.equal(K.isApprovalControl({ ariaLabel: "Skip all approvals" }), true);
+  assert.equal(K.isApprovalControl({ text: "Auto" }), true);
+  // A trigger that says what it IS without saying what it is ON: the mode is
+  // unreadable, but the menu still opens and the right row can still be
+  // pressed, so this must not read as "this page has no approval control".
+  assert.equal(K.isApprovalControl({ ariaLabel: "Change approval mode" }), true);
+  assert.equal(K.isApprovalControl({ title: "Approvals" }), true);
+  // Prose is not a button: only the label and the title carry this weight.
+  assert.equal(
+    K.isApprovalControl({ text: "I will ask for approval before each action" }),
+    false
+  );
+  assert.equal(
+    K.isApprovalControl({ ariaLabel: "Read more about approvals and how Claude decides to pause" }),
+    false
+  );
+  assert.equal(K.isApprovalControl({ ariaLabel: "Send message" }), false);
+  assert.equal(K.isApprovalControl(null), false);
+});
+
+test("the switch is believed off the trigger's words too, and disbelieved off them", () => {
+  // The control that renders "Skip" with no label is the page saying skip.
+  assert.equal(K.approvalTook({ triggerText: "Skip" }, "skip"), true);
+  assert.equal(K.approvalTook({ triggerTitle: "Automatically approve" }, "auto"), true);
+  // A trigger still reading the old mode does not cancel the row's tick — a
+  // hidden Cowork tab renders that trigger late, and the tick got there first.
+  assert.equal(K.approvalTook({ triggerText: "Manual", rowChecked: true }, "skip"), true);
+  // ...but on its own, the wrong mode is the wrong mode.
+  assert.equal(K.approvalTook({ triggerText: "Manual" }, "skip"), false);
+  // With the trigger saying nothing at all, the row's tick is still evidence.
+  assert.equal(K.approvalTook({ triggerLabel: "Approvals", rowChecked: true }, "skip"), true);
+});
+
+test("a send that could not set the mode says what it ran under instead", () => {
+  assert.equal(
+    K.approvalMissedNote("skip", "no approval control on this page", "manual"),
+    "approval NOT set to Skip all approvals (no approval control on this page) — " +
+      "sent under Manually approve"
+  );
+  // Nothing readable on the page, so nothing is claimed about it.
+  assert.equal(
+    K.approvalMissedNote("skip", "", ""),
+    "approval NOT set to Skip all approvals — sent under whatever mode the page was already in"
+  );
+});

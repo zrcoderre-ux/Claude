@@ -997,8 +997,45 @@
     );
   }
 
-  // The approval control. Its own aria-label is the mode in force, which makes
-  // it both the trigger to click and the answer to "which mode is this?".
+  // Everything a control says about itself, for the mode readers below.
+  function controlSays(el) {
+    const g = (n) => (el && el.getAttribute ? el.getAttribute(n) || "" : "");
+    return {
+      ariaLabel: g("aria-label"),
+      title: g("title"),
+      text: ((el && el.textContent) || "").slice(0, 120),
+    };
+  }
+
+  /**
+   * The approval control. Its own aria-label is normally the mode in force,
+   * which makes it both the trigger to click and the answer to "which mode is
+   * this?" — but "normally" was doing too much work here.
+   *
+   * The first version of this looked for one thing: a <button> whose
+   * aria-label was EXACTLY one of the three mode names. On a live Cowork
+   * session showing a Skip control the operator could see, it found nothing,
+   * and the send stood down reporting no approval control on the page. The
+   * folder-upload anchor had already hit the same wall with the same control
+   * and widened its own search; this is that search, made the one
+   * implementation both use.
+   *
+   * Four passes, strongest evidence first, so a widened net never outranks the
+   * label claude.ai has actually been seen wearing:
+   *
+   *   1. The exact aria-label, on a <button>. The known shape, fastest.
+   *   2. Anything button-like whose LABEL or TITLE names a mode — including a
+   *      label that says more than the mode's name ("Approval mode: Skip all
+   *      approvals").
+   *   3. Anything button-like that carries NO label or title and whose visible
+   *      words name a mode, which is how the control reads when it renders
+   *      "Skip" with nothing else to go on. Labelled controls are skipped here:
+   *      they had their say in pass 2, and a bare "Auto" is a word any chip
+   *      could wear.
+   *   4. A control that says it is the approval control without naming a mode.
+   *      The mode is then unreadable, but the menu still opens and the right
+   *      row can still be pressed.
+   */
   function findApprovalTrigger() {
     const k = K();
     if (!k) return null;
@@ -1006,14 +1043,49 @@
       const b = document.querySelector('button[aria-label="' + m.label + '" i]');
       if (b && !isOurs(b)) return b;
     }
+    if (typeof k.modeFromCaption !== "function") return null;
+    let list;
+    try {
+      list = document.querySelectorAll('button,[role="button"],[role="combobox"]');
+    } catch (e) {
+      return null;
+    }
+    const live = [];
+    for (const el of list) if (!isOurs(el) && isVisible(el)) live.push(el);
+    for (const el of live) {
+      const say = controlSays(el);
+      if (k.modeFromCaption({ ariaLabel: say.ariaLabel, title: say.title })) return el;
+    }
+    for (const el of live) {
+      const say = controlSays(el);
+      // Words are the fallback for a control that says nothing ELSE about
+      // itself. A control that carries a label has already had its say above,
+      // and its visible "Auto" must not outvote it — that short form is one
+      // any chip could wear.
+      if (say.ariaLabel || say.title) continue;
+      if (k.modeFromCaption({ text: say.text })) return el;
+    }
+    if (typeof k.isApprovalControl === "function")
+      for (const el of live) {
+        const say = controlSays(el);
+        if (k.isApprovalControl({ ariaLabel: say.ariaLabel, title: say.title })) return el;
+      }
     return null;
   }
 
-  /** The approval mode in force, or "" where there is no such control. */
+  /**
+   * The approval mode in force, or "" where nothing on the page says — which
+   * now covers a control that was FOUND but doesn't name its mode, as well as
+   * a page with no such control at all. Both mean the same thing to a caller:
+   * don't claim to know.
+   */
   function currentApproval() {
     const k = K();
     const t = findApprovalTrigger();
-    return k && t ? k.modeFromLabel(t.getAttribute("aria-label")) : "";
+    if (!k || !t) return "";
+    return typeof k.modeFromCaption === "function"
+      ? k.modeFromCaption(controlSays(t))
+      : k.modeFromLabel(t.getAttribute("aria-label"));
   }
 
   /**
@@ -1419,6 +1491,7 @@
     selectSurface,
     findApprovalTrigger,
     currentApproval,
+    controlSays,
     menuItems,
     openMenu,
     closeMenu,

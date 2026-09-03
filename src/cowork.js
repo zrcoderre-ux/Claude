@@ -77,6 +77,82 @@
     return INHERIT;
   }
 
+  /**
+   * The mode a control NAMES, read off everything a control can say about
+   * itself — its aria-label, its title, its visible words.
+   *
+   * `modeFromLabel` is strict on purpose: a prefix match over one string, so a
+   * menu row's description can't outvote its name. That strictness is what
+   * lost a live send. The page carried a "Skip all approvals" control the
+   * operator could see, the finder looked only for an exact aria-label on a
+   * <button>, found nothing, and the run stood down saying there was no
+   * approval control on the page. The folder-upload anchor had already learned
+   * the same lesson from the same control (see modeControl there).
+   *
+   * So: the strict reading of each string first, and only then the tolerant
+   * one — the mode's full name sitting ANYWHERE in a short label, which is
+   * what "Approval mode: Skip all approvals" or "Skip all approvals, change"
+   * amounts to. A string naming two modes names neither: it is a description,
+   * not a control, and guessing between them is exactly the guess the send is
+   * forbidden to make.
+   *
+   * Takes { ariaLabel, title, text } (or a bare string, read as the label).
+   */
+  function modeFromCaption(ev) {
+    const e = ev && typeof ev === "object" ? ev : { ariaLabel: ev };
+    const said = [e.ariaLabel, e.title, e.text];
+    for (const v of said) {
+      const k = modeFromLabel(v);
+      if (k) return k;
+    }
+    for (const v of said) {
+      const k = modeNamedWithin(v);
+      if (k) return k;
+    }
+    return INHERIT;
+  }
+
+  /**
+   * The one mode named inside `text`, or "" for none — and "" for more than
+   * one, which is a sentence about approvals rather than a control set to one.
+   * Length-capped: a whole rendered turn mentioning a mode is not a control.
+   */
+  function modeNamedWithin(text) {
+    const t = lower(text);
+    if (!t || t.length > 120) return INHERIT;
+    let found = INHERIT;
+    for (const m of MODES) {
+      if (t.indexOf(m.label.toLowerCase()) === -1) continue;
+      if (found && found !== m.key) return INHERIT;
+      found = m.key;
+    }
+    return found;
+  }
+
+  /**
+   * Whether a control is the approval control at all — either because it names
+   * a mode, or because it says "approval" in a label short enough to be a
+   * control's own name rather than a sentence about one ("Change approval
+   * mode" is twenty characters; a sentence offering to explain approvals is
+   * not a button).
+   *
+   * The second half is the case where the mode can't be read but the menu can
+   * still be opened and the right row pressed: a relabelled trigger is a
+   * reason to click carefully, not a reason to conclude the page has no
+   * approval control. Only the label and title count, never the visible text —
+   * claude.ai's own prose says "approvals" often, and a paragraph is not a
+   * button.
+   */
+  function isApprovalControl(ev) {
+    const e = ev && typeof ev === "object" ? ev : { ariaLabel: ev };
+    if (modeFromCaption(e)) return true;
+    for (const v of [e.ariaLabel, e.title]) {
+      const t = lower(v);
+      if (t && t.length <= 40 && /(^|[^a-z])approvals?([^a-z]|$)/.test(t)) return true;
+    }
+    return false;
+  }
+
   /** The aria-label claude.ai uses for a mode, for finding its trigger or row. */
   function labelForMode(key) {
     const m = modeByKey(key);
@@ -745,8 +821,32 @@
     const want = modeByKey(lower(wanted));
     if (!want) return false;
     const e = ev || {};
-    if (modeFromLabel(e.triggerLabel) === want.key) return true;
+    const says = modeFromCaption({
+      ariaLabel: e.triggerLabel,
+      title: e.triggerTitle,
+      text: e.triggerText,
+    });
+    if (says === want.key) return true;
+    // The row's tick still counts even against a trigger reading the old mode:
+    // a hidden Cowork tab renders the trigger LATE, so the tick is routinely
+    // the same word said earlier rather than a contradiction of it.
     return !!e.rowChecked;
+  }
+
+  /**
+   * What a send says when the approval mode could NOT be set and it went
+   * anyway (the owner's instruction, September 2026 — see the send driver).
+   * The wanted mode, why it failed, and what the message actually runs under,
+   * so the note is a bug report rather than a shrug.
+   */
+  function approvalMissedNote(wanted, why, current) {
+    const on = modeFromLabel(current);
+    return (
+      "approval NOT set to " + describeMode(wanted) +
+      (why ? " (" + norm(why) + ")" : "") +
+      " — sent under " +
+      (on ? describeMode(on) : "whatever mode the page was already in")
+    );
   }
 
   /** Whether two titles are the same name, letters and digits only — the
@@ -775,6 +875,9 @@
     approvalApplies,
     surfaceLeftNote,
     modeFromLabel,
+    modeFromCaption,
+    modeNamedWithin,
+    isApprovalControl,
     labelForMode,
     describeMode,
     modeOptions,
@@ -808,6 +911,7 @@
     attachOutcome,
     nameSeen,
     approvalTook,
+    approvalMissedNote,
     isSendCaption,
     sentEvidence,
     sameTitle,

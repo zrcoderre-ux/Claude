@@ -815,7 +815,27 @@
     if (!wanted) return { ok: true, why: "nothing asked for" };
     if (C.currentApproval() === wanted) return { ok: true, why: "already on it" };
     const trigger = C.findApprovalTrigger();
-    if (!trigger) return { ok: false, why: "no approval control on this page" };
+    // The bare "no approval control on this page" was a dead end to debug from
+    // — it can't tell a page that has none from a finder that missed one. Say
+    // what the page was actually showing, capped so a note stays a note.
+    if (!trigger) {
+      let seen = [];
+      try {
+        seen = Array.from(document.querySelectorAll('button,[role="button"],[role="combobox"]'))
+          .filter((el) => !C.isOurs(el) && C.isVisible(el))
+          .map((el) => norm(el.getAttribute("aria-label") || el.textContent).slice(0, 24))
+          .filter(Boolean);
+      } catch (e) {
+        /* a page that won't be queried says nothing, and the note says that */
+      }
+      return {
+        ok: false,
+        why:
+          "no approval control on this page — nothing among its " + seen.length +
+          " visible controls named a mode or said \"approval\"" +
+          (seen.length ? ": " + JSON.stringify(seen.slice(0, 12).join(" | ")) : ""),
+      };
+    }
 
     const trouble = await C.openMenu(trigger, C.menuItems());
     if (trouble) {
@@ -842,6 +862,20 @@
       };
     }
 
+    // Everything the trigger says about itself, not just its aria-label: the
+    // control renders its mode as visible words too, and a page that relabels
+    // it still shows what it is on.
+    const says = (el) => (C.controlSays ? C.controlSays(el) : { ariaLabel: el && el.getAttribute("aria-label") });
+    const evidenceOf = (el, checked) => {
+      const said = says(el);
+      return {
+        triggerLabel: said.ariaLabel,
+        triggerTitle: said.title,
+        triggerText: said.text,
+        rowChecked: checked,
+      };
+    };
+
     const took = async (tries) => {
       for (let i = 0; i < tries; i++) {
         await sleep(400);
@@ -854,13 +888,7 @@
         } catch (e) {
           /* a detached row answers nothing; the trigger still can */
         }
-        if (
-          K.approvalTook(
-            { triggerLabel: t && t.getAttribute("aria-label"), rowChecked: checked },
-            wanted
-          )
-        )
-          return true;
+        if (K.approvalTook(evidenceOf(t, checked), wanted)) return true;
       }
       return false;
     };
@@ -885,13 +913,14 @@
     // a run whose page is in exactly the state it asked for.
     await sleep(600);
     const t = C.findApprovalTrigger();
-    if (K.approvalTook({ triggerLabel: t && t.getAttribute("aria-label") }, wanted))
+    if (K.approvalTook(evidenceOf(t, false), wanted))
       return { ok: true, why: "took after the menu closed" };
+    const said = says(t);
     return {
       ok: false,
       why:
         "clicked the row both ways and the trigger still reads " +
-        JSON.stringify((t && t.getAttribute("aria-label")) || "nothing"),
+        JSON.stringify(said.ariaLabel || said.text || "nothing"),
     };
   }
 
@@ -1003,9 +1032,14 @@
   /**
    * One composed Cowork message, end to end. Same contract as the Chat
    * driver's sendMessage — { ok, error?, halted?, notes } — but every phase
-   * reports, and a phase that fails fails the SEND, loudly, rather than
-   * leaving a note and sailing on: a message sent into the wrong project, or
-   * under an approval mode nobody chose, is worse than one that waits.
+   * reports, and a phase that fails the message's ADDRESS fails the SEND
+   * loudly rather than leaving a note and sailing on: a message that lands in
+   * the wrong project is worse than one that waits.
+   *
+   * The approval mode is not one of those, on the owner's instruction: the
+   * mode the page is already in is one claude.ai chose, and a run that never
+   * happens is worse than one under a mode we didn't get to set. It leaves a
+   * note saying so, loudly, and goes.
    */
   async function send(o) {
     const j = o || {};
@@ -1091,12 +1125,26 @@
         } catch (e) {
           r = { ok: false, why: String((e && e.message) || e) };
         }
-        if (!r.ok)
-          return fail(
-            "could not set approval to " + K.describeMode(approval) + approvalFrom + " — " + r.why +
-              " — not sent: a session that runs under a mode nobody chose is worse than one that waits"
-          );
-        say("approval", K.describeMode(approval) + approvalFrom + " (" + r.why + ")");
+        if (r.ok) say("approval", K.describeMode(approval) + approvalFrom + " (" + r.why + ")");
+        else {
+          // Survivable, like the model — the owner's instruction, September
+          // 2026, reversing what this used to do. A send that stands down over
+          // the approval mode leaves the work undone, and the work not
+          // happening is the worse outcome; the mode the page is already in is
+          // a mode claude.ai chose, not one nobody did. It still fails LOUDLY:
+          // the note names the mode asked for, why the switch failed and what
+          // the message actually runs under, so a shape change gets found
+          // rather than quietly tolerated.
+          let now = "";
+          try {
+            now = C.currentApproval();
+          } catch (e) {
+            now = "";
+          }
+          notes.push(K.approvalMissedNote(approval, r.why + approvalFrom, now));
+          say("approval", "NOT set (" + r.why + ") — sent under " +
+            (now ? K.describeMode(now) : "the page's own mode"));
+        }
       } else if (phase === "project") {
         const r = await selectProject(project);
         if (!r.ok)
