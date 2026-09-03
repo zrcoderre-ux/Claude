@@ -27,6 +27,11 @@
  *   all of it: this is an alternative to reaching for it, not a replacement,
  *   because the popup is also where you go when the page will not load.
  *
+ *   AND THE KEY FILE BACK. The workbook a key was loaded from is kept beside
+ *   the library (src/keyfile.js) and handed back by the download button here —
+ *   the bytes that were loaded, never a rebuild from the stored rows, because
+ *   the rows are what the parser could read and the file was more than that.
+ *
  * THE BUTTON CARRIES THE COUNT, and that is not decoration. The badge existed
  * for one invariant — a real name on screen always has something on screen
  * saying why — and a panel that has to be opened would have quietly ended it.
@@ -56,6 +61,7 @@
   const X = window.CUMXlsx;
   const V = window.CUMPseudoView;
   const M = window.CUMMasterKey;
+  const KF = window.CUMKeyFile;
   // Only the two this file cannot draw a single thing without. X (the workbook
   // reader), V (the live translation state) and M (the master key) are each
   // one SECTION of the panel, and a missing section is a sentence the panel
@@ -69,6 +75,9 @@
   const KEYS_KEY = "cum_pseudo_keys";
   const CHATS_KEY = "cum_pseudo_chats";
   const MASTER_KEY = "cum_pseudo_master";
+  // The loaded workbooks themselves, beside the library rather than inside it
+  // (src/keyfile.js says why). Read here so the panel can hand one back.
+  const FILES_KEY = (KF && KF.FILES_KEY) || "cum_pseudo_keyfiles";
   const TICK_MS = 1200;
 
   let btn = null;
@@ -77,10 +86,12 @@
   let open = false;
   let state = { on: false, names: 0, titles: 0, paused: false, hold: null };
   let lastKeyId = null; // so a change of case empties the cleaner's boxes
+  let selectEl = null; // this draw's key picker, where there is one
 
   let keys = {};
   let chats = {};
   let master = null;
+  let keyFiles = {};
   let note = ""; // the last thing that happened, said in the panel
 
   // ---- storage ---------------------------------------------------------------
@@ -116,10 +127,11 @@
   }
 
   async function load() {
-    const res = await get([KEYS_KEY, CHATS_KEY, MASTER_KEY]);
+    const res = await get([KEYS_KEY, CHATS_KEY, MASTER_KEY, FILES_KEY]);
     keys = res.data[KEYS_KEY] || {};
     chats = res.data[CHATS_KEY] || {};
     master = res.data[MASTER_KEY] || null;
+    keyFiles = res.data[FILES_KEY] || {};
     draw();
   }
 
@@ -325,6 +337,7 @@
 
   function drawChat() {
     const box = el("div", "cum-key-sec");
+    selectEl = null;
     const conv = convKey();
     const ids = Object.keys(keys);
     const attached = conv ? chats[conv] : null;
@@ -362,12 +375,12 @@
       }
       if (attached && keys[attached]) sel.value = attached;
       sel.id = "cum-key-select";
+      selectEl = sel;
       box.appendChild(sel);
     }
     const row = el("div", "cum-key-row");
     const attach = button("Attach to this chat", "cum-key-primary", () => {
-      const sel = panel && panel.querySelector("#cum-key-select");
-      const id = (sel && sel.value) || offeredFirst();
+      const id = selectedKeyId();
       if (!id) return;
       rekey(id, (ok, runs) =>
         say(
@@ -399,6 +412,60 @@
     return box;
   }
 
+  // ---- the workbook itself ---------------------------------------------------
+
+  /**
+   * Keep the bytes that were loaded, under the library id they became. Says
+   * whether it happened: a file too big to keep is a key that still works,
+   * minus the download, and the panel would rather say that than let the
+   * button appear and then do nothing.
+   */
+  async function rememberFile(id, bytes, name) {
+    if (!KF) return { ok: false, why: "the key-file store isn't loaded on this page" };
+    const made = KF.fileRecord(bytes, name, Date.now());
+    if (!made.ok) return made;
+    const res = await get([FILES_KEY]);
+    const files = KF.putFile(res.data[FILES_KEY] || {}, id, made.record);
+    const wrote = await set({ [FILES_KEY]: files });
+    if (!wrote) return { ok: false, why: "the write didn't go through" };
+    keyFiles = files;
+    return { ok: true };
+  }
+
+  /**
+   * Hand a stored workbook back. The same anchor-and-blob save src/save-chat.js
+   * and src/up-files.js use, in the same world, for the same reason: the page's
+   * CSP does not reach in here.
+   */
+  function downloadFile(id) {
+    const rec = KF && KF.fileFor(keyFiles, id);
+    if (!rec)
+      return say(
+        KF
+          ? KF.describeFile(null, keyLabel(keys[id]))
+          : "The key-file store isn't loaded on this page, so nothing can be handed back."
+      );
+    let url = "";
+    try {
+      const blob = new Blob([KF.base64ToBytes(rec.b64)], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      url = URL.createObjectURL(blob);
+      const a = el("a");
+      a.href = url;
+      a.download = KF.saveAsName(rec);
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      if (url) URL.revokeObjectURL(url);
+      return say("Couldn't save that file: " + String((e && e.message) || e));
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 6000);
+    say("Saved " + KF.saveAsName(rec) + " — the key for " + keyLabel(keys[id]) + ".");
+  }
+
   // ---- the library -----------------------------------------------------------
 
   /**
@@ -413,8 +480,18 @@
       return false;
     }
     let wb;
+    let bytes = null;
     try {
-      wb = await X.parseXlsx(await file.arrayBuffer());
+      const buf = await file.arrayBuffer();
+      // Read ONCE. A File is a handle on something that can be moved or
+      // rewritten between two reads, and the workbook this panel keeps has to
+      // be the workbook it parsed, not whatever is at that path a moment later.
+      // A COPY, not a view: the reader is free to do what it likes with the
+      // buffer it was handed, and a workbook that came back empty because
+      // something downstream detached it would be a download nobody could
+      // explain.
+      bytes = new Uint8Array(buf.slice(0));
+      wb = await X.parseXlsx(buf);
     } catch (e) {
       return false; // unreadable is not a key; the caller says what it found
     }
@@ -431,12 +508,20 @@
     // from somewhere else cannot know the folder that first named it.
     keys[where.id] = P.keepKeyFacts ? P.keepKeyFacts(keys[where.id], key) : key;
     await set({ [KEYS_KEY]: keys });
+    // ...and the workbook itself, so the panel can hand it back. A refresh
+    // replaces the stored file with the one just read: the library entry is
+    // now that file's rows, and a download that gave back the PREVIOUS
+    // workbook would be a key that doesn't match what this tab is translating
+    // with. Kept separately from the rows, and never fatal — a file too big to
+    // keep is a key that still works, minus the download.
+    const kept = await rememberFile(where.id, bytes, file.name);
     const d = key.dropped || {};
     say(
       (where.refreshed ? "Refreshed " : "Loaded ") +
         keyLabel(keys[where.id]) +
         (d.keeps ? " · " + d.keeps + " keep rows skipped" : "") +
-        (d.ambiguous ? " · " + d.ambiguous + " ambiguous fakes retired" : "")
+        (d.ambiguous ? " · " + d.ambiguous + " ambiguous fakes retired" : "") +
+        (kept.ok ? "" : " · the file itself isn't kept (" + kept.why + ")")
     );
     load();
     return true;
@@ -513,6 +598,26 @@
     return offered[0] || "";
   }
 
+  /**
+   * The key every control in this panel is talking about — read at the moment
+   * it is needed, because the picker is a live control and the panel is not
+   * redrawn when it changes.
+   *
+   * The picker's own value first, then what this chat is attached to (which is
+   * what the picker SHOWS when it is drawn), then the first key it would
+   * offer. Attach, Forget and Download all ask this one question, so no two of
+   * them can ever act on different keys.
+   */
+  function selectedKeyId() {
+    const sel = (selectEl && selectEl.isConnected && selectEl) ||
+      (panel && panel.querySelector("#cum-key-select"));
+    if (sel && sel.value && keys[sel.value]) return sel.value;
+    const conv = convKey();
+    const attached = (conv && chats[conv]) || "";
+    if (attached && keys[attached]) return attached;
+    return offeredFirst();
+  }
+
   function drawLibrary() {
     const box = el("div", "cum-key-sec");
     const ids = Object.keys(keys);
@@ -547,19 +652,47 @@
     // name. Only the key is read: nothing in that folder is uploaded, opened
     // or looked at beyond the one spreadsheet.
     row.appendChild(button("Load key from case folder…", "", pickFolder));
-    if (ids.length)
+    // Give the loaded workbook back. What this panel stores is the ROWS, which
+    // is less than the file was (parseKey drops keep rows and ambiguous
+    // fakes), so this hands back the bytes that were loaded or it says it
+    // cannot — it never rebuilds a spreadsheet that would look like the
+    // original while quietly holding less than it.
+    if (ids.length) {
+      const down = button("Download key file", "", () => downloadFile(selectedKeyId()));
+      const fileLine = el("p", "cum-key-line cum-key-dim", "");
+      const refresh = () => {
+        const id = selectedKeyId();
+        const rec = KF ? KF.fileFor(keyFiles, id) : null;
+        fileLine.textContent = KF
+          ? KF.describeFile(rec, keyLabel(keys[id]))
+          : "The key-file store isn't loaded on this page, so nothing can be handed back.";
+        down.disabled = !rec;
+        down.title = rec
+          ? "Save " + KF.saveAsName(rec) + " again — the file this key was loaded from"
+          : "Nothing kept for this key — load it once more and it will be";
+      };
+      refresh();
+      // The picker is live and the panel is not redrawn when it moves, so the
+      // sentence and the button follow it rather than describing whichever key
+      // happened to be chosen when this was drawn.
+      if (selectEl) selectEl.addEventListener("change", refresh);
+      row.appendChild(down);
+      box.appendChild(fileLine);
       row.appendChild(
         button("Forget key", "cum-key-warn", async () => {
-          const sel = panel && panel.querySelector("#cum-key-select");
-          const id = (sel && sel.value) || offeredFirst();
+          const id = selectedKeyId();
           if (!id) return;
           delete keys[id];
           for (const conv of Object.keys(chats)) if (chats[conv] === id) delete chats[conv];
-          await set({ [KEYS_KEY]: keys, [CHATS_KEY]: chats });
+          // The workbook goes with it. "Forget this case" that left the file
+          // it was loaded from sitting in storage would not be forgetting it.
+          keyFiles = KF ? KF.dropFiles(keyFiles, [id]) : keyFiles;
+          await set({ [KEYS_KEY]: keys, [CHATS_KEY]: chats, [FILES_KEY]: keyFiles });
           say("Forgotten, and detached everywhere it was attached.");
           load();
         })
       );
+    }
     box.appendChild(row);
     return box;
   }

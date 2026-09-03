@@ -612,12 +612,34 @@
     // uploaded. Answers true when it did, and is quiet either way, because one
     // caller is OFFERING candidates (the case-folder split hands over every
     // .xlsx it saw) and a refusal per spreadsheet would be noise there.
+    /**
+     * Keep the workbook a run's key was read from, beside the library rather
+     * than in it, so the key panel on the page can hand it back. Best effort:
+     * a file too big to keep is a key that still works, minus the download.
+     */
+    async function rememberKeyFile(id, bytes, name) {
+      const KF = window.CUMKeyFile;
+      if (!KF || !id) return;
+      const made = KF.fileRecord(bytes, name, Date.now());
+      if (!made.ok) return;
+      await new Promise((res) =>
+        chrome.storage.local.get(KF.FILES_KEY, (r) => {
+          const files = KF.putFile((r && r[KF.FILES_KEY]) || {}, id, made.record);
+          chrome.storage.local.set({ [KF.FILES_KEY]: files }, res);
+        })
+      );
+    }
+
     async function attachKeyFile(f, folder) {
       const P = window.CUMPseudo;
       const X = window.CUMXlsx;
       if (P && X && /\.xlsx$/i.test(f.name || "")) {
         try {
-          const wb = X.parseXlsx ? await X.parseXlsx(await f.arrayBuffer()) : null;
+          // Read ONCE and keep what was read: the key panel on the page hands
+          // this workbook back (src/keyfile.js), and it has to be the workbook
+          // that was parsed rather than whatever is at that path later.
+          const buf = X.parseXlsx ? await f.arrayBuffer() : null;
+          const wb = buf ? await X.parseXlsx(buf) : null;
           if (wb && (P.isKeyFileName(f.name) || P.sheetsLookLikeKey(wb.sheets))) {
             const key = P.parseKey(wb.sheets, f.name);
             if (key.rows) {
@@ -639,6 +661,7 @@
                   chrome.storage.local.set({ cum_pseudo_keys: keys }, res);
                 })
               );
+              await rememberKeyFile(id, new Uint8Array(buf.slice(0)), f.name);
               wf.pseudoKeyId = id;
               loadPseudoKeys();
               flash(

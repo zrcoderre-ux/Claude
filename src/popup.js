@@ -519,6 +519,35 @@
     const CHATS_KEY = "cum_pseudo_chats";
     const MASTER_KEY = "cum_pseudo_master";
     const M = window.CUMMasterKey;
+    const KF = window.CUMKeyFile;
+
+    /**
+     * Keep the workbook that was loaded, beside the library rather than in it,
+     * so the key panel on the page can hand it back (src/keyfile.js). Best
+     * effort by design: a file too big to keep is a key that still works,
+     * minus the download, and nothing here waits on this write.
+     */
+    function rememberKeyFile(id, bytes, name) {
+      if (!KF) return;
+      const made = KF.fileRecord(bytes, name, Date.now());
+      if (!made.ok) return;
+      chrome.storage.local.get(KF.FILES_KEY, (res) => {
+        if (chrome.runtime.lastError) return;
+        const files = KF.putFile((res && res[KF.FILES_KEY]) || {}, id, made.record);
+        chrome.storage.local.set({ [KF.FILES_KEY]: files }, () => void chrome.runtime.lastError);
+      });
+    }
+
+    /** ...and drop it when the key is forgotten: a "forget this case" that
+     * left the file it was loaded from in storage would not be forgetting it. */
+    function forgetKeyFile(id) {
+      if (!KF) return;
+      chrome.storage.local.get(KF.FILES_KEY, (res) => {
+        if (chrome.runtime.lastError) return;
+        const files = KF.dropFiles((res && res[KF.FILES_KEY]) || {}, [id]);
+        chrome.storage.local.set({ [KF.FILES_KEY]: files }, () => void chrome.runtime.lastError);
+      });
+    }
     const ui = {
       here: document.getElementById("pseudo-here"),
       chat: document.getElementById("pseudo-chat"),
@@ -659,7 +688,11 @@
       ui.file.value = "";
       if (!f) return;
       try {
-        const wb = await X.parseXlsx(await f.arrayBuffer());
+        // Read ONCE, and keep what was read: the panel on the page hands this
+        // workbook back, and it has to be the workbook that was parsed.
+        const buf = await f.arrayBuffer();
+        const bytes = new Uint8Array(buf.slice(0)); // a copy, not a view
+        const wb = await X.parseXlsx(buf);
         if (!P.sheetsLookLikeKey(wb.sheets)) {
           say("That workbook has no Real Value / Replacement sheet — not a pseudonym key.");
           return;
@@ -678,6 +711,7 @@
         // The file cannot know which case FOLDER named this key, so a refresh
         // from here keeps what the entry already learned (P.keepKeyFacts).
         keys[where.id] = P.keepKeyFacts ? P.keepKeyFacts(keys[where.id], key) : key;
+        rememberKeyFile(where.id, bytes, f.name);
         chrome.storage.local.set({ [KEYS_KEY]: keys }, () => {
           renderPseudo();
           ui.select.value = where.id;
@@ -759,6 +793,7 @@
       const id = ui.select.hidden ? first : ui.select.value || first;
       delete keys[id];
       for (const conv of Object.keys(chats)) if (chats[conv] === id) delete chats[conv];
+      forgetKeyFile(id);
       chrome.storage.local.set({ [KEYS_KEY]: keys, [CHATS_KEY]: chats }, () => {
         renderPseudo();
         say("Forgotten, and detached everywhere it was attached.");

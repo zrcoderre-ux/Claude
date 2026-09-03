@@ -228,13 +228,33 @@
   // every case's key file is called pseudonym_key.xlsx. The case FOLDER is what
   // the key is called from here on, so the popup, the run editor's picker and
   // the badge in this chat all name the same matter the same way.
+  /**
+   * Keep the workbook a key was read from, beside the library rather than in
+   * it, so the key panel can hand it back (src/keyfile.js). Best effort: a
+   * file too big to keep is a key that still works, minus the download.
+   */
+  async function rememberKeyFile(id, bytes, name) {
+    const KF = window.CUMKeyFile;
+    if (!KF || !id) return;
+    const made = KF.fileRecord(bytes, name, Date.now());
+    if (!made.ok) return;
+    const store = await readLocal([KF.FILES_KEY]);
+    if (!store.ok) return;
+    await storageSet({ [KF.FILES_KEY]: KF.putFile(store.data[KF.FILES_KEY] || {}, id, made.record) });
+  }
+
   async function loadKey(file, folder) {
     const P = window.CUMPseudo;
     const X = window.CUMXlsx;
     if (!P || !X || !X.parseXlsx || !F.isSpreadsheet(file.name)) return null;
     let key = null;
+    let bytes = null;
     try {
-      const wb = await X.parseXlsx(await file.arrayBuffer());
+      // Read ONCE and keep what was read: the key panel hands this workbook
+      // back (src/keyfile.js), and it has to be the one that was parsed.
+      const buf = await file.arrayBuffer();
+      bytes = new Uint8Array(buf.slice(0)); // a copy: see src/key-panel.js
+      const wb = await X.parseXlsx(buf);
       if (!wb || !(P.isKeyFileName(file.name) || P.sheetsLookLikeKey(wb.sheets))) return null;
       key = P.parseKey(wb.sheets, file.name);
     } catch (e) {
@@ -248,6 +268,7 @@
     const id = P.libraryIdFor(keys, key).id;
     keys[id] = P.keepKeyFacts ? P.keepKeyFacts(keys[id], key) : key;
     await storageSet({ [KEYS_KEY]: keys });
+    await rememberKeyFile(id, bytes, file.name);
     return { id: id, key: keys[id], label: P.keyLabel ? P.keyLabel(keys[id]) : folder || file.name };
   }
 
