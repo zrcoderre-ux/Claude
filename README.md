@@ -530,9 +530,18 @@ chose. So it is back: a job or a workflow step can name its mode, and the
 popup's **Approvals on Cowork sends** is the default every Cowork send applies
 when its job names none (a job that chose still wins). Set that to **Skip all
 approvals** and every unattended session runs with the brakes off. The switch
-is made on the composer home before the message goes, verified off the
-control's own label, and a switch that cannot be verified **fails the send**
-rather than posting under a mode nobody chose.
+is made on the composer home before the message goes and verified off the
+control's own words.
+
+**A switch that cannot be made no longer stops the send** (the owner's
+instruction, September 2026, reversing what this used to do). It used to fail
+the send outright, on the reasoning that a session under a mode nobody chose is
+worse than one that waits; a live run then stood down over a page that was
+*already* on Skip, and the work simply never happened. The mode the page is
+already in is one claude.ai chose, and a run that never happens is the worse
+outcome — so the send goes, and the job's note says loudly what was asked for,
+why the switch failed, and which mode the message actually ran under:
+*approval NOT set to Skip all approvals (…) — sent under Manually approve*.
 
 Three things about it shape how this works, and none of them is obvious:
 
@@ -541,7 +550,16 @@ Three things about it shape how this works, and none of them is obvious:
   goes — `/cowork/cse_…`, whose id isn't a uuid, so `conversationId` has its own
   arm for it and `settledUrl` its own test. Reading the surface off the DOM is
   the only honest answer, and the page gives one: the approval control's own
-  `aria-label` **is** the mode in force.
+  `aria-label` **is** the mode in force. Reading only that exact label was what
+  produced the stand-down above, so the control is now found by everything it
+  says about itself — an `aria-label` that says more than the mode's name
+  (*Approval mode: Skip all approvals*), a `title`, the visible words it renders
+  when there is no room (*Skip*), and failing all of those, a control whose
+  label merely says it is about approvals, which can still be opened and its
+  row pressed. A caption naming *two* modes names neither — that is prose about
+  approvals, not a control set to one. `findApprovalTrigger` is the one
+  implementation; the Upload folder button's anchor uses it rather than
+  carrying a second finder of its own.
 - **The choice is remembered for the whole account, not the tab.** Set Cowork in
   one window and the next window you open comes up in Cowork, whatever else is
   already open. So a 3am job that switches surfaces changes what you find in the
@@ -592,9 +610,10 @@ Three things about it shape how this works, and none of them is obvious:
 Both fields default to **leave as-is**, the same contract the model picker has:
 a job that never mentions the surface never touches it, so nothing that predates
 this behaves differently. And a mode asked for on a page with no approval
-control is **not** quietly treated as satisfied — the send reports that it was
-ignored, because "it must have worked" is exactly the assumption that gets a
-message sent under a mode nobody chose.
+control is **not** quietly treated as satisfied — the message goes, but the
+send reports that the mode was ignored and names what the page was showing
+instead, because "it must have worked" is exactly the assumption that hides a
+markup change until it has cost a week of runs.
 
 In a workflow the surface belongs to the **chat** (a conversation can't be half
 in Cowork) and the approval mode works like the model: set on the chat, and
@@ -625,9 +644,10 @@ navigating rows still excluded by name), confirming attachments by what the
 composer **visibly carries** — chips or the filenames themselves, truncation
 tolerated — and proving the send by Cowork's own evidence (the address becoming
 `/cowork/cse_…`, a new human turn, the editor emptying). Every phase reports,
-and a phase that fails **fails the send loudly** — a message posted into the
-wrong project, or under an approval mode nobody chose, is worse than one that
-waits. The decisions live in `src/cowork.js`, pure and tested; the driver holds
+and a phase that fails the message's **address** fails the send loudly — a
+message posted into the wrong project is worse than one that waits. The
+approval mode is the exception: it leaves a loud note and the send goes (see
+above). The decisions live in `src/cowork.js`, pure and tested; the driver holds
 only the wiring.
 
 ## Workflows

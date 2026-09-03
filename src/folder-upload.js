@@ -918,49 +918,9 @@
   // are different things — a row that clips, or one with no room left, puts a
   // button in the page and nowhere on the screen.
 
-  /**
-   * claude.ai's own control to sit beside, in the composer row under the
-   * prompt box — and which side of it to sit on.
-   *
-   * Four ways of finding one, because the row is not the same row on the two
-   * surfaces and the FIRST version of this found only two of them. On a Cowork
-   * session that carried a "Skip all approvals" button the operator could see,
-   * every one of them missed and the button fell back to the tray in the top
-   * right corner, which is not a composer row at all.
-   *
-   *   1. The approval control by its own aria-label (C.findApprovalTrigger).
-   *   2. The approval control by its CAPTION — same three modes, read off the
-   *      aria-label or the visible text, over anything that behaves like a
-   *      button. claude.ai labels that control with the mode in force, and a
-   *      label it has not been seen wearing is not a reason to give up on a
-   *      control whose words are right there.
-   *   3. The Chat/Cowork toggle, which only ever sits on the composer home.
-   *   4. SEND, which every composer has. Found the way the COWORK driver finds
-   *      it (CW.findSend) before Chat's own way: Cowork's send control reads
-   *      "Start Task" and wears none of Chat's labels, so C.findSend answers
-   *      nothing on the surface this fallback most needed to work on.
-   *
-   * The button goes AFTER the first three — to the right of Skip, which is
-   * where it was asked for — and BEFORE Send, which is the last thing in that
-   * row and the one control there it must never crowd or be mistaken for.
-   */
-  function modeControl() {
-    const K = window.CUMCowork;
-    if (!K || !K.modeFromLabel) return null;
-    let list;
-    try {
-      list = document.querySelectorAll('button,[role="button"]');
-    } catch (e) {
-      return null;
-    }
-    for (const el of list) {
-      if (C.isOurs(el) || !C.isVisible(el)) continue;
-      const aria = (el.getAttribute && el.getAttribute("aria-label")) || "";
-      if (K.modeFromLabel(aria) || K.modeFromLabel(el.textContent)) return el;
-    }
-    return null;
-  }
-
+  /** Cowork's send control before Chat's: Cowork reads "Start Task" and wears
+   * none of Chat's labels, so C.findSend answers nothing on the surface this
+   * fallback most needed to work on. */
   function sendControl() {
     const CW = window.CUMCoworkSend;
     let el = null;
@@ -972,10 +932,30 @@
     return el;
   }
 
+  /**
+   * claude.ai's own control to sit beside, in the composer row under the
+   * prompt box — and which side of it to sit on.
+   *
+   * Three ways of finding one, because the row is not the same row on the two
+   * surfaces and the FIRST version of this found only one of them. On a Cowork
+   * session that carried a "Skip all approvals" button the operator could see,
+   * every one of them missed and the button fell back to the tray in the top
+   * right corner, which is not a composer row at all.
+   *
+   *   1. The approval control (C.findApprovalTrigger) — which is where the
+   *      widened search for it lives now: this file used to carry a second
+   *      finder of its own, and one implementation of "what is the approval
+   *      control" is the point.
+   *   2. The Chat/Cowork toggle, which only ever sits on the composer home.
+   *   3. SEND, which every composer has.
+   *
+   * The button goes AFTER the first two — to the right of Skip, which is where
+   * it was asked for — and BEFORE Send, which is the last thing in that row and
+   * the one control there it must never crowd or be mistaken for.
+   */
   function rowAnchor() {
     const after = [
       () => C.findApprovalTrigger && C.findApprovalTrigger(),
-      modeControl,
       () => C.findSurfaceGroup && C.findSurfaceGroup(),
     ];
     for (const find of after) {
