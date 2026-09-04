@@ -34,36 +34,16 @@ test("a peek is monochrome, because the page IS showing the fakes", () => {
   assert.equal(b.disabled, false, "a peek is the user's own switch to throw back");
 });
 
-test("a run holding the messages is said, and the press is still offered", () => {
-  // The hold takes the MESSAGES. The titles are the peek's, held or not, so
-  // the button still has something to do and the page is still not saying what
-  // claude.ai says. It used to come back disabled and monochrome, which was
-  // the hold answering a question nobody had asked it.
+test("a run holding the messages is said, not offered", () => {
+  // The hold is not the user's to lift here: the run's hand-off can fall back
+  // to the rendered message, and pausing the run is what ends it.
   const b = K.buttonState(on({ hold: { name: "Smith v. Jones", via: "key" } }));
-  assert.equal(b.disabled, false, "the titles are still the user's to put back");
-  assert.equal(b.faking, false, "a hold is a HALF stand-down — the titles read real");
-  assert.equal(b.lit, true, "real names ARE on screen, in every title");
+  assert.equal(b.disabled, true);
+  assert.equal(b.faking, true);
+  assert.equal(b.lit, false, "held is monochrome like a peek — the fakes are showing in both");
   assert.equal(b.label, K.HELD);
-  assert.equal(b.next, true, "pressing it peeks");
   assert.match(b.title, /pause the run/i);
   assert.match(b.title, /Smith v\. Jones/);
-  assert.match(b.title, /titles/i, "it has to say which half the press moves");
-});
-
-test("a peek during a hold is a peek, not a hold", () => {
-  // Both at once is the whole page in the fakes. "Held" would be naming the
-  // half that didn't change, and aria-pressed has to follow what is on screen.
-  const b = K.buttonState(on({ paused: true, hold: { name: "Smith v. Jones", via: "chat" } }));
-  assert.equal(b.label, K.FAKES);
-  assert.equal(b.faking, true);
-  assert.equal(b.lit, false);
-  assert.equal(b.disabled, false);
-  assert.equal(b.next, false, "pressing it reads the titles back");
-});
-
-test("the hold never disables the switch, named run or not", () => {
-  for (const hold of [{ name: "", via: "chat" }, { name: "MSJ", via: "key" }])
-    assert.equal(K.buttonState(on({ hold: hold })).disabled, false);
 });
 
 test("a held page with no run name still says what is happening", () => {
@@ -124,4 +104,34 @@ test("a key that is not attached here says so", () => {
 test("an attached key says nothing of the sort", () => {
   const b = K.buttonState(on({ attached: true }));
   assert.doesNotMatch(b.title, /not attached|No key is attached/);
+});
+
+// ---- the titles are outside the switch -------------------------------------
+//
+// The repo owner's rule (September 2026): the title reads in the real names in
+// every state there is. The peek is about the BODY. That makes this button a
+// control over half the page by design, and a control that says "showing the
+// fakes" while a sidebar full of real names sits beside it is a control that
+// has lied. So every state that stands the messages down has to name the half
+// it did not touch.
+
+test("a peek says which half it moved", () => {
+  const b = K.buttonState(on({ paused: true }));
+  assert.match(b.title, /messages/i, "it has to say the MESSAGES are the fakes");
+  assert.match(b.title, /titles keep their real names/i);
+});
+
+test("a run's hold says it too", () => {
+  const b = K.buttonState(on({ hold: { name: "Smith v. Jones", via: "key" } }));
+  assert.match(b.title, /titles keep their real names/i);
+  assert.match(b.title, /pause the run/i, "the messages are still the run's");
+});
+
+test("the ON state says the titles are not what the colour is about", () => {
+  // Lit means the MESSAGES are in the real names. Pressing it does not take
+  // the titles with them, and the tooltip is where that is said before the
+  // press rather than discovered after it.
+  const b = K.buttonState(on());
+  assert.equal(b.lit, true);
+  assert.match(b.title, /titles keep their real names/i);
 });
