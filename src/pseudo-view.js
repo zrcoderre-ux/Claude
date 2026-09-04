@@ -452,17 +452,8 @@
   }
 
   function setPaused(on) {
-    // Held or not. The hold and the peek stand different things down — the
-    // hold takes the MESSAGES, the peek takes the whole page — so a held page
-    // is a page whose TITLES are still reading back in the real names, and
-    // this is the only control that puts those back. Refusing the press while
-    // held made the one state where the peek matters most the one state where
-    // it did nothing: the panel said "the titles keep their real names" and
-    // greyed out the button for exactly that.
-    //
-    // Nothing here can lift the hold. `paused` only ever adds to what is stood
-    // down (translationOff is `paused || hold`), so pressing this while a run
-    // is moving can put MORE of the page into the fakes and never less.
+    // A peek is a choice about the display; the run's hold is not one to make.
+    if (hold) return;
     paused = !!on;
     applyTranslationState();
   }

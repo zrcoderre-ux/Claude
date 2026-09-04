@@ -16,23 +16,14 @@
  * not re-decided here:
  *
  *   LIT IF AND ONLY IF REAL NAMES ARE ON SCREEN. Colour means this page is not
- *   saying what claude.ai says. A peek is monochrome like the off state,
- *   because a peek is the whole page in the fakes. A run's HOLD is not: it
- *   stands the messages down and leaves every title reading back in the real
- *   name, so the page is still not saying what claude.ai says and the button
- *   is still lit. It used to be monochrome here on the belief that a hold and
- *   a peek showed the same thing, and they never have.
+ *   saying what claude.ai says. A peek and a run's hold both leave the fakes
+ *   showing, so both are monochrome like the off state and are told apart by
+ *   the word on the button.
  *
- *   A RUN'S HOLD IS NOT THE USER'S TO LIFT — AND PRESSING THIS DOES NOT LIFT
- *   IT. While a run is moving through this chat the messages show the fakes,
- *   because the run's hand-off can fall back to the rendered message, and no
- *   button here changes that; pausing the run is what ends it. But the TITLES
- *   are the peek's, held or not, and this button is how you see what claude.ai
- *   actually holds for one. So a held page still takes the press: it puts the
- *   titles back to the fakes, which is the one thing the hold was never doing
- *   for you. Disabling it was the hold answering a question nobody had asked
- *   it — and it left the panel saying "the titles keep their real names" beside
- *   the greyed-out control for exactly that.
+ *   A RUN'S HOLD IS NOT THE USER'S TO LIFT HERE. While a run is moving through
+ *   this chat the messages show the fakes because the run's hand-off can fall
+ *   back to the rendered message. The button says so and does nothing, the way
+ *   the panel's peek does; pausing the run is what ends it.
  *
  *   THE SAFETY HALF NEVER STANDS DOWN. Faking is display: the composer
  *   warning, the typeahead swap and the upload guard stay on either side of
@@ -65,7 +56,7 @@
    *   shown     — put it in the row at all
    *   faking    — the page is showing the fakes right now
    *   lit       — real names are on screen (the one thing colour may mean)
-   *   disabled  — never; kept so the button's drawing has one thing to ask
+   *   disabled  — a run has the display, and this is not the control for it
    *   next      — what to hand setPaused() when it is pressed
    *   label     — the word on the button
    *   title     — the whole sentence, for the tooltip
@@ -80,24 +71,16 @@
     // and a paused page whose only switch had vanished would be a translation
     // quietly off with nothing on screen offering to turn it on.
     const shown = !!st.on || paused;
-    // The whole page in the fakes, which is the peek and only the peek. A hold
-    // is a HALF stand-down — messages down, titles up — so it is not this, and
-    // saying it was is what left the button claiming to be pressed already
-    // while the titles beside it read in the real names.
-    const faking = paused;
+    const faking = paused || held;
     return {
       shown: shown,
       faking: faking,
       lit: !!st.on && !faking,
-      // Never. The hold owns the messages and this button was never the
-      // control for those; what it does own is the titles, which a hold leaves
-      // alone.
-      disabled: false,
-      // The flag this flips is `paused` in both directions, hold or no hold.
+      disabled: held,
+      // The flag this flips is `paused`, so a held page (whose button is
+      // disabled anyway) never answers "resume" to a press it can't take.
       next: !paused,
-      // A peek names itself first: pressed while held, the page IS the fakes
-      // and "Held" would be naming the half that didn't change.
-      label: paused ? FAKES : held ? HELD : REAL,
+      label: held ? HELD : paused ? FAKES : REAL,
       title: titleFor(st, held, paused),
     };
   }
@@ -109,12 +92,9 @@
         (st.hold && st.hold.name ? "“" + st.hold.name + "”" : "a run") +
         " is working" +
         (st.hold && st.hold.via === "key" ? " on this matter" : "") +
-        ", and the titles keep their real names. A run's hand-off can fall back " +
-        "to the text on screen, so this is not the control for the messages: " +
-        "pause the run — or let it finish, hold or fail — and they come back by " +
-        "themselves. Click to put the fakes back in the TITLES, which the run " +
-        "never held." +
-        SAFETY
+        ". A run's hand-off can fall back to the text on screen, so this is not " +
+        "the control for it: pause the run — or let it finish, hold or fail — and " +
+        "the real names come back by themselves."
       );
     if (paused)
       return (

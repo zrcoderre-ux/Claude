@@ -2677,21 +2677,12 @@ they are claims about the same page:
 | --- | --- |
 | **Real names**, lit | The key's real values, in place of the fakes |
 | **Fakes**, italic | Exactly what claude.ai renders |
-| **Held**, lit | The fakes in the *messages*, because [a run is working](#while-a-run-is-working-the-messages-show-the-fakes) — and the real names in every title. Pressing it puts the titles back too; pausing the run is what frees the messages |
+| **Held**, italic, unpressable | The fakes, because [a run is working](#while-a-run-is-working-the-messages-show-the-fakes) — pause the run, not this |
 
-**Lit if and only if real names are on screen**, in the key button's own colour.
-A peek is monochrome, because a peek is the whole page in the fakes. A run's
-hold is *not*: it stands the messages down and leaves every title reading back
-in the real name, so real names are on screen and the button stays lit — the
-word on it is what tells the two lit states apart, rather than a second colour
-that would dilute the first.
-
-**A hold never disables the switch.** It used to, on the reasoning that a run's
-display is not the user's to lift — but the hold only ever took the *messages*,
-and the titles have always been the peek's. So while a run works, the button
-still answers the question it exists for: press it and the titles show what
-claude.ai actually holds. Nothing about pressing it reaches the messages, which
-the run keeps in the fakes either way.
+**Lit if and only if real names are on screen**, in the key button's own colour:
+a peek and a run's hold are monochrome, because in both of them the page *is*
+showing the fakes, and they are told apart by the word rather than by a second
+colour that would dilute the first.
 
 It appears only where there is a switch to throw — a key translating this page,
 or a peek to come back from — and it **follows the Folder button** rather than
@@ -2785,12 +2776,11 @@ peek has the display standing down. Its tooltip is the whole sentence.
 **And it is lit if and only if real names are on screen** — black and white the
 rest of the time. That is the same invariant turned into something you don't
 have to read: colour means this page is *not* saying what claude.ai says. A
-[peek](#pseudonym-translation) is monochrome like the off state, because a peek
-is the whole page in the fakes. A [run's
-hold](#while-a-run-is-working-the-messages-show-the-fakes) is not: it stands the
-messages down and leaves every title reading back in the real name, so the
-button stays lit and the count beside it (`held`) is what tells the two lit
-states apart, not a second colour that would dilute the first.
+[peek](#pseudonym-translation) and a [run's
+hold](#while-a-run-is-working-the-messages-show-the-fakes) are monochrome like
+the off state, because in both of them the page is showing the fakes; they are
+told apart by the word on the button, not by a second colour that would dilute
+the first.
 
 **A key that is merely *available* lights nothing.** Two things light the
 button — this conversation having a key **attached**, or real names being on
@@ -2814,10 +2804,8 @@ The panel under it holds, in order:
 
 - **What is translating, and what it is doing** — the case this page is being
   read in, how many names and titles are restored, and the **peek toggle**.
-  Where a run is holding the messages the toggle still works — it puts the
-  fakes back in the **titles**, which the run never held — and says which run
-  has the messages and what ends that ([While a run is
-  working](#while-a-run-is-working-the-messages-show-the-fakes)).
+  Where a run is holding the messages the toggle is disabled and says which run
+  and what ends it ([While a run is working](#while-a-run-is-working-the-messages-show-the-fakes)).
 - **This conversation** — attach a key to it, or detach. Attaching in a chat
   that belongs to a **run** re-keys the whole case, exactly as the popup does:
   the run, its group, and their chats all follow.
@@ -2981,12 +2969,10 @@ mid-step — is a failure like any other: past **five minutes** with no heartbea
 and no progress, the real names return. A run genuinely waiting an hour for a
 long answer keeps beating every twenty seconds, so it keeps its hold.
 
-The key button says which state it is in. The **peek toggle** keeps working
-while a run holds: the hold takes the *messages*, the titles have always been
-the peek's, so pressing it is how you see what claude.ai actually holds for a
-title mid-run. It cannot lift the hold — a peek only ever stands *more* down,
-never less — and it says which run has the messages and that pausing that run
-is what frees them. Everything that is *safety* rather than display stays on
+The key button says which state it is in, and while a run holds the messages
+the **peek toggle** is disabled and says why —
+pausing the run is one click, and pausing the run is exactly what this rule is
+waiting for. Everything that is *safety* rather than display stays on
 throughout: the composer warning, the typeahead swap, the upload guard, and the
 cleaner box.
 
