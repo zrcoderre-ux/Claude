@@ -2903,15 +2903,24 @@ Four limits keep a page-wide pass honest:
   here it is asked of each **text node**, which in a list *is* a row. Without
   it a case binding the fake `Doe` would rename a chat called `Doe hours` that
   has nothing to do with the matter.
-- **Rendered turns are pruned.** A message belongs to the message sweep under
-  that chat's own full key; a distilled key never gets near one.
+- **Rendered turns are pruned** — every shape of turn a run can *find*, not
+  just the ones the message sweep translates. The two lists are one list, kept
+  in `src/pseudo.js` and held together by the test suite, because what a
+  hand-off can read is exactly what this pass must never touch. A message
+  belongs to the message sweep under that chat's own full key; a distilled key
+  never gets near one.
 - **Title-length text only.** A chat title is capped at 100 characters and a
   paragraph is not, so the ceiling keeps this about names in lists rather than
   prose a turn selector happened to miss.
-- **It stands down with the messages, not with the titles.** The targeted rules
-  keep translating through a run's hold because their targets are *provably*
-  titles. This pass *believes* it has a title — and while a run is moving,
-  something merely believed to be a title is something a hand-off might read.
+- **It stands down with the titles** — for the peek, and nothing else. It used
+  to stand down for a run's hold too, on the reasoning that this pass only
+  *believes* it has a title while the targeted rules can *prove* it. What that
+  cost was half your sidebar: mid-run, a chat drawn as a link read back in its
+  real name and the chat beside it, drawn as a row in Recents or a project's
+  page, sat in the fake, with nothing on screen saying why. A hand-off reads
+  **turns**, and turns are what the prune above now covers by the run's own
+  reckoning — so the reader keeps the line naming the case in the minutes a
+  run is working it.
 
 The library isn't merged in beside the master key, and doesn't need to be:
 every key you load is folded **into** the master key already, so the
