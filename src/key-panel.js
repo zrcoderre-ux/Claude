@@ -42,9 +42,12 @@
  * And it is COLOURED if and only if real names are on screen. That is the same
  * invariant turned into something you do not have to read: colour means this
  * page is not saying what claude.ai says, black and white means it is. A peek
- * and a run's hold are therefore monochrome like the off state — in both of
- * them the page is showing the fakes — and are told apart by the word on the
- * button rather than by a second colour that would dilute the first.
+ * is therefore monochrome like the off state, since a peek is the whole page
+ * in the fakes. A run's HOLD is not: it stands the messages down and leaves
+ * every title reading back in the real name, so real names are on screen and
+ * the button stays coloured — the count beside it ("held") is what tells the
+ * two lit states apart, rather than a second colour that would dilute the
+ * first.
  *
  * The decisions it renders are not here. src/pseudo-view.js owns the keys, the
  * sweep and the peek, and publishes state()/clean()/setPaused()/subscribe();
@@ -234,6 +237,16 @@
     const titles = st.titles
       ? " The titles keep their real names — " + st.titles + " of them."
       : "";
+    // The peek is asked FIRST, because a peek during a hold is the whole page
+    // in the fakes and the hold's own line would go on promising real names in
+    // titles that are showing fakes.
+    if (st.paused)
+      return (
+        "Paused — this page is showing exactly what claude.ai renders." +
+        (st.hold
+          ? " A run is working this matter as well, and holds the messages either way."
+          : "")
+      );
     if (st.hold)
       return (
         "The messages show the fakes while " +
@@ -243,7 +256,6 @@
         "." +
         titles
       );
-    if (st.paused) return "Paused — this page is showing exactly what claude.ai renders." + titles;
     // Nothing is attached here: what is lit is the chat names in the lists
     // being read back, not a key on this page. Said plainly, because the two
     // are different facts and only one of them can be true on a page that is
@@ -275,23 +287,26 @@
             "no loaded key claims a title, and it never touches a message."
         )
       );
-    // The peek. A run's hold is not the user's to lift here: the button says
-    // which run and what ends it, because pausing that run is one click and is
-    // exactly what the rule is waiting for.
+    // The peek, and it works while a run is holding this chat. The hold takes
+    // the MESSAGES; the peek takes the whole page — so a held page is one
+    // whose TITLES are still reading back in the real names, and this is the
+    // only control that puts those back. It used to be disabled here, which
+    // made the status line above say "the titles keep their real names" beside
+    // a greyed-out button for exactly that. Nothing about pressing it lifts
+    // the hold: the peek only ever stands MORE down, never less, and the
+    // tooltip still says which run has the messages and what ends it.
     const peek = button(
-      st.hold
-        ? "Held while a run works"
-        : st.paused
-        ? "Show the real names"
-        : "Show the fakes",
+      st.paused ? "Show the real names" : "Show the fakes",
       "cum-key-peek",
       () => V && V.setPaused(!state.paused)
     );
-    peek.disabled = !!st.hold || !st.on;
+    peek.disabled = !st.on && !st.paused;
     peek.title = st.hold
-      ? "A run's hand-off can fall back to the text on screen, so real names in a " +
-        "message could reach the next chat. Pause the run — or let it finish, hold " +
-        "or fail — and the real names come back by themselves."
+      ? "Puts the fakes back in the TITLES, which the run is not holding. The " +
+        "messages are already showing them: a run's hand-off can fall back to the " +
+        "text on screen, so real names in a message could reach the next chat, and " +
+        "this does not lift that. Pause the run — or let it finish, hold or fail — " +
+        "and they come back by themselves."
       : "Pause or resume this page's translation — messages AND titles, since a peek " +
         "is for seeing the page exactly as claude.ai renders it. This tab only, and " +
         "never remembered.";
@@ -820,8 +835,10 @@
 
   function countText(st) {
     if (!st.on) return "";
-    if (st.hold) return "held";
+    // The peek first: a peek DURING a hold is the whole page in the fakes, and
+    // "held" would be naming the half that didn't change.
     if (st.paused) return "fakes";
+    if (st.hold) return "held";
     const n = (st.names || 0) + (st.titles || 0);
     return n ? String(n) : "on";
   }
@@ -832,11 +849,13 @@
       const c = btn.querySelector(".cum-key-count");
       if (c) c.textContent = countText(st);
       // Lit if and ONLY if real names are on screen — see content.css. A peek
-      // and a run's hold both leave the page showing the fakes, so both are
-      // monochrome like the off state and are told apart by the word on the
-      // button rather than by a second colour.
-      btn.classList.toggle("cum-key-on", st.on && !st.paused && !st.hold);
-      btn.classList.toggle("cum-key-off", st.on && (st.paused || !!st.hold));
+      // is monochrome like the off state, because a peek is the whole page in
+      // the fakes. A run's hold is NOT: it stands the messages down and leaves
+      // every title reading back in the real name, so real names are on screen
+      // and the button says so. The count beside it ("held") is what tells the
+      // two lit states apart — the colour has one meaning and keeps it.
+      btn.classList.toggle("cum-key-on", st.on && !st.paused);
+      btn.classList.toggle("cum-key-off", st.on && st.paused);
       btn.title =
         (st.on
           ? st.name +
