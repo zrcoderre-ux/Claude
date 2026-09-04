@@ -41,10 +41,14 @@
  *
  * And it is COLOURED if and only if real names are on screen. That is the same
  * invariant turned into something you do not have to read: colour means this
- * page is not saying what claude.ai says, black and white means it is. A peek
+ * body is not saying what claude.ai says, black and white means it is. A peek
  * and a run's hold are therefore monochrome like the off state — in both of
- * them the page is showing the fakes — and are told apart by the word on the
- * button rather than by a second colour that would dilute the first.
+ * them the messages are showing the fakes — and are told apart by the count on
+ * the button rather than by a second colour that would dilute the first.
+ *
+ * The TITLES are outside all of that: they read in the real names in every
+ * state there is (see titlesOff in src/pseudo-view.js), so the colour is never
+ * about them and the line under the button is what says they are on.
  *
  * The decisions it renders are not here. src/pseudo-view.js owns the keys, the
  * sweep and the peek, and publishes state()/clean()/setPaused()/subscribe();
@@ -231,6 +235,8 @@
     const bits = [];
     if (st.names) bits.push(st.names + " name" + (st.names === 1 ? "" : "s"));
     if (st.titles) bits.push(st.titles + " title" + (st.titles === 1 ? "" : "s"));
+    // Said in every standing-down state, because it is true in every one of
+    // them: the titles never go down (titlesOff in src/pseudo-view.js).
     const titles = st.titles
       ? " The titles keep their real names — " + st.titles + " of them."
       : "";
@@ -243,7 +249,10 @@
         "." +
         titles
       );
-    if (st.paused) return "Paused — this page is showing exactly what claude.ai renders." + titles;
+    if (st.paused)
+      return (
+        "Paused — the messages are showing exactly what claude.ai renders." + titles
+      );
     // Nothing is attached here: what is lit is the chat names in the lists
     // being read back, not a key on this page. Said plainly, because the two
     // are different facts and only one of them can be true on a page that is
@@ -282,8 +291,8 @@
       st.hold
         ? "Held while a run works"
         : st.paused
-        ? "Show the real names"
-        : "Show the fakes",
+        ? "Show the real names again"
+        : "Show the fakes in the messages",
       "cum-key-peek",
       () => V && V.setPaused(!state.paused)
     );
@@ -292,9 +301,10 @@
       ? "A run's hand-off can fall back to the text on screen, so real names in a " +
         "message could reach the next chat. Pause the run — or let it finish, hold " +
         "or fail — and the real names come back by themselves."
-      : "Pause or resume this page's translation — messages AND titles, since a peek " +
-        "is for seeing the page exactly as claude.ai renders it. This tab only, and " +
-        "never remembered.";
+      : "Pause or resume the MESSAGE translation, for seeing the body exactly as " +
+        "claude.ai renders it. The titles keep their real names either way — a " +
+        "sidebar in fakes is one you cannot find your way back out of. This tab " +
+        "only, and never remembered.";
     box.appendChild(peek);
     return box;
   }

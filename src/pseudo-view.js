@@ -406,22 +406,37 @@
   // fail, hold or finish, and the real names come back on their own.
   let hold = null; // { runId, name, via } or null
 
-  // The MESSAGES stand down for either reason. The TITLES stand down only for
-  // the peek, and the difference is the whole point of the run's hold: it
-  // exists because a run's hand-off can fall back to the RENDERED MESSAGE and
-  // paste it into the next chat. Nothing reads a title that way — the Chat
-  // rename asks the conversation API what it is called, the Cowork one reads
-  // the control's aria-label (never translated), and the title a run WRITES is
-  // its own name run through the key by the worker (background.js,
-  // chatTitleFor). So there is nothing for a real name in a title to ride, and
-  // holding it only cost the reader the one line telling them which case they
-  // are looking at, at exactly the moment a run is moving through it.
+  // The MESSAGES stand down for either reason. The TITLES NEVER DO — not for a
+  // run's hold, and not for the peek either (the repo owner's rule, September
+  // 2026: the title always reads in the real names, whatever the body is
+  // showing).
+  //
+  // Both halves of that come from the same fact. What a stand-down protects
+  // against is a real name being CARRIED somewhere — a run's hand-off falling
+  // back to the rendered message and pasting it into the next chat. A title is
+  // not that. Nothing reads one that way: the Chat rename asks the
+  // conversation API what the conversation is called, the Cowork one reads the
+  // control's aria-label (never translated), Save chat and the scheduler read
+  // what claude.ai wrote rather than what is on screen, and the title a run
+  // WRITES is its own name run through the key by the worker first
+  // (background.js, chatTitleFor). So there is nothing for a real name in a
+  // title to ride.
+  //
+  // What standing them down DID cost was the one line telling you which case
+  // you are looking at, and it cost it in both directions. Mid-run: the very
+  // minutes a run is working the matter. Mid-peek: a peek asks what claude.ai
+  // actually holds in the BODY, and a sidebar that goes to fakes along with it
+  // is a sidebar you cannot find your way back out of.
+  //
+  // titlesOff is kept as a function rather than deleted: the sweep and the
+  // restore both ask the question, and the answer is worth having in one place
+  // if it ever stops being "never".
   function translationOff() {
     return paused || !!hold;
   }
 
   function titlesOff() {
-    return paused; // the peek is a choice about the display; a run's hold isn't
+    return false;
   }
 
   // Put back the fakes exactly as claude.ai rendered them.
@@ -499,9 +514,9 @@
     if (active && !translationOff()) {
       for (const turn of document.querySelectorAll(MSG_SEL)) total += swapIn(turn, active.compiled);
     }
-    let titles = 0;
-    if (titlesOff()) titleKeyId = null; // a peek translates no titles and has no owner
-    else titles = sweepTitles();
+    // The titles are swept in every state — a peek and a run's hold are both
+    // about the BODY (see titlesOff), so neither has an owner to clear.
+    const titles = sweepTitles();
     if (total !== shown || titles !== titleShown) {
       shown = total;
       titleShown = titles;
@@ -770,23 +785,21 @@
   }
 
   function sweepLoose() {
-    // The peek only — the same test the targeted pass and the tab title use.
-    // This pass used to stand down for a run's hold as well, and that is the
-    // bug it was reported for: mid-run, one chat read in its real name and the
-    // one beside it read in the fake, with nothing on screen saying why. The
-    // difference was never the chat, it was which pass happened to reach it —
-    // a title claude.ai draws as a link the targeted pass proves and keeps
-    // translating, and every other list it draws (Recents, a project's page,
-    // the Chats and Tasks margin, a header the data-testids no longer name)
-    // is this pass's alone.
+    // No stand-down at all. This is a TITLE pass — the one that reaches the
+    // lists claude.ai does not draw as links — and titles never stand down
+    // (see titlesOff). It used to go down with the messages, which mid-run
+    // left one chat reading back by name and the chat beside it in the fake,
+    // decided by nothing but which of the two title passes happened to reach
+    // it: a title drawn as a link the targeted pass proves and keeps, and
+    // every other list (Recents, a project's page, the Chats and Tasks margin,
+    // a header the data-testids no longer name) is this pass's alone.
     //
-    // What made the hold look necessary was the worry that something this
-    // pass merely BELIEVES is a title could be prose a hand-off then reads.
-    // That is a question about the PRUNE, and it is answered there: the walk
-    // now skips every turn shape the run itself can find (LOOSE_PRUNE_SEL,
-    // above), so what a run can read is what this pass can never touch. The
-    // ceiling and the one-claimant rule below are unchanged.
-    if (paused) return 0;
+    // What made that look necessary was the worry that something this pass
+    // merely BELIEVES is a title could be prose a hand-off then reads. That is
+    // a question about the PRUNE, and it is answered there: the walk skips
+    // every turn shape the run itself can find (LOOSE_PRUNE_SEL, above), so
+    // what a run can read is what this pass can never touch. The ceiling and
+    // the one-claimant rule below are unchanged.
     const master = masterFor();
     const root = looseRoot();
     if (!master || !root) return 0;

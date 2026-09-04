@@ -2,12 +2,18 @@
  * The fakes toggle — what the one-click switch in claude.ai's composer row
  * says, and whether it may be pressed.
  *
- * The peek already existed: a button inside the key panel that pauses this
- * page's translation so you see exactly what claude.ai renders, then puts the
- * real names back. Reaching it took opening a panel, which is two clicks and a
- * thing on screen to close, for a switch that is used mid-read and is never
- * anything but on or off. So the same decision gets a second home in the
- * composer row, beside Upload folder, with no panel of its own.
+ * The peek already existed: a button inside the key panel that stands this
+ * page's MESSAGES down so you see exactly what claude.ai renders in them, then
+ * puts the real names back. Reaching it took opening a panel, which is two
+ * clicks and a thing on screen to close, for a switch that is used mid-read and
+ * is never anything but on or off. So the same decision gets a second home in
+ * the composer row, beside Upload folder, with no panel of its own.
+ *
+ * The MESSAGES, and not the titles. The titles read in the real names in every
+ * state there is — the repo owner's rule, September 2026 — because a peek asks
+ * what claude.ai holds in the body, and a sidebar that went to fakes with it is
+ * a sidebar you cannot find your way back out of. So this switch governs half
+ * the page by design, and every sentence it says has to name which half.
  *
  * One switch, not two states of two switches: this and the panel's peek are
  * the same `paused` flag in src/pseudo-view.js, so pressing either moves both.
@@ -15,10 +21,13 @@
  * The rules it keeps, which are the key button's rules and are deliberately
  * not re-decided here:
  *
- *   LIT IF AND ONLY IF REAL NAMES ARE ON SCREEN. Colour means this page is not
- *   saying what claude.ai says. A peek and a run's hold both leave the fakes
- *   showing, so both are monochrome like the off state and are told apart by
- *   the word on the button.
+ *   LIT IF AND ONLY IF REAL NAMES ARE IN THE MESSAGES — the half this switch
+ *   governs. Colour means the body is not saying what claude.ai says. A peek
+ *   and a run's hold both leave the messages in the fakes, so both are
+ *   monochrome like the off state and are told apart by the word on the
+ *   button. The titles are real throughout and are never what the colour is
+ *   about; the button being THERE at all is what says so, and its tooltip
+ *   says it in words.
  *
  *   A RUN'S HOLD IS NOT THE USER'S TO LIFT HERE. While a run is moving through
  *   this chat the messages show the fakes because the run's hand-off can fall
@@ -92,14 +101,15 @@
         (st.hold && st.hold.name ? "“" + st.hold.name + "”" : "a run") +
         " is working" +
         (st.hold && st.hold.via === "key" ? " on this matter" : "") +
-        ". A run's hand-off can fall back to the text on screen, so this is not " +
-        "the control for it: pause the run — or let it finish, hold or fail — and " +
-        "the real names come back by themselves."
+        ", and the titles keep their real names. A run's hand-off can fall back " +
+        "to the text on screen, so this is not the control for it: pause the run — " +
+        "or let it finish, hold or fail — and the messages come back by themselves."
       );
     if (paused)
       return (
-        "Showing the fakes — this page is exactly what claude.ai renders. " +
-        "Click to read it back in the real names." +
+        "The messages show the fakes — exactly what claude.ai renders. The " +
+        "titles keep their real names, as they do in every state. Click to read " +
+        "the messages back in the real names too." +
         SAFETY
       );
     if (!st.on)
@@ -119,7 +129,8 @@
     return (
       "Showing the real names" +
       (st.name ? " from " + st.name : "") +
-      " in place of the fakes. Click to see the page exactly as claude.ai renders it." +
+      " in place of the fakes. Click to see the messages exactly as claude.ai " +
+      "renders them — the titles keep their real names either way." +
       SAFETY
     );
   }

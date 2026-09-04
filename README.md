@@ -2563,9 +2563,10 @@ swept on the next extension start.
    It only swaps values the key knows, and says so; it never writes into the
    composer itself — pasting is your move, and the composer warning is still
    watching either way. The same panel holds the **peek toggle** —
-   **Show the fakes / Show the real names** — which pauses this page's
-   translation so you can see it exactly as claude.ai renders it, then puts the
-   real names back. This tab only, never remembered (a peek that silently
+   **Show the fakes in the messages / Show the real names again** — which pauses
+   the *message* translation so you can see the body exactly as claude.ai
+   renders it, then puts the real names back. The **titles** are outside the
+   switch and keep their real names throughout. This tab only, never remembered (a peek that silently
    outlived the visit would be translation quietly off), and the button says
    plainly when it's paused. The composer warning, the
    typeahead and the upload guard stay on while paused — they're safety,
@@ -2648,19 +2649,27 @@ matter's names there settles it in one glance.
 
 The key button counts titles beside names, and **lights up for titles alone**
 on a page where no chat has a key attached — a sidebar reading in real names is
-still translation, and it never happens without something on screen saying so. The peek toggle puts the fakes
-back in the titles too — a peek is for seeing the page exactly as claude.ai
-renders it. **A run working the matter does not**: while a run is moving, its
-chats' *messages* show the fakes and their **titles keep their real names**.
-The hold below exists because a hand-off can fall back to a rendered message,
-and no hand-off has ever read a title off the screen — so holding the titles
-bought nothing and cost you the one line naming the case, in the very minutes a
-run was working it.
+still translation, and it never happens without something on screen saying so.
+
+**The titles never stand down.** Not for a run's hold, and not for the peek
+either: the peek puts the fakes back in the **messages**, and a title reads in
+the real names in every state there is. Both halves come from the same fact —
+what a stand-down protects against is a real name being *carried* somewhere,
+and a title is never carried. No hand-off has ever read one off the screen: the
+Chat rename asks the conversation API what the conversation is called, the
+Cowork one reads an aria-label that is never translated, Save chat and the
+scheduler read what claude.ai wrote rather than what you are looking at, and
+the title a run *writes* is its own name run through the key first. So holding
+the titles buys nothing, and it costs the one line telling you which case you
+are looking at — in the very minutes a run is working it, and again the moment
+you glance at what claude.ai actually holds in the body. A sidebar in fakes is
+a sidebar you cannot find your way back out of.
 
 ### The fakes toggle, beside Upload folder
 
-The peek is a switch used **mid-read** — *am I looking at the real names, or at
-what claude.ai actually holds?* — and reaching it in the panel is a click to
+The peek is a switch used **mid-read** — *am I looking at the real names in
+this message, or at what claude.ai actually holds?* — and reaching it in the
+panel is a click to
 open, a click to throw and a click to close. So it has a second home: a
 one-click button in claude.ai's own composer row, immediately **to the right of
 [Upload folder](#uploading-a-case-folder-into-a-chat)**, with no panel of its
@@ -2675,14 +2684,19 @@ they are claims about the same page:
 
 | The button | What is on screen |
 | --- | --- |
-| **Real names**, lit | The key's real values, in place of the fakes |
-| **Fakes**, italic | Exactly what claude.ai renders |
-| **Held**, italic, unpressable | The fakes, because [a run is working](#while-a-run-is-working-the-messages-show-the-fakes) — pause the run, not this |
+| **Real names**, lit | The key's real values in the messages, in place of the fakes |
+| **Fakes**, italic | The messages exactly as claude.ai renders them |
+| **Held**, italic, unpressable | The messages in the fakes, because [a run is working](#while-a-run-is-working-the-messages-show-the-fakes) — pause the run, not this |
 
-**Lit if and only if real names are on screen**, in the key button's own colour:
-a peek and a run's hold are monochrome, because in both of them the page *is*
-showing the fakes, and they are told apart by the word rather than by a second
-colour that would dilute the first.
+In all three, the **titles read in the real names** — they are outside this
+switch entirely, and every one of the button's tooltips says so, because a
+control saying "showing the fakes" beside a sidebar full of real names would
+have lied about the half it doesn't govern.
+
+**Lit if and only if real names are in the messages**, in the key button's own
+colour: a peek and a run's hold are monochrome, because in both of them the
+body *is* showing the fakes, and they are told apart by the word rather than by
+a second colour that would dilute the first.
 
 It appears only where there is a switch to throw — a key translating this page,
 or a peek to come back from — and it **follows the Folder button** rather than
@@ -2771,16 +2785,19 @@ for one invariant — *a real name on screen always has something on screen
 saying why* — and a panel that has to be opened would have quietly ended it. So
 the button shows how many values are restored right now, goes quiet when
 nothing on the page is translated, and says `held` or `fakes` when a run or a
-peek has the display standing down. Its tooltip is the whole sentence.
+peek has the messages standing down. Its tooltip is the whole sentence — and in
+those two states it names the titles, which are still on.
 
-**And it is lit if and only if real names are on screen** — black and white the
-rest of the time. That is the same invariant turned into something you don't
-have to read: colour means this page is *not* saying what claude.ai says. A
-[peek](#pseudonym-translation) and a [run's
+**And it is lit if and only if real names are in the messages** — black and
+white the rest of the time. That is the same invariant turned into something
+you don't have to read: colour means the body is *not* saying what claude.ai
+says. A [peek](#pseudonym-translation) and a [run's
 hold](#while-a-run-is-working-the-messages-show-the-fakes) are monochrome like
-the off state, because in both of them the page is showing the fakes; they are
-told apart by the word on the button, not by a second colour that would dilute
-the first.
+the off state, because in both of them the messages are showing the fakes; they
+are told apart by the word on the button, not by a second colour that would
+dilute the first. The titles never go down, so they are never what the colour
+is about — the button being *there*, with its count and its sentence, is what
+says they are on.
 
 **A key that is merely *available* lights nothing.** Two things light the
 button — this conversation having a key **attached**, or real names being on
@@ -2875,9 +2892,9 @@ thing.
 **Warn, never rewrite.** The clipboard is yours, the same way the composer is:
 the banner says what went onto it and gets out of the way. It replaces itself
 on the next copy, clears when you copy something with no real names in it, and
-has a ✕. A [peek](#pseudonym-translation) stands it down — nothing is swapped,
-so nothing swapped can be on the clipboard — and so does a run's hold, for the
-messages it covers.
+has a ✕. A [peek](#pseudonym-translation) stands it down — no message text is
+swapped, so nothing swapped can be copied out of one — and so does a run's
+hold, for the messages it covers.
 
 ### Lists reached the other way
 
@@ -2912,15 +2929,14 @@ Four limits keep a page-wide pass honest:
 - **Title-length text only.** A chat title is capped at 100 characters and a
   paragraph is not, so the ceiling keeps this about names in lists rather than
   prose a turn selector happened to miss.
-- **It stands down with the titles** — for the peek, and nothing else. It used
-  to stand down for a run's hold too, on the reasoning that this pass only
-  *believes* it has a title while the targeted rules can *prove* it. What that
-  cost was half your sidebar: mid-run, a chat drawn as a link read back in its
-  real name and the chat beside it, drawn as a row in Recents or a project's
-  page, sat in the fake, with nothing on screen saying why. A hand-off reads
-  **turns**, and turns are what the prune above now covers by the run's own
-  reckoning — so the reader keeps the line naming the case in the minutes a
-  run is working it.
+- **It never stands down**, because it is a title pass and titles never stand
+  down. It used to go down with the messages, on the reasoning that this pass
+  only *believes* it has a title while the targeted rules can *prove* it. What
+  that cost was half your sidebar: mid-run, a chat drawn as a link read back in
+  its real name and the chat beside it, drawn as a row in Recents or a
+  project's page, sat in the fake, decided by nothing but which of the two
+  passes happened to reach it. A hand-off reads **turns**, and turns are what
+  the prune above covers by the run's own reckoning.
 
 The library isn't merged in beside the master key, and doesn't need to be:
 every key you load is folded **into** the master key already, so the
@@ -2970,11 +2986,14 @@ and no progress, the real names return. A run genuinely waiting an hour for a
 long answer keeps beating every twenty seconds, so it keeps its hold.
 
 The key button says which state it is in, and while a run holds the messages
-the **peek toggle** is disabled and says why —
-pausing the run is one click, and pausing the run is exactly what this rule is
-waiting for. Everything that is *safety* rather than display stays on
-throughout: the composer warning, the typeahead swap, the upload guard, and the
-cleaner box.
+the **peek toggle** is disabled and says why — the peek and the hold stand the
+same thing down, so there is nothing left for it to do; pausing the run is one
+click, and pausing the run is exactly what this rule is waiting for. The
+**titles keep their real names** throughout, and the panel's line says so by
+name and count, because a run working the matter is exactly when you need to
+know which case you are looking at. Everything that is *safety* rather than
+display stays on throughout: the composer warning, the typeahead swap, the
+upload guard, and the cleaner box.
 
 ### The title goes over pseudonymized
 

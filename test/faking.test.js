@@ -105,3 +105,33 @@ test("an attached key says nothing of the sort", () => {
   const b = K.buttonState(on({ attached: true }));
   assert.doesNotMatch(b.title, /not attached|No key is attached/);
 });
+
+// ---- the titles are outside the switch -------------------------------------
+//
+// The repo owner's rule (September 2026): the title reads in the real names in
+// every state there is. The peek is about the BODY. That makes this button a
+// control over half the page by design, and a control that says "showing the
+// fakes" while a sidebar full of real names sits beside it is a control that
+// has lied. So every state that stands the messages down has to name the half
+// it did not touch.
+
+test("a peek says which half it moved", () => {
+  const b = K.buttonState(on({ paused: true }));
+  assert.match(b.title, /messages/i, "it has to say the MESSAGES are the fakes");
+  assert.match(b.title, /titles keep their real names/i);
+});
+
+test("a run's hold says it too", () => {
+  const b = K.buttonState(on({ hold: { name: "Smith v. Jones", via: "key" } }));
+  assert.match(b.title, /titles keep their real names/i);
+  assert.match(b.title, /pause the run/i, "the messages are still the run's");
+});
+
+test("the ON state says the titles are not what the colour is about", () => {
+  // Lit means the MESSAGES are in the real names. Pressing it does not take
+  // the titles with them, and the tooltip is where that is said before the
+  // press rather than discovered after it.
+  const b = K.buttonState(on());
+  assert.equal(b.lit, true);
+  assert.match(b.title, /titles keep their real names/i);
+});
