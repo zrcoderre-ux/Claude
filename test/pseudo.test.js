@@ -1460,3 +1460,89 @@ test("a peek and a run's hold keep the switch on screen", () => {
   assert.equal(P.keyInPlay({ attached: false, names: 0, titles: 0, paused: true }), true);
   assert.equal(P.keyInPlay({ attached: false, names: 0, titles: 0, held: true }), true);
 });
+
+// ---- what a hand-off can read off the page ---------------------------------
+//
+// The page-wide title pass (pseudo-view.js, sweepLoose) keeps translating
+// through a run's hold, because a chat's name in Recents or a project's page
+// is drawn in a shape the targeted pass cannot prove and would otherwise sit
+// in the fake for the length of the run. The only thing making that safe is
+// the prune: the pass must never walk into a RENDERED TURN, because a turn is
+// what a run's hand-off falls back to reading. So the two lists have to be one
+// list, and this is where they are held together.
+
+// The quoted strings out of one literal — an array of selectors, or a string
+// built by concatenation. Selectors carry brackets and quotes of their own, so
+// they are read as STRING LITERALS rather than split on punctuation.
+function quotedStrings(literal) {
+  const out = [];
+  const rx = /"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g;
+  let m;
+  while ((m = rx.exec(literal))) {
+    for (const part of String(m[1] != null ? m[1] : m[2]).split(",")) {
+      const s = part.trim();
+      if (s) out.push(s);
+    }
+  }
+  return out;
+}
+
+function literalAfter(source, decl, open, close, where) {
+  const at = source.indexOf(decl);
+  assert.ok(at !== -1, decl + " is not there any more in " + where);
+  const from = source.indexOf(open, at);
+  assert.ok(from !== -1, decl + " is not a literal any more in " + where);
+  const to = source.indexOf(close, from);
+  assert.ok(to !== -1, decl + " is not a literal any more in " + where);
+  return source.slice(from, to);
+}
+
+function turnSelectorsIn(source, name) {
+  return quotedStrings(
+    literalAfter(source, "const " + name + " = [", "[", "];", "workflow-run.js")
+  );
+}
+
+test("the turn prune covers every shape a run reads a turn out of", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "..", "src", "workflow-run.js"), "utf8");
+  const run = turnSelectorsIn(src, "ASSISTANT_SELECTORS").concat(
+    turnSelectorsIn(src, "HUMAN_SELECTORS")
+  );
+  assert.ok(run.length >= 6, "read the cascades, not an empty match");
+  const covered = P.turnSelector().split(",");
+  for (const sel of run)
+    assert.ok(
+      covered.indexOf(sel) !== -1,
+      "workflow-run.js can find a turn by " +
+        sel +
+        " and the display translation would not prune it — add it to " +
+        "ASSISTANT_TURN_SELECTORS / HUMAN_TURN_SELECTORS in src/pseudo.js"
+    );
+});
+
+test("the turn prune is a selector the page can be asked for", () => {
+  // Joined, not concatenated: a prune built by gluing two lists together
+  // without the comma matches nothing at all, and matching nothing is exactly
+  // the failure that has no symptom until a real name has already travelled.
+  const sel = P.turnSelector();
+  assert.equal(
+    sel.split(",").length,
+    P.ASSISTANT_TURN_SELECTORS.length + P.HUMAN_TURN_SELECTORS.length
+  );
+  for (const s of sel.split(",")) assert.ok(s.trim().length > 1);
+});
+
+test("the message sweep's own shapes are all pruned", () => {
+  // MSG_SEL in pseudo-view.js is what the MESSAGE sweep translates. Every one
+  // of those has to be in here too, or the page-wide pass would translate a
+  // turn the message sweep had just stood down for the run.
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const view = fs.readFileSync(path.join(__dirname, "..", "src", "pseudo-view.js"), "utf8");
+  const msg = quotedStrings(literalAfter(view, "const MSG_SEL =", "=", ";", "pseudo-view.js"));
+  assert.ok(msg.length >= 5, "read MSG_SEL, not an empty match");
+  const covered = P.turnSelector().split(",");
+  for (const sel of msg) assert.ok(covered.indexOf(sel) !== -1, sel + " is not pruned");
+});

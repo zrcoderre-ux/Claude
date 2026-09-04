@@ -1470,6 +1470,38 @@
     return null;
   }
 
+  // ---- what a hand-off can READ off the page ---------------------------------
+  //
+  // Every shape a rendered TURN takes on claude.ai: the union of the two
+  // cascades src/workflow-run.js walks to find the assistant's answer and the
+  // human's message. It lives here, beside the hold, because it is the same
+  // decision the hold is about — what a run can pick up off the screen — and
+  // the display translation has to prune EXACTLY that set before it rewrites
+  // anything while a run is moving. Two lists that drifted apart would be a
+  // real name riding a hand-off into the next chat through a turn shape only
+  // one of them knew about, so the suite holds them together
+  // (test/pseudo.test.js reads workflow-run.js and checks this covers it).
+  //
+  // A superset is fine and a subset is not: the run takes the FIRST selector
+  // that matches anything, so a shape it can reach is a shape the prune must
+  // already have.
+  const ASSISTANT_TURN_SELECTORS = [
+    '[data-testid="assistant-message"]',
+    ".font-claude-response",
+    ".font-claude-message",
+    "[data-is-streaming]",
+  ];
+  const HUMAN_TURN_SELECTORS = [
+    '[data-testid="user-message"]',
+    ".font-user-message",
+    '[data-testid="human-message"]',
+  ];
+
+  /** Both cascades as one selector — what a page-wide pass must not walk into. */
+  function turnSelector() {
+    return ASSISTANT_TURN_SELECTORS.concat(HUMAN_TURN_SELECTORS).join(",");
+  }
+
   const api = {
     isKeyFileName,
     sheetsLookLikeKey,
@@ -1525,6 +1557,9 @@
     titleKeyFor,
     runTranslationHold,
     HOLD_STALE_MS,
+    ASSISTANT_TURN_SELECTORS,
+    HUMAN_TURN_SELECTORS,
+    turnSelector,
     fold,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

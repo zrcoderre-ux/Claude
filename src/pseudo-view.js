@@ -729,11 +729,14 @@
   //   paragraph is not. The ceiling is what keeps this about names in lists
   //   rather than prose that a turn selector happened to miss.
   //
-  //   IT STANDS DOWN WITH THE MESSAGES, not with the titles. The per-target
-  //   pass keeps translating through a run's hold because those targets are
-  //   PROVABLY titles — a header control, an href that is a conversation.
-  //   This pass believes it has a title; and while a run is moving, something
-  //   we merely believe is a title is something a hand-off might read.
+  //   IT STANDS DOWN WITH THE TITLES, for the peek and nothing else. It used
+  //   to stand down for a run's hold too, on the reasoning that something we
+  //   merely BELIEVE is a title is something a hand-off might read — but a
+  //   hand-off reads TURNS, and the prune above is now the run's own list of
+  //   them rather than the message sweep's shorter one. Holding this pass on
+  //   top of that bought nothing and cost the reader half their sidebar: the
+  //   chats a run had not opened as links sat in the fakes for the length of
+  //   the run, beside the ones that did not.
   //
   // The library is not merged in beside the master key, and does not need to
   // be: the worker folds every library key INTO the master key already, so
@@ -741,8 +744,15 @@
   // spreadsheets have since gone. Merging the full keys would put every
   // declarant and address in one matcher, which is the merged library
   // src/masterkey.js exists to avoid being.
+  //
+  // The turn prune is P.turnSelector() rather than MSG_SEL: MSG_SEL is what
+  // the MESSAGE sweep translates, and it is a SUBSET of the shapes a run will
+  // read a reply out of (workflow-run.js falls through to [data-is-streaming]
+  // when nothing else matches). Pruning the smaller list left a turn shape the
+  // run can reach and this pass would rewrite — the exact leak that made
+  // standing the whole pass down look like the only safe answer.
   const LOOSE_PRUNE_SEL =
-    MSG_SEL +
+    P.turnSelector() +
     ',[contenteditable="true"],input,textarea,script,style,svg,' +
     '[id^="cum-"],[class*="cum-"]';
   const LOOSE_MAX = 160; // a title, with room for the "· 2 days ago" beside it
@@ -760,7 +770,23 @@
   }
 
   function sweepLoose() {
-    if (translationOff()) return 0;
+    // The peek only — the same test the targeted pass and the tab title use.
+    // This pass used to stand down for a run's hold as well, and that is the
+    // bug it was reported for: mid-run, one chat read in its real name and the
+    // one beside it read in the fake, with nothing on screen saying why. The
+    // difference was never the chat, it was which pass happened to reach it —
+    // a title claude.ai draws as a link the targeted pass proves and keeps
+    // translating, and every other list it draws (Recents, a project's page,
+    // the Chats and Tasks margin, a header the data-testids no longer name)
+    // is this pass's alone.
+    //
+    // What made the hold look necessary was the worry that something this
+    // pass merely BELIEVES is a title could be prose a hand-off then reads.
+    // That is a question about the PRUNE, and it is answered there: the walk
+    // now skips every turn shape the run itself can find (LOOSE_PRUNE_SEL,
+    // above), so what a run can read is what this pass can never touch. The
+    // ceiling and the one-claimant rule below are unchanged.
+    if (paused) return 0;
     const master = masterFor();
     const root = looseRoot();
     if (!master || !root) return 0;
