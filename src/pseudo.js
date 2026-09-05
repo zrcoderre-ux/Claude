@@ -69,6 +69,91 @@
     return false;
   }
 
+  // ---- the key-upload guard's release -----------------------------------------
+  //
+  // "Upload anyway" pressed in the guard (src/pseudo-view.js) is a file the
+  // operator has affirmatively let through, and letting it through used to be
+  // one synthetic change event on claude.ai's file input, with nothing to say
+  // whether the page took it. The composer already knows better — its own
+  // attach ladder tries the input, then a drop, and confirms the landing —
+  // because the page has been seen ignoring a programmatic pick. So the guard
+  // hands a release to that same ladder, and the two decisions in it live here
+  // where they can be tested: what to do after the input has been given its
+  // short watch, and what to say when the release never landed. A guard that
+  // refused an upload the operator overrode, silently, is the exact failure
+  // this extension's own rules forbid (CLAUDE.md: fail loudly, never silently).
+
+  // How long the file input is watched before a drop is tried instead. Short
+  // on purpose: a present-but-dead input must not spend the whole deadline,
+  // and an input that DID take the files says so — upload confirmations or
+  // chips — well inside this.
+  const RELEASE_INPUT_WATCH_MS = 15000;
+
+  // The whole release's deadline, scaled the way the composer scales its own:
+  // twenty papers need more than two minutes.
+  function releaseDeadline(count) {
+    return Math.max(120000, (Number(count) || 0) * 15000);
+  }
+
+  /**
+   * After the input's short watch — `{ ok, uploads, chips }` as the composer's
+   * waitUploads answers — what next:
+   *
+   *   "done"   every file confirmed; nothing more to do
+   *   "drop"   NOTHING took: no confirmation, no chip. The input was dead, so
+   *            the files go in the other door
+   *   "stop"   SOMETHING took but not everything. A drop now would attach the
+   *            taken files twice, so the ladder stops here and says so — a
+   *            partial landing is reported, never doubled
+   */
+  function releaseNext(res) {
+    const r = res || {};
+    if (r.ok) return "done";
+    const uploads = Math.max(0, Number(r.uploads) || 0);
+    const chips = Math.max(0, Number(r.chips) || 0);
+    return uploads > 0 || chips > 0 ? "stop" : "drop";
+  }
+
+  /**
+   * The sentence the guard owes the operator once a release has been handed
+   * over: "" when it landed (the chips say so), and otherwise a loud one that
+   * names the files, what was tried, what was seen, and what to do — because a
+   * release the composer never confirmed is a file that may not be on the
+   * message about to be sent.
+   *
+   *   names     the files let through
+   *   how       what was tried, in the composer's own words ("the file input, then a drop")
+   *   res       the final { ok, uploads, chips } — or { ok, why } from a driver
+   *             that words its own evidence (Cowork's), in which case `why` is
+   *             what is said and the counts are not invented
+   *   expected  how many were handed over
+   *   caveat    a surface note ("Cowork's own upload driver isn't loaded…"), or ""
+   */
+  function releaseNote(names, how, res, expected, caveat) {
+    const r = res || {};
+    if (r.ok) return "";
+    const list = (names || []).filter(Boolean);
+    const said = list.length ? list.join(", ") : "the file";
+    const want = Math.max(0, Number(expected) || list.length || 1);
+    const uploads = Math.max(0, Number(r.uploads) || 0);
+    const chips = Math.max(0, Number(r.chips) || 0);
+    const why = String(r.why || "").trim();
+    const seen = why
+      ? why
+      : uploads + " upload confirmation" + (uploads === 1 ? "" : "s") + " and " +
+        chips + " new attachment chip" + (chips === 1 ? "" : "s") + " seen";
+    const partial = !why && (uploads > 0 || chips > 0);
+    return (
+      "Upload anyway was pressed for " + said + ", but claude.ai never confirmed " +
+      want + (want === 1 ? " file" : " files") + " landing on the composer" +
+      (how ? " (tried " + how + "; " : " (") + seen + ")." +
+      (partial
+        ? " Some of it may be attached and the rest not — look at the composer before sending, and add what is missing by hand."
+        : " Look at the composer: what is not on it did not go up. Drag the file onto the composer to try again; the same question will be asked.") +
+      (caveat ? " " + caveat : "")
+    );
+  }
+
   // ---- which sheet the bindings live on -------------------------------------
   //
   // PDF-Linker writes TWO tabs, and only one of them is reversible:
@@ -1561,6 +1646,10 @@
     HUMAN_TURN_SELECTORS,
     turnSelector,
     fold,
+    RELEASE_INPUT_WATCH_MS,
+    releaseDeadline,
+    releaseNext,
+    releaseNote,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMPseudo = api;

@@ -45,7 +45,11 @@
  *      picked, dropped or pasted that is pseudonym_key*.xlsx by name — or any
  *      .xlsx whose sheets carry the key's header fingerprint — is held back
  *      and only goes through on an affirmative "Upload anyway". Other files
- *      in the same batch pass through untouched.
+ *      in the same batch pass through untouched. What goes through is handed
+ *      back through the composer's own attach ladder and CONFIRMED (the file
+ *      input, then a drop), and a release that never landed is said out loud
+ *      rather than left to be noticed at send time — one bare re-dispatched
+ *      event used to be the whole hand-off, and claude.ai ignored it.
  *
  * Cowork note (see CLAUDE.md): the guard intercepts the page's file-chooser,
  * drop and paste events, which are generic DOM mechanics — but it is CONFIRMED
@@ -1470,10 +1474,49 @@
   // Always on. Interception is capture-phase on window, so it runs before any
   // page handler; a batch with a suspect file is swallowed whole, vetted
   // asynchronously (name first, then the sheet fingerprint for any .xlsx), and
-  // re-dispatched with everything the user let through. `passing` marks our own
-  // re-dispatch so it sails past this same listener.
+  // everything the user let through is handed BACK to claude.ai — through the
+  // composer's own attach ladder (the file input, then a drop, each confirmed),
+  // never through one bare re-dispatched event. That is the lesson of the
+  // override that did nothing: claude.ai has been seen ignoring a programmatic
+  // pick on its input, and a release that went in that door alone, unconfirmed,
+  // was an "Upload anyway" the operator pressed and a file that never went up,
+  // with nothing on screen to say so. Now a release that cannot be confirmed
+  // says so loudly (P.releaseNote), and a release that is confirmed says
+  // nothing — the chips are the word.
+  //
+  // `inFlight` holds the files being handed over, by fingerprint rather than by
+  // object identity (a File that has been through a DataTransfer may not be
+  // the same wrapper), so the events the ladder dispatches sail past these
+  // same listeners while a genuinely new pick during that window is still
+  // vetted. A boolean could not do that: the ladder is asynchronous, and a
+  // flag left up across it would have waved a second pick through.
 
-  let passing = false;
+  const inFlight = new Map();
+
+  function fingerprint(f) {
+    return [f && f.name, f && f.size, f && f.lastModified].join("\u0000");
+  }
+
+  function passing(files) {
+    if (!files.length || !inFlight.size) return false;
+    for (const f of files) if (!inFlight.has(fingerprint(f))) return false;
+    return true;
+  }
+
+  function holdInFlight(files) {
+    for (const f of files) {
+      const k = fingerprint(f);
+      inFlight.set(k, (inFlight.get(k) || 0) + 1);
+    }
+    return () => {
+      for (const f of files) {
+        const k = fingerprint(f);
+        const n = (inFlight.get(k) || 0) - 1;
+        if (n > 0) inFlight.set(k, n);
+        else inFlight.delete(k);
+      }
+    };
+  }
 
   function suspectName(name) {
     return P.isKeyFileName(name) || /\.xlsx$/i.test(String(name || ""));
@@ -1530,6 +1573,34 @@
     });
   }
 
+  /** One-button notice in the guard's own dress, for a release that did not land. */
+  function guardNotice(text) {
+    const overlay = document.createElement("div");
+    overlay.className = "cum-pseudo-guard";
+    const box = document.createElement("div");
+    box.className = "cum-pseudo-guard-box";
+    const h = document.createElement("div");
+    h.className = "cum-pseudo-guard-head";
+    h.textContent = "That upload did not go through";
+    const p = document.createElement("p");
+    p.textContent = text;
+    const row = document.createElement("div");
+    row.className = "cum-pseudo-guard-row";
+    const ok = document.createElement("button");
+    ok.className = "cum-pseudo-guard-keep";
+    ok.textContent = "OK";
+    row.appendChild(ok);
+    box.append(h, p, row);
+    overlay.appendChild(box);
+    const done = () => overlay.remove();
+    ok.addEventListener("click", done);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) done();
+    });
+    document.documentElement.appendChild(overlay);
+    ok.focus();
+  }
+
   async function vet(files) {
     const keyFiles = [];
     const clean = [];
@@ -1537,9 +1608,9 @@
       if (await isKeyFile(f)) keyFiles.push(f);
       else clean.push(f);
     }
-    if (!keyFiles.length) return files;
+    if (!keyFiles.length) return { files: files, released: [] };
     const ok = await guardDialog(keyFiles.map((f) => f.name), clean.length);
-    return ok ? files : clean;
+    return { files: ok ? files : clean, released: ok ? keyFiles.map((f) => f.name) : [] };
   }
 
   function fileList(files) {
@@ -1548,10 +1619,130 @@
     return dt;
   }
 
+  /**
+   * Which surface a release goes out on, the way the Folder button decides it:
+   * the address where it is a Cowork one, the page's own toggle otherwise, and
+   * Cowork where neither says — its confirmation covers both.
+   */
+  function surfaceHere() {
+    const C = window.CUMComposer;
+    const F = window.CUMFolderUp;
+    let toggle = "";
+    try {
+      toggle = C && C.currentSurface ? C.currentSurface() : "";
+    } catch (e) {
+      toggle = "";
+    }
+    if (F && F.pickSurface) return F.pickSurface(location.href, toggle);
+    return /^\/cowork(\/|$)/.test(location.pathname) ? "cowork" : "chat";
+  }
+
+  /**
+   * Hand a vetted release back to claude.ai and confirm it landed.
+   *
+   * Cowork goes through its own driver (CUMCoworkSend.attachFiles): its
+   * uploads run in a worker no hook sees, and the driver knows the evidence
+   * that exists there. Chat goes through the composer's file input with a
+   * SHORT watch, then — only if nothing at all took — a drop on `target` (the
+   * element the files were dropped on, else the composer), each measured by
+   * the composer's own waitUploads. A landing that was partial stops rather
+   * than drops (P.releaseNext): a second door on top of a half-taken first
+   * would attach the taken files twice.
+   *
+   * Returns the note to show, "" for a confirmed landing.
+   */
+  async function handOff(files, target) {
+    const C = window.CUMComposer;
+    const CW = window.CUMCoworkSend;
+    const n = files.length;
+    const surface = surfaceHere();
+    if (surface === "cowork" && CW && CW.attachFiles) {
+      const r = await CW.attachFiles(files, P.releaseDeadline(n));
+      return { ok: !!r.ok, how: r.how || "", res: { ok: !!r.ok, why: r.why || "" }, caveat: "" };
+    }
+    const caveat =
+      surface === "cowork"
+        ? "This is a Cowork page and its own upload driver isn't loaded, so this is Chat's evidence — the files may be attached all the same; look at the composer."
+        : "";
+    const deadline = P.releaseDeadline(n);
+    const input = C.findFileInput();
+    let how = "";
+    let res = { ok: false, uploads: 0, chips: 0 };
+    if (input) {
+      const baseChips = C.countChips();
+      try {
+        C.setFiles(input, files);
+        how = "the file input";
+        res = await C.waitUploads(n, deadline, { baseChips: baseChips, idleMs: P.RELEASE_INPUT_WATCH_MS });
+      } catch (e) {
+        how = "the file input (threw)";
+      }
+    }
+    const next = input ? P.releaseNext(res) : "drop";
+    if (next === "drop") {
+      const el =
+        (target && target.isConnected && target) ||
+        (C.findEditor && C.findEditor()) ||
+        document.body;
+      const baseChips = C.countChips();
+      C.dropFiles(el, files);
+      how = how ? how + ", then a drop" : "a drop";
+      res = await C.waitUploads(n, deadline, { baseChips: baseChips });
+    }
+    return { ok: !!res.ok, how: how, res: res, caveat: caveat };
+  }
+
+  /**
+   * The old way in, kept for a page where the composer module is not loaded:
+   * one re-dispatched event, unconfirmed. `fire` does the dispatch.
+   */
+  function bareRelease(files, fire) {
+    const free = holdInFlight(files);
+    try {
+      fire();
+    } finally {
+      free();
+    }
+  }
+
+  /**
+   * Vet a batch and let through what the operator allows. `fire` is the bare
+   * re-dispatch for a page without the composer; `target` is where a drop
+   * landed, if it was a drop.
+   */
+  function guard(files, target, fire) {
+    vet(files).then(async (v) => {
+      const release = v.files;
+      if (!release.length) return;
+      const C = window.CUMComposer;
+      if (!C || !C.setFiles || !C.waitUploads || !C.dropFiles || !C.findFileInput) {
+        bareRelease(release, () => fire(release));
+        return;
+      }
+      const free = holdInFlight(release);
+      let out;
+      try {
+        out = await handOff(release, target);
+      } catch (e) {
+        out = { ok: false, how: "", res: { ok: false, why: "threw: " + String((e && e.message) || e) }, caveat: "" };
+      } finally {
+        free();
+      }
+      if (out.ok) return;
+      const names = v.released.length ? v.released : release.map((f) => f.name);
+      const text = P.releaseNote(names, out.how, out.res, release.length, out.caveat);
+      try {
+        console.warn("[claude-usage-meter] key-upload guard: " + text);
+      } catch (e) {
+        /* ignore */
+      }
+      guardNotice(text);
+    });
+  }
+
   window.addEventListener(
     "change",
     (ev) => {
-      if (passing) return;
       const input = ev.target;
       if (!input || input.type !== "file" || !input.files || !input.files.length) return;
       // Our OWN pickers are not uploads. The folder button's picker reads a case
@@ -1563,19 +1754,15 @@
       const C = window.CUMComposer;
       if (C && C.isOurs && C.isOurs(input)) return;
       const files = Array.from(input.files);
+      if (passing(files)) return; // the ladder's own hand-off, already vetted
       if (!files.some((f) => suspectName(f.name))) return;
       ev.stopImmediatePropagation();
       ev.preventDefault();
       input.value = "";
-      vet(files).then((release) => {
-        if (!release.length) return;
-        try {
-          input.files = fileList(release).files;
-          passing = true;
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        } finally {
-          passing = false;
-        }
+      guard(files, null, (release) => {
+        input.files = fileList(release).files;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
       });
     },
     true
@@ -1584,35 +1771,23 @@
   window.addEventListener(
     "drop",
     (ev) => {
-      if (passing) return;
       const dt = ev.dataTransfer;
       const files = dt && dt.files ? Array.from(dt.files) : [];
-      if (!files.length || !files.some((f) => suspectName(f.name))) return;
+      if (!files.length || passing(files)) return;
+      if (!files.some((f) => suspectName(f.name))) return;
       ev.stopImmediatePropagation();
       ev.preventDefault();
       const target = ev.target;
-      vet(files).then((release) => {
-        if (!release.length) return;
-        const C = window.CUMComposer;
-        const el =
-          (target && target.isConnected && target) ||
-          (C && C.findEditor && C.findEditor()) ||
-          document.body;
-        try {
-          passing = true;
-          if (C && C.dropFiles) C.dropFiles(el, release);
-          else {
-            const r = new DragEvent("drop", {
-              bubbles: true,
-              cancelable: true,
-              composed: true,
-              dataTransfer: fileList(release),
-            });
-            el.dispatchEvent(r);
-          }
-        } finally {
-          passing = false;
-        }
+      guard(files, target, (release) => {
+        const el = (target && target.isConnected && target) || document.body;
+        el.dispatchEvent(
+          new DragEvent("drop", {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            dataTransfer: fileList(release),
+          })
+        );
       });
     },
     true
@@ -1621,28 +1796,22 @@
   window.addEventListener(
     "paste",
     (ev) => {
-      if (passing) return;
       const dt = ev.clipboardData;
       const files = dt && dt.files ? Array.from(dt.files) : [];
-      if (!files.length || !files.some((f) => suspectName(f.name))) return;
+      if (!files.length || passing(files)) return;
+      if (!files.some((f) => suspectName(f.name))) return;
       ev.stopImmediatePropagation();
       ev.preventDefault();
       const target = ev.target;
-      vet(files).then((release) => {
-        if (!release.length) return;
+      guard(files, target, (release) => {
         const el = (target && target.isConnected && target) || document.body;
-        try {
-          passing = true;
-          el.dispatchEvent(
-            new ClipboardEvent("paste", {
-              bubbles: true,
-              cancelable: true,
-              clipboardData: fileList(release),
-            })
-          );
-        } finally {
-          passing = false;
-        }
+        el.dispatchEvent(
+          new ClipboardEvent("paste", {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: fileList(release),
+          })
+        );
       });
     },
     true

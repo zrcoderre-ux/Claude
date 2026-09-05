@@ -400,13 +400,26 @@
   // after the grace period — that many NEW attachment chips are showing.
   // Resolves { ok, uploads, chips } so a caller can say WHY it gave up: an
   // upload that silently doesn't happen is the failure mode that matters here.
-  function waitUploads(expected, timeoutMs) {
+  //
+  // `opts` (optional):
+  //   baseChips  the chip count to measure NEW chips against, for a caller
+  //              that counted before it handed the files over. A discrete
+  //              event flushes React synchronously, so a chip can already be
+  //              showing by the time this is called — counted here, it would
+  //              be the composer's own base and never a signal.
+  //   idleMs     give up this early when NOTHING has happened — no upload
+  //              confirmed, no new chip. The key-upload guard's release uses it
+  //              to tell a dead input from a slow upload without spending the
+  //              whole deadline on the one and without abandoning the other.
+  function waitUploads(expected, timeoutMs, opts) {
     return new Promise((resolve) => {
       if (expected <= 0) return resolve({ ok: true, uploads: 0, chips: 0 });
-      const baseChips = countChips(); // this composer may already show some
+      const o = opts || {};
+      const baseChips = typeof o.baseChips === "number" ? o.baseChips : countChips();
       const startedAt = Date.now();
       let done = 0;
       const deadline = startedAt + (timeoutMs || 120000);
+      const idleBy = o.idleMs > 0 ? startedAt + o.idleMs : 0;
       function onMsg(event) {
         if (event.source !== window) return;
         const m = event.data;
@@ -420,6 +433,8 @@
         const chips = countChips() - baseChips;
         if (done >= expected) return finish(true);
         if (chips >= expected && Date.now() - startedAt >= CHIP_GRACE_MS) return finish(true);
+        // Nothing at all inside the idle window: the door was dead, say so now.
+        if (idleBy && done === 0 && chips <= 0 && Date.now() >= idleBy) return finish(false);
         // Out of time. ALL of them or none: "some uploaded" was accepted here,
         // which is how a message goes out with twelve of twenty papers on it
         // and Claude answers from the twelve without either of us knowing.
