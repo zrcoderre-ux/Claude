@@ -1125,6 +1125,107 @@
     return bits;
   }
 
+  // The banner the operator closed, by what it was warning about
+  // (P.draftWarnSig): it stays closed while the draft carries exactly those
+  // real names and comes back the moment a different one appears. Never
+  // remembered past the tab — a closed warning that outlived the draft would
+  // be a warning quietly off.
+  let warnDismissed = "";
+
+  // The editor's text the way the banner reads it for a rewrite: every text
+  // node in order, with a line break wherever the block changes, so a name
+  // cannot be matched across two paragraphs that merely touch. `nodes`
+  // carries each node's offset into the text so a span can be selected.
+  const BLOCK_SEL = "p,div,li,h1,h2,h3,h4,h5,h6,blockquote,pre,td,th";
+  function editorText(ed) {
+    const walker = document.createTreeWalker(ed, 4 /* SHOW_TEXT */);
+    const nodes = [];
+    let text = "";
+    let lastBlock = null;
+    let n;
+    while ((n = walker.nextNode())) {
+      const block = n.parentElement && n.parentElement.closest ? n.parentElement.closest(BLOCK_SEL) : null;
+      if (nodes.length && block !== lastBlock) text += "\n";
+      lastBlock = block;
+      nodes.push({ node: n, at: text.length });
+      text += n.nodeValue || "";
+    }
+    return { text: text, nodes: nodes };
+  }
+
+  // The DOM point for an offset into editorText's text, or null.
+  function pointAt(nodes, offset) {
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const e = nodes[i];
+      const len = (e.node.nodeValue || "").length;
+      if (offset >= e.at && offset <= e.at + len) return { node: e.node, offset: offset - e.at };
+    }
+    return null;
+  }
+
+  /**
+   * Type the fake over every occurrence of `real` in the draft — all warned
+   * values when `real` is empty. One occurrence at a time, re-reading the
+   * editor after each, because the rewrite moves everything after it. The
+   * same door the typeahead uses (select, then insertText): ProseMirror takes
+   * it as ordinary typing, so Ctrl+Z brings the real name back.
+   *
+   * Returns how many were rewritten. Bounded, so an editor that refuses the
+   * edit cannot hold the page in a loop that never ends.
+   */
+  function acceptInDraft(real) {
+    if (!active || !active.compiledReals.rx) return 0;
+    const ed = editorEl();
+    if (!ed) return 0;
+    const sel = window.getSelection();
+    let done = 0;
+    for (let guard = 0; guard < 200; guard++) {
+      const read = editorText(ed);
+      const spans = P.draftSpans(active.compiledReals, read.text, real);
+      if (!spans.length) break;
+      const span = spans[0];
+      const from = pointAt(read.nodes, span.start);
+      const to = pointAt(read.nodes, span.end);
+      if (!from || !to || !sel) break;
+      const range = document.createRange();
+      range.setStart(from.node, from.offset);
+      range.setEnd(to.node, to.offset);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      ed.focus();
+      const ok = document.execCommand("insertText", false, span.replacement);
+      // An editor that did not take the edit would hand back the same span
+      // forever; the text is compared rather than the verdict trusted.
+      if (!ok && editorText(ed).text === read.text) break;
+      done++;
+    }
+    hideTip();
+    return done;
+  }
+
+  function closeWarn(sig) {
+    warnDismissed = sig;
+    if (warnBox) warnBox.hidden = true;
+  }
+
+  function acceptButton(label, real, title) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "cum-pseudo-warn-accept";
+    b.textContent = label;
+    b.title = title;
+    // The click must not take the caret away from the composer before the
+    // rewrite: the edit is typed into whatever is focused.
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      acceptInDraft(real);
+      checkComposer();
+    });
+    return b;
+  }
+
   function checkComposer() {
     if (!active || !active.compiledReals.rx) {
       if (warnBox) warnBox.hidden = true;
@@ -1147,25 +1248,60 @@
     );
     if (!hits.length) {
       if (warnBox) warnBox.hidden = true;
+      warnDismissed = ""; // a clean draft forgets the closing; the next real name warns again
       return;
     }
+    const sig = P.draftWarnSig(hits);
+    if (sig === warnDismissed) {
+      if (warnBox) warnBox.hidden = true;
+      return;
+    }
+    // Redrawing the same warning on every 900ms tick would pull the buttons
+    // out from under a click; the box is rebuilt only when what it says changes.
+    if (warnBox && !warnBox.hidden && warnBox.dataset.sig === sig) return;
     if (!warnBox) {
       warnBox = document.createElement("div");
       warnBox.className = "cum-pseudo-warn";
       document.documentElement.appendChild(warnBox);
     }
     warnBox.hidden = false;
+    warnBox.dataset.sig = sig;
     warnBox.textContent = "";
+    const x = document.createElement("button");
+    x.className = "cum-pseudo-warn-x";
+    x.type = "button";
+    x.textContent = "✕";
+    x.title = "Close — until a different real name is in the draft";
+    x.addEventListener("mousedown", (e) => e.preventDefault());
+    x.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeWarn(sig);
+    });
+    warnBox.appendChild(x);
     const head = document.createElement("div");
     head.className = "cum-pseudo-warn-head";
     head.textContent = "⚠ Real name in your draft";
     warnBox.appendChild(head);
-    for (const line of warnHtmlFor(hits)) warnBox.appendChild(line);
+    const shown = hits.slice(0, 4);
+    const lines = warnHtmlFor(shown);
+    for (let i = 0; i < lines.length; i++) {
+      lines[i].appendChild(
+        acceptButton("Accept", shown[i].real, "Type “" + shown[i].fake + "” over “" + shown[i].real + "” in the draft")
+      );
+      warnBox.appendChild(lines[i]);
+    }
     if (hits.length > 4) {
       const more = document.createElement("div");
       more.className = "cum-pseudo-warn-line";
       more.textContent = "…and " + (hits.length - 4) + " more.";
       warnBox.appendChild(more);
+    }
+    if (hits.length > 1) {
+      const row = document.createElement("div");
+      row.className = "cum-pseudo-warn-row";
+      row.appendChild(acceptButton("Accept all", "", "Type the fakes over every real name in the draft"));
+      warnBox.appendChild(row);
     }
   }
 

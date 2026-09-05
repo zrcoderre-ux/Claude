@@ -983,6 +983,60 @@
     return out;
   }
 
+  /**
+   * The composer banner's ACCEPT: where in `text` a real value stands, and
+   * what to type over each one. `real` narrows it to one value (the line's
+   * own Accept); left out, every warned value is listed (Accept all).
+   *
+   * Spans are what the editor is driven with — [start, end) offsets into the
+   * text the caller built from the editor, in order — and the replacement is
+   * exactly what translate() would have written: the fake in the case shape
+   * the real was typed in, a possessive kept as typed. Reported per
+   * occurrence, unlike findReals, because each one has to be typed over.
+   */
+  function draftSpans(compiledReals, text, real) {
+    if (!compiledReals || !compiledReals.rx || !text) return [];
+    const want = real ? fold(real) : "";
+    const out = [];
+    compiledReals.rx.lastIndex = 0;
+    let m;
+    while ((m = compiledReals.rx.exec(text))) {
+      let w = compiledReals.map.get(fold(m[0]));
+      let suffix = "";
+      if (!w) {
+        const mp = m[0].match(POSS_MATCH_RE);
+        if (mp) {
+          w = compiledReals.map.get(fold(m[0].slice(0, -mp[0].length)));
+          if (w) suffix = mp[0];
+        }
+      }
+      if (w && (!want || fold(w.real) === want)) {
+        const shape = caseShape(suffix ? m[0].slice(0, -suffix.length) : m[0]);
+        out.push({
+          start: m.index,
+          end: m.index + m[0].length,
+          matched: m[0],
+          real: w.real,
+          replacement: applyCase(shape, w.fake) + casedSuffix(shape, suffix),
+        });
+      }
+      if (m.index === compiledReals.rx.lastIndex) compiledReals.rx.lastIndex++;
+    }
+    return out;
+  }
+
+  /**
+   * What the banner is warning about, as one string — so a banner the
+   * operator closed stays closed for exactly that set of values and comes
+   * back the moment a different real name is in the draft. Order-blind and
+   * case-blind: the same names in another order are the same warning.
+   */
+  function draftWarnSig(hits) {
+    const reals = (hits || []).map((h) => fold(h && h.real)).filter(Boolean);
+    reals.sort();
+    return reals.join("|");
+  }
+
   // ---- a copy that carries the real names ------------------------------------
   //
   // The display translation's boundary was always "what LEAVES the page reads
@@ -1646,6 +1700,8 @@
     HUMAN_TURN_SELECTORS,
     turnSelector,
     fold,
+    draftSpans,
+    draftWarnSig,
     RELEASE_INPUT_WATCH_MS,
     releaseDeadline,
     releaseNext,

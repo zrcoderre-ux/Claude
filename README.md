@@ -2545,8 +2545,16 @@ swept on the next extension start.
 
    The red **banner stays as the net** for everything the caret is *not* on
    — pasted text, a dismissed prompt — without ever doubling the value
-   currently being offered. Nothing is rewritten without a keypress the
-   composer would have taken anyway: the composer is yours. One declared exception: a draft that
+   currently being offered. Each line carries an **Accept** button, and a
+   banner with more than one name an **Accept all**: the fake is typed over
+   every occurrence of that real name in the draft, in the case shape it was
+   typed in and with a possessive kept, through the same door as the
+   typeahead swap — so Ctrl+Z brings the real name back. The **✕** closes the
+   banner for exactly the names it was showing; it stays closed while the
+   draft carries those and no others, and comes back the moment a different
+   real name appears, and it is never remembered past the tab. Nothing else is
+   rewritten without a keypress the composer would have taken anyway: the
+   composer is yours. One declared exception: a draft that
    **begins** `PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS` is the operator
    pasting pincites out of Lexis — published citations, always safe — and the
    warning stands down for that draft. And **ordinary English is never
