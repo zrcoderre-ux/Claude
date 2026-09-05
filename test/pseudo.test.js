@@ -1613,3 +1613,56 @@ test("the release's clocks: a short look at the input, a deadline that scales", 
   assert.equal(P.releaseDeadline(20), 300000);
   assert.equal(P.releaseDeadline(0), 120000);
 });
+
+// ---- the draft banner's Accept and close ---------------------------------------
+
+function warnKey() {
+  return {
+    warn: [
+      { real: "Helen Rasho", fake: "Mara Quenby" },
+      { real: "Rasho", fake: "Quenby" },
+      { real: "Cross River Bank", fake: "Elm Street Bank" },
+    ],
+  };
+}
+
+test("draftSpans: every occurrence, in order, with translate's own replacement", () => {
+  const c = P.compileReals(warnKey());
+  const spans = P.draftSpans(c, "Rasho said RASHO's case is Helen Rasho's; Cross River Bank agreed.");
+  assert.deepStrictEqual(
+    spans.map((s) => [s.start, s.end, s.matched, s.replacement]),
+    [
+      [0, 5, "Rasho", "Quenby"],
+      [11, 18, "RASHO's", "QUENBY'S"],
+      [27, 40, "Helen Rasho's", "Mara Quenby's"],
+      [42, 58, "Cross River Bank", "Elm Street Bank"],
+    ]
+  );
+  // The text the spans index is the text handed in: slicing gives the match.
+  const text = "Rasho said RASHO's case is Helen Rasho's; Cross River Bank agreed.";
+  for (const s of spans) assert.equal(text.slice(s.start, s.end), s.matched);
+});
+
+test("draftSpans: one value's Accept touches only that value", () => {
+  const c = P.compileReals(warnKey());
+  const text = "Rasho and Helen Rasho and rasho.";
+  const only = P.draftSpans(c, text, "RASHO");
+  assert.deepStrictEqual(only.map((s) => s.matched), ["Rasho", "rasho"]);
+  const whole = P.draftSpans(c, text, "Helen Rasho");
+  assert.deepStrictEqual(whole.map((s) => s.matched), ["Helen Rasho"]);
+  assert.deepStrictEqual(P.draftSpans(c, text, "Strangeways"), []);
+  assert.deepStrictEqual(P.draftSpans(c, "", "Rasho"), []);
+  assert.deepStrictEqual(P.draftSpans(null, text, "Rasho"), []);
+});
+
+test("draftWarnSig: the same names are the same warning, whatever the order or case", () => {
+  const a = P.draftWarnSig([{ real: "Rasho" }, { real: "Cross River Bank" }]);
+  const b = P.draftWarnSig([{ real: "cross river bank" }, { real: "RASHO" }]);
+  assert.equal(a, b);
+  assert.ok(a.length > 0);
+  // A different name is a different warning — the closed banner comes back.
+  assert.notEqual(a, P.draftWarnSig([{ real: "Rasho" }, { real: "Cross River Bank" }, { real: "Helen Rasho" }]));
+  assert.notEqual(a, P.draftWarnSig([{ real: "Rasho" }]));
+  assert.equal(P.draftWarnSig([]), "");
+  assert.equal(P.draftWarnSig(null), "");
+});
