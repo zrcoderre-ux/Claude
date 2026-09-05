@@ -1546,3 +1546,70 @@ test("the message sweep's own shapes are all pruned", () => {
   const covered = P.turnSelector().split(",");
   for (const sel of msg) assert.ok(covered.indexOf(sel) !== -1, sel + " is not pruned");
 });
+
+// ---- the key-upload guard's release ------------------------------------------
+//
+// "Upload anyway" used to be one re-dispatched change event on claude.ai's
+// file input, unconfirmed — and claude.ai ignored it, so the override the
+// operator pressed uploaded nothing and said nothing. The release now goes
+// through the composer's attach ladder; these are the two decisions in it.
+
+test("releaseNext: a dead input drops, a confirmed one is done", () => {
+  assert.equal(P.releaseNext({ ok: true, uploads: 1, chips: 1 }), "done");
+  assert.equal(P.releaseNext({ ok: true }), "done");
+  // Nothing took at all — no confirmation, no chip: the other door.
+  assert.equal(P.releaseNext({ ok: false, uploads: 0, chips: 0 }), "drop");
+  assert.equal(P.releaseNext({ ok: false }), "drop");
+  assert.equal(P.releaseNext(null), "drop");
+});
+
+test("releaseNext: a partial landing stops rather than doubling up", () => {
+  // The input took SOMETHING. A drop on top would attach those files twice,
+  // so the ladder stops and the note says what was seen.
+  assert.equal(P.releaseNext({ ok: false, uploads: 1, chips: 0 }), "stop");
+  assert.equal(P.releaseNext({ ok: false, uploads: 0, chips: 2 }), "stop");
+  assert.equal(P.releaseNext({ ok: false, uploads: "1", chips: -3 }), "stop");
+});
+
+test("releaseNote: silent when it landed, loud and specific when it did not", () => {
+  assert.equal(P.releaseNote(["pseudonym_key.xlsx"], "the file input", { ok: true }, 1, ""), "");
+  const dead = P.releaseNote(
+    ["pseudonym_key.xlsx"],
+    "the file input, then a drop",
+    { ok: false, uploads: 0, chips: 0 },
+    1,
+    ""
+  );
+  assert.match(dead, /Upload anyway was pressed for pseudonym_key\.xlsx/);
+  assert.match(dead, /never confirmed 1 file landing/);
+  assert.match(dead, /tried the file input, then a drop/);
+  assert.match(dead, /0 upload confirmations and 0 new attachment chips/);
+  assert.match(dead, /Drag the file onto the composer to try again/);
+  assert.ok(!/Some of it may be attached/.test(dead));
+});
+
+test("releaseNote: a partial landing says to look before sending", () => {
+  const part = P.releaseNote(["a.xlsx", "b.pdf"], "the file input", { ok: false, uploads: 1, chips: 1 }, 2, "");
+  assert.match(part, /a\.xlsx, b\.pdf/);
+  assert.match(part, /2 files landing/);
+  assert.match(part, /1 upload confirmation and 1 new attachment chip seen/);
+  assert.match(part, /Some of it may be attached and the rest not/);
+});
+
+test("releaseNote: a driver's own evidence is said as it worded it, and a caveat rides along", () => {
+  // Cowork's driver words what it saw; the counts must not be invented for it.
+  const cw = P.releaseNote(["pseudonym_key.xlsx"], "file input, then drop", { ok: false, why: "expected 1 attachment(s); saw 0 upload confirmation(s), 0 chip(s), 0 filename(s)" }, 1, "");
+  assert.match(cw, /saw 0 upload confirmation\(s\), 0 chip\(s\), 0 filename\(s\)/);
+  assert.ok(!/new attachment chip/.test(cw));
+  const caveat = P.releaseNote([], "", { ok: false }, 0, "This is Chat's evidence.");
+  assert.match(caveat, /pressed for the file, but/);
+  assert.match(caveat, /1 file landing/);
+  assert.ok(/This is Chat's evidence\.$/.test(caveat), caveat);
+});
+
+test("the release's clocks: a short look at the input, a deadline that scales", () => {
+  assert.ok(P.RELEASE_INPUT_WATCH_MS >= 8000 && P.RELEASE_INPUT_WATCH_MS <= 30000);
+  assert.equal(P.releaseDeadline(1), 120000);
+  assert.equal(P.releaseDeadline(20), 300000);
+  assert.equal(P.releaseDeadline(0), 120000);
+});

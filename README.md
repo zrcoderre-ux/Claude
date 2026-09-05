@@ -2587,6 +2587,20 @@ folder](#uploading-a-case-folder-into-a-chat) reads a case folder locally
 and parses the key into the library — but what that button then hands to
 claude.ai goes through this guard like anything else.
 
+What you let through is **handed back and confirmed**, not merely re-fired.
+The release goes through the same attach ladder the scheduled sends and the
+Folder button use: claude.ai's file input first, watched briefly, then a drop
+on the composer if the input took nothing at all, each step confirmed by the
+upload responses and the chips (on Cowork, by its own driver's evidence). It
+used to be one synthetic change event on the input, unconfirmed — and
+claude.ai has been seen ignoring exactly that, so **Upload anyway** could
+upload nothing and say nothing. Now a release the composer never confirmed is
+said out loud in a dialog naming the file, what was tried, and what was seen;
+a release that half-landed stops rather than dropping the files in a second
+door on top (that would attach the taken ones twice) and says to look at the
+composer before sending. A confirmed release says nothing — the chips are the
+word.
+
 ### The titles read back in the real name
 
 The title that went out is the fake, and it stays the fake — that is the whole
