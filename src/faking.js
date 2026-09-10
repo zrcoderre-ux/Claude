@@ -39,6 +39,13 @@
  *   this switch, and the tooltip says so, because a control that looks like it
  *   turns the feature off must say what it does not turn off.
  *
+ * And one decision that is not about the word at all: WHETHER THE ROW HAS
+ * ANSWERED YET. A row that takes the button and shows nothing has either no
+ * room or no layout yet, and a conversation Upload folder's own send just
+ * created is measured mid-render every time — see roomVerdict, which is why
+ * this button used to be in a run's chats and never in the ones the Folder
+ * button started.
+ *
  * Pure: no DOM, no chrome. The button is src/fake-toggle.js.
  */
 (function (root) {
@@ -135,7 +142,60 @@
     );
   }
 
-  const api = { buttonState: buttonState, REAL: REAL, FAKES: FAKES, HELD: HELD };
+  // ---- where it stands when the row will not show it -----------------------
+
+  /**
+   * A row that took the button and showed nothing has said one of two things,
+   * and nothing about the measurement itself tells them apart: it has no ROOM,
+   * or it has no LAYOUT YET.
+   *
+   * The second one is not a corner case — it is the conversation this button
+   * most needs to be in. Upload folder's own send CREATES a conversation and
+   * the tab that sent it watches claude.ai build the new composer row, so the
+   * first insert lands mid-render and measures zero. A conversation you merely
+   * OPEN — a run's chat, clicked in the sidebar — is settled by the time
+   * anything measures it, which is why the same button was there in one and
+   * never in the other. Answered once and kept, that one instant cost the
+   * whole visit.
+   *
+   * So a row gets a WINDOW to lay itself out in, and only a row that is still
+   * refusing at the end of it is a row with no room. Twelve seconds because
+   * the tick is 1.5 and a new conversation's row settles in one or two of
+   * them; long enough to cover a slow render, short enough that a row that
+   * really is full has answered before you have read the reply.
+   */
+  const ROOM_GRACE_MS = 12000;
+
+  /**
+   * What to do about it.
+   *
+   *   waited   — ms since this row was FIRST asked to show the button
+   *   answered — this row has already been through the window once and said no
+   *              (a resize is what asks it again, and a row that has already
+   *              answered is not owed a second silent window)
+   *
+   * "wait"   — take the button back out and ask again: nothing is concluded,
+   *            and a button in the page and nowhere on the screen is worse
+   *            than one that isn't there yet.
+   * "corner" — the row has had its chance. Stand at the BOTTOM on its own
+   *            rather than nowhere: a switch that vanishes is a translation
+   *            with nothing on screen offering to turn it off.
+   */
+  function roomVerdict(ev) {
+    const e = ev || {};
+    if (e.answered) return "corner";
+    const waited = typeof e.waited === "number" && e.waited > 0 ? e.waited : 0;
+    return waited < ROOM_GRACE_MS ? "wait" : "corner";
+  }
+
+  const api = {
+    buttonState: buttonState,
+    roomVerdict: roomVerdict,
+    ROOM_GRACE_MS: ROOM_GRACE_MS,
+    REAL: REAL,
+    FAKES: FAKES,
+    HELD: HELD,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMFaking = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

@@ -135,3 +135,40 @@ test("the ON state says the titles are not what the colour is about", () => {
   assert.equal(b.lit, true);
   assert.match(b.title, /titles keep their real names/i);
 });
+
+// ---- where it stands when the row will not show it -------------------------
+//
+// The measurement is the same in both cases and only time tells them apart: a
+// composer row with nothing left to give, and a composer row that has not laid
+// itself out yet. The second is the conversation this button is most for — the
+// one Upload folder's own send just created, watched from the tab that sent it
+// — which is why it used to be in a run's chats and never in the folder's.
+
+test("a row that shows nothing on the first ask is not a row with no room", () => {
+  assert.equal(K.roomVerdict({ waited: 0 }), "wait");
+  assert.equal(K.roomVerdict({ waited: 1500 }), "wait", "one tick later it is still rendering");
+  assert.equal(K.roomVerdict({ waited: K.ROOM_GRACE_MS - 1 }), "wait");
+});
+
+test("a row still refusing at the end of its window has answered", () => {
+  assert.equal(K.roomVerdict({ waited: K.ROOM_GRACE_MS }), "corner");
+  assert.equal(K.roomVerdict({ waited: 60000 }), "corner");
+});
+
+test("the window is long enough for a new conversation's row to settle", () => {
+  // The tick is 1.5s and a row built by our own send takes one or two of them.
+  assert.ok(K.ROOM_GRACE_MS >= 6000, "a slow render must not be read as a full row");
+  assert.ok(K.ROOM_GRACE_MS <= 20000, "a full row has to answer before the reply is read");
+});
+
+test("a row that has already answered is not owed a second silent window", () => {
+  // What asks again is a resize, and a window being dragged must not take the
+  // button off the screen for the whole of the window each time.
+  assert.equal(K.roomVerdict({ waited: 0, answered: true }), "corner");
+});
+
+test("nothing readable about the wait is treated as the first ask", () => {
+  assert.equal(K.roomVerdict({}), "wait");
+  assert.equal(K.roomVerdict(), "wait");
+  assert.equal(K.roomVerdict({ waited: -5 }), "wait", "a clock that went backwards is not a verdict");
+});

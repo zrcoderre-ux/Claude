@@ -2124,8 +2124,10 @@ Press it, pick the matter's folder, and:
   extension's key library under the case folder's name — the same entry the run
   editor's picker and the popup show — and attached to the conversation once it
   exists, so the chat [reads back in the real
-  names](#pseudonym-translation). The spreadsheet itself never reaches the
-  composer: it is barred from the upload twice over, by the plan and again by
+  names](#pseudonym-translation), with the [fakes
+  toggle](#the-fakes-toggle-beside-upload-folder) beside Folder at the bottom of
+  it saying which way you are reading — the same as in a chat a run made. The
+  spreadsheet itself never reaches the composer: it is barred from the upload twice over, by the plan and again by
   the list handed to claude.ai. A folder you have picked before finds the key
   it already loaded, without the `.xlsx` having to be sitting there again.
 - **Nothing is typed and nothing is sent.** The prompt is yours to write and
@@ -2723,9 +2725,26 @@ a second colour that would dilute the first.
 It appears only where there is a switch to throw — a key translating this page,
 or a peek to come back from — and it **follows the Folder button** rather than
 claude.ai's furniture, so "to the right of Folder" holds in all three of that
-button's homes and stays one edit in one file. Where the row has no room to
-show it, it stays out rather than sitting in the page and nowhere on the screen;
-the peek is still in the panel, where it has always been.
+button's homes and stays one edit in one file.
+
+**A row that shows nothing gets a second ask, and then a corner.** Inserted and
+visible are different things, so the button is measured once it is docked — and
+a composer row with nothing left to give measures exactly like one that has not
+laid itself out yet. Those are not the same fact, and the difference was costing
+this button the conversations it is most for: **Upload folder's own send creates
+a conversation and the tab that sent it watches claude.ai build the new row**, so
+the first measurement lands mid-render and read as "no room" for the rest of the
+visit. A chat you merely *open* — a run's, one clicked in the sidebar — is
+settled before anything measures it, which is why the toggle was there in a
+run's chats and never in the ones the Folder button started. So the row now gets
+a **twelve-second window** to lay itself out in, asked again on the tick rather
+than concluded on one frame; while it is being asked the peek is in the panel,
+where it has always been. A row still refusing at the end of that window is a
+row with no room, and the button then stands **on its own at the bottom left**,
+above where the Folder button's own corner would be — a switch that vanishes is
+a translation with nothing on screen offering to turn it off. A window resize
+asks the row again, and a row that has already refused answers on the spot
+rather than taking the button off the screen for another twelve seconds a drag.
 
 And what it does **not** switch is in its tooltip, because a control that looks
 like it turns the feature off has to say so: the composer warning, the typeahead
