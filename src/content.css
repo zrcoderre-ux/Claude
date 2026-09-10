@@ -1935,6 +1935,23 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   border-color: rgba(0, 0, 0, 0.18);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
+/* A row that took the button and would not show it — claude.ai's own row with
+   nothing left to give, after the window src/faking.js gives it to lay itself
+   out in. The bottom LEFT, like every other corner this extension falls back
+   to, and never the top right where Share lives: this switch is used with the
+   composer in front of you, and the key button in the tray already carries the
+   panel's own peek. Above the Folder button's corner, since a row that squeezed
+   this button out is a row the Folder button is still sitting in. */
+#cum-fakes.cum-fakes-corner {
+  position: fixed;
+  left: 16px;
+  bottom: 140px;
+  z-index: 2147483643;
+  background: #ffffff;
+  color: #1f1f1f;
+  border-color: rgba(0, 0, 0, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
 
 @media (prefers-color-scheme: dark) {
   #cum-fakes {
@@ -1947,6 +1964,7 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   #cum-fakes.cum-fakes-on { background: rgba(201, 100, 66, 0.16); }
   #cum-fakes.cum-fakes-on:hover { background: rgba(201, 100, 66, 0.24); }
   #cum-fakes.cum-fakes-loose { background: #2a2a28; color: #f0efea; }
+  #cum-fakes.cum-fakes-corner { background: #2a2a28; color: #f0efea; }
 }
 
 /* ── Upload folder ────────────────────────────────────────────────────────

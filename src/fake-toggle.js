@@ -36,21 +36,37 @@
   const ID = "cum-fakes";
   const FOLDER_ID = "cum-folder";
   const TICK_MS = 1500;
+  // An insert that measures nothing costs a layout, and place() runs on every
+  // render the sweep publishes — which, mid-reply, is a great many. So a row
+  // that has just shown nothing is asked again on the TICK's cadence rather
+  // than the stream's.
+  const RETRY_MS = 750;
 
   let btn = null;
   let state = K.buttonState(null);
-  // Set when the row took the button and had no room to show it. INSERTED and
-  // VISIBLE are different things — the header slot's own lesson, which the
-  // Folder button beside this one learned the hard way — and a button in the
-  // page and nowhere on the screen is worse than one that isn't there: the
-  // peek is still in the key panel, where it has always been. Sticky rather
-  // than retried every tick, so a row with no room isn't handed a button and
-  // taken back one and a half seconds later, forever.
-  let noRoom = false;
-  // The row the Folder button was last found in. claude.ai swapping its
-  // composer out for another one's is a new row and gets its own answer about
-  // whether there is room, rather than inheriting the old one's.
+  // INSERTED and VISIBLE are different things — the header slot's own lesson,
+  // which the Folder button beside this one learned the hard way. So the
+  // button is measured after it is docked, and what a row that shows nothing
+  // has actually said is src/faking.js's roomVerdict: a row still being BUILT
+  // measures exactly like a row with no ROOM, and the composer row of a
+  // conversation this button's own Folder just created is mid-render every
+  // time. Judged on that one measurement, it was the run's chats that carried
+  // the button and never the ones the folder started.
+  //
+  // firstTryAt — when this row was first asked to show it, which is the window
+  //              it gets to lay itself out in
+  // lastFailAt — when it last showed nothing, so the ask goes at the tick's
+  //              pace and not the sweep's
+  // saidNoRoom — this row has been through the window once and refused, so a
+  //              resize's second ask is answered on the spot rather than
+  //              costing another silent twelve seconds
+  // cornered   — the row refused: the button stands at the bottom on its own,
+  //              and stays there until the row changes or the window resizes
   let lastRow = null;
+  let firstTryAt = 0;
+  let lastFailAt = 0;
+  let saidNoRoom = false;
+  let cornered = false;
 
   function build() {
     if (btn) return btn;
@@ -126,25 +142,56 @@
     }
   }
 
+  /**
+   * The bottom of the conversation, on its own — the home for a row that will
+   * not show the button. Not the tray at the top: this switch is used mid-read
+   * with the composer in front of you, the key button up there already carries
+   * the panel's peek, and a second control saying the same thing in the same
+   * corner is the one nobody presses.
+   */
+  function corner(b) {
+    b.classList.remove("cum-fakes-inrow", "cum-fakes-loose");
+    b.classList.add("cum-fakes-corner");
+    // Whatever follow() measured for a loose Folder button is not this
+    // button's place any more; the stylesheet's corner is.
+    b.style.left = "";
+    b.style.bottom = "";
+    if (b.parentElement !== document.body) document.body.appendChild(b);
+  }
+
   function place() {
     const at = folder();
     const row = at ? at.parentElement : null;
     if (row !== lastRow) {
+      // claude.ai swapping its composer out for another one's is a new row and
+      // gets its own answer about whether there is room, rather than
+      // inheriting the old one's.
       lastRow = row;
-      noRoom = false;
+      firstTryAt = 0;
+      lastFailAt = 0;
+      saidNoRoom = false;
+      cornered = false;
     }
-    if (!state.shown || !at || noRoom) {
+    if (!state.shown || !at) {
       if (btn && btn.parentNode) btn.remove();
       return;
     }
     const b = build();
+    if (cornered) {
+      corner(b);
+      paint();
+      return;
+    }
     // Checked before it is done, so a docked button is not torn out and put
     // back on every tick — which would cost it its own hover and focus.
     if (b.parentElement !== at.parentElement || b.previousElementSibling !== at) {
+      const now = Date.now();
+      if (lastFailAt && now - lastFailAt < RETRY_MS) return;
       // The Folder button's own row class decides how a button of ours looks in
       // claude.ai's furniture, and it is put on BEFORE the insert: measuring one
       // still wearing the loose styling is measuring something that will not be
       // what is on the screen.
+      b.classList.remove("cum-fakes-corner");
       b.classList.toggle("cum-fakes-inrow", at.classList.contains("cum-folder-inrow"));
       b.classList.toggle("cum-fakes-loose", at.classList.contains("cum-folder-loose"));
       try {
@@ -152,11 +199,29 @@
       } catch (e) {
         return;
       }
+      if (!firstTryAt) firstTryAt = now;
       if (!C.isVisible(b)) {
-        noRoom = true;
-        b.remove();
+        lastFailAt = now;
+        const verdict = K.roomVerdict({ waited: now - firstTryAt, answered: saidNoRoom });
+        if (verdict === "wait") {
+          // Nothing is concluded: out it comes, and the next tick asks the row
+          // again. The peek is in the key panel meanwhile, where it has always
+          // been.
+          b.remove();
+          return;
+        }
+        saidNoRoom = true;
+        cornered = true;
+        corner(b);
+        paint();
         return;
       }
+      // The row has shown it. Whatever it said before, this row has room — so
+      // a zero measurement in it later is a rebuild rather than a refusal, and
+      // gets the window again rather than the corner on the spot.
+      firstTryAt = 0;
+      lastFailAt = 0;
+      saidNoRoom = false;
     }
     follow(at, b);
     paint();
@@ -176,9 +241,14 @@
   setInterval(place, TICK_MS);
   // A row that had no room may have some now. The other thing that changes
   // that — claude.ai swapping the composer row out — is caught in place() by
-  // the row itself changing, so neither answer is kept past the question.
+  // the row itself changing, so neither answer is kept past the question. The
+  // row's refusal is REMEMBERED across this ask (saidNoRoom), so a window
+  // being dragged doesn't take the button off the screen for twelve seconds a
+  // drag: one measurement decides it now.
   window.addEventListener("resize", () => {
-    noRoom = false;
+    firstTryAt = 0;
+    lastFailAt = 0;
+    cornered = false;
     place();
   });
   place();
