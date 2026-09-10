@@ -166,6 +166,81 @@ test("a real bound on both tabs is cleaned to the APPLIED fake", () => {
   assert.strictEqual(P.translate(P.compile(key), fake).text, folder);
 });
 
+// ---- "no match" arrives on the APPLIED sheet ------------------------------
+//
+// PDF-Linker used to park a binding no export carried on the pinned tab; at the
+// owner's direction it writes those to the main sheet now, so a real value the
+// operator types in another program can find its stand-in. Such a row is an
+// ORDINARY binding here: at the owner's direction the only question either
+// direction asks is what the page in hand contains.
+
+test('a "no match" row is an ordinary binding, both directions', () => {
+  const key = keyOf([
+    ["person", "Rasho", "Strangeways", "", "replaced", "", 3],
+    ["person", "Gregory Walton", "Lowther Rolleston", "", "no match", "template", 0],
+  ]);
+  // Typing the real name is a leak whether or not the filings mentioned it...
+  assert.deepStrictEqual(key.warn.map((w) => w.real), ["Rasho", "Gregory Walton"]);
+  // ...and the operator can be handed the stand-in for it...
+  assert.strictEqual(
+    P.nameCleaner(key)("Gregory Walton called"),
+    "Lowther Rolleston called"
+  );
+  // ...so a page carrying that stand-in has to read back.
+  assert.strictEqual(
+    P.translate(P.compile(key), "Lowther Rolleston called").text,
+    "Gregory Walton called"
+  );
+  assert.strictEqual(key.dropped.pinned, 0);
+});
+
+test('a "no match" row on a BARE TOKEN reverses — its fake shipped', () => {
+  // Why the Status word could not be the discriminator even if it were asked.
+  // PDF-Linker writes "no match" for a party's bare tokens whenever the export
+  // only ever spelled the full name: they matched nothing themselves, and their
+  // fakes are standing in that export as the words of the composed name. The
+  // macro reverses a composed fake word by word off exactly these rows.
+  const key = keyOf([
+    ["person", "Gregory Yu", "Finnegan Harrell", "", "replaced", "", 4],
+    ["person-token", "Gregory", "Finnegan", "", "no match", "", 0],
+    ["person-token", "Yu", "Harrell", "", "no match", "", 0],
+  ]);
+  assert.strictEqual(P.translate(P.compile(key), "Harrell testified.").text, "Yu testified.");
+});
+
+test('an "ocr fix" row is never reversed, whatever tab it arrives on', () => {
+  // The one thing the map genuinely cannot answer backward, beside an alt
+  // spelling: its Replacement is the canonical value's own stand-in, so
+  // reversing it is the two-reals-one-fake collision by construction — and a
+  // row reading "cuve!nants -> covenants" would un-fix the word. PDF-Linker
+  // keeps these on the pinned tab; this is the belt for one that reaches the
+  // applied sheet.
+  const key = keyOf([
+    ["person", "Smith", "Barlowe", "", "replaced", "", 9],
+    ["person", "Smlth", "Barlowe", "", "ocr fix", "", 4],
+    ["", "cuve!nants", "covenants", "", "ocr fix", "", 2],
+  ]);
+  assert.strictEqual(key.dropped.ambiguous, 0);
+  assert.deepStrictEqual(key.pairs, [{ fake: "Barlowe", real: "Smith" }]);
+  assert.strictEqual(P.translate(P.compile(key), "Barlowe signed.").text, "Smith signed.");
+});
+
+test("the pinned tab is still refused, so an older key reads as it always has", () => {
+  // The rows moved; the sheet rule did not. A key an older PDF-Linker wrote
+  // carries them on the pinned tab, where the collisions that retired live
+  // mappings came from, and it must keep reading exactly as before.
+  const pinned = sheet("Pinned (never in text)", [
+    HEADERS,
+    ["person", "Gregory Walton", "Marlow", "", "no match", "template", 0],
+  ]);
+  const key = keyOf([["person", "Helen Rasho", "Marlow", "", "replaced", "", 12]], [pinned]);
+  assert.strictEqual(key.dropped.ambiguous, 0);
+  assert.strictEqual(key.dropped.pinned, 1);
+  assert.deepStrictEqual(key.pairs, [{ fake: "Marlow", real: "Helen Rasho" }]);
+  // ...and the pinned party still warns.
+  assert.ok(key.warn.some((w) => w.real === "Gregory Walton"));
+});
+
 test("appliedSheet follows FindKeySheet: one sheet, by name, never the pinned tab", () => {
   const named = sheet("Pseudonym Key", [HEADERS, ["person", "A", "B", "", "", "", 1]]);
   const pinned = sheet("Pinned (never in text)", [HEADERS, ["person", "C", "D", "", "", "", 0]]);

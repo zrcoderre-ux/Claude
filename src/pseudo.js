@@ -15,9 +15,12 @@
  *                 "alt spelling" row is forward-only (its fake belongs to the
  *                 canonical row), a fake claimed by two canonical reals is
  *                 ambiguous — retired from reversal rather than guessed at —
- *                 and the bindings come off the APPLIED sheet, never the
- *                 "Pinned (never in text)" tab, which the macro refuses to read
- *                 for a reason that bit here too (see appliedSheet).
+ *                 and a row is out of the reversal only where the MAP cannot
+ *                 answer it backward: the "Pinned (never in text)" tab, which
+ *                 the macro refuses to read for a reason that bit here too, and
+ *                 an "ocr fix" row wherever it sits (see appliedSheet,
+ *                 UNAPPLIED_STATUS). Never because the filings did not mention
+ *                 the party — only this page decides that.
  *   - compile / translate:  fake → real for DISPLAY. Longest fake first so a
  *                 bare surname token never rewrites part of a longer full
  *                 name; whole words only; case-insensitive with an ALL-CAPS
@@ -192,6 +195,21 @@
   // along for the WARNING — a pinned party's real name typed into a chat is a
   // leak like any other — and they take no part in the reversal (`pairs`), in
   // the ambiguity grouping, or in naming the case (`hint`).
+  //
+  // …AND WHAT IS ON THE PINNED TAB HAS CHANGED, without changing any of that.
+  // At the owner's direction PDF-Linker now writes a binding no export carried
+  // to the MAIN sheet, so a real value typed by hand in another program can
+  // find its stand-in; what stays on the pinned tab is the scan-error
+  // correction, whose Replacement is the canonical row's own fake.
+  //
+  // Those rows need no special handling here, and must not get any: at the
+  // owner's direction the only question either direction asks is what THIS PAGE
+  // contains. A fake on the page is reversed and a real value about to be typed
+  // is warned about, whether or not the filings mentioned that party — indeed
+  // ESPECIALLY then, since the operator now gets a stand-in for such a party by
+  // hand and a draft can carry it. So a "no match" row is an ordinary binding.
+  // The sheet test above is unchanged, so a key an older PDF-Linker wrote —
+  // those rows still on the pinned tab — reads exactly as it did.
   const KEY_SHEET_NAME = "pseudonym key";
   const PINNED_SHEET_NAME = "pinned (never in text)";
 
@@ -208,7 +226,12 @@
   //   3  the applied rows come off ONE sheet, the macro's own FindKeySheet
   //      rule — not off every tab that isn't named exactly "Pinned (never in
   //      text)", which let a differently named second tab retire live rows.
-  const PARSE_VERSION = 3;
+  //   4  an "ocr fix" row is out of the reversal wherever it sits — its
+  //      Replacement is the canonical row's own fake, so backward it is a
+  //      collision by construction. "no match" is not: at the owner's
+  //      direction only the page in hand decides, so such a row reverses like
+  //      any other now that PDF-Linker writes it to the MAIN sheet.
+  const PARSE_VERSION = 4;
 
   /** Was this stored key built by an older reader than the one running now? */
   function keyNeedsReparse(key) {
@@ -354,6 +377,26 @@
 
   const ALT_STATUS = "alt spelling"; // forward-only: fake belongs to the canonical row
 
+  // Statuses whose row the MAP cannot answer backward — never a statement about
+  // what the anonymized exports happened to carry, which is a fact about other
+  // files and decides nothing about the page in hand:
+  //   "ocr fix"   a scan-error correction, whose Replacement is the canonical
+  //               value's own stand-in (or the corrected word itself) — so in
+  //               reverse it is the two-reals-one-fake collision by
+  //               construction, or it un-fixes the word. It stays on the pinned
+  //               tab; this is the belt for one that reaches the applied sheet.
+  // ("alt spelling" is the other, and has its own flag; see ALT_STATUS.)
+  //
+  // "no match" is deliberately NOT here, at the owner's direction: what matters
+  // is what THIS PAGE contains. A fake on it is reversed and a real value about
+  // to be typed is warned about, whether or not the filings mentioned that
+  // party — the operator types real values into other programs and wants the
+  // stand-in back, and a draft can then carry it. The word could not decide
+  // this even if it were asked: PDF-Linker writes it for a party's BARE TOKEN
+  // whenever the export only ever spelled the full name, and that token's fake
+  // is standing in the export as a word of the composed name.
+  const UNAPPLIED_STATUS = new Set(["ocr fix"]);
+
   // A POSSESSIVE is the party's own name, not a second party — PDF-Linker's
   // own rule (its registry draws on the affix-stripped core). Both marks,
   // because the spreadsheet exports the straight one and Word writes the
@@ -363,18 +406,18 @@
 
   /**
    * Key workbook → the map. `sheets` is what CUMXlsx.parseXlsx returns. Every
-   * sheet carrying the header fingerprint is read, and the APPLIED ones are
-   * told from the pinned tab (appliedSheet, above): a pinned party's fake
-   * can't appear in text written from these exports — so it is never reversed
-   * and never collides with an applied row — but its REAL name is exactly what
-   * the warning exists to catch, so the row still rides along for that.
+   * sheet carrying the header fingerprint is read. A row is kept out of the
+   * REVERSAL only where the map cannot answer it backward — the pinned tab
+   * (appliedSheet, above) and an "ocr fix" row — never because the filings did
+   * not mention the party: a "no match" binding reverses like any other, and
+   * its REAL name is exactly what the warning exists to catch.
    *
    * Returns { name, rows, pairs, warn, dropped }:
-   *   pairs — [{fake, real}] for display reversal, unambiguous APPLIED owners
+   *   pairs — [{fake, real}] for display reversal, unambiguous owners
    *   warn  — [{real, fake, pinned}] real values that must not be typed, with
-   *           the stand-in to suggest instead. A real bound on BOTH tabs keeps
-   *           the APPLIED fake, whatever order the sheets came in: that is the
-   *           one a reader can reverse.
+   *           the stand-in to suggest instead; `pinned` marks a row out of the
+   *           reversal. A real bound both ways keeps the reversible fake,
+   *           whatever order the rows came in.
    */
   function parseKey(sheets, name) {
     const entries = [];
@@ -400,12 +443,17 @@
           continue;
         }
         const occ = occCol !== -1 ? parseInt(row[occCol], 10) : 0;
+        const status = statusCol !== -1 ? fold(row[statusCol]) : "";
         entries.push({
           real: real,
           fake: fake,
-          alt: statusCol !== -1 && fold(row[statusCol]) === ALT_STATUS,
+          alt: status === ALT_STATUS,
           occ: isFinite(occ) && occ > 0 ? occ : 0,
-          pinned: pinned,
+          // Out of the reversal: the pinned TAB (whose rows are unreachable
+          // to a reader by construction, and whose collisions retired live
+          // mappings — see appliedSheet), or a Status the map cannot answer
+          // backward. Never "did the filings mention this party".
+          pinned: pinned || UNAPPLIED_STATUS.has(status),
         });
       }
     }
@@ -428,10 +476,10 @@
     }
     for (const d of derived) entries.push(d);
 
-    // Reversal: exactly one row may own each fake. Pinned rows are out of this
-    // direction entirely (see appliedSheet) — their fakes are in no export, so
-    // searching for one is at best wasted work and at worst retires the applied
-    // row it collides with. Alt-spelling rows never own either. What is left is
+    // Reversal: exactly one row may own each fake. Rows the map cannot answer
+    // backward are out of this direction entirely — the pinned tab, whose
+    // collisions retired live rows, and an "ocr fix" row, which is a collision
+    // by construction. Alt-spelling rows never own either. What is left is
     // the macro's own guard: two CANONICAL rows claiming one fake, and the
     // mapping is retired rather than restored to a coin flip.
     const byFake = new Map();
@@ -467,12 +515,15 @@
     // The warning list: every real value the key binds, alt spellings and
     // pinned rows included — an OCR near-miss of a party's name is still that
     // party, and a party this batch never mentioned is still a name that must
-    // not be typed into a chat.
+    // not be typed into a chat. At the owner's direction that last one is the
+    // point rather than an edge: about-to-be-typed is the whole test, and what
+    // the filings mentioned has nothing to do with it.
     //
     // The FAKE beside it is the stand-in the cleaner offers and the chat title
-    // is minted from, so a real bound on both tabs takes the APPLIED row's:
-    // first-seen let workbook order decide, and where it landed on the pinned
-    // tab the extension minted a title out of a fake nothing could reverse.
+    // is minted from, so a real bound both on the pinned tab and off it takes
+    // the reversible row's: first-seen let workbook order decide, and where it
+    // landed on the pinned tab the extension minted a title out of a fake
+    // nothing could reverse.
     const warn = [];
     const seenReal = new Map();
     for (const e of entries) {
@@ -492,9 +543,9 @@
     // Which CASE this key belongs to, said in one value: the real name the
     // exports used most. Every key is named pseudonym_key.xlsx, so the
     // filename can't tell two cases apart in a list — the lead party can.
-    // Off the APPLIED rows only: a pinned party is one these filings never
-    // mentioned, so naming the case after it would name it after the party it
-    // is least about.
+    // Off the reversible rows only, and by Occurrences, so a party these
+    // filings never mentioned cannot name the case after the party it is least
+    // about: its count is 0.
     let hint = "";
     let hintOcc = -1;
     for (const e of entries) {
