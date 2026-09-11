@@ -239,6 +239,46 @@ test("the key button actually lands in the tray", () => {
   assert.ok(btn.isConnected, "the key button was placed but is not connected");
 });
 
+test("the send gate is wired, and a page with no key attached holds nothing", () => {
+  // The gate (src/pseudo-view.js, deciding by P.sendHold) stops a send while a
+  // real value stands in the draft. Its direction on FAILURE is the half no
+  // pure test can see: a page with no key attached — which is every page until
+  // one is loaded — must send exactly as claude.ai would. A gate that held
+  // there would be a composer wedged shut by this extension, and nothing on
+  // screen to say why.
+  //
+  // Registered handlers are CALLED rather than counted: one that is present
+  // and wrong looks identical to a test that only counts them.
+  const win = loaded.win;
+  assert.ok(win.__listeners, "the stub is no longer recording listeners");
+  const of = (type) => win.__listeners.filter(([t]) => t === type).map(([, fn]) => fn);
+  assert.ok(of("keydown").length > 0, "nothing is listening for a keystroke");
+  // A send control by name, the way a click on claude.ai's button arrives.
+  const button = win.document.createElement("button");
+  button.setAttribute("aria-label", "Send message");
+  const target = win.document.createElement("div");
+  // Selector-aware, because other modules' capture listeners ask this same
+  // question about their OWN furniture ("#cum-…"): a closest() that answered
+  // yes to everything would have them all acting on this event.
+  target.closest = (sel) => (/^button|\bbutton\b/i.test(String(sel)) ? button : null);
+  let prevented = 0;
+  const ev = (extra) =>
+    Object.assign(
+      {
+        isTrusted: true,
+        button: 0,
+        target: target,
+        preventDefault: () => prevented++,
+        stopPropagation: () => {},
+        stopImmediatePropagation: () => {},
+      },
+      extra || {}
+    );
+  for (const fn of of("keydown")) fn(ev({ key: "Enter", shiftKey: false, isComposing: false }));
+  for (const type of ["pointerdown", "mousedown", "click"]) for (const fn of of(type)) fn(ev());
+  assert.equal(prevented, 0, "a page with no key attached must never hold a send");
+});
+
 test("no file declares one function name twice in one scope", () => {
   // A function declaration does not scope to where it is written: two of them
   // sharing a name at the top level of one IIFE are ONE binding, and the later

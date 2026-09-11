@@ -317,6 +317,10 @@ function makeStub(opts) {
     devicePixelRatio: 1,
     document: document,
     chrome: chrome,
+    // Every listener any script registered, in order, as [type, fn]. Exposed so
+    // a load test can CALL one: a handler that is registered and wrong is
+    // invisible to a test that only counts them.
+    __listeners: listeners,
     navigator: { userAgent: "stub", clipboard: { writeText: () => Promise.resolve() } },
     addEventListener: (t, fn) => listeners.push([t, fn]),
     removeEventListener: () => {},

@@ -2554,7 +2554,10 @@ swept on the next extension start.
    typeahead swap — so Ctrl+Z brings the real name back. The **✕** closes the
    banner for exactly the names it was showing; it stays closed while the
    draft carries those and no others, and comes back the moment a different
-   real name appears, and it is never remembered past the tab. Nothing else is
+   real name appears, and it is never remembered past the tab. And while a real
+   value stands in the draft the **send does not go** — Enter and the send
+   button both stop, and the banner says so: see [A real name in the draft stops
+   the send](#a-real-name-in-the-draft-stops-the-send). Nothing else is
    rewritten without a keypress the composer would have taken anyway: the
    composer is yours. One declared exception: a draft that
    **begins** `PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS` is the operator
@@ -2610,6 +2613,57 @@ a release that half-landed stops rather than dropping the files in a second
 door on top (that would attach the taken ones twice) and says to look at the
 composer before sending. A confirmed release says nothing — the chips are the
 word.
+
+### A real name in the draft stops the send
+
+The banner used to be a sign. It named the real value, offered the fake, and
+left the send alone — and one Enter, the keystroke already in your fingers, was
+all that stood between a draft with a party's real name in it and Claude having
+that name. So the last inch is a **gate**:
+
+**While a real value from the key stands in the draft, the send does not go.**
+**Enter** does nothing, the **send button** does nothing (Cowork's **Start
+Task** included), and the banner comes back as the reason — headed *Not sent — a
+real name is still in your draft*, with the names, their fakes, and a line
+saying what each way out does. A second Enter against the same hold flashes the
+banner, so a keystroke is never answered by nothing at all.
+
+Two things open it, both of them already on the banner and both your own move:
+
+- **Accept** (or **Accept all**, or the caret prompt's **space** / **→**) types
+  the fake over the real name. The name is gone, so there is nothing left to
+  hold, and the next Enter sends.
+- **✕** closes the banner for exactly the names it was showing — and closing it
+  **releases the hold** for those names: the next send goes as written, real
+  name and all. The ✕ never sends by itself. Releasing a hold and pressing send
+  are two decisions, and the second one stays yours.
+
+What it deliberately does not do:
+
+- **It never times out.** Every other gate in the extension has a ceiling,
+  because the thing it holds is work that has to happen eventually; the thing
+  this holds is a real name reaching Claude, which must never happen by
+  default. The ✕ is the ceiling, and it is one click from the held send.
+- **It never rewrites the draft to let a send through.** The composer is yours,
+  which is why Accept is a button and not an autocorrect.
+- **It never holds a send the extension itself made** — a scheduled send, a
+  workflow step, the Folder button's own first message. Those prompts are
+  machine-composed and travel their own path, and a gate that silently wedged a
+  run would be the failure this repo forbids outright: an automation that does
+  not act and does not say so. Only a real keystroke or a real click is held.
+- **It never holds a pincite paste** (a draft beginning `PINCITE CHECK —
+  OFFICIAL REPORTER PAGE BREAKS`), for the same reason the banner stands down
+  for one: published citations are declared safe.
+- **It holds the composer only.** An Enter in a search field, a rename, a
+  dialog is not a send and is not touched.
+
+It fails **open** by construction: every input comes from the key's own
+matcher, so a page with no key attached — or a key that would not parse, or a
+module that never loaded — finds no real names and holds nothing. A composer
+wedged shut by the extension's own failure would be worse than the warning this
+replaced. The decision is `P.sendHold` in `src/pseudo.js` (tested); the wiring
+in `src/pseudo-view.js` catches the two ways a person sends, in the capture
+phase, before claude.ai's own handlers see them.
 
 ### The titles read back in the real name
 
@@ -3783,9 +3837,9 @@ src/conv.js            The conversation payload, fetched once and shared
 src/toc-panel.js       The floating table of contents itself
 src/run-panel.js       The workflow's own contents — every step, every chat
 src/xlsxread.js        Minimal .xlsx reader — enough for the pseudonym key (pure)
-src/pseudo.js          Pseudonym key: parsing, translation, warnings, guards, run hold, chat titles, case-number gate (pure)
+src/pseudo.js          Pseudonym key: parsing, translation, warnings, the send gate, guards, run hold, chat titles, case-number gate (pure)
 src/keyfile.js         The loaded key WORKBOOK: base64, the bounded store, what the panel says about it (pure)
-src/pseudo-view.js     Shows real names for the fakes — messages and chat titles — warns, guards the key file
+src/pseudo-view.js     Shows real names for the fakes — messages and chat titles — warns, holds the send, guards the key file
 src/faking.js          The fakes toggle: its word, its colour, whether it may be pressed (pure)
 src/coderepo.js        Which repo a Claude Code session is on: what counts as evidence (pure)
 src/code-recents.js    The Repos toggle beside Recents, and the swap it makes

@@ -1674,6 +1674,24 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   opacity: 0.75; padding: 4px;
 }
 .cum-pseudo-warn-x:hover { opacity: 1; }
+/* A send this gate held: the same banner, said louder, because the operator's
+   Enter did nothing and the only thing on screen that can say why is this. */
+.cum-pseudo-warn-held {
+  border-color: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(255, 120, 120, 0.55);
+}
+.cum-pseudo-warn-note {
+  margin-top: 7px; padding-top: 6px; font-size: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.25);
+}
+/* Restarted on every held send (see sendGate), so a second Enter against the
+   same hold is answered by something moving. */
+.cum-pseudo-warn-flash { animation: cum-pseudo-warn-flash 420ms ease-out 1; }
+@keyframes cum-pseudo-warn-flash {
+  0% { transform: translateX(-50%) scale(1); }
+  30% { transform: translateX(-50%) scale(1.035); }
+  100% { transform: translateX(-50%) scale(1); }
+}
 
 /* A copy that carried the real names off the page. Top rather than bottom:
    the draft warning owns the space above the composer, and these two must

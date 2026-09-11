@@ -1666,3 +1666,60 @@ test("draftWarnSig: the same names are the same warning, whatever the order or c
   assert.equal(P.draftWarnSig([]), "");
   assert.equal(P.draftWarnSig(null), "");
 });
+
+// ---- the send gate ---------------------------------------------------------
+
+const HIT = { real: "Helen Rasho", fake: "Ingrid Strangeways" };
+const HIT2 = { real: "Cross River Bank", fake: "Pelham Savings" };
+
+test("sendHold: a real value in the draft stops the send, and says which", () => {
+  const v = P.sendHold({ hits: [HIT] });
+  assert.equal(v.hold, true);
+  assert.equal(v.sig, P.draftWarnSig([HIT]));
+  assert.deepStrictEqual(v.names, ["Helen Rasho"]);
+  assert.ok(/Helen Rasho/.test(v.note));
+  assert.ok(v.head.length > 0);
+  // The two ways out are both named: an operator whose Enter did nothing must
+  // not have to guess which button lets it go.
+  assert.ok(/Accept/.test(v.note));
+  assert.ok(/✕/.test(v.note));
+  assert.ok(/does not send/.test(v.note));
+});
+
+test("sendHold: a clean draft, and a pincite paste, send freely", () => {
+  assert.equal(P.sendHold({ hits: [] }).hold, false);
+  assert.equal(P.sendHold({}).hold, false);
+  assert.equal(P.sendHold(null).hold, false);
+  // Published citations out of Lexis are declared safe, and the banner already
+  // stands down for them.
+  assert.equal(P.sendHold({ hits: [HIT], pincite: true }).hold, false);
+});
+
+test("sendHold: closing the warning for these values releases the send", () => {
+  const sig = P.draftWarnSig([HIT, HIT2]);
+  assert.equal(P.sendHold({ hits: [HIT, HIT2], dismissed: sig }).hold, false);
+  // Order-blind, like the banner's own closing.
+  assert.equal(P.sendHold({ hits: [HIT2, HIT], dismissed: sig }).hold, false);
+  // A closing for one set is not a closing for another: a name typed after the
+  // ✕ holds the send again.
+  assert.equal(P.sendHold({ hits: [HIT, HIT2], dismissed: P.draftWarnSig([HIT]) }).hold, true);
+  assert.equal(P.sendHold({ hits: [HIT], dismissed: sig }).hold, true);
+  // An empty dismissal never frees anything, even for an empty signature.
+  assert.equal(P.sendHold({ hits: [HIT], dismissed: "" }).hold, true);
+});
+
+test("sendHold: the extension's own sends are not the operator's keystrokes", () => {
+  assert.equal(P.sendHold({ hits: [HIT], trusted: false }).hold, false);
+  assert.equal(P.sendHold({ hits: [HIT], trusted: true }).hold, true);
+  // Absent is the human case: the gate is wired to real events.
+  assert.equal(P.sendHold({ hits: [HIT] }).hold, true);
+});
+
+test("sendHoldNote: one name is named, several are counted", () => {
+  assert.ok(/“Helen Rasho” is a real value/.test(P.sendHoldNote([HIT])));
+  const many = P.sendHoldNote([HIT, HIT2]);
+  assert.ok(/2 real values/.test(many));
+  assert.ok(/the fakes/.test(many));
+  // Rows with no real value never make it into the count.
+  assert.ok(/“Helen Rasho”/.test(P.sendHoldNote([HIT, { fake: "x" }, null])));
+});

@@ -1037,6 +1037,122 @@
     return reals.join("|");
   }
 
+  // ---- the send gate: a real name in the draft stops the send ----------------
+  //
+  // The banner has always been a WARNING: it named the real value, offered the
+  // fake, and left the send alone, because the composer belongs to the user.
+  // One keystroke was all that stood between a draft that carried a party's
+  // real name and Claude having it — and Enter is the keystroke that is already
+  // in your fingers. So the last inch is a gate rather than a sign: while a
+  // real value stands in the draft, the send does not go.
+  //
+  // It holds a HUMAN send only, and it is opened two ways, both of them the
+  // operator's own move and both already on the banner:
+  //
+  //   ACCEPT — the fake is typed over the real name (the banner's own button,
+  //   or the caret prompt's space/→). The name is gone, so there is nothing
+  //   left to hold.
+  //
+  //   ✕ — the banner is closed for exactly the names it was showing
+  //   (draftWarnSig), and closing it releases the hold for those names: the
+  //   next send goes as written. That is the manual override this repo's rules
+  //   require of every gate, and it is one click away from the held send. The
+  //   ✕ never sends by itself — releasing a hold and pressing send are two
+  //   decisions, and the second one stays the operator's.
+  //
+  // What it deliberately does NOT do:
+  //
+  //   It never times out. Every other gate in here has a ceiling because the
+  //   thing it holds is work that must eventually happen; the thing this holds
+  //   is a real name reaching Claude, which must never happen by default. The
+  //   ✕ is the ceiling.
+  //
+  //   It never rewrites the draft to let the send through. The composer is the
+  //   user's, which is the rule the banner was built on and the reason Accept
+  //   is a button rather than an autocorrect.
+  //
+  //   It never holds a send this extension made itself (`trusted: false`). A
+  //   run's prompt is machine-composed and travels its own path, and a gate
+  //   that silently wedged a scheduled send would be the failure CLAUDE.md
+  //   forbids outright — an automation that does not act and does not say so.
+  //
+  //   It never holds a pincite paste, for the same reason the banner stands
+  //   down for one: published citations out of Lexis are declared safe.
+  //
+  // Fail-open by construction: every input comes from the key's own matcher,
+  // so a page with no key attached, an unreadable key, or a module that never
+  // loaded produces no hits and holds nothing. A composer wedged by the
+  // extension's own failure would be worse than the warning it replaced.
+
+  const SEND_HOLD_HEAD = "⚠ Not sent — a real name is still in your draft";
+
+  /**
+   * What the held send says. Names the value where there is one of it, counts
+   * them where there are more, and says what each of the two ways out does —
+   * an operator whose Enter did nothing must not have to guess which.
+   */
+  function sendHoldNote(hits) {
+    const list = (hits || []).filter((h) => h && h.real);
+    const n = list.length;
+    const one = n === 1;
+    const said = one ? "“" + list[0].real + "” is a real value" : n + " real values stand in it";
+    const them = one ? "it" : "them";
+    return (
+      "Nothing was sent: " +
+      said +
+      ", and the draft would have carried " +
+      them +
+      " to Claude. Accept swaps " +
+      them +
+      " for the " +
+      (one ? "fake" : "fakes") +
+      "; ✕ keeps " +
+      them +
+      " and releases the hold, so the next send goes as written. The ✕ does not send."
+    );
+  }
+
+  /**
+   * Whether this send may go.
+   *
+   *   hits       the real values standing in the draft right now (findReals),
+   *              the whole draft's worth — including the one the caret prompt
+   *              is offering, which is in the draft like any other
+   *   dismissed  the signature the operator closed the banner for
+   *   pincite    the draft is a pincite paste (isPincitePaste)
+   *   trusted    this is the user's own keystroke or click; false for a send
+   *              the extension itself made
+   *
+   * Answers { hold, sig, why, head, note, names } — `sig` is what a ✕ has to
+   * be remembered under for this hold to lift, and `why` says which rule
+   * answered, for a log.
+   */
+  function sendHold(ev) {
+    const e = ev || {};
+    const hits = (e.hits || []).filter((h) => h && h.real);
+    const sig = draftWarnSig(hits);
+    const free = (why) => ({
+      hold: false,
+      sig: sig,
+      why: why,
+      head: "",
+      note: "",
+      names: [],
+    });
+    if (e.trusted === false) return free("not the user's own send");
+    if (e.pincite) return free("a pincite paste");
+    if (!hits.length) return free("no real values in the draft");
+    if (sig && sig === e.dismissed) return free("the warning was closed for these values");
+    return {
+      hold: true,
+      sig: sig,
+      why: "real values in the draft",
+      head: SEND_HOLD_HEAD,
+      note: sendHoldNote(hits),
+      names: hits.map((h) => h.real),
+    };
+  }
+
   // ---- a copy that carries the real names ------------------------------------
   //
   // The display translation's boundary was always "what LEAVES the page reads
@@ -1702,6 +1818,9 @@
     fold,
     draftSpans,
     draftWarnSig,
+    sendHold,
+    sendHoldNote,
+    SEND_HOLD_HEAD,
     RELEASE_INPUT_WATCH_MS,
     releaseDeadline,
     releaseNext,

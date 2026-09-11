@@ -1081,6 +1081,10 @@
         warnBox.remove();
         warnBox = null;
       }
+      // Nothing is translated, so there is no key to hold a send against: a
+      // hold that outlived its key would be a composer wedged by a warning
+      // with nowhere left to show itself.
+      sendHeld = null;
       hideTip();
     }
     for (const fn of watchers) {
@@ -1131,6 +1135,10 @@
   // remembered past the tab — a closed warning that outlived the draft would
   // be a warning quietly off.
   let warnDismissed = "";
+
+  // The send this gate is holding — { sig, head, note } — or null. Declared
+  // beside the closing it is lifted by; the gate itself is further down.
+  let sendHeld = null;
 
   // The editor's text the way the banner reads it for a rewrite: every text
   // node in order, with a line break wherever the block changes, so a name
@@ -1205,6 +1213,10 @@
 
   function closeWarn(sig) {
     warnDismissed = sig;
+    // Closing IS the release: a send this gate held for exactly these values
+    // goes the next time it is pressed (see sendGate below). Never a send of
+    // its own — the ✕ lifts the hold and stops there.
+    if (sendHeld && sendHeld.sig === sig) sendHeld = null;
     if (warnBox) warnBox.hidden = true;
   }
 
@@ -1226,27 +1238,51 @@
     return b;
   }
 
-  function checkComposer() {
-    if (!active || !active.compiledReals.rx) {
-      if (warnBox) warnBox.hidden = true;
-      return;
-    }
-    const C = window.CUMComposer;
-    const ed =
-      (C && C.findEditor && C.findEditor()) ||
-      document.querySelector('div[contenteditable="true"]');
+  // What stands in the draft right now — one reading, shared by the banner and
+  // by the send gate, so the two can never disagree about what is in the box.
+  // null when there is nothing to read it against (no key attached).
+  //
+  // The hits are the WHOLE draft's, the caret prompt's value included: the
+  // banner filters that one out because the prompt is already offering it, but
+  // a send carries it like any other name.
+  function draftReals() {
+    if (!active || !active.compiledReals.rx) return null;
+    const ed = editorEl();
     const text = ed ? ed.innerText || ed.textContent || "" : "";
     // A draft opening with the PINCITE CHECK header is the operator pasting
     // official-reporter pincites out of Lexis — published citations, declared
-    // safe. The warning stands down for that draft (P.isPincitePaste).
-    const hits = (
-      text && !P.isPincitePaste(text) ? P.findReals(active.compiledReals, text) : []
-    ).filter(
+    // safe. The warning stands down for that draft (P.isPincitePaste), and so
+    // does the gate.
+    const pincite = !!text && P.isPincitePaste(text);
+    return {
+      text: text,
+      pincite: pincite,
+      hits: text && !pincite ? P.findReals(active.compiledReals, text) : [],
+    };
+  }
+
+  function checkComposer() {
+    const read = draftReals();
+    if (!read) {
+      sendHeld = null;
+      if (warnBox) warnBox.hidden = true;
+      return;
+    }
+    const all = read.hits;
+    // A hold belongs to the set of names it was taken over; once the draft
+    // says something else, it is a fresh reading and the banner goes back to
+    // being a warning. Cleared before the filter below, which reads it.
+    if (sendHeld && sendHeld.sig !== P.draftWarnSig(all)) sendHeld = null;
+    const hits = all.filter(
       // The value the caret prompt is offering right now is being handled —
-      // the banner covers everything the caret is NOT on.
-      (h) => !(tipHit && tipEl && !tipEl.hidden && P.fold(h.real) === P.fold(tipHit.real))
+      // the banner covers everything the caret is NOT on. A HELD send shows
+      // them all: the prompt is moot once the draft has tried to leave.
+      (h) =>
+        sendHeld ||
+        !(tipHit && tipEl && !tipEl.hidden && P.fold(h.real) === P.fold(tipHit.real))
     );
     if (!hits.length) {
+      sendHeld = null;
       if (warnBox) warnBox.hidden = true;
       warnDismissed = ""; // a clean draft forgets the closing; the next real name warns again
       return;
@@ -1257,21 +1293,27 @@
       return;
     }
     // Redrawing the same warning on every 900ms tick would pull the buttons
-    // out from under a click; the box is rebuilt only when what it says changes.
-    if (warnBox && !warnBox.hidden && warnBox.dataset.sig === sig) return;
+    // out from under a click; the box is rebuilt only when what it says
+    // changes — and a held send changes what it says, so it is part of the
+    // signature the redraw is judged on rather than a repaint nothing asks for.
+    const drawSig = (sendHeld ? "held|" : "") + sig;
+    if (warnBox && !warnBox.hidden && warnBox.dataset.sig === drawSig) return;
     if (!warnBox) {
       warnBox = document.createElement("div");
       warnBox.className = "cum-pseudo-warn";
       document.documentElement.appendChild(warnBox);
     }
     warnBox.hidden = false;
-    warnBox.dataset.sig = sig;
+    warnBox.dataset.sig = drawSig;
+    warnBox.classList.toggle("cum-pseudo-warn-held", !!sendHeld);
     warnBox.textContent = "";
     const x = document.createElement("button");
     x.className = "cum-pseudo-warn-x";
     x.type = "button";
     x.textContent = "✕";
-    x.title = "Close — until a different real name is in the draft";
+    x.title = sendHeld
+      ? "Close — keeps the real name and releases the held send, so the next Enter goes as written"
+      : "Close — until a different real name is in the draft";
     x.addEventListener("mousedown", (e) => e.preventDefault());
     x.addEventListener("click", (e) => {
       e.preventDefault();
@@ -1281,7 +1323,7 @@
     warnBox.appendChild(x);
     const head = document.createElement("div");
     head.className = "cum-pseudo-warn-head";
-    head.textContent = "⚠ Real name in your draft";
+    head.textContent = sendHeld ? sendHeld.head : "⚠ Real name in your draft";
     warnBox.appendChild(head);
     const shown = hits.slice(0, 4);
     const lines = warnHtmlFor(shown);
@@ -1303,7 +1345,174 @@
       row.appendChild(acceptButton("Accept all", "", "Type the fakes over every real name in the draft"));
       warnBox.appendChild(row);
     }
+    // A send that did nothing has to say so in words, and say what the two
+    // ways out do — a composer that swallowed an Enter and only showed the
+    // same warning as before would read as claude.ai being slow.
+    if (sendHeld) {
+      const note = document.createElement("div");
+      note.className = "cum-pseudo-warn-note";
+      note.textContent = sendHeld.note;
+      warnBox.appendChild(note);
+    }
   }
+
+  // ---- the send gate ----------------------------------------------------------
+  //
+  // The decision is P.sendHold (pure, tested, and documented there — what
+  // opens the gate, what it refuses to do, and why it has no timeout). This is
+  // the wiring: the two ways a human sends on claude.ai, each caught in the
+  // capture phase before the page's own handler, and the banner redrawn as the
+  // reason nothing happened.
+  //
+  // Cowork note (CLAUDE.md): keydown capture on window is generic mechanics and
+  // is confirmed on both surfaces, so the Enter path carries the gate on Chat
+  // and Cowork alike. The CONTROL is the surface-specific half — Cowork's reads
+  // "Start Task" — so it is found the way this repo finds controls now: what it
+  // says about itself, through the same tested caption test the Cowork driver
+  // uses (CUMCowork.isSendCaption), with both drivers' own finders consulted
+  // first. A control neither recognizes still cannot get a real name out of a
+  // held draft by mouse alone: the draft is unchanged, so the next Enter holds,
+  // and the banner is already on screen naming what is in it.
+
+  /**
+   * Judge a send. Returns true when it must not go, and leaves the banner
+   * showing why.
+   */
+  function sendGate(ev) {
+    const read = draftReals();
+    if (!read) return false;
+    const v = P.sendHold({
+      hits: read.hits,
+      dismissed: warnDismissed,
+      pincite: read.pincite,
+      // A send the extension itself made is not a keystroke of the operator's
+      // and is never held here; the events our own drivers dispatch are
+      // untrusted by construction.
+      trusted: !ev || ev.isTrusted !== false,
+    });
+    if (!v.hold) {
+      sendHeld = null;
+      return false;
+    }
+    sendHeld = { sig: v.sig, head: v.head, note: v.note };
+    // The caret prompt is moot: the value it was offering is in the draft that
+    // just tried to leave, and the banner is about to name it with the rest.
+    hideTip();
+    checkComposer();
+    // A second Enter against the same hold draws the same banner, and a banner
+    // that does not move is a keystroke with no answer at all. The flash is
+    // restarted by hand because the class is already on the box.
+    if (warnBox) {
+      warnBox.classList.remove("cum-pseudo-warn-flash");
+      void warnBox.offsetWidth;
+      warnBox.classList.add("cum-pseudo-warn-flash");
+    }
+    return true;
+  }
+
+  // The gate covers exactly the editor the banner reads (draftReals above), so
+  // the two can never disagree about which box is being judged. An Enter
+  // anywhere else on the page — a search field, a rename — is not a send and is
+  // left alone.
+  function inEditor(node) {
+    const ed = editorEl();
+    if (!ed || !node) return false;
+    return node === ed || (ed.contains && ed.contains(node));
+  }
+
+  // Every control that says it sends: both drivers' own finders (Chat's
+  // "Send message", Cowork's "Start Task"), then the caption test on whatever
+  // was actually clicked, so a relabelled button is still recognized. The
+  // caption test is prefix-anchored in the tested module, which is why
+  // "Send feedback" cannot press as sending.
+  const SEND_TESTID_RE = /^send[-_ ]?(button|message)?$/i;
+
+  function saysSend(el) {
+    const K = window.CUMCowork;
+    const attr = (n) => (el.getAttribute && el.getAttribute(n)) || "";
+    if (SEND_TESTID_RE.test(attr("data-testid").trim())) return true;
+    if (!K || !K.isSendCaption) return false;
+    return (
+      K.isSendCaption(attr("aria-label")) ||
+      K.isSendCaption(attr("title")) ||
+      K.isSendCaption(el.textContent)
+    );
+  }
+
+  function sendControlOf(node) {
+    const el = node && node.closest ? node.closest('button,[role="button"]') : null;
+    if (!el) return null;
+    // Never one of ours. The extension's own controls are not claude.ai's send
+    // button, and a gate that swallowed a click on Accept or on the key button
+    // would hold the draft shut with its own way out.
+    const C = window.CUMComposer;
+    if (C && C.isOurs && C.isOurs(el)) return null;
+    // What the clicked control says about itself, first: it costs two attribute
+    // reads and answers for the button this gate is actually about.
+    if (saysSend(el)) return el;
+    // Only then the drivers' own finders, for a control that says nothing —
+    // an icon with no label, which both surfaces have worn.
+    for (const driver of [window.CUMCoworkSend, window.CUMComposer]) {
+      let found = null;
+      try {
+        found = driver && driver.findSend ? driver.findSend() : null;
+      } catch (e) {
+        found = null; // a finder that throws must not decide the gate
+      }
+      if (found && (found === el || found.contains(el) || el.contains(found))) return el;
+    }
+    return null;
+  }
+
+  // Enter is how a draft leaves on both surfaces. Shift+Enter is a newline and
+  // is left alone, and so is an Enter mid-composition (an IME candidate being
+  // accepted is not a send).
+  window.addEventListener(
+    "keydown",
+    (ev) => {
+      if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing) return;
+      if (!inEditor(ev.target)) return;
+      if (sendGate(ev)) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+      }
+    },
+    true
+  );
+
+  // The button, on every event a page could send from — a control that acts on
+  // pointerdown must not slip through a gate that only watches clicks.
+  for (const type of ["pointerdown", "mousedown", "click"]) {
+    window.addEventListener(
+      type,
+      (ev) => {
+        if (ev.button != null && ev.button !== 0) return;
+        if (!sendControlOf(ev.target)) return;
+        if (sendGate(ev)) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+        }
+      },
+      true
+    );
+  }
+
+  // And the form, where a composer is wired as one: the keydown above is what
+  // normally raises the submit, but a submit that arrives any other way is
+  // still this draft leaving.
+  window.addEventListener(
+    "submit",
+    (ev) => {
+      const form = ev.target;
+      const ed = editorEl();
+      if (!ed || !form || !form.contains || !form.contains(ed)) return;
+      if (sendGate(ev)) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+      }
+    },
+    true
+  );
 
   // ---- a copy that carries the real names ------------------------------------
   //
