@@ -353,3 +353,62 @@ test("whether a reply has a ruling at all is answerable off the page", () => {
   assert.equal(T.mentionsRuling(""), false);
   assert.equal(T.mentionsRuling(null), false);
 });
+
+// ---- the short conclusion that read as no conclusion ----------------------
+
+test("a conclusion heading welded to its sentence is still the conclusion", () => {
+  // textContent drops the <br> under a heading, so a one-sentence disposition
+  // came off the page as "CONCLUSIONThe hearing ..." and the button said
+  // "no CONCLUSION" over a ruling that had one.
+  const welded =
+    "CONCLUSIONThe hearing on the Petition for Approval of Transfer of Structured " +
+    "Settlement Payment Rights is continued to a later date to be set at the hearing.";
+  assert.equal(T.startsConclusion(welded), true);
+  assert.equal(T.hasConclusion("NATURE OF PROCEEDINGS\n" + welded), true);
+  const list = blocks(
+    { text: "NATURE OF PROCEEDINGS", heading: true },
+    "Petition for Approval of Transfer of Structured Settlement Payment Rights.",
+    welded,
+    "hr",
+    "Change report",
+    "The structure pass needed no changes."
+  );
+  const p = T.planBlocks(list);
+  assert.equal(p.ok, true);
+  assert.equal(p.reason, null);
+  assert.equal(list[p.end].text, welded);
+});
+
+test("the welded form doesn't take other words for the heading", () => {
+  assert.equal(T.startsConclusion("CONCLUSIONS OF LAW"), false);
+  assert.equal(T.startsConclusion("Conclusionary allegations do not suffice."), false);
+});
+
+test("a bold line after the conclusion ends the ruling like a heading", () => {
+  const list = blocks(
+    { text: "NATURE OF PROCEEDINGS", heading: true },
+    "Petition for Approval of Transfer of Structured Settlement Payment Rights.",
+    { text: "CONCLUSION", bold: true },
+    "The hearing on the Petition is continued to a later date to be set at the hearing.",
+    { text: "Change report", bold: true },
+    "The structure pass needed no changes."
+  );
+  const p = T.planBlocks(list);
+  assert.equal(p.reason, null);
+  assert.equal(list[p.end].text, "The hearing on the Petition is continued to a later date to be set at the hearing.");
+});
+
+test("a bold sentence in the conclusion stays in the ruling", () => {
+  const list = blocks(
+    { text: "NATURE OF PROCEEDINGS", heading: true },
+    "Demurrer.",
+    { text: "CONCLUSION", heading: true },
+    "The Demurrer is SUSTAINED.",
+    { text: "IT IS SO ORDERED.", bold: true }
+  );
+  assert.equal(list[T.planBlocks(list).end].text, "IT IS SO ORDERED.");
+  assert.equal(T.looksLikeHeading("Change report"), true);
+  assert.equal(T.looksLikeHeading("Change report:"), true);
+  assert.equal(T.looksLikeHeading("IT IS SO ORDERED."), false);
+  assert.equal(T.looksLikeHeading("x".repeat(120)), false);
+});

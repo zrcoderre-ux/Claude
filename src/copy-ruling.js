@@ -127,11 +127,52 @@
   }
 
   const HEADING_TAGS = { H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1 };
+  const LINE_TAGS = {
+    P: 1, DIV: 1, LI: 1, UL: 1, OL: 1, BLOCKQUOTE: 1, PRE: 1, TABLE: 1, TR: 1, HR: 1,
+    H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1,
+  };
+
+  // A block's text with its line breaks where the page draws them. textContent
+  // has none: a <br> contributes nothing and React puts no whitespace between
+  // sibling blocks, so `CONCLUSION` over a one-sentence disposition came back
+  // as "CONCLUSIONThe hearing ..." — a conclusion heading nothing could see,
+  // and a button saying "no CONCLUSION" over a ruling that plainly had one.
+  function lineText(el) {
+    let s = "";
+    for (const n of Array.from(el.childNodes || [])) {
+      if (n.nodeType === 3) s += n.nodeValue || "";
+      else if (n.nodeType !== 1) continue;
+      else if (n.tagName === "BR") s += "\n";
+      else if (LINE_TAGS[n.tagName]) s += "\n" + lineText(n) + "\n";
+      else s += lineText(n);
+    }
+    return s;
+  }
+
+  // Is every word of the block inside <strong>/<b>? That is how Claude sets a
+  // heading it didn't write as one ("**Change report**").
+  function allBold(el) {
+    const whole = (el.textContent || "").replace(/\s+/g, "");
+    if (!whole) return false;
+    let bold = "";
+    try {
+      for (const b of el.querySelectorAll("strong,b")) {
+        const outer = b.parentElement && b.parentElement.closest("strong,b");
+        if (outer && el.contains(outer)) continue; // counted with the bold around it
+        bold += (b.textContent || "").replace(/\s+/g, "");
+      }
+    } catch (e) {
+      return false;
+    }
+    return bold === whole;
+  }
+
   function describe(el) {
     return {
-      text: el.textContent || "",
+      text: lineText(el),
       rule: el.tagName === "HR",
       heading: !!HEADING_TAGS[el.tagName],
+      bold: allBold(el),
     };
   }
 
