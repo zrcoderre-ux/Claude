@@ -132,21 +132,94 @@
     H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1,
   };
 
-  // A block's text with its line breaks where the page draws them. textContent
-  // has none: a <br> contributes nothing and React puts no whitespace between
-  // sibling blocks, so `CONCLUSION` over a one-sentence disposition came back
-  // as "CONCLUSIONThe hearing ..." — a conclusion heading nothing could see,
-  // and a button saying "no CONCLUSION" over a ruling that plainly had one.
-  function lineText(el) {
-    let s = "";
-    for (const n of Array.from(el.childNodes || [])) {
-      if (n.nodeType === 3) s += n.nodeValue || "";
-      else if (n.nodeType !== 1) continue;
-      else if (n.tagName === "BR") s += "\n";
-      else if (LINE_TAGS[n.tagName]) s += "\n" + lineText(n) + "\n";
-      else s += lineText(n);
+  // A block's lines, where the page draws them, each with whether it is set
+  // wholly in bold. textContent has no line breaks: a <br> contributes nothing
+  // and React puts no whitespace between sibling blocks, so `CONCLUSION` over a
+  // one-sentence disposition came back as "CONCLUSIONThe hearing ..." — a
+  // conclusion heading nothing could see, and a button saying "no CONCLUSION"
+  // over a ruling that plainly had one. cutLines walks the same way, so a line
+  // number from here is a line number there.
+  const BOLD_TAGS = { STRONG: 1, B: 1 };
+  function readLines(el) {
+    const lines = [{ text: "", all: 0, bold: 0 }];
+    const brk = () => lines.push({ text: "", all: 0, bold: 0 });
+    (function go(node, inBold) {
+      for (const n of Array.from(node.childNodes || [])) {
+        if (n.nodeType === 3) {
+          const v = n.nodeValue || "";
+          const cur = lines[lines.length - 1];
+          const k = v.replace(/\s+/g, "").length;
+          cur.text += v;
+          cur.all += k;
+          if (inBold) cur.bold += k;
+        } else if (n.nodeType !== 1) {
+          continue;
+        } else if (n.tagName === "BR") {
+          brk();
+        } else if (LINE_TAGS[n.tagName]) {
+          brk();
+          go(n, inBold || !!BOLD_TAGS[n.tagName]);
+          brk();
+        } else {
+          go(n, inBold || !!BOLD_TAGS[n.tagName]);
+        }
+      }
+    })(el, false);
+    return lines.map((l) => ({ text: l.text, bold: l.all > 0 && l.bold === l.all }));
+  }
+
+  // Keep the first `keep` lines of a (cloned) block and drop the rest: the
+  // commentary Claude wrote on the lines under the conclusion, inside the same
+  // paragraph.
+  function cutLines(root, keep) {
+    let line = 0;
+    const STOP = {};
+    function dropFrom(node, inclusive) {
+      let cur = node;
+      let first = true;
+      while (cur && cur !== root) {
+        let sib = cur.nextSibling;
+        while (sib) {
+          const next = sib.nextSibling;
+          sib.remove();
+          sib = next;
+        }
+        const parent = cur.parentNode;
+        if (first && inclusive) cur.remove();
+        first = false;
+        cur = parent;
+      }
     }
-    return s;
+    function brk(node, inclusive) {
+      line++;
+      if (line === keep) {
+        dropFrom(node, inclusive);
+        throw STOP;
+      }
+    }
+    function go(node) {
+      for (const n of Array.from(node.childNodes || [])) {
+        if (n.nodeType !== 1) continue;
+        if (n.tagName === "BR") brk(n, true);
+        else if (LINE_TAGS[n.tagName]) {
+          brk(n, true);
+          go(n);
+          brk(n, false);
+        } else go(n);
+      }
+    }
+    try {
+      go(root);
+    } catch (e) {
+      if (e !== STOP) throw e;
+    }
+    // A <br> left dangling at the end draws an empty line under the ruling.
+    for (let last = root.lastChild; last; last = root.lastChild) {
+      if (last.nodeType === 1 && last.tagName === "BR") last.remove();
+      else if (last.nodeType === 3 && !last.nodeValue.trim()) last.remove();
+      else break;
+    }
+    return root;
   }
 
   // Is every word of the block inside <strong>/<b>? That is how Claude sets a
@@ -168,8 +241,10 @@
   }
 
   function describe(el) {
+    const lines = readLines(el);
     return {
-      text: lineText(el),
+      text: lines.map((l) => l.text).join("\n"),
+      lines,
       rule: el.tagName === "HR",
       heading: !!HEADING_TAGS[el.tagName],
       bold: allBold(el),
@@ -273,13 +348,17 @@
   // asked for it. The blocks are cloned somewhere off-screen first, which is
   // what lets a rule INSIDE the ruling be dropped — a range over the live page
   // would have to take whatever sits between its ends.
-  function copyBlocks(nodes) {
+  // `endLine`, where it is not -1, is how many lines of the LAST node are the
+  // ruling's (see planBlocks).
+  function copyBlocks(nodes, endLine) {
     const holder = document.createElement("div");
     holder.className = "cum-ruling-clip";
-    for (const n of nodes) {
-      if (n.tagName === "HR") continue;
-      holder.appendChild(n.cloneNode(true));
-    }
+    nodes.forEach((n, i) => {
+      if (n.tagName === "HR") return;
+      const copy = n.cloneNode(true);
+      if (i === nodes.length - 1 && endLine > 0) cutLines(copy, endLine);
+      holder.appendChild(copy);
+    });
     try {
       for (const hr of holder.querySelectorAll("hr")) hr.remove();
       for (const own of holder.querySelectorAll(".cum-ruling-btn")) own.remove();
@@ -355,7 +434,7 @@
     // don't, the markdown route is a better answer than a confident wrong cut.
     const chosen = blocks[plan.start];
     if (!chosen || !(chosen === startEl || chosen.contains(startEl))) return null;
-    const out = copyBlocks(blocks.slice(plan.start, plan.end + 1));
+    const out = copyBlocks(blocks.slice(plan.start, plan.end + 1), plan.endLine);
     if (!out.ok) return null;
     return { ok: true, reason: plan.reason };
   }
@@ -492,7 +571,7 @@
 
   // Exposed for tests: the page is the only place this can be exercised, and a
   // button that silently falls back is a button that looks like it worked.
-  window.CUMCopyRuling = { findStartEl, proseRoot, describe, copyBlocks, copyFromPage };
+  window.CUMCopyRuling = { findStartEl, proseRoot, describe, readLines, cutLines, copyBlocks, copyFromPage };
 
   setInterval(place, PLACE_MS);
 

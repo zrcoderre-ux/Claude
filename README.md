@@ -2243,7 +2243,11 @@ Where the boundaries come from, and why each is where it is:
   draw the line, and a ruling has no section after its conclusion — so a heading
   there belongs to whatever was written underneath. A short line set wholly in
   bold (`**Change report**`) counts as a heading here; one ending in a full stop
-  (`**IT IS SO ORDERED.**`) stays in the ruling.
+  (`**IT IS SO ORDERED.**`) stays in the ruling. The same line ends it when it
+  sits *inside* the conclusion's paragraph: claude.ai draws a single newline as
+  a line break, so `CONCLUSION`, the disposition and `**Change report**` written
+  on consecutive lines are one paragraph on the page, and the copy is cut at the
+  line rather than at the paragraph.
 - **CONCLUSION directly over its sentence is still CONCLUSION.** The page's
   plain text drops a line break, so a heading sitting on the line above a
   one-sentence disposition reads as `CONCLUSIONThe hearing is continued…`. The

@@ -412,3 +412,77 @@ test("a bold sentence in the conclusion stays in the ruling", () => {
   assert.equal(T.looksLikeHeading("IT IS SO ORDERED."), false);
   assert.equal(T.looksLikeHeading("x".repeat(120)), false);
 });
+
+// ---- the change report inside the conclusion's own paragraph --------------
+
+// claude.ai draws a single newline as a <br>, so CONCLUSION, the disposition
+// and "**Change report**" on consecutive lines are ONE paragraph on the page.
+const L = (text, bold) => ({ text, bold: !!bold });
+function para(...lines) {
+  return { text: lines.map((l) => l.text).join("\n"), lines };
+}
+
+test("a bold heading line inside the conclusion's paragraph ends the ruling there", () => {
+  const list = [
+    { text: "Revised below." },
+    { rule: true },
+    para(L("NATURE OF PROCEEDINGS", true), L("Petition for Approval of Transfer of Structured Settlement Payment Rights.")),
+    para(L("CONCLUSION", true), L("The Petition is denied without prejudice."), L("Change report", true)),
+    { text: "1. I cut a clause." },
+  ];
+  const p = T.planBlocks(list);
+  assert.equal(p.ok, true);
+  assert.equal(p.reason, null);
+  assert.equal(p.start, 2);
+  assert.equal(p.end, 3);
+  assert.equal(p.endLine, 2); // CONCLUSION and the disposition, not the report
+});
+
+test("the whole ruling as one block is cut inside it too", () => {
+  const one = para(
+    L("NATURE OF PROCEEDINGS", true),
+    L("Petition."),
+    L("CONCLUSION", true),
+    L("Denied."),
+    L("Change report", true),
+    L("I cut a clause.")
+  );
+  const p = T.planBlocks([one, { text: "More commentary." }]);
+  assert.equal(p.end, 0);
+  assert.equal(p.endLine, 4);
+});
+
+test("a heading line starting the next block ends the ruling at the block before", () => {
+  const list = [
+    para(L("NATURE OF PROCEEDINGS", true), L("Petition.")),
+    para(L("CONCLUSION", true), L("Denied.")),
+    para(L("Change report", true), L("1. I cut a clause.")),
+  ];
+  const p = T.planBlocks(list);
+  assert.equal(p.end, 1);
+  assert.equal(p.endLine, -1);
+});
+
+test("bold lines that aren't headings stay in the conclusion", () => {
+  const p = T.planBlocks([
+    para(L("NATURE OF PROCEEDINGS", true), L("Petition.")),
+    para(L("CONCLUSION", true), L("Denied."), L("IT IS SO ORDERED.", true)),
+  ]);
+  assert.equal(p.end, 1);
+  assert.equal(p.endLine, -1);
+});
+
+test("as markdown, a bold heading line after the conclusion ends the ruling", () => {
+  const md =
+    "**NATURE OF PROCEEDINGS**\nPetition.\n\n**CONCLUSION**\n" +
+    "The Petition is denied without prejudice.\n**Change report**\n\n1. I cut a clause.";
+  const r = T.extractRuling(md);
+  assert.equal(r.reason, null);
+  assert.ok(r.text.endsWith("The Petition is denied without prejudice."));
+  assert.equal(r.text.includes("Change report"), false);
+  const atx = T.extractRuling("NATURE OF PROCEEDINGS\n\nPetition.\n\nCONCLUSION\n\nDenied.\n\n## Change report\n\nx");
+  assert.ok(atx.text.endsWith("Denied."));
+  // ...but not before the conclusion: a bold section heading is the ruling's.
+  const mid = T.extractRuling("NATURE OF PROCEEDINGS\n\n**Analysis**\n\nText.\n\nCONCLUSION\n\nDenied.");
+  assert.ok(mid.text.includes("**Analysis**"));
+});

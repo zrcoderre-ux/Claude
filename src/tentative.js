@@ -109,6 +109,15 @@
     return str(lines[i - 1]).trim() === "";
   }
 
+  // A markdown line that is a heading, after the conclusion: "## Change
+  // report", or a short line wholly in bold ("**Change report**").
+  function headingLine(line) {
+    const l = str(line).trim();
+    if (/^#{1,6}\s+\S/.test(l)) return true;
+    const m = /^(\*\*|__)(.+)\1:?$/.exec(l);
+    return !!m && looksLikeHeading(m[2]);
+  }
+
   function findLine(lines, from, lineRe, capsRe) {
     for (let i = from; i < lines.length; i++) {
       if (lineRe.test(bareLine(lines[i]))) return { line: i, col: 0 };
@@ -173,7 +182,9 @@
    *         underline, a table border and a row of dashes someone typed. The
    *         page knows. `bold` says the block's text is set wholly in bold.
    *
-   * → { ok, start, end, reason } — indices into `blocks`, inclusive.
+   * → { ok, start, end, endLine, reason } — indices into `blocks`, inclusive.
+   *   `endLine`, where it is not -1, is how many of block `end`'s lines are the
+   *   ruling's: the rest of that block is what Claude wrote underneath.
    */
   function planBlocks(blocks) {
     const list = Array.isArray(blocks) ? blocks : [];
@@ -210,6 +221,7 @@
     // standing alone counts: see looksLikeHeading). Failing both, the last
     // block.
     let end = list.length - 1;
+    let endLine = -1;
     let reason = concl === -1 ? "no CONCLUSION heading — took the ruling to the end" : null;
     for (let i = (concl === -1 ? start : concl) + 1; i < list.length; i++) {
       const b = list[i] || {};
@@ -219,9 +231,69 @@
         break;
       }
     }
-    while (end > start && !str((list[end] || {}).text).trim()) end--;
+
+    // ...and the same heading INSIDE a block. claude.ai draws a single newline
+    // as a <br>, so "CONCLUSION", the disposition and "**Change report**"
+    // written on consecutive lines are one paragraph on the page — and cutting
+    // only between blocks took the change report, and everything under it,
+    // along with the ruling.
+    if (concl !== -1) {
+      const inner = headingInside(list, concl, end, start);
+      if (inner) {
+        end = inner.block;
+        endLine = inner.line;
+        const kept = linesOf(list[end]).slice(0, endLine);
+        if (!kept.some((l) => l.text.trim())) {
+          end--;
+          endLine = -1;
+        }
+      }
+    }
+
+    while (end > start && !str((list[end] || {}).text).trim()) {
+      end--;
+      endLine = -1;
+    }
     if (end < start) return fail("the ruling came out empty");
-    return { ok: true, start, end, reason };
+    return { ok: true, start, end, endLine, reason };
+  }
+
+  // A block's lines, each with whether it is set wholly in bold. The page
+  // supplies them (`lines`); a block described by its text alone takes its
+  // block-level `bold` for every line.
+  function linesOf(b) {
+    const blk = b || {};
+    if (Array.isArray(blk.lines)) {
+      return blk.lines.map((l) => ({ text: str(l && l.text), bold: !!(l && l.bold) }));
+    }
+    return str(blk.text)
+      .split("\n")
+      .map((t) => ({ text: t, bold: !!blk.bold }));
+  }
+
+  // The first bold heading-like line after the conclusion heading, within the
+  // blocks from the conclusion's through `last`. → { block, line } | null.
+  function headingInside(list, concl, last, start) {
+    for (let i = concl; i <= last; i++) {
+      const lines = linesOf(list[i]);
+      let from = 0;
+      if (i === concl) {
+        // Past the conclusion heading itself — and, where the whole ruling is
+        // one block, past its NATURE OF PROCEEDINGS line first.
+        let j = 0;
+        if (concl === start) {
+          while (j < lines.length && !lines[j].text.trim()) j++;
+          j++;
+        }
+        while (j < lines.length && !isConclusionLine(lines[j].text)) j++;
+        from = j + 1;
+      }
+      for (let j = from; j < lines.length; j++) {
+        const l = lines[j];
+        if (l.bold && looksLikeHeading(l.text)) return { block: i, line: j };
+      }
+    }
+    return null;
   }
 
   /**
@@ -249,7 +321,7 @@
     // start, which is the best available guess at where the ruling stops.
     let end = lines.length - 1;
     for (let i = (concl ? concl.line : start.line) + 1; i < lines.length; i++) {
-      if (isBreak(lines, i)) {
+      if (isBreak(lines, i) || (concl && headingLine(lines[i]))) {
         end = i - 1;
         break;
       }
