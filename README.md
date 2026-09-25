@@ -2241,7 +2241,15 @@ Where the boundaries come from, and why each is where it is:
   last rule in the reply either, which would take the commentary with it.
 - **Failing a rule, the first heading after CONCLUSION.** Claude doesn't always
   draw the line, and a ruling has no section after its conclusion — so a heading
-  there belongs to whatever was written underneath.
+  there belongs to whatever was written underneath. A short line set wholly in
+  bold (`**Change report**`) counts as a heading here; one ending in a full stop
+  (`**IT IS SO ORDERED.**`) stays in the ruling.
+- **CONCLUSION directly over its sentence is still CONCLUSION.** The page's
+  plain text drops a line break, so a heading sitting on the line above a
+  one-sentence disposition reads as `CONCLUSIONThe hearing is continued…`. The
+  blocks are read with their line breaks kept, and the welded form is matched
+  too — it once made the button say *no CONCLUSION* and copy the change report
+  underneath.
 - **CONCLUSION is looked for after the start**, so a "Conclusion" in Claude's
   own remarks underneath can't be mistaken for the ruling's.
 - **A rule directly under a line of text is left alone.** In Markdown that's a

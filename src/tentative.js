@@ -56,6 +56,30 @@
   // the shouted form is the heading.
   const START_CAPS = /NATURE OF (?:THE )?PROCEEDINGS/;
   const END_CAPS = /\bCONCLUSION\b/;
+  // The heading welded to the sentence under it. textContent drops a <br> and
+  // runs one block into the next without a space, so `CONCLUSION` on its own
+  // line over a one-sentence disposition reads off the page as
+  // "CONCLUSIONThe hearing ..." — where neither pattern above sees a word
+  // boundary, and a ruling with a conclusion was reported as having none. The
+  // shouted word followed by a capital and then a lower-case letter is the
+  // heading and the start of the next sentence; "CONCLUSIONS OF LAW" is not.
+  const END_GLUED = /^CONCLUSION(?=[A-Z][a-z])/;
+  function isConclusionLine(line) {
+    const bare = bareLine(line);
+    return END_LINE.test(bare) || END_GLUED.test(bare) || END_CAPS.test(str(line));
+  }
+
+  // A block that reads as a heading though the page didn't draw it as one: a
+  // short line set wholly in bold, with no sentence punctuation to end it.
+  // Claude writes "**Change report**" as often as "## Change report", and
+  // after the conclusion either one is the start of what it wrote underneath.
+  // Ending in a full stop keeps "**IT IS SO ORDERED.**" in the ruling.
+  const HEADISH_MAX = 80;
+  function looksLikeHeading(text) {
+    const t = str(text).trim();
+    if (!t || t.length > HEADISH_MAX || /\n/.test(t)) return false;
+    return !/[.;,!?]$/.test(t);
+  }
 
   // Is this reply one that has a ruling in it at all? Used to decide whether to
   // offer the button, and deliberately loose — it runs against text read off
@@ -127,15 +151,14 @@
     return START_LINE.test(bareLine(t)) || START_CAPS.test(t);
   }
   function startsConclusion(text) {
-    const t = firstLine(text);
-    return END_LINE.test(bareLine(t)) || END_CAPS.test(t);
+    return isConclusionLine(firstLine(text));
   }
   // A conclusion heading anywhere in a block, for a ruling that arrives as one
   // block rather than as a run of them.
   function hasConclusion(text) {
     for (const line of str(text).split("\n")) {
       if (!line.trim()) continue;
-      if (END_LINE.test(bareLine(line)) || END_CAPS.test(line)) return true;
+      if (isConclusionLine(line)) return true;
     }
     return false;
   }
@@ -143,11 +166,12 @@
   /**
    * The same decision, over the reply as the page has drawn it.
    *
-   * blocks: [{ text, rule, heading }] — the message's own top-level blocks in
-   *         order. `rule` is an <hr>, which is the whole reason this exists: on
-   *         the page a horizontal rule is an ELEMENT, where in text it is three
-   *         characters that have to be told apart from a setext underline, a
-   *         table border and a row of dashes someone typed. The page knows.
+   * blocks: [{ text, rule, heading, bold }] — the message's own top-level
+   *         blocks in order. `rule` is an <hr>, which is the whole reason this
+   *         exists: on the page a horizontal rule is an ELEMENT, where in text
+   *         it is three characters that have to be told apart from a setext
+   *         underline, a table border and a row of dashes someone typed. The
+   *         page knows. `bold` says the block's text is set wholly in bold.
    *
    * → { ok, start, end, reason } — indices into `blocks`, inclusive.
    */
@@ -182,13 +206,15 @@
 
     // The end: the first rule after the conclusion. Failing that, the first
     // HEADING after it — a ruling has no section after its conclusion, so a
-    // heading there belongs to whatever Claude wrote underneath. Failing both,
-    // the last block.
+    // heading there belongs to whatever Claude wrote underneath (a bold line
+    // standing alone counts: see looksLikeHeading). Failing both, the last
+    // block.
     let end = list.length - 1;
     let reason = concl === -1 ? "no CONCLUSION heading — took the ruling to the end" : null;
     for (let i = (concl === -1 ? start : concl) + 1; i < list.length; i++) {
       const b = list[i] || {};
-      if (b.rule || (concl !== -1 && b.heading)) {
+      const heading = b.heading || (b.bold && looksLikeHeading(b.text));
+      if (b.rule || (concl !== -1 && heading)) {
         end = i - 1;
         break;
       }
@@ -251,6 +277,7 @@
     startsRuling,
     startsConclusion,
     hasConclusion,
+    looksLikeHeading,
     planBlocks,
     extractRuling,
     START_LINE,
