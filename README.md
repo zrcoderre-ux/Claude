@@ -508,6 +508,16 @@ files (via the hidden `file-upload` input), waits for each upload to finish
 ProseMirror editor, and clicks **Send message** — all by driving the real UI, so
 there's no token-harvesting or backend server.
 
+When the upload responses don't reach the page hook, the attachment chips on the
+composer confirm the files instead, after an eight-second grace. The chip count
+those are measured against is taken **before** the files are handed over. The
+change event is discrete, so claude.ai can draw the chip before the event returns,
+and a count taken after it treated the new chip as one that was already there.
+Runs failed that way with the document on the composer — `0/1 uploads confirmed,
+1 attachment(s) visible (tried: file input, then drop)` — after waiting out both
+rungs' two-minute deadlines. `test/composer.test.js` drives that ladder on a fake
+page with a fake clock.
+
 **Limitation:** a job only fires while your **browser is running and logged into
 claude.ai**. There's no headless/while-closed execution (that would require a
 hosted backend). "When usage resets" is the common case and your browser is
