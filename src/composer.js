@@ -485,6 +485,12 @@
     return Math.max(given || 120000, (count || 0) * 15000);
   }
 
+  // Each rung is measured from a chip count taken BEFORE its files are handed
+  // over, never after. The change event (and the drop) is discrete, so React
+  // can draw the chip before dispatchEvent returns; counted afterwards, the chip
+  // was the base, "new chips" stayed at zero, and a run whose upload responses
+  // the hook can't see failed with the document sitting right there on the
+  // composer — "0/1 uploads confirmed, 1 attachment(s) visible".
   async function attachFiles(files, timeoutMs) {
     const baseChips = countChips(); // before anything is attached
     const input = findFileInput();
@@ -493,15 +499,18 @@
     if (input) {
       setFiles(input, files);
       how = "file input";
-      res = await waitUploads(files.length, uploadDeadline(files.length, timeoutMs));
+      res = await waitUploads(files.length, uploadDeadline(files.length, timeoutMs), { baseChips: baseChips });
     }
     if (!res.ok) {
       // Second way in: drop them on the composer.
       const target = findDropTarget();
       if (target) {
+        const dropBase = countChips();
         dropFiles(target, files);
         how = how ? how + ", then drop" : "drop";
-        res = await waitUploads(files.length, Math.min(uploadDeadline(files.length, timeoutMs), 120000));
+        res = await waitUploads(files.length, Math.min(uploadDeadline(files.length, timeoutMs), 120000), {
+          baseChips: dropBase,
+        });
       }
     }
     // Bounded settle: let the chips catch up with the uploads, so the send that
