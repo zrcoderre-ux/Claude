@@ -2263,7 +2263,18 @@ Where the boundaries come from, and why each is where it is:
 - **The heading is matched however it was decorated** — `## NATURE OF
   PROCEEDINGS`, `**NATURE OF PROCEEDINGS**`, `NATURE OF PROCEEDINGS:`, or the
   words sharing a line with something else. claude.ai's wording varies and none
-  of them is wrong.
+  of them is wrong. But a block that *starts* with the heading beats one where
+  the heading shares its line with something ahead of it, which is taken only
+  where there is no other.
+- **What the page doesn't show isn't the ruling.** claude.ai labels every reply
+  for screen readers — `Claude responded:` and the reply's first line — in an
+  element clipped to nothing. A reply that opens with the ruling therefore
+  carries the heading twice, the first time behind the label, and the label was
+  taken for the heading: it went onto the clipboard, the ruling under it went
+  whole with its change report, and the button said *no CONCLUSION*. Hidden
+  text (the `sr-only` recipe under any class name, or `display: none`) is now
+  skipped when looking for the heading, when reading the blocks, and when
+  copying.
 
 ### What lands on the clipboard
 
@@ -2322,11 +2333,12 @@ whose shape can't be read — it is the one path that can leave the clipboard
 holding the whole reply, and it now says `Couldn't copy — whole reply` when it
 does, rather than reporting success.
 
-The five shapes it is checked against, in a real browser with a sentinel on the
+The shapes it is checked against, in a real browser with a sentinel on the
 clipboard so a stale copy can't pass for a fresh one: rules either side of the
 ruling; no rules at all; the ruling wrapped a level deeper than expected; a rule
-inside the ruling as well; and a reply with no ruling in it, which offers no
-button.
+inside the ruling as well; a reply that opens with the ruling under claude.ai's
+screen-reader label, wherever the label sits and however it is hidden; and a
+reply with no ruling in it, which offers no button.
 
 Two edges remain, and the button says both out loud rather than leaving you to
 find them:

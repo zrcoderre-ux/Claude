@@ -155,9 +155,16 @@
     return "";
   }
 
-  function startsRuling(text) {
+  // Whether a block opens the ruling, and how plainly. 2: its first line IS
+  // the heading. 1: the shouted heading shares that line with something ahead
+  // of it ("Here it is. NATURE OF PROCEEDINGS: ..."). 0: neither.
+  function rulingStart(text) {
     const t = firstLine(text);
-    return START_LINE.test(bareLine(t)) || START_CAPS.test(t);
+    if (START_LINE.test(bareLine(t))) return 2;
+    return START_CAPS.test(t) ? 1 : 0;
+  }
+  function startsRuling(text) {
+    return rulingStart(text) > 0;
   }
   function startsConclusion(text) {
     return isConclusionLine(firstLine(text));
@@ -190,14 +197,21 @@
     const list = Array.isArray(blocks) ? blocks : [];
     const fail = (reason) => ({ ok: false, start: -1, end: -1, reason });
 
+    // A block that starts with the heading first, and one where the heading
+    // shares its line with something ahead of it only where there is none —
+    // the same order extractRuling reads the text in. claude.ai labels every
+    // reply for screen readers with "Claude responded: " and the reply's first
+    // line, so a reply that OPENS with the ruling carries the heading twice,
+    // the first time behind the label. Taking the first match took the label:
+    // it went onto the clipboard, the ruling under it went whole, change report
+    // and all, and the CONCLUSION inside it went unseen.
     let start = -1;
-    for (let i = 0; i < list.length; i++) {
-      const b = list[i] || {};
-      if (b.rule) continue;
-      if (startsRuling(b.text)) {
-        start = i;
-        break;
+    for (const want of [2, 1]) {
+      for (let i = 0; i < list.length && start === -1; i++) {
+        const b = list[i] || {};
+        if (!b.rule && rulingStart(b.text) === want) start = i;
       }
+      if (start !== -1) break;
     }
     if (start === -1) return fail("no NATURE OF PROCEEDINGS heading");
 
@@ -347,6 +361,7 @@
     mentionsRuling,
     isBreak,
     startsRuling,
+    rulingStart,
     startsConclusion,
     hasConclusion,
     looksLikeHeading,
