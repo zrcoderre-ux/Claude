@@ -81,9 +81,44 @@
     return false;
   }
 
+  // ---- what the page does not show ------------------------------------------
+  // claude.ai labels each reply for screen readers — "Claude responded: " and
+  // the reply's first line — in an element clipped to nothing. textContent reads
+  // it like any other text, and a clone with its attributes stripped (see
+  // neutralize) draws it, so a reply that opened with the ruling copied as
+  // "Claude responded: NATURE OF PROCEEDINGS: ..." over the ruling proper. What
+  // the page does not show is not the ruling: it is skipped when looking for the
+  // heading, when reading a block's lines, and when copying.
+  const UNSEEN_CLASS = /(?:^|\s)(?:sr-only|visually-hidden|screen-reader-only)(?:\s|$)/;
+  const CLIPPED = /rect\(\s*0(?:px)?[\s,]+0(?:px)?[\s,]+0(?:px)?[\s,]+0(?:px)?\s*\)/;
+  function unseen(el) {
+    if (!el || el.nodeType !== 1) return false;
+    try {
+      if (el.hidden) return true;
+      if (UNSEEN_CLASS.test(el.getAttribute("class") || "")) return true;
+      const cs = window.getComputedStyle(el);
+      if (!cs) return false;
+      if (cs.display === "none") return true;
+      // The screen-reader recipe under any class name: out of the flow, and
+      // clipped or shrunk to nothing.
+      if (cs.position !== "absolute" && cs.position !== "fixed") return false;
+      if (CLIPPED.test(cs.clip || "") || /inset\(\s*50%/.test(cs.clipPath || "")) return true;
+      return parseFloat(cs.width) <= 1 && parseFloat(cs.height) <= 1 && cs.overflow === "hidden";
+    } catch (e) {
+      return false;
+    }
+  }
+  function unseenWithin(el, stop) {
+    for (let n = el; n && n !== stop; n = n.parentElement) if (unseen(n)) return true;
+    return unseen(stop);
+  }
+
   // ---- the ruling, out of the rendered message -----------------------------
   // The element the ruling starts at. Capped in length so the match is the
-  // HEADING rather than some wrapper that contains the whole answer.
+  // HEADING rather than some wrapper that contains the whole answer. One that
+  // starts with the heading beats one where the heading shares its line with
+  // something ahead of it, as in T.planBlocks — which has to pick the same
+  // block, or copyFromPage stands down.
   const HEAD_SEL = "h1,h2,h3,h4,h5,h6,p,div,li,blockquote";
   const MAX_HEAD = 200;
   function findStartEl(msgEl) {
@@ -93,12 +128,16 @@
     } catch (e) {
       return null;
     }
+    let shared = null;
     for (const el of nodes) {
       const t = (el.textContent || "").replace(/\s+/g, " ").trim();
       if (!t || t.length > MAX_HEAD) continue;
-      if (T.startsRuling(t)) return el;
+      const how = T.rulingStart(t);
+      if (!how || unseenWithin(el, msgEl)) continue;
+      if (how === 2) return el;
+      if (!shared) shared = el;
     }
-    return null;
+    return shared;
   }
 
   // The level of the message the ruling's blocks sit at.
@@ -145,6 +184,7 @@
     const brk = () => lines.push({ text: "", all: 0, bold: 0 });
     (function go(node, inBold) {
       for (const n of Array.from(node.childNodes || [])) {
+        if (unseen(n)) continue;
         if (n.nodeType === 3) {
           const v = n.nodeValue || "";
           const cur = lines[lines.length - 1];
@@ -241,6 +281,7 @@
   }
 
   function describe(el) {
+    if (unseen(el)) return { text: "", lines: [], rule: false, heading: false, bold: false };
     const lines = readLines(el);
     return {
       text: lines.map((l) => l.text).join("\n"),
@@ -344,6 +385,25 @@
     return holder.innerHTML;
   }
 
+  // Take out of a clone whatever its original does not show. The question has
+  // to be asked of the ORIGINAL, where the page's styles apply; a clone and its
+  // original list their elements in the same order. Done before cutLines, so
+  // the lines it counts are the ones readLines counted.
+  function dropUnseen(live, copy) {
+    let a, b;
+    try {
+      a = live.querySelectorAll("*");
+      b = copy.querySelectorAll("*");
+    } catch (e) {
+      return copy;
+    }
+    if (a.length !== b.length) return copy;
+    const drop = [];
+    for (let i = 0; i < a.length; i++) if (unseen(a[i])) drop.push(b[i]);
+    for (const el of drop) el.remove();
+    return copy;
+  }
+
   // Copy a run of blocks, synchronously, so the write belongs to the click that
   // asked for it. The blocks are cloned somewhere off-screen first, which is
   // what lets a rule INSIDE the ruling be dropped — a range over the live page
@@ -354,8 +414,8 @@
     const holder = document.createElement("div");
     holder.className = "cum-ruling-clip";
     nodes.forEach((n, i) => {
-      if (n.tagName === "HR") return;
-      const copy = n.cloneNode(true);
+      if (n.tagName === "HR" || unseen(n)) return;
+      const copy = dropUnseen(n, n.cloneNode(true));
       if (i === nodes.length - 1 && endLine > 0) cutLines(copy, endLine);
       holder.appendChild(copy);
     });
@@ -571,7 +631,9 @@
 
   // Exposed for tests: the page is the only place this can be exercised, and a
   // button that silently falls back is a button that looks like it worked.
-  window.CUMCopyRuling = { findStartEl, proseRoot, describe, readLines, cutLines, copyBlocks, copyFromPage };
+  window.CUMCopyRuling = {
+    findStartEl, proseRoot, describe, readLines, cutLines, copyBlocks, copyFromPage, unseen,
+  };
 
   setInterval(place, PLACE_MS);
 

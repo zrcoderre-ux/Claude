@@ -486,3 +486,69 @@ test("as markdown, a bold heading line after the conclusion ends the ruling", ()
   const mid = T.extractRuling("NATURE OF PROCEEDINGS\n\n**Analysis**\n\nText.\n\nCONCLUSION\n\nDenied.");
   assert.ok(mid.text.includes("**Analysis**"));
 });
+
+// ---- the screen-reader label over a reply that opens with the ruling -------
+
+// claude.ai labels every reply for screen readers: "Claude responded: " and the
+// reply's first line. A reply that OPENS with the ruling therefore carries the
+// heading twice, the first time behind the label — and the label was taken for
+// the heading. It went onto the clipboard, the ruling under it went whole with
+// its change report, and the button said "no CONCLUSION".
+const LABEL = "Claude responded: NATURE OF PROCEEDINGS: Hearing on Petition for Approval of Transfer";
+
+test("a heading on its own line is told from one sharing a line", () => {
+  assert.equal(T.rulingStart("NATURE OF PROCEEDINGS: Hearing on Petition."), 2);
+  assert.equal(T.rulingStart("**NATURE OF PROCEEDINGS**"), 2);
+  assert.equal(T.rulingStart(LABEL), 1);
+  assert.equal(T.rulingStart("Here it is. NATURE OF PROCEEDINGS: Demurrer."), 1);
+  assert.equal(T.rulingStart("Sure — which motion?"), 0);
+  assert.equal(T.startsRuling(LABEL), true);
+});
+
+test("the label ahead of the ruling is not where the ruling starts", () => {
+  const list = [
+    { text: LABEL },
+    para(L("NATURE OF PROCEEDINGS: Hearing on Petition for Approval of Transfer")),
+    para(L("The Petition is denied without prejudice.")),
+    para(L("CONCLUSION", true)),
+    para(L("The Petition is denied without prejudice.")),
+    para(L("Change report", true)),
+    { text: "1. In Part I, I added a sentence." },
+  ];
+  const p = T.planBlocks(list);
+  assert.equal(p.ok, true);
+  assert.equal(p.reason, null);
+  assert.equal(p.start, 1);
+  assert.equal(p.end, 4);
+});
+
+test("the label beside ONE block holding the whole reply: the block, cut at the report", () => {
+  // The exact shape that came back wrong: the label, then the reply as one
+  // block, with CONCLUSION somewhere inside it rather than at its top.
+  const whole = para(
+    L("NATURE OF PROCEEDINGS: Hearing on Petition for Approval of Transfer"),
+    L("The Petition is denied without prejudice."),
+    L("BACKGROUND", true),
+    L("Petitioner filed this proceeding."),
+    L("CONCLUSION", true),
+    L("The Petition is denied without prejudice."),
+    L("Change report", true),
+    L("In Part I, I added a sentence."),
+    L("FLAGGED", true)
+  );
+  const p = T.planBlocks([{ text: LABEL }, whole]);
+  assert.equal(p.ok, true);
+  assert.equal(p.reason, null);
+  assert.equal(p.start, 1);
+  assert.equal(p.end, 1);
+  assert.equal(p.endLine, 6);
+});
+
+test("a heading sharing its line still starts the ruling where nothing starts with it", () => {
+  const p = T.planBlocks(
+    blocks("Here it is. NATURE OF PROCEEDINGS: Demurrer.", { text: "CONCLUSION", heading: true }, "SUSTAINED.")
+  );
+  assert.equal(p.ok, true);
+  assert.equal(p.start, 0);
+  assert.equal(p.reason, null);
+});
