@@ -49,8 +49,58 @@
     return KEY_FILE_RE.test(base.trim());
   }
 
+  // ---- quote marks ----------------------------------------------------------
+  //
+  // A straight apostrophe and either curly single quote are ONE character here,
+  // and a straight double quote and either curly double quote are another. The
+  // key holds what the PDF or the operator typed — usually straight — while
+  // Word, and claude.ai's own rendering, curl them; compared literally, a name
+  // like O'Brien matched nothing in either direction, so it was neither put
+  // back on screen nor caught in a draft. The macro (DeAnonymize.bas) and
+  // PDF-Linker's term patterns treat all three single marks and all three
+  // double marks as interchangeable, and so does everything below.
+  const APOS = "'\u2018\u2019";
+  const DQUOTE = '"\u201C\u201D';
+  const APOS_CLASS = "[" + APOS + "]";
+  const DQUOTE_CLASS = "[" + DQUOTE + "]";
+
+  /** `s` with every curly quote mark made straight. One character for one. */
+  function foldQuotes(s) {
+    return String(s == null ? "" : s)
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"');
+  }
+
+  /**
+   * `value` with its quote marks in the style of `sample`, the text it is
+   * replacing — the quote-mark half of mirrorCase, and the macro's MatchQuotes.
+   * The sample's first mark decides, straight or curly; a sample with no mark
+   * leaves the value exactly as the key spells it. A straight mark being curled
+   * takes the LEFT-hand one where it opens (at the start, or after a space or
+   * an opening bracket) and the right-hand one everywhere else, which is where
+   * an apostrophe stands.
+   */
+  function mirrorQuotes(sample, value) {
+    const v = String(value == null ? "" : value);
+    if (!/['"\u2018\u2019\u201C\u201D]/.test(v)) return v;
+    const m = String(sample == null ? "" : sample).match(/['"\u2018\u2019\u201C\u201D]/);
+    if (!m) return v;
+    if (m[0] === "'" || m[0] === '"') return foldQuotes(v);
+    let out = "";
+    for (let i = 0; i < v.length; i++) {
+      const c = v[i];
+      const opens = i === 0 || /[\s(\[{\u2018\u201C]/.test(out[i - 1]);
+      if (c === "'") out += opens ? "\u2018" : "\u2019";
+      else if (c === '"') out += opens ? "\u201C" : "\u201D";
+      else out += c;
+    }
+    return out;
+  }
+
+  // Quote-folded as well as case- and space-folded, so every map lookup and
+  // every "same value?" test below agrees with the matchers about quote marks.
   function fold(s) {
-    return String(s == null ? "" : s).trim().replace(/\s+/g, " ").toLowerCase();
+    return foldQuotes(String(s == null ? "" : s).trim().replace(/\s+/g, " ").toLowerCase());
   }
 
   // Header row: the fingerprint is the headers every key layout shares —
@@ -208,7 +258,11 @@
   //   3  the applied rows come off ONE sheet, the macro's own FindKeySheet
   //      rule — not off every tab that isn't named exactly "Pinned (never in
   //      text)", which let a differently named second tab retire live rows.
-  const PARSE_VERSION = 3;
+  //   4  quote marks are interchangeable (foldQuotes): two rows whose reals
+  //      differ only in a straight or curly apostrophe are one name, not an
+  //      ambiguous fake to retire, and a possessive typed with a left-hand
+  //      curly mark derives its bare name like any other.
+  const PARSE_VERSION = 4;
 
   /** Was this stored key built by an older reader than the one running now? */
   function keyNeedsReparse(key) {
@@ -355,11 +409,12 @@
   const ALT_STATUS = "alt spelling"; // forward-only: fake belongs to the canonical row
 
   // A POSSESSIVE is the party's own name, not a second party — PDF-Linker's
-  // own rule (its registry draws on the affix-stripped core). Both marks,
-  // because the spreadsheet exports the straight one and Word writes the
-  // typographic one.
-  const POSS_TAIL_RE = /['’]s$/i;
-  const POSS_MATCH_RE = /['’][sS]$/;
+  // own rule (its registry draws on the affix-stripped core). Every apostrophe
+  // mark (APOS), because the spreadsheet exports the straight one and Word
+  // writes a typographic one.
+  const POSS_TAIL_RE = /['\u2018\u2019]s$/i;
+  const POSS_MATCH_RE = /['\u2018\u2019][sS]$/;
+  const POSS_OPT = "(?:" + APOS_CLASS + "[sS])?";
 
   /**
    * Key workbook → the map. `sheets` is what CUMXlsx.parseXlsx returns. Every
@@ -727,6 +782,14 @@
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
+  // One value as a pattern: escaped, a space matching any whitespace run, and
+  // each quote mark matching any mark of its kind (see foldQuotes).
+  function valuePattern(v) {
+    return escapeRe(v)
+      .replace(/ /g, "\\s+")
+      .replace(/['\u2018\u2019"\u201C\u201D]/g, (c) => (APOS.indexOf(c) !== -1 ? APOS_CLASS : DQUOTE_CLASS));
+  }
+
   // One alternation, longest value first (the regex engine tries alternatives
   // in order, so the full name beats its own surname token). Values match
   // across a line wrap: a literal space in the value matches any whitespace
@@ -741,12 +804,7 @@
     if (!sorted.length) return null;
     // A value not already possessive also matches its own possessive —
     // "John" matches "John's" — and the lookup carries the suffix across.
-    const alts = sorted
-      .map(
-        (v) =>
-          escapeRe(v).replace(/ /g, "\\s+") + (POSS_TAIL_RE.test(v) ? "" : "(?:['’][sS])?")
-      )
-      .join("|");
+    const alts = sorted.map((v) => valuePattern(v) + (POSS_TAIL_RE.test(v) ? "" : POSS_OPT)).join("|");
     return new RegExp("(?<![A-Za-z0-9_])(?:" + alts + ")(?![A-Za-z0-9_])", "gi");
   }
 
@@ -795,7 +853,7 @@
   // A word for casing purposes: letters, with an apostrophe INSIDE the word
   // rather than ending it — "O'Brien" and "Coderre's" are each one word, so
   // titling can't produce "O'BRien" or "Coderre'S".
-  const WORD_RE = /[A-Za-z]+(?:['\u2019][A-Za-z]+)*/g;
+  const WORD_RE = /[A-Za-z]+(?:['\u2018\u2019][A-Za-z]+)*/g;
 
   // `deliberate` — whether the value this word came out of has lowercase in it
   // somewhere, which makes every capital in it authored rather than incidental.
@@ -884,7 +942,9 @@
       // name, so a shouted caption gets "CODERRE'S" and a sentence
       // "Coderre's" rather than "Coderre'S".
       const shape = caseShape(suffix ? m.slice(0, -suffix.length) : m);
-      return applyCase(shape, mapped) + casedSuffix(shape, suffix);
+      // Quote marks follow the text the same way case does: the whole match,
+      // possessive included, says which marks the text writes.
+      return mirrorQuotes(m, applyCase(shape, mapped)) + casedSuffix(shape, suffix);
     });
     return { text: out, count: count };
   }
@@ -1017,7 +1077,7 @@
           end: m.index + m[0].length,
           matched: m[0],
           real: w.real,
-          replacement: applyCase(shape, w.fake) + casedSuffix(shape, suffix),
+          replacement: mirrorQuotes(m[0], applyCase(shape, w.fake)) + casedSuffix(shape, suffix),
         });
       }
       if (m.index === compiledReals.rx.lastIndex) compiledReals.rx.lastIndex++;
@@ -1226,10 +1286,7 @@
         fake: w.fake,
         partial: isOpeningOfLonger(fold(w.real), folded),
         rx: new RegExp(
-          "(?<![A-Za-z0-9_])" +
-            escapeRe(w.real).replace(/ /g, "\\s+") +
-            (POSS_TAIL_RE.test(w.real) ? "" : "(?:['’][sS])?") +
-            "$",
+          "(?<![A-Za-z0-9_])" + valuePattern(w.real) + (POSS_TAIL_RE.test(w.real) ? "" : POSS_OPT) + "$",
           "i"
         ),
       }));
@@ -1263,7 +1320,7 @@
       if (m) {
         // "Zachary's" typed against a bare "Zachary" row offers "John's" —
         // the possessive rides the swap rather than being lost by it.
-        let fake = e.fake;
+        let fake = mirrorQuotes(m[0], e.fake);
         const mp = m[0].match(POSS_MATCH_RE);
         if (mp && !POSS_TAIL_RE.test(e.real)) fake = e.fake + mp[0];
         return { real: e.real, fake: fake, matched: m[0], partial: !!e.partial };
@@ -1792,6 +1849,7 @@
     endingReal,
     swapsOnSpace,
     mirrorCase,
+    mirrorQuotes,
     caseShape,
     applyCase,
     isPincitePaste,
@@ -1816,6 +1874,7 @@
     HUMAN_TURN_SELECTORS,
     turnSelector,
     fold,
+    foldQuotes,
     draftSpans,
     draftWarnSig,
     sendHold,

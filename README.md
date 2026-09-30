@@ -2459,6 +2459,17 @@ derives its bare form, so `Zachary's → John's` also maps `Zachary` to
 typeahead swap (which offers `John's` when you typed `Zachary's`), and the
 cleaner.
 
+**Quote marks are one character in every spelling.** A straight apostrophe and
+either curly single quote are interchangeable, and so are a straight double
+quote and either curly one. The key holds what the spreadsheet typed, usually
+straight; Word and claude.ai curl them. So a key row for `O'Brien` finds
+`O’Brien` in a message, a draft or a title, and the other way round. The
+swapped-in value takes the marks of the text it replaces. `D’Arcy` comes back
+as `O’Brien` even when the key spells it straight, and a match with no quote
+mark in it leaves the value as the key spells it. Two key rows that differ only
+in their apostrophe are one name, not an ambiguous fake to retire. The macro
+(`DeAnonymize.bas`) and PDF-Linker follow the same rule.
+
 **A picker offers the three most recent**, newest first — plus whatever is
 already attached to this chat (or carried by this run), however old, since a
 select that can't represent its own current value silently reports a different
