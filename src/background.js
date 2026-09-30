@@ -3077,9 +3077,9 @@ async function reparseKeys() {
       }
       // A workbook that was never kept, or that no longer reads as a key, is
       // not a reason to throw the entry away: the operator still has a
-      // translating key, made by an older reader. It keeps translating, and the
-      // key panel NAMES the case (P.staleNote) rather than letting it read back
-      // in fakes with nothing on screen saying why.
+      // translating key, made by an older reader, and it keeps translating.
+      // Nothing is shown about it — the owner's instruction (September 2026):
+      // no warning anywhere about which reader made a key.
       if (!next || !next.rows) {
         keys[id] = Object.assign({}, keys[id], { parseTried: P.PARSE_VERSION });
         continue;

@@ -230,25 +230,6 @@ test("a stored key says which reader made it", () => {
   assert.ok(P.keyNeedsReparse(null));
 });
 
-test("staleNote names the cases whose key could not be re-read", () => {
-  const keys = {
-    a: { folder: "23STCV12345 Rasho v. County", rows: 40 },
-    b: { folder: "21STCV54321 Cabot v. Reyes", rows: 12 },
-  };
-  const current = (k) => Object.assign({ parsed: P.PARSE_VERSION }, k);
-  // A library the worker healed says nothing at all.
-  assert.strictEqual(P.staleNote({ a: current(keys.a), b: current(keys.b) }), "");
-  assert.strictEqual(P.staleNote({}), "");
-  const one = P.staleNote({ a: keys.a, b: current(keys.b) });
-  assert.match(one, /One case's key was/);
-  assert.match(one, /23STCV12345 Rasho v\. County/);
-  assert.match(one, /Load the pseudonym_key\.xlsx again/);
-  assert.ok(one.indexOf("Cabot") === -1, "the healed case is not named");
-  const two = P.staleNote(keys);
-  assert.match(two, /^2 cases' keys were/);
-  assert.match(two, /those cases/);
-});
-
 test("matchNothingNote tells an attached key that matched nothing from a working one", () => {
   const working = { attached: true, names: 4, titles: 1, pairs: 40, sample: ["Marlow"] };
   assert.strictEqual(P.matchNothingNote(working), "");

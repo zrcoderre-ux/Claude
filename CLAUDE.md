@@ -60,6 +60,12 @@ than inline in the wiring.
   folded into an existing toggle, because the toggles carry different risks.
   Permission prompts especially: only ever click the narrowest grant
   (`Allow once`), never one that outlives the prompt.
+- **No warning about the key READER, anywhere (standing instruction from the
+  repo owner, September 2026).** A key or a master-key case made under an
+  older `PARSE_VERSION` is re-read silently where its workbook was kept and
+  otherwise left translating as it was — the panel, the popup and every other
+  surface say nothing about which reader made a key. Bumping `PARSE_VERSION`
+  is still right when a parse changes; surfacing it is not.
 - **claude.ai's DOM and API shapes are unversioned.** Match button labels exactly,
   guard every parse, and keep the heuristics in a tested pure module so a shape
   change is a small edit rather than an investigation.
