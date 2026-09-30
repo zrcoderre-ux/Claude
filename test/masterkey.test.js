@@ -401,3 +401,29 @@ test("a key with no forward direction does not file the real name as the fake", 
   assert.equal(M.distil(k).fake, "");
   assert.equal(M.distil(k).real, "23STCV12345 Cabot v. Reyes");
 });
+
+test("a case name with a curly apostrophe still carries its party", () => {
+  // The folder says O’Brien the way Word wrote it; the key row says O'Brien the
+  // way the spreadsheet did. One party, and the title keeps it.
+  const k = key([["24STCV09876", "23STCV12345"], ["Doe", "O'Brien"]], {
+    folder: "23STCV12345 O’Brien v. Reyes",
+  });
+  const got = M.distil(k);
+  assert.ok(got.pairs.some((p) => p.fake === "Doe"), "the party is in the title pairs");
+});
+
+test("two cases binding one fake to one name in two quote styles do not collide", () => {
+  const one = key([["24STCV09876", "23STCV12345"], ["Doe", "O'Brien"]], {
+    folder: "23STCV12345 O'Brien v. Reyes",
+    savedAt: 1,
+  });
+  const two = key([["22SMCV01111", "21STCV54321"], ["Doe", "O’Brien"]], {
+    folder: "21STCV54321 O’Brien v. Holloway",
+    savedAt: 2,
+  });
+  let m = M.remember({ cases: [] }, M.distil(one));
+  m = M.remember(m, M.distil(two));
+  const k = M.asKey(m);
+  assert.equal(k.retired, 0);
+  assert.ok(k.pairs.some((p) => p.fake === "Doe"));
+});

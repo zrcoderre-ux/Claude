@@ -68,7 +68,15 @@
 
   const str = (v) => (v == null ? "" : String(v));
   const norm = (v) => str(v).replace(/\s+/g, " ").trim();
-  const fold = (v) => norm(v).toLowerCase();
+  // Quote marks folded too — a straight and a curly apostrophe are one
+  // character, as in src/pseudo.js (foldQuotes) — so a party typed "O'Brien"
+  // is found in a case name that says O’Brien, and two cases binding one fake
+  // to the same name in two quote styles are not read as a collision.
+  const fold = (v) =>
+    norm(v)
+      .toLowerCase()
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"');
 
   const P = () => root.CUMPseudo || null;
 

@@ -1723,3 +1723,80 @@ test("sendHoldNote: one name is named, several are counted", () => {
   // Rows with no real value never make it into the count.
   assert.ok(/“Helen Rasho”/.test(P.sendHoldNote([HIT, { fake: "x" }, null])));
 });
+
+// ---- quote marks are interchangeable ---------------------------------------
+//
+// The key holds what the PDF or the operator typed, usually a straight mark;
+// Word and claude.ai curl them. Compared literally, O'Brien matched nothing in
+// either direction — the chat kept the fake, and the draft warning never fired.
+
+const RSQ = "’"; // right single quote — Word's apostrophe
+const LSQ = "‘"; // left single quote
+const LDQ = "“";
+const RDQ = "”";
+
+test("a straight-quoted key reverses a curly fake, and the other way round", () => {
+  const straight = P.compile(keyOf([["person", "Sean O'Brien", "Marlow D'Arcy", "", "", "", 3]]));
+  assert.equal(P.translate(straight, `Marlow D${RSQ}Arcy signed.`).text, `Sean O${RSQ}Brien signed.`);
+  assert.equal(P.translate(straight, `Marlow D${LSQ}Arcy signed.`).count, 1);
+  const curly = P.compile(keyOf([["person", `Sean O${RSQ}Brien`, `Marlow D${RSQ}Arcy`, "", "", "", 3]]));
+  assert.equal(P.translate(curly, "Marlow D'Arcy signed.").text, "Sean O'Brien signed.");
+});
+
+test("the restored name takes the quote style of the text it replaces", () => {
+  const c = P.compile(keyOf([["person-token", "O'Brien", "Ashford", "", "", "", 3]]));
+  // No mark in the match: the value goes in as the key spells it…
+  assert.equal(P.translate(c, "Ashford testified.").text, "O'Brien testified.");
+  // …and a curled possessive says which marks this text writes.
+  assert.equal(P.translate(c, `Ashford${RSQ}s motion.`).text, `O${RSQ}Brien${RSQ}s motion.`);
+});
+
+test("a double quote matches straight or curled", () => {
+  const c = P.compile(keyOf([["person", 'Robert "Bobby" Smith', "Ivers Nash", "", "", "", 1]]));
+  const warn = P.compileReals(keyOf([["person", 'Robert "Bobby" Smith', "Ivers Nash", "", "", "", 1]]));
+  const hits = P.findReals(warn, `Robert ${LDQ}Bobby${RDQ} Smith appeared.`);
+  assert.deepStrictEqual(hits.map((h) => h.real), ['Robert "Bobby" Smith']);
+  assert.equal(P.translate(c, "Ivers Nash appeared.").text, 'Robert "Bobby" Smith appeared.');
+});
+
+test("the draft warning and the typeahead catch a real name in either mark", () => {
+  const key = keyOf([["person", "Sean O'Brien", "Marlow Ashford", "", "", "", 3]]);
+  const reals = P.compileReals(key);
+  assert.equal(P.findReals(reals, `Email Sean O${RSQ}Brien today.`).length, 1);
+  const spans = P.draftSpans(reals, `Email Sean O${RSQ}Brien today.`);
+  assert.equal(spans.length, 1);
+  assert.equal(spans[0].replacement, "Marlow Ashford");
+  const hit = P.endingReal(P.compileTypeahead(key), `Email Sean O${LSQ}Brien`);
+  assert.ok(hit, "the typeahead sees the name typed with a left-hand mark");
+  assert.equal(hit.fake, "Marlow Ashford");
+});
+
+test("a possessive in any apostrophe carries across", () => {
+  const c = P.compile(keyOf([["person-token", "Rasho", "Strangeways", "", "", "", 3]]));
+  for (const apos of ["'", RSQ, LSQ]) {
+    assert.equal(P.translate(c, `Strangeways${apos}s motion`).text, `Rasho${apos}s motion`, apos);
+  }
+});
+
+test("two rows differing only in their apostrophe are one name, not an ambiguous fake", () => {
+  const key = keyOf([
+    ["person-token", "O'Brien", "D'Arcy", "", "", "", 3],
+    ["person-token", `O${RSQ}Brien`, `D${RSQ}Arcy`, "", "", "", 2],
+  ]);
+  assert.equal(key.dropped.ambiguous, 0);
+  assert.equal(P.translate(P.compile(key), "D'Arcy said").text, "O'Brien said");
+});
+
+test("a row mapping a name onto itself in another quote style is no mapping", () => {
+  const key = keyOf([["person-token", "O'Brien", `O${RSQ}Brien`, "", "", "", 3]]);
+  assert.equal(key.pairs.length, 0);
+});
+
+test("foldQuotes and mirrorQuotes", () => {
+  assert.equal(P.foldQuotes(`${LSQ}a${RSQ} ${LDQ}b${RDQ}`), `'a' "b"`);
+  assert.equal(P.fold(`  O${RSQ}BRIEN `), "o'brien");
+  assert.equal(P.mirrorQuotes(`D${RSQ}Arcy`, "O'Brien"), `O${RSQ}Brien`);
+  assert.equal(P.mirrorQuotes("D'Arcy", `O${RSQ}Brien`), "O'Brien");
+  assert.equal(P.mirrorQuotes(`x${RDQ}`, 'Robert "Bobby" Smith'), `Robert ${LDQ}Bobby${RDQ} Smith`);
+  assert.equal(P.mirrorQuotes("Ashford", "O'Brien"), "O'Brien");
+});
