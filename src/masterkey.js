@@ -191,13 +191,6 @@
       fake: fakeNameOf(clean, real),
       at: stamp,
       pairs: pairs,
-      // Which READER distilled it. A case is kept here after its key has left
-      // the library — that is the whole point of this store — and rebuild()
-      // only walks the library, so such a case can never be distilled again. A
-      // reader fix therefore reaches every case whose key is still loaded and
-      // no others, and staleCases() below is how the ones it could not reach
-      // are named rather than left translating by rules that were wrong.
-      parsed: p && p.PARSE_VERSION,
     };
   }
 
@@ -232,26 +225,6 @@
     const want = fold(entry.caseNo);
     const kept = cases(master).filter((c) => fold(c && c.caseNo) !== want);
     return { cases: [entry].concat(kept) };
-  }
-
-  /**
-   * The held cases distilled by an older reader — [{ caseNo, real }], newest
-   * first. Empty where every case is current.
-   *
-   * These are the cases whose key is no longer in the library: one that is
-   * still loaded was re-read and re-distilled by the worker (background.js,
-   * reparseKeys), and one whose spreadsheet is gone has nothing left to
-   * distil from. Loading that case's key once more is the whole remedy, and
-   * saying which cases want it is the alternative to a Recents row that
-   * quietly still reads in the fakes.
-   */
-  function staleCases(master) {
-    const p = P();
-    const want = p && p.PARSE_VERSION;
-    if (!want) return [];
-    return cases(master)
-      .filter((c) => c && c.parsed !== want)
-      .map((c) => ({ caseNo: c.caseNo, real: c.real || c.caseNo }));
   }
 
   /** Drop one case, by its real case number. */
@@ -442,7 +415,6 @@
     distil,
     reject,
     remember,
-    staleCases,
     forget,
     clear,
     rebuild,

@@ -2436,19 +2436,17 @@ parsed again on the worker's next start, under the same library id so every
 chat and run attached to it follows, and the [master
 key](#the-master-key-every-case-distilled) is re-distilled from the corrected
 rows. A key whose workbook was **not** kept — too big, or loaded before that
-store existed — can't be healed that way, so the key panel **names those cases**
-and asks for the spreadsheet again rather than leaving one to read back in
-fakes quietly.
+store existed — can't be healed that way; it keeps translating by the rules it
+was read under until its spreadsheet is loaded again. Nothing on screen says
+which reader made a key.
 
 The [master key](#the-master-key-every-case-distilled) follows the library, and
 only the library. A case whose key is still loaded is re-distilled from the
 corrected rows — the case entry is replaced outright, so nothing of the old
 reading survives it. A case whose key has since **left** the library is kept
 here (that is the whole point of the store) and has nothing left to distil
-from, so a reader fix cannot reach it. Those cases are marked with the reader
-that made them and **named in the panel**, because the remedy is one thing —
-load that case's `pseudonym_key.xlsx` once — and a Recents row that quietly
-still reads in the fakes is the failure this whole section is about.
+from, so a reader fix cannot reach it; loading that case's
+`pseudonym_key.xlsx` once brings it up to date. No warning is shown for it.
 
 **A possessive is the
 same party** (PDF-Linker's own rule): a bare row covers the possessive —

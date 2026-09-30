@@ -269,38 +269,6 @@
     return !key || key.parsed !== PARSE_VERSION;
   }
 
-  /**
-   * What to say about keys the worker could not re-read (background.js,
-   * reparseKeys) — "" when there are none.
-   *
-   * A key still on an older reader still translates; it just translates by the
-   * rules that were wrong, and the case it belongs to is one whose chats may
-   * be sitting there in the fakes. That is precisely the silent half-working
-   * this feature cannot afford, so it is said, by name, with the one thing
-   * that fixes it.
-   *
-   * Read off the LIBRARY rather than off a list the worker keeps: a key still
-   * carrying an older `parsed` IS the stale one, so there is no second store to
-   * fall out of step with what the worker managed to heal.
-   */
-  function staleNote(keys) {
-    const lib = keys || {};
-    const names = Object.keys(lib)
-      .filter((id) => lib[id] && keyNeedsReparse(lib[id]))
-      .map((id) => keyTitle(lib[id]));
-    if (!names.length) return "";
-    return (
-      (names.length === 1 ? "One case's key was" : names.length + " cases' keys were") +
-      " loaded by an older reader and the spreadsheet is no longer kept here, so " +
-      (names.length === 1 ? "it could" : "they could") +
-      " not be re-read: " +
-      names.join(", ") +
-      ". Load the pseudonym_key.xlsx again — until then " +
-      (names.length === 1 ? "that case" : "those cases") +
-      " may read back in the fakes."
-    );
-  }
-
   // ---- attached, and matching nothing ---------------------------------------
   //
   // The key button lights for an ATTACHMENT as well as for a swap, deliberately:
@@ -1821,7 +1789,6 @@
     appliedSheet,
     PARSE_VERSION,
     keyNeedsReparse,
-    staleNote,
     matchNothingNote,
     sampleFakes,
     headerIndex,
