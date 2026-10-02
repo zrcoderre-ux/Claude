@@ -1689,10 +1689,18 @@
   // than the URLs it has written down so far:
   //
   //   - "chat": a conversation the run names among its own.
-  //   - "key":  any conversation on the run's KEY. A run is a MATTER and a
-  //             matter has one key, so this covers the chat the run opened a
-  //             beat ago and hasn't recorded yet — the window where the first
-  //             arm is still blind.
+  //   - "key":  a conversation on the run's KEY that NO run has recorded. A
+  //             run is a MATTER and a matter has one key, so this covers the
+  //             chat the run opened a beat ago and hasn't recorded yet — the
+  //             window where the first arm is still blind.
+  //
+  // A conversation some run HAS recorded is that run's, and only a run that
+  // recorded it holds it. It cannot be the moving run's unrecorded chat — it is
+  // recorded — and holding it through the key arm is how a finished run's chats
+  // kept showing the fakes for as long as ANY other run on the same case was
+  // moving (two runs on one matter, related runs sharing a group's key): the
+  // run was over, and its chats stayed held until the last run on the case
+  // stopped.
   //
   // MOVING is the whole test, and the hold is DERIVED rather than stored: it is
   // only ever a reading of the run's own status, so a run that pauses, is held
@@ -1730,6 +1738,9 @@
     const beats = o.beats || {};
     const keyIdFor =
       typeof o.keyIdFor === "function" ? o.keyIdFor : (r) => (r && r.pseudoKeyId) || null;
+    // Recorded by any run at all, moving or not — a finished run's chat is
+    // still that run's.
+    const recorded = (runs || []).some((r) => runNamesConv(r, o.conv));
     for (const run of runs || []) {
       // Every other status is a run that is not going to paste anything: draft,
       // queued, held, paused, failed, canceled, done.
@@ -1742,7 +1753,7 @@
       if (!(at > 0) || now - at > staleMs) continue; // nothing alive is driving it
       const via = runNamesConv(run, o.conv)
         ? "chat"
-        : o.keyId && keyIdFor(run) === o.keyId
+        : !recorded && o.keyId && keyIdFor(run) === o.keyId
         ? "key"
         : null;
       if (via) return { runId: run.id, name: String(run.name || "").trim(), via: via };

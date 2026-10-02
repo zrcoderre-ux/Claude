@@ -3155,9 +3155,18 @@ the conversation shows the fakes exactly as claude.ai wrote them. Two things are
 held, because a run reaches further than the URLs it has written down so far:
 
 - **The chats the run names** — the conversations it is driving.
-- **Every chat on the run's key** — a run is a *matter* and a matter has one
-  key, so the chat a run opened a beat ago and hasn't recorded yet is held too.
-  Another matter's chat, in the next tab, keeps its real names.
+- **Any chat on the run's key that no run has recorded** — a run is a *matter*
+  and a matter has one key, so the chat a run opened a beat ago and hasn't
+  recorded yet is held too. Another matter's chat, in the next tab, keeps its
+  real names.
+
+**A finished run's chats are not held by another run on the same case.** A chat
+a run has recorded belongs to that run, and only a run that recorded it holds
+it. Before this, the key arm reached every chat on the key, so with two runs on
+one matter (or related runs sharing a group's key) the first run's chats kept
+showing the fakes after it finished, until the last run on the case stopped. A
+recorded chat can't be the moving run's unrecorded one, so nothing was being
+protected by holding it.
 
 **The chat titles are not held**, in either arm. The hold is about what a
 hand-off can *pick up*, and a title is the one thing on the page nothing reads:
