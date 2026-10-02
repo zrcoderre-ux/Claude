@@ -448,6 +448,8 @@
       measureHome(typeof c.sinceMs === "number" ? c.sinceMs : null);
     } else if (c.type === "fetchConversation" && typeof c.uuid === "string") {
       fetchConversation(c.uuid, c.reqId);
+    } else if (c.type === "listTitles") {
+      listTitles(c.reqId);
     } else if (c.type === "renameConversation" && typeof c.uuid === "string") {
       renameConversation(c.uuid, c.name, c.reqId);
     } else if (c.type === "fetchFile" && Array.isArray(c.urls)) {
@@ -675,6 +677,78 @@
         })(0, "PUT");
       })
       .catch((e) => reply({ error: String((e && e.message) || e) }));
+  }
+
+  // ---- The names your chats already have ---------------------------------
+  // For src/titles.js: a conversation the extension names gets a number when an
+  // earlier one already has that name, and the chats' names are read here from
+  // chat_conversations_v2 — the list the sidebar is drawn from. Paged, since a
+  // matter named months ago is exactly the clash this is for: `limit`/`offset`
+  // are asked for, and followed while the page says there is more or comes back
+  // full. The parameters are unversioned, so a page that refuses them is asked
+  // again bare, and a page that ignores them (the same chats a second time)
+  // ends the walk rather than looping on it. Answers { ok, items, error }.
+  const TITLE_PAGE = 500;
+  const TITLE_CAP = 5000;
+  function listTitles(reqId) {
+    const reply = (obj) => post({ titles: Object.assign({ reqId }, obj) });
+    const T = window.CUMTitles;
+    if (!origFetch || !T) return reply({ ok: false, error: "unavailable" });
+    const ids = new Set();
+    origFetch("/api/organizations", { credentials: "include" })
+      .then((r) => (r.ok ? r.clone().text() : ""))
+      .then((t) => {
+        probeOrgIds(t, ids);
+        const orgs = Array.from(ids);
+        if (!orgs.length) return reply({ ok: false, error: "no organization" });
+        return Promise.all(orgs.map((org) => listOrgTitles(T, org))).then((per) => {
+          const items = [];
+          const errors = [];
+          for (const r of per) {
+            if (r.ok) items.push.apply(items, r.items);
+            else errors.push(r.error);
+          }
+          // One org answering is an answer: the others are orgs this
+          // conversation is not in.
+          if (per.some((r) => r.ok)) reply({ ok: true, items });
+          else reply({ ok: false, error: errors.join("; ") || "no answer" });
+        });
+      })
+      .catch((e) => reply({ ok: false, error: String((e && e.message) || e) }));
+  }
+
+  function listOrgTitles(T, org) {
+    const base = `/api/organizations/${org}/chat_conversations_v2`;
+    const items = [];
+    const seen = new Set();
+    const page = (url) =>
+      origFetch(url, { credentials: "include", headers: { accept: "*/*" } }).then((res) => {
+        if (!res.ok) throw new Error("chat list → HTTP " + res.status);
+        return res.json();
+      });
+    function walk(offset, bare) {
+      const url = bare ? base : `${base}?limit=${TITLE_PAGE}&offset=${offset}`;
+      return page(url)
+        .then((json) => {
+          const got = T.parseList(json);
+          if (!got) return items.length ? { ok: true, items } : { ok: false, error: "chat list of no known shape" };
+          let added = 0;
+          for (const it of got.items) {
+            if (seen.has(it.id)) continue;
+            seen.add(it.id);
+            items.push(it);
+            added++;
+          }
+          const more = got.hasMore || got.items.length >= TITLE_PAGE;
+          if (bare || !added || !more || items.length >= TITLE_CAP) return { ok: true, items };
+          return walk(offset + got.items.length, false);
+        })
+        .catch((e) => {
+          if (!bare && offset === 0) return walk(0, true);
+          return items.length ? { ok: true, items } : { ok: false, error: String((e && e.message) || e) };
+        });
+    }
+    return walk(0, false);
   }
 
   // ---- Clipboard capture --------------------------------------------------

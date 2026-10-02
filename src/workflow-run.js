@@ -393,6 +393,19 @@
     }
     if (!msg.firstInChat) return;
     const uuid = conversationUuid();
+    // The run's name, or that name numbered where an earlier conversation
+    // already has it ("MSJ: Drafting (A) 2"). Decided once per conversation and
+    // remembered (C.uniqueTitle), so every pass below — the send-time one, the
+    // keep-naming ones, the one after the reply — stamps the same name.
+    const pick =
+      uuid && C.uniqueTitle ? await C.uniqueTitle(msg.title, uuid) : { title: msg.title, note: "" };
+    const title = pick.title || msg.title;
+    const namedNote = (name) =>
+      'named this chat "' +
+      name +
+      '"' +
+      (title !== msg.title ? ' — an earlier conversation is already called "' + msg.title + '"' : "") +
+      (pick.note ? " (" + pick.note + ")" : "");
     // A Cowork SESSION has no rename API — renaming one by hand makes no HTTP
     // request at all, watched for on a page that renames a regular chat with a
     // plain PUT a few lines away. So it is done the way you do it: open the
@@ -412,14 +425,14 @@
       // what gets SAID about it below.
       let r;
       try {
-        r = await C.renameCoworkSession(msg.title);
+        r = await C.renameCoworkSession(title);
       } catch (e) {
         r = "failed";
       }
       if (!notes) return;
       const already = /already called/i.test(C.renameWhy() || "");
       if (r === "ok") {
-        if (!(onlyIfUnnamed && already)) notes.push('named this chat "' + msg.title + '"');
+        if (!(onlyIfUnnamed && already)) notes.push(namedNote(title));
       } else notes.push("could not name this Cowork chat (" + (C.renameWhy() || r) + ")");
       return;
     }
@@ -431,11 +444,11 @@
       // right.
       const K = window.CUMCowork;
       const conv = await fetchConversation(uuid, 10000);
-      if (K && conv && K.sameTitle(K.conversationName(conv), msg.title)) return;
+      if (K && conv && K.sameTitle(K.conversationName(conv), title)) return;
     }
-    const named = uuid ? await renameConversation(uuid, msg.title) : null;
+    const named = uuid ? await renameConversation(uuid, title) : null;
     if (!notes) return;
-    if (named && named.ok) notes.push('named this chat "' + named.name + '"');
+    if (named && named.ok) notes.push(namedNote(named.name));
     else notes.push("could not name this chat (" + ((named && named.error) || "no answer") + ")");
   }
 

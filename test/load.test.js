@@ -95,6 +95,9 @@ test("each module publishes the global the next one reads", () => {
     // content.js tags and records every weekly reading through this; without
     // it the plan comparison quietly has no data.
     "CUMWeeks",
+    // composer.js numbers a conversation's name through this; without it an
+    // earlier conversation's name is given again, silently.
+    "CUMTitles",
   ];
   const missing = wanted.filter((g) => !loaded.win[g]);
   assert.deepEqual(missing, [], "never published: " + missing.join(", "));
