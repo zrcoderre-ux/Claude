@@ -43,6 +43,7 @@
         "src/harvest.js",
         "src/weights.js",
         "src/coderepo.js",
+        "src/titles.js",
         "src/inject.js"
       ],
       "run_at": "document_start",
@@ -58,6 +59,7 @@
         "src/predict.js",
         "src/daily.js",
         "src/weeks.js",
+        "src/titles.js",
         "src/weights.js",
         "src/split.js",
         "src/jobstore.js",

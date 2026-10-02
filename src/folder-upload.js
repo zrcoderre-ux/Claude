@@ -891,6 +891,15 @@
       return;
     }
     label("Naming…");
+    // The folder's name, or that name numbered where an earlier conversation
+    // already has it — the same folder uploaded twice is "Smith v. Jones" and
+    // then "Smith v. Jones 2". Decided once and remembered by id, so the hold
+    // below keeps defending the same name rather than counting itself.
+    const pick = C.uniqueTitle ? await C.uniqueTitle(p.title, conv.id) : { title: p.title, note: "" };
+    const title = pick.title || p.title;
+    if (title !== p.title)
+      lines.push('An earlier conversation is already called "' + p.title + '", so this one is numbered.');
+    if (pick.note) lines.push(pick.note.charAt(0).toUpperCase() + pick.note.slice(1) + ".");
     // The session's own page is still being built in the moment the address
     // changes; the chat's rename goes through the API and needs no such wait.
     if (conv.surface === "cowork") {
@@ -901,7 +910,7 @@
         return;
       }
     }
-    const named = await nameIt(conv, p.title);
+    const named = await nameIt(conv, title);
     label("Folder");
     // The weaker evidence is said where it was what carried the decision, so a
     // name that landed on the wrong conversation is something you can see
@@ -911,9 +920,9 @@
     // made; what the conversation is CALLED is a different question, and it is
     // the one the note has to answer — claude.ai's own auto-title is still to
     // come and routinely wins this first round.
-    const took = named.ok ? await confirmName(conv, p.title) : false;
+    const took = named.ok ? await confirmName(conv, title) : false;
     const verdict = F.describeNamed({
-      title: p.title,
+      title: title,
       took: took,
       error: named.ok ? "" : named.error,
     });
@@ -922,7 +931,7 @@
     // again, and one that took gets defended against the auto-title still to
     // come. The verdict just said is handed over so the hold only speaks again
     // when there is something different to say.
-    holdName(conv, p.title, lines, verdict);
+    holdName(conv, title, lines, verdict);
   }
 
   // ---- placement -----------------------------------------------------------

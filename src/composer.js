@@ -1113,6 +1113,88 @@
   }
 
   /**
+   * The name to give conversation `convId` when `base` is the name wanted:
+   * `base` itself, or "base 2", "base 3"… where an earlier conversation already
+   * has it (src/titles.js decides). Answers { title, note }: `note` is set when
+   * the check could only be partial and the caller should say so.
+   *
+   * Asked once per conversation and remembered by id (cum_titles), because a
+   * conversation is named several times over while claude.ai's auto-title
+   * competes for it — and each of those passes has to land on the same name,
+   * not find its own "base 2" taken and move on to "base 3".
+   *
+   * Never in the way of the naming itself: anything that goes wrong here
+   * answers the name that was asked for.
+   */
+  const TITLES_KEY = "cum_titles";
+  let titleReqSeq = 0;
+  function listTitles(timeoutMs) {
+    return new Promise((resolve) => {
+      const reqId = "tl" + ++titleReqSeq + "-" + Date.now();
+      let settled = false;
+      const finish = (data) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        window.removeEventListener("message", onMsg);
+        resolve(data || { ok: false, error: "no answer" });
+      };
+      function onMsg(event) {
+        if (event.source !== window) return;
+        const m = event.data;
+        const p = m && m.__channel === CHANNEL ? m.payload : null;
+        if (p && p.titles && p.titles.reqId === reqId) finish(p.titles);
+      }
+      window.addEventListener("message", onMsg);
+      const timer = setTimeout(() => finish(null), timeoutMs || 15000);
+      try {
+        window.postMessage({ __channel: CHANNEL, command: { type: "listTitles", reqId } }, window.location.origin);
+      } catch (e) {
+        finish(null);
+      }
+    });
+  }
+
+  async function uniqueTitle(base, convId) {
+    const T = window.CUMTitles;
+    const asked = String(base || "");
+    if (!T || !asked || !convId) return { title: asked, note: "" };
+    try {
+      const store = await storageGet([TITLES_KEY]);
+      const ledger = store[TITLES_KEY] || T.EMPTY;
+      const prior = T.entryFor(ledger, convId, asked);
+      if (prior) return { title: prior.title, note: prior.note || "" };
+      const live = await listTitles();
+      const title = T.nextName(asked, T.takenFor(ledger, live, convId)) || asked;
+      const note =
+        live && live.ok
+          ? ""
+          : "could not read your other chats' names (" +
+            ((live && live.error) || "no answer") +
+            "), so this name was checked only against the ones this extension gave";
+      // Read again before writing: another tab may have named something while
+      // the list was loading, and its entry must survive this one.
+      const now = await storageGet([TITLES_KEY]);
+      try {
+        chrome.storage.local.set({
+          [TITLES_KEY]: T.remember(now[TITLES_KEY] || T.EMPTY, {
+            id: convId,
+            base: asked,
+            title,
+            note,
+            at: Date.now(),
+          }),
+        });
+      } catch (e) {
+        /* remembered or not, the name stands */
+      }
+      return { title, note };
+    } catch (e) {
+      return { title: asked, note: "" };
+    }
+  }
+
+  /**
    * What the session's header says it is called, or "" where nothing in the
    * header says.
    *
@@ -1511,6 +1593,7 @@
     renameCoworkSession,
     renameWhy,
     coworkSessionName,
+    uniqueTitle,
     currentSurface,
     selectSurface,
     findApprovalTrigger,

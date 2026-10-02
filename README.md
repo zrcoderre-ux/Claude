@@ -811,7 +811,9 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   claude.ai titles a new conversation itself a moment after the first answer
   lands and would otherwise write over it. **With a pseudonym key on the run,
   the title goes over in the fake name** — see [The title goes over
-  pseudonymized](#the-title-goes-over-pseudonymized).
+  pseudonymized](#the-title-goes-over-pseudonymized). A title an earlier
+  conversation already has gets a number: see [A name already taken gets a
+  number](#a-name-already-taken-gets-a-number).
 
 - **Files a reply produces** are no longer a workflow's business. A run used to
   have its own switch for clicking whatever a reply offered for download; that is
@@ -2170,7 +2172,9 @@ Press it, pick the matter's folder, and:
   the first few minutes — and only where claude.ai's own has won. On your screen
   the sidebar still reads `23STCV12345 Smith v. Jones`: the key this button just
   attached translates the title back [for you](#the-titles-read-back-in-the-real-name),
-  while the title claude.ai stores stays the fake.
+  while the title claude.ai stores stays the fake. The same folder uploaded a
+  second time is `… 2` — see [A name already taken gets a
+  number](#a-name-already-taken-gets-a-number).
 
 **Where the name can't go over pseudonymized, no name goes.** Not the real one
 as a fallback — the note says which of these it was, and the chat keeps
@@ -2219,6 +2223,43 @@ and every refusal above.
 The decisions are `src/folderup.js` (no DOM, no `chrome`), tested in
 `test/folderup.test.js`; the button, the picker and the wait around them are
 `src/folder-upload.js`.
+
+## A name already taken gets a number
+
+The extension names conversations in two places — a workflow run's chats and
+the Upload folder button's — and the name it would give is often one an earlier
+conversation already has: the same folder uploaded twice, a second run under a
+matter's name. Two sidebar rows that read the same say nothing about which is
+which, so the later one is numbered. The first conversation with a name is 1
+without saying so; the next is `Smith v. Jones 2`, then `Smith v. Jones 3`. The
+number is the **smallest one free**, starting at 2, and a name too long for the
+title limit loses letters from the name, never the number. Case, spacing and
+punctuation don't make a different name: `smith v jones` is taken by `Smith v.
+Jones`. A re-run's `(Run 2)` is part of the name, so it only gets a number if
+another conversation already carries that whole title.
+
+**What counts as taken** (`src/titles.js`):
+
+- **Every chat's name**, read when the name is chosen from
+  `chat_conversations_v2`, the list claude.ai's sidebar is drawn from. That list
+  knows what has since been renamed or deleted, so a name you freed is free
+  again. It is read in pages (`limit`/`offset`); a page that refuses those is
+  read bare, and a page that ignores them ends the walk.
+- **Every name this extension gave a Cowork session.** Cowork sessions aren't in
+  that list, and no list of them has been confirmed, so the names the extension
+  gave them are the ones it can vouch for. A Cowork session you named by hand
+  isn't seen.
+- When the chat list can't be read, the chat names the extension gave stand in
+  for it, and the run's note (or the Upload folder note) **says the check was
+  partial and why**.
+
+**The choice is made once per conversation and remembered** (`cum_titles`, by
+conversation id). A conversation is named several times over while claude.ai's
+auto-title competes for it, and every pass has to land on the same name.
+Without that, the second pass would find its own `Smith v. Jones 2` taken and
+move on to `3`. The note says why a name was numbered: `named this chat
+"Smith v. Jones 2" — an earlier conversation is already called "Smith v.
+Jones"`.
 
 ## Copying just the ruling
 
@@ -3915,6 +3956,7 @@ src/usagewarn.js       Daily-share + weekly-milestone warnings (pure)
 src/split.js           Chat vs Cowork vs Code attribution, incl. gaps (pure)
 src/daily.js           Per-day attribution of weekly-limit usage (pure)
 src/weeks.js           One record per weekly window, by plan: peak, session rate, plan comparison (pure)
+src/titles.js          A conversation's name, numbered where an earlier one has it (pure)
 src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/wfexport.js        Workflow export/import bundles: what travels (pure)
@@ -3966,6 +4008,7 @@ test/status.test.js    Unit tests for the status model + hold decisions
 test/usagewarn.test.js Unit tests for the pace warnings + their re-arming
 test/split.test.js     Unit tests for surface attribution and gap splitting
 test/weeks.test.js     Unit tests for the weekly ledger, the plan tag and the comparison
+test/titles.test.js    Unit tests for numbering a name an earlier conversation has
 test/workflow.test.js  Unit tests for the workflow model + run transitions
 test/toc.test.js       Unit tests for the table-of-contents labelling
 test/stamp.test.js     Unit tests for turn times and the gaps between them
