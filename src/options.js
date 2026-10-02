@@ -1957,6 +1957,223 @@
 
 
   // ======================================================================
+  // Weekly baseline, by plan (src/weeks.js)
+  // ======================================================================
+  const WEEKS_KEY = "cum_weeks";
+  const PLAN_KEY = "cum_plan";
+  const WK = window.CUMWeeks;
+
+  const wb = {
+    plan: document.getElementById("wk-plan"),
+    fallback: document.getElementById("wk-fallback"),
+    empty: document.getElementById("wk-empty"),
+    plans: document.getElementById("wk-plans"),
+    compare: document.getElementById("wk-compare"),
+    tools: document.getElementById("wk-tools"),
+    download: document.getElementById("wk-download"),
+    count: document.getElementById("wk-count"),
+    tableWrap: document.getElementById("wk-table-wrap"),
+    body: document.getElementById("wk-body"),
+    note: document.getElementById("wk-note"),
+  };
+  let wkModel = null;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function ago(ms) {
+    const m = Math.round((Date.now() - ms) / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return m + " min ago";
+    const h = Math.round(m / 60);
+    if (h < 48) return h + " hr ago";
+    return Math.round(h / 24) + " days ago";
+  }
+
+  function pct1(n) {
+    return n == null ? "—" : (Math.round(n * 10) / 10) + "%";
+  }
+
+  function whole(n) {
+    return n == null ? "—" : Math.round(n).toLocaleString();
+  }
+
+  // Which plan new readings are being tagged with, and where that came from —
+  // said in full, because a wrong tag here poisons every week it touches.
+  function renderPlanLine(cfg) {
+    if (!WK) return;
+    const now = Date.now();
+    const eff = WK.effectivePlan(cfg, now);
+    const c = cfg || {};
+    let text;
+    let cls = "wk-plan";
+    if (eff.source === "auto") {
+      text =
+        `New readings are tagged <b>${esc(WK.planLabel(eff.id))}</b> — read from claude.ai ${ago(eff.at)}` +
+        (c.auto && c.auto.raw ? ` (<code>${esc(c.auto.raw)}</code>)` : "") +
+        ".";
+      if (eff.stale) {
+        text += " That reading is old: open a claude.ai tab to refresh it.";
+        cls += " wk-warn";
+      }
+      if (c.failAt) text += ` The last attempt to re-read it failed (${esc(c.error || "no answer")}).`;
+    } else if (eff.source === "manual") {
+      text =
+        `claude.ai didn't say which plan you're on, so new readings are tagged <b>${esc(WK.planLabel(eff.id))}</b>` +
+        ` from the setting below. Change it the day your plan changes.`;
+      cls += " wk-warn";
+    } else if (c.checkedAt) {
+      text =
+        "claude.ai didn't say which plan you're on" +
+        (c.error ? ` (${esc(c.error)})` : "") +
+        ", and no fallback is set, so <b>new readings are untagged</b> and won't count toward a comparison. Pick your plan below.";
+      cls += " wk-warn";
+    } else {
+      text = "The plan hasn't been read yet. It's read the next time a claude.ai tab loads.";
+    }
+    wb.plan.className = cls;
+    wb.plan.innerHTML = text;
+    wb.fallback.value = (cfg && cfg.fallback) || "";
+  }
+
+  function planCard(p) {
+    const lines = [];
+    lines.push(
+      `${p.weeks} week${p.weeks === 1 ? "" : "s"} recorded, ${p.complete} complete` +
+        (p.weeks > p.ended ? " (one still running)" : "")
+    );
+    if (p.medianPeak != null) {
+      lines.push(
+        `Typical week: <b>${pct1(p.medianPeak)}</b> of the weekly limit` +
+          (p.peaks.length > 1 ? ` (range ${pct1(p.minPeak)}–${pct1(p.maxPeak)})` : "")
+      );
+    } else {
+      lines.push("Typical week: — (no complete week yet)");
+    }
+    if (p.perSession != null) {
+      let s = `A full 5-hour session costs <b>${pct1(p.perSession)}</b> of the week, so the week holds ~${whole(100 / p.perSession)} sessions`;
+      if (p.allowancePro != null) s += ` ≈ <b>${whole(p.allowancePro)} Pro sessions</b>`;
+      lines.push(s);
+    } else {
+      lines.push(
+        `Session cost: — (needs ${WK.MIN_PAIRED_SESSION} session %-points of paired readings; has ${whole(p.sumS)})`
+      );
+    }
+    if (p.typicalPro != null) lines.push(`Typical week in Pro sessions: <b>${whole(p.typicalPro)}</b>`);
+    for (const q of Object.keys(p.sessionsPast || {})) {
+      const sp = p.sessionsPast[q];
+      if (!p.sessions) continue;
+      lines.push(
+        `${sp.count} of ${p.sessions} sessions went past ${pct1(sp.cut)} — more than a whole ${esc(WK.planLabel(q))} session holds`
+      );
+    }
+    return (
+      `<div class="wk-card"><div class="wk-card-head">${esc(p.label)}</div>` +
+      lines.map((l) => `<div>${l}</div>`).join("") +
+      `</div>`
+    );
+  }
+
+  function recordedCell(w) {
+    if (!w.ended) return "in progress";
+    if (w.short) return `<span class="wk-floor" title="A new weekly window started before this one's reset time.">cut short</span>`;
+    if (w.complete) return "complete";
+    return (
+      `<span class="wk-floor" title="The last reading came ${Math.round(w.tailMs / 360000) / 10} hours before the week ended; anything used after it isn't counted.">` +
+      `at least (${Math.round(w.tailMs / 360000) / 10} hr gap)</span>`
+    );
+  }
+
+  function renderWeeks() {
+    if (!WK) return;
+    const now = Date.now();
+    const s = WK.summary(wkModel, now);
+    const any = s.weeks.length > 0;
+    wb.empty.hidden = any;
+    wb.plans.hidden = !any;
+    wb.tools.hidden = !any;
+    wb.tableWrap.hidden = !any;
+    wb.note.hidden = !any;
+    if (!any) {
+      wb.compare.hidden = true;
+      return;
+    }
+    wb.plans.innerHTML = s.plans.map(planCard).join("");
+    if (s.compare) {
+      const c = s.compare;
+      wb.compare.innerHTML =
+        `<b>${esc(WK.planLabel(c.big))}</b>'s week holds about <b>${(Math.round(c.ratio * 100) / 100).toFixed(2)}×</b>` +
+        ` what <b>${esc(WK.planLabel(c.small))}</b>'s does.` +
+        (c.bigTypicalOfSmall != null
+          ? ` Your typical ${esc(WK.planLabel(c.big))} week would be <b>${pct1(c.bigTypicalOfSmall)}</b> of a ${esc(WK.planLabel(c.small))} week` +
+            (c.bigTypicalOfSmall > 100 ? " — more than the whole week holds." : ".")
+          : "");
+      wb.compare.hidden = false;
+    } else {
+      wb.compare.textContent =
+        "Once complete weeks under a second plan are recorded, the two plans are compared here.";
+      wb.compare.hidden = false;
+    }
+    const rows = s.weeks.slice().reverse(); // newest first
+    wb.body.innerHTML = rows
+      .map((w) => {
+        const top = w.sessionPeaks.length ? Math.max.apply(null, w.sessionPeaks) : null;
+        return (
+          `<tr><td>${fmtDate(w.endAt)}</td>` +
+          `<td>${esc(WK.planLabel(w.plan))}</td>` +
+          `<td class="pct">${pct1(w.peak)}</td>` +
+          `<td>${recordedCell(w)}</td>` +
+          `<td>${w.sessions}${top != null ? ` · top ${pct1(top)}` : ""}</td>` +
+          `<td class="pct">${pct1(w.perSession)}</td></tr>`
+        );
+      })
+      .join("");
+    wb.count.textContent = `${s.weeks.length} week${s.weeks.length === 1 ? "" : "s"}`;
+  }
+
+  function downloadWeeks() {
+    if (!WK) return;
+    const rows = WK.csvRows(wkModel, Date.now(), (ms) => fmtDate(ms) + " " + fmtTime(ms));
+    const csv = window.CUMLog.buildCsv(rows, WK.CSV_HEADER);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `claude weekly baseline ${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  wb.download.addEventListener("click", downloadWeeks);
+
+  wb.fallback.addEventListener("change", () => {
+    const v = wb.fallback.value || null;
+    chrome.storage.local.get(PLAN_KEY, (res) => {
+      const cfg = Object.assign({}, (res && res[PLAN_KEY]) || {}, { fallback: v });
+      chrome.storage.local.set({ [PLAN_KEY]: cfg });
+    });
+  });
+
+  chrome.storage.local.get([WEEKS_KEY, PLAN_KEY], (res) => {
+    wkModel = (res && res[WEEKS_KEY]) || null;
+    renderPlanLine(res && res[PLAN_KEY]);
+    renderWeeks();
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (changes[WEEKS_KEY]) {
+      wkModel = changes[WEEKS_KEY].newValue || null;
+      renderWeeks();
+    }
+    if (changes[PLAN_KEY]) renderPlanLine(changes[PLAN_KEY].newValue);
+  });
+
+
+  // ======================================================================
   // Chat vs Claude Code split (pie)
   // ======================================================================
   const SPLIT_KEY = "cum_split";

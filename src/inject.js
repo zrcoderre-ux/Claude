@@ -385,6 +385,39 @@
     });
   }
 
+  // Which plan the account is on, so the weekly ledger (src/weeks.js) can tag
+  // each reading with the limit it is a percentage of. /api/organizations first,
+  // /api/bootstrap if that names none. `orgHint` is the org the usage URL is on.
+  // A fetch that fails is reported as a failure, not as "no plan" — the two
+  // mean different things to the ledger.
+  function readPlan(orgHint) {
+    if (!origFetch || !H || !H.parsePlan) return;
+    const sources = ["/api/organizations", "/api/bootstrap"];
+    const errors = [];
+    let answered = false;
+    (function next(i) {
+      if (i >= sources.length) {
+        post({ planRead: answered ? { ok: true, plan: null } : { ok: false, error: errors.join("; ") } });
+        return;
+      }
+      origFetch(sources[i], { credentials: "include", headers: { accept: "*/*" } })
+        .then((r) => {
+          if (!r.ok) throw new Error(sources[i] + " → HTTP " + r.status);
+          return r.json();
+        })
+        .then((json) => {
+          answered = true;
+          const plan = H.parsePlan(json, orgHint || null);
+          if (plan) post({ planRead: { ok: true, plan } });
+          else next(i + 1);
+        })
+        .catch((e) => {
+          errors.push(String((e && e.message) || e));
+          next(i + 1);
+        });
+    })(0);
+  }
+
   // Proactively pull the project list so the picker fills in without the user
   // having to visit the Projects page.
   function fetchProjects(url) {
@@ -405,6 +438,8 @@
       fetchUsage(c.url);
     } else if (c.type === "discover") {
       discover();
+    } else if (c.type === "readPlan") {
+      readPlan(typeof c.orgHint === "string" ? c.orgHint : null);
     } else if (c.type === "discoverProjects") {
       discoverProjects();
     } else if (c.type === "discoverConversations") {

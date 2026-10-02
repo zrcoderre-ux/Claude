@@ -381,12 +381,72 @@
     );
   }
 
+  // Which plan an organization is on, read out of GET /api/organizations (or
+  // /api/bootstrap, which nests the same org objects under the account). The
+  // usage endpoint only ever answers in percentages of the plan's OWN limit, so
+  // a reading means nothing across a plan change unless the plan is recorded
+  // beside it — this is what tags it.
+  //
+  // The shape is unversioned and not documented anywhere public, so this reads
+  // everything an org object says about its tier rather than one field: a tier
+  // string naming a multiple (`rate_limit_tier: "default_claude_max_20x"`) wins,
+  // and a bare capability (`claude_max`, `claude_pro`) says the plan family
+  // without the multiple. `orgHint` is the uuid the usage URL is on — a member
+  // of several orgs has several plans, and the meter is reading that one.
+  // Returns { id, raw, org } or null; id is "max_20x", "max_5x", "max" (multiple
+  // unknown) or "pro".
+  function planOfOrg(o) {
+    const strs = [];
+    for (const k of Object.keys(o)) {
+      const v = o[k];
+      if (/tier|plan|subscription/i.test(k) && typeof v === "string") strs.push(v);
+    }
+    for (const s of strs) {
+      const m = String(s).match(/max[_\s-]?(\d+)\s*x\b/i);
+      if (m) return { id: "max_" + m[1] + "x", raw: s };
+    }
+    const caps = Array.isArray(o.capabilities) ? o.capabilities.map(String) : [];
+    if (caps.some((c) => /^claude_max$/i.test(c))) return { id: "max", raw: "capabilities: claude_max" };
+    if (caps.some((c) => /^claude_pro$/i.test(c))) return { id: "pro", raw: "capabilities: claude_pro" };
+    for (const s of strs) if (/claude_pro\b/i.test(s)) return { id: "pro", raw: s };
+    return null;
+  }
+
+  function parsePlan(obj, orgHint) {
+    const found = [];
+    (function walk(v, depth) {
+      if (!v || typeof v !== "object" || depth > 6 || found.length > 20) return;
+      if (Array.isArray(v)) {
+        for (const x of v) walk(x, depth + 1);
+        return;
+      }
+      if (typeof v.uuid === "string") {
+        const p = planOfOrg(v);
+        if (p) found.push(Object.assign({ org: v.uuid }, p));
+      }
+      for (const k of Object.keys(v)) {
+        const x = v[k];
+        if (x && typeof x === "object") walk(x, depth + 1);
+      }
+    })(obj, 0);
+    if (!found.length) return null;
+    if (orgHint) {
+      const hit = found.find((f) => f.org === orgHint);
+      if (hit) return hit;
+    }
+    // Without a hint (or with one that names none of them), only an answer that
+    // can't be the wrong org's: every org that says a plan says the same one.
+    const ids = new Set(found.map((f) => f.id));
+    return ids.size === 1 ? found[0] : null;
+  }
+
   const api = {
     toEpochMs,
     harvest,
     harvestHeaders,
     parseClaudeUsage,
     parseOverage,
+    parsePlan,
     parseConversation,
     parseBody,
     hasData,
