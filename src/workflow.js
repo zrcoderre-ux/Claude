@@ -95,7 +95,8 @@
         // Which surface this chat opens on. It sits in `target` beside the
         // project because it is a fact about where the chat lives, and because
         // CUMJobs.targetUrl() reads these same names — a chat that says
-        // "cowork" has to resolve to the composer home the way a job does.
+        // "cowork" has to resolve the way a job does: to its project's own
+        // page when it has one, else to the composer home.
         surface: trimmed(f.surface || (f.target && f.target.surface)) || null,
       },
       model: trimmed(f.model) || null,

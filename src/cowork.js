@@ -393,6 +393,48 @@
     return /^\/cowork(\/|$)/.test(path);
   }
 
+  /**
+   * The project id in a Cowork project's own page — /cowork/project/<uuid> —
+   * or "". Only the page itself: never the projects list, and never anything
+   * living under a project's address.
+   */
+  function projectIdFromUrl(href) {
+    let path = str(href);
+    try {
+      path = new URL(path).pathname;
+    } catch (e) {
+      /* not absolute */
+    }
+    const m = /^\/cowork\/project\/([0-9a-f-]{36})\/?$/i.exec(path);
+    return m ? m[1].toLowerCase() : "";
+  }
+
+  /**
+   * Is this tab on the page of the project the send was opened at? A send
+   * with a project opens straight into it, so its address is the proof —
+   * stronger than a menu row matched by name, which is all the composer home
+   * ever offered. A project that is gone, or one this account can't open,
+   * sends the tab somewhere else, and a message that lands outside its
+   * project is worse than one that waits.
+   */
+  function projectPageOutcome(href, wantId) {
+    const want = str(wantId).toLowerCase();
+    if (!want) return { ok: false, why: "no project id to check the address against" };
+    const at = projectIdFromUrl(href);
+    if (at === want) return { ok: true, why: "opened at its own address" };
+    if (at) return { ok: false, why: "the tab is on another project's page (" + at + ")" };
+    let path = str(href);
+    try {
+      path = new URL(path).pathname;
+    } catch (e) {
+      /* not absolute */
+    }
+    return {
+      ok: false,
+      why: "the tab is not on the project's page — it is on " + (path || "an address it could not read"),
+    };
+  }
+
   // ---- projects ----------------------------------------------------------
 
   // Characters a scraped project name carries that are not text. claude.ai
@@ -703,13 +745,20 @@
    * surface toggle and the project menu; a page already inside a conversation
    * has neither, and asking for them there would be hunting for controls that
    * are not on the page.
+   *
+   * A send that knows its project's id was opened at that project's own page,
+   * which is a Cowork address already and is already the project — so neither
+   * the toggle nor the menu, just a check of the address ("projectPage"),
+   * first, before anything is touched.
    */
   function coworkPhases(job) {
     const j = job || {};
     const out = [];
-    if (!j.onSession) out.push("surface");
+    if (j.projectId) out.push("projectPage");
+    else if (!j.onSession && !j.onProjectPage) out.push("surface");
     if (j.approval) out.push("approval");
-    if (j.project && !j.onSession) out.push("project");
+    // The menu, only for a project known by name alone, on the composer home.
+    if (j.project && !j.projectId && !j.onSession && !j.onProjectPage) out.push("project");
     if (j.model) out.push("model");
     if (j.files) out.push("attach");
     if (j.text) out.push("prompt");
@@ -887,6 +936,8 @@
     sessionId,
     conversationApiPath,
     isCoworkUrl,
+    projectIdFromUrl,
+    projectPageOutcome,
     wantedProjectName,
     projectRowMatches,
     projectTriggerName,

@@ -76,6 +76,15 @@
     return (jobs || []).find((j) => j.id === id) || null;
   }
 
+  // The project a job opens AT, by its id, or null — a project target that no
+  // existing conversation or Code session overrides (targetUrl's precedence).
+  // The send is handed this too, so the page can check the address it landed
+  // on is that project's before anything goes up.
+  function projectPageId(job) {
+    if (!job || job.chatUrl || job.codeRepo) return null;
+    return job.projectUuid || projectUuidFromHref(job.projectHref) || null;
+  }
+
   // The claude.ai URL a job should open to compose its message.
   function targetUrl(job) {
     if (job && job.chatUrl) {
@@ -83,13 +92,16 @@
       return /^https?:\/\//i.test(job.chatUrl) ? job.chatUrl : ORIGIN + job.chatUrl;
     }
     if (job && job.codeRepo) return ORIGIN + "/code"; // fresh Claude Code session
-    // A Cowork job goes to the composer home even when it has a project. The
-    // toggle, the approval control and the project menu all live there and
-    // nowhere else, so arriving anywhere else means arriving with no way to
-    // set any of the three. The project is chosen on the page instead.
-    if (job && job.surface === "cowork") return ORIGIN + "/new";
+    const project = projectPageId(job);
+    // A Cowork job with a project opens straight into it, by id. Choosing it
+    // from the composer home's menu instead meant a list that only loads in a
+    // tab someone is looking at, matched by a scraped name — and stood runs
+    // down over both. Built from the id rather than taken from projectHref,
+    // which can be a Chat sidebar link.
+    if (job && job.surface === "cowork")
+      return ORIGIN + (project ? "/cowork/project/" + project : "/new");
     if (job && job.projectHref) return ORIGIN + job.projectHref;
-    if (job && job.projectUuid) return ORIGIN + "/cowork/project/" + job.projectUuid;
+    if (project) return ORIGIN + "/cowork/project/" + project;
     return ORIGIN + "/new";
   }
 
@@ -270,6 +282,7 @@
     upsertJob,
     removeJob,
     getJob,
+    projectPageId,
     targetUrl,
     targetLabel,
     surfaceLabel,

@@ -1321,9 +1321,8 @@ async function stepTab(run, savedUrl, chat) {
       projectHref: (chat.target && chat.target.projectHref) || null,
       projectUuid: (chat.target && chat.target.projectUuid) || null,
       codeRepo: (chat.target && chat.target.codeRepo) || null,
-      // targetUrl sends a Cowork chat to the composer home rather than to its
-      // project, because the toggle, the approval control and the project menu
-      // are all there and nowhere else.
+      // targetUrl opens a Cowork chat with a project straight at the project's
+      // page, by its id, and one without at the composer home.
       surface: (chat.target && chat.target.surface) || null,
     });
   // Reuse only where the address is a conversation this run already has. A
@@ -1610,13 +1609,16 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
     titleHeld: naming.held,
     codeRepo: m.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
     // Only on the way in. Once a conversation exists the toggle isn't on the
-    // page any more, and the project menu is the composer home's.
+    // page any more, and the project is the address the chat was opened at.
     surface: !saved.url ? m.surface || null : null,
     approval: m.approval || null,
     coworkProject:
       m.surface === "cowork" && m.firstInChat && !saved.url
         ? (chat.target && chat.target.projectName) || null
         : null,
+    // The project the tab was opened at, so the page can check it landed there.
+    coworkProjectId:
+      m.surface === "cowork" && m.firstInChat && !saved.url ? J.projectPageId(chat.target) : null,
   };
 
   let res;
@@ -1923,6 +1925,10 @@ async function driveRun(runId, opts) {
         coworkProject:
           step.surface === "cowork" && step.firstInChat && !saved.url
             ? (chat.target && chat.target.projectName) || null
+            : null,
+        coworkProjectId:
+          step.surface === "cowork" && step.firstInChat && !saved.url
+            ? J.projectPageId(chat.target)
             : null,
       };
       let res = await sendStep(tab.id, payload);
