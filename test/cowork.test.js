@@ -576,6 +576,77 @@ test("inside a conversation there is no surface to choose and no project menu to
   );
 });
 
+test("a send opened at its project's page checks the address first, and opens no toggle or menu", () => {
+  assert.deepEqual(
+    K.coworkPhases({
+      onSession: false,
+      onProjectPage: true,
+      projectId: true,
+      approval: true,
+      project: true, // the name, kept for the notes — never a menu here
+      model: true,
+      files: true,
+      text: true,
+    }),
+    ["projectPage", "approval", "model", "attach", "prompt", "send"]
+  );
+});
+
+test("a send with a project id checks the address wherever the tab ended up", () => {
+  // A project that is gone sends the tab elsewhere; the check is what stops
+  // the message, so it runs even on the composer home — never the menu.
+  const home = K.coworkPhases({ onSession: false, projectId: true, project: true, text: true });
+  assert.deepEqual(home, ["projectPage", "prompt", "send"]);
+  const session = K.coworkPhases({ onSession: true, projectId: true, project: true, text: true });
+  assert.deepEqual(session, ["projectPage", "prompt", "send"]);
+});
+
+test("a project's page with no id to check is still not the composer home", () => {
+  // The address is Cowork already, so there is no surface to choose, and the
+  // menu is the home's.
+  assert.deepEqual(
+    K.coworkPhases({ onSession: false, onProjectPage: true, project: true, text: true }),
+    ["prompt", "send"]
+  );
+});
+
+const PROJ = "019f3fcd-9b35-7715-b2cc-b227512b5459";
+
+test("projectIdFromUrl reads a Cowork project's own page and nothing else", () => {
+  assert.equal(K.projectIdFromUrl("https://claude.ai/cowork/project/" + PROJ), PROJ);
+  assert.equal(K.projectIdFromUrl("/cowork/project/" + PROJ + "/"), PROJ);
+  assert.equal(K.projectIdFromUrl("https://claude.ai/cowork/project/" + PROJ + "?x=1"), PROJ);
+  assert.equal(K.projectIdFromUrl("/cowork/project/" + PROJ.toUpperCase()), PROJ);
+  assert.equal(K.projectIdFromUrl("/cowork/projects"), "");
+  assert.equal(K.projectIdFromUrl("/cowork/cse_011f5HCzaWWJ2hm19v6NuQmN"), "");
+  assert.equal(K.projectIdFromUrl("/new"), "");
+  assert.equal(K.projectIdFromUrl("/project/" + PROJ), ""); // Chat's, not Cowork's
+  assert.equal(K.projectIdFromUrl("/cowork/project/" + PROJ + "/cse_abc"), "");
+  assert.equal(K.projectIdFromUrl(""), "");
+  assert.equal(K.projectIdFromUrl(null), "");
+});
+
+test("projectPageOutcome passes only the project the send was opened at", () => {
+  const ok = K.projectPageOutcome("https://claude.ai/cowork/project/" + PROJ, PROJ.toUpperCase());
+  assert.equal(ok.ok, true);
+  assert.ok(/own address/.test(ok.why));
+
+  const other = K.projectPageOutcome(
+    "https://claude.ai/cowork/project/11111111-2222-3333-4444-555555555555",
+    PROJ
+  );
+  assert.equal(other.ok, false);
+  assert.ok(/another project/.test(other.why));
+
+  // A project that is gone, or one this account can't open, sends the tab
+  // elsewhere — and the report names where.
+  const away = K.projectPageOutcome("https://claude.ai/new", PROJ);
+  assert.equal(away.ok, false);
+  assert.ok(away.why.indexOf("/new") !== -1);
+
+  assert.equal(K.projectPageOutcome("https://claude.ai/cowork/project/" + PROJ, "").ok, false);
+});
+
 test("a bare continuation — text only, into an open session — is prompt and send", () => {
   assert.deepEqual(K.coworkPhases({ onSession: true, text: true }), ["prompt", "send"]);
 });

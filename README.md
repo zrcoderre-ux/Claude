@@ -41,8 +41,9 @@ bottom-right corner of [claude.ai](https://claude.ai).
 - **Borrow focus to load a Cowork project list** (opt-in, separate toggle) —
   lets a Cowork send bring its own window in front for a bounded time when its
   project list will not load in a tab that is merely visible, and give the
-  screen back afterwards. Off by default because it takes the screen. See
-  [Cowork](#cowork).
+  screen back afterwards. Off by default because it takes the screen. A send
+  with a project now opens the project's own page instead of the list, so this
+  only matters for a project known by name alone. See [Cowork](#cowork).
 - **Auto-download files Claude produces** (opt-in, separate toggle) — when a
   reply hands you a file, its **Download** button is clicked for you once the
   answer has finished, so a produced document lands in your Downloads folder
@@ -540,8 +541,8 @@ chose. So it is back: a job or a workflow step can name its mode, and the
 popup's **Approvals on Cowork sends** is the default every Cowork send applies
 when its job names none (a job that chose still wins). Set that to **Skip all
 approvals** and every unattended session runs with the brakes off. The switch
-is made on the composer home before the message goes and verified off the
-control's own words.
+is made on the composer — the home, or a project's own page — before the
+message goes and verified off the control's own words.
 
 **A switch that cannot be made no longer stops the send** (the owner's
 instruction, September 2026, reversing what this used to do). It used to fail
@@ -577,11 +578,23 @@ Three things about it shape how this works, and none of them is obvious:
   gone — and where it can't (the toggle lives on the composer home, which the
   send navigates away from), it says so in the job's note rather than leaving
   you to notice.
-- **A Cowork job goes to `/new`, even when it has a Project.** The toggle, the
-  approval control and the project menu all live on the composer home. Arriving
-  at `/cowork/project/{uuid}` instead would mean arriving with no way to set any
-  of the three, so `targetUrl` sends a Cowork job to `/new` and the project is
-  chosen from the menu there, by name.
+- **A Cowork job with a Project opens straight into it, by its id.**
+  `targetUrl` sends it to `/cowork/project/{uuid}`, built from the stored id
+  (never from a Chat sidebar link), and the driver's first phase checks the tab
+  is on *that* project's page — the address is the proof, which is stronger
+  than a menu row matched by a scraped name. A project that is gone, or one the
+  account can't open, sends the tab somewhere else, and the send fails loudly
+  rather than going out there: *project "Cutlist" not opened — the tab is not
+  on the project's page — it is on /new — not sent*. The page is a Cowork
+  address already, so there is no toggle to move (and nothing account-wide is
+  left changed), and no menu to open. The approval control and the model menu
+  are worked there as on the home; if either is missing from a project's page,
+  that is the same loud, survivable note it is anywhere else. A Cowork job with
+  no project still goes to `/new`.
+
+  This replaced choosing the project from the composer home's menu, by name,
+  which is what the next three points are about. They still describe that menu,
+  which a send now reaches only for a project known by name alone, with no id.
 - **An open project menu is not a loaded one.** The list comes off the server,
   and Cowork mounts skeleton rows captioned *Loading* while it waits — no rows
   to match, and not even a search box, because that mounts with the list. A run
@@ -649,8 +662,9 @@ So a Cowork send goes through `src/cowork-composer.js`, a parallel driver that
 borrows from the Chat one only what is surface-agnostic mechanics (clicks,
 menus, sleeping in a hidden tab) or has been confirmed on Cowork itself (the
 Chat/Cowork toggle, the approval menu, the model menu). Everything else is its
-own: choosing the project (a wider net than literal `<button>`s, with the
-navigating rows still excluded by name), confirming attachments by what the
+own: checking the tab is on the project's own page (or, for a project known by
+name alone, choosing it from the menu — a wider net than literal `<button>`s,
+with the navigating rows still excluded by name), confirming attachments by what the
 composer **visibly carries** — chips or the filenames themselves, truncation
 tolerated — and proving the send by Cowork's own evidence (the address becoming
 `/cowork/cse_…`, a new human turn, the editor emptying). Every phase reports,

@@ -84,7 +84,11 @@ than inline in the wiring.
   gate. The approval control is found by everything it says about itself
   (`findApprovalTrigger`: label, title, visible words, then any control whose
   label merely says "approval"); an exact-`aria-label` search missed a control
-  the operator could see and stood a run down. Cowork's project list loads only in a tab that
+  the operator could see and stood a run down. A send with a project opens
+  the project's own page by its id (`/cowork/project/<uuid>`) and checks the
+  address before anything goes up (`projectPageOutcome`) — it no longer picks
+  the project from the composer home's menu. That menu is kept for a project
+  known by name alone, and its list loads only in a tab that
   is looked at: visible first (the tab is moved into a window of its own when
   it sits behind the user's), focus last and only with the popup's opt-in
   switch, and always given back. Confirmed broken on Cowork: upload confirmations (its traffic runs

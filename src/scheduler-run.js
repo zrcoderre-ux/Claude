@@ -2,7 +2,7 @@
  * Claude Usage Meter — scheduled-send executor (ISOLATED world content script).
  *
  * Runs on claude.ai. When the background worker opens a tab to the right
- * composer (/new or /cowork/project/<uuid>) and sends "cum-run-job", this
+ * composer (/new, or a project's own page) and sends "cum-run-job", this
  * rebuilds the queued files from stored bytes and hands them, with the prompt,
  * to the shared composer driver (src/composer.js), which attaches them, waits
  * for the uploads, types the prompt and clicks Send. The result goes back to the
@@ -33,9 +33,11 @@
       codeRepo: job.codeRepo || null,
       surface: job.surface || null,
       approval: job.approval || null,
-      // A Cowork session's project is a menu on the composer, not an address,
-      // so the name travels with the send rather than with the URL.
+      // A Cowork job with a project opens at that project's page; the id goes
+      // with the send so the page can check that is where it landed, and the
+      // name so the run's notes can say which project it was.
       coworkProject: job.surface === "cowork" ? job.projectName || null : null,
+      coworkProjectId: job.surface === "cowork" ? window.CUMJobs.projectPageId(job) : null,
     });
     const note = res.notes && res.notes.length ? res.notes.join("; ") : null;
     if (!res.ok) return { ok: false, error: res.error, note };

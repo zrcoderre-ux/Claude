@@ -1238,6 +1238,7 @@
         surface: msg.surface || null,
         approval: msg.approval || null,
         coworkProject: msg.coworkProject || null,
+        coworkProjectId: msg.coworkProjectId || null,
         stop: () => halted,
       });
       if (sent.notes && sent.notes.length) notes.push.apply(notes, sent.notes);

@@ -1076,25 +1076,34 @@
     const J = window.CUMJobs;
     const project =
       (J && j.coworkProject ? J.cleanProjectName(j.coworkProject) : j.coworkProject) || null;
+    // The project's id, when the tab was opened at its page: then the address
+    // is checked rather than the menu worked.
+    const projectId = j.coworkProjectId || null;
 
     // The toggle only exists on the composer home; inside a conversation there
-    // is no surface to choose and no project menu to open.
-    const onHome = !!C.findSurfaceGroup();
+    // is no surface to choose and no project menu to open. A project's own
+    // page is neither — a composer whose address is already Cowork and
+    // already the project.
+    const onProjectPage = !!K.projectIdFromUrl(location.href);
+    const onHome = !onProjectPage && !!C.findSurfaceGroup();
     // The approval mode: the job's own, else the popup's default. Cowork does
     // not keep the mode between sessions, so a send that says nothing lands
     // on whatever claude.ai chose — which is why the default exists.
     const prefs = await coworkSettings();
     const approval = K.effectiveApproval(j.approval, prefs.approval);
     const approvalFrom = approval && !K.modeFromLabel(j.approval) ? " (the popup's default)" : "";
+    const onSession = !onHome && !onProjectPage;
     const phases = K.coworkPhases({
-      onSession: !onHome,
+      onSession: onSession,
+      onProjectPage: onProjectPage,
+      projectId: !!projectId,
       approval: !!approval,
       project: !!project,
       model: !!j.model,
       files: !!files.length,
       text: !!j.text,
     });
-    if (!onHome && project)
+    if (onSession && project && !projectId)
       notes.push("project not chosen — this page is already inside a conversation");
 
     // What the toggle was on before we touched it, for the note a changed
@@ -1105,7 +1114,17 @@
       why = halted();
       if (why) return standDown(why);
 
-      if (phase === "surface") {
+      if (phase === "projectPage") {
+        // An address, like the menu's project: the send goes nowhere else.
+        const r = K.projectPageOutcome(location.href, projectId);
+        const which = project ? JSON.stringify(project) : projectId;
+        if (!r.ok)
+          return fail(
+            "project " + which + " not opened — " + r.why +
+              " — not sent: a message that lands outside its project is worse than one that waits"
+          );
+        say("project", which + " (" + r.why + ")");
+      } else if (phase === "surface") {
         try {
           surfaceWas = C.currentSurface();
         } catch (e) {
