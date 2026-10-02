@@ -37,7 +37,7 @@ test("a peek is monochrome, because the page IS showing the fakes", () => {
 test("a run holding the messages is said, not offered", () => {
   // The hold is not the user's to lift here: the run's hand-off can fall back
   // to the rendered message, and pausing the run is what ends it.
-  const b = K.buttonState(on({ hold: { name: "Smith v. Jones", via: "key" } }));
+  const b = K.buttonState(on({ hold: { name: "Smith v. Jones", via: "chat" } }));
   assert.equal(b.disabled, true);
   assert.equal(b.faking, true);
   assert.equal(b.lit, false, "held is monochrome like a peek — the fakes are showing in both");
@@ -122,7 +122,7 @@ test("a peek says which half it moved", () => {
 });
 
 test("a run's hold says it too", () => {
-  const b = K.buttonState(on({ hold: { name: "Smith v. Jones", via: "key" } }));
+  const b = K.buttonState(on({ hold: { name: "Smith v. Jones", via: "chat" } }));
   assert.match(b.title, /titles keep their real names/i);
   assert.match(b.title, /pause the run/i, "the messages are still the run's");
 });

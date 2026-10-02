@@ -769,12 +769,12 @@ test("a moving run holds the translation in the chat it is driving", () => {
   assert.equal(h.name, "Rasho — tentative");
 });
 
-test("it holds a chat on the run's matter that no run has recorded", () => {
-  // The chat a run opened a beat ago isn't in run.chats yet — the key is what
-  // says it belongs to the matter under automation.
-  const h = held([run()], { conv: CONV_B, keyId: "key-rasho" });
-  assert.ok(h);
-  assert.equal(h.via, "key");
+test("a run holds only the chats it recorded — never the rest of its matter", () => {
+  // There used to be a key arm: every chat on the run's key, for the chat it
+  // opened a beat ago and hadn't recorded yet. That chat has no key until a run
+  // records it, so the arm protected nothing — and it held your own chats on
+  // the case, and a finished run's, for as long as any run on it was moving.
+  assert.equal(held([run()], { conv: CONV_B, keyId: "key-rasho" }), null);
 });
 
 test("a finished run's chats are not held by another run on the same matter", () => {
@@ -791,7 +791,7 @@ test("a finished run's chats are not held by another run on the same matter", ()
     held([finished, mate], { conv: CONV_B, keyId: "key-rasho", keyIdFor: () => "key-rasho" }),
     null
   );
-  // The moving run's own chat is still held, by the chat arm.
+  // The moving run's own chat is still held.
   assert.equal(held([finished, moving], { conv: CONV_A, keyId: "key-rasho" }).via, "chat");
 });
 
@@ -811,17 +811,9 @@ test("another matter's chat is left alone", () => {
   assert.equal(held([run()], { conv: CONV_B, keyId: null }), null);
 });
 
-test("a group-mate's key holds too, through keyIdFor", () => {
-  // Runs are per matter and a matter has one key: a run with no key of its own
-  // answers to its group's (W.runPseudoKey), and the hold follows that answer.
+test("a group-mate on the same key holds nothing it didn't record", () => {
   const r = run({ pseudoKeyId: null, chats: {} });
-  const h = held([r], {
-    conv: CONV_B,
-    keyId: "key-rasho",
-    keyIdFor: () => "key-rasho",
-  });
-  assert.ok(h);
-  assert.equal(h.via, "key");
+  assert.equal(held([r], { conv: CONV_B, keyId: "key-rasho", keyIdFor: () => "key-rasho" }), null);
 });
 
 test("a pause, a hold, a failure or an ending puts the real names back", () => {

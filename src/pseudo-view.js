@@ -504,10 +504,7 @@
     setHold(
       P.runTranslationHold(runsCache.runs, {
         conv: mine.conv,
-        keyId: mine.id,
         beats: runsCache.beats,
-        keyIdFor: (r) =>
-          W.runPseudoKey ? W.runPseudoKey(r, runsCache.runs, runsCache.groups || []) : r.pseudoKeyId,
       })
     );
   }
