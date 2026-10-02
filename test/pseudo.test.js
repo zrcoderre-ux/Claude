@@ -769,12 +769,41 @@ test("a moving run holds the translation in the chat it is driving", () => {
   assert.equal(h.name, "Rasho — tentative");
 });
 
-test("it holds every chat on the run's matter, recorded or not", () => {
+test("it holds a chat on the run's matter that no run has recorded", () => {
   // The chat a run opened a beat ago isn't in run.chats yet — the key is what
   // says it belongs to the matter under automation.
   const h = held([run()], { conv: CONV_B, keyId: "key-rasho" });
   assert.ok(h);
   assert.equal(h.via, "key");
+});
+
+test("a finished run's chats are not held by another run on the same matter", () => {
+  // The owner's report: the run was over and its chats kept showing the fakes.
+  // A second run on the same case was still moving, and the key arm held every
+  // chat on that key — the finished run's included.
+  const finished = run({ id: "r0", status: "done", chats: { c9: { url: "https://claude.ai/chat/" + CONV_B } } });
+  const moving = run({ id: "r1" });
+  assert.equal(held([finished, moving], { conv: CONV_B, keyId: "key-rasho" }), null);
+  // ...in either order, and through a group's key the same.
+  assert.equal(held([moving, finished], { conv: CONV_B, keyId: "key-rasho" }), null);
+  const mate = run({ id: "r2", pseudoKeyId: null, chats: {} });
+  assert.equal(
+    held([finished, mate], { conv: CONV_B, keyId: "key-rasho", keyIdFor: () => "key-rasho" }),
+    null
+  );
+  // The moving run's own chat is still held, by the chat arm.
+  assert.equal(held([finished, moving], { conv: CONV_A, keyId: "key-rasho" }).via, "chat");
+});
+
+test("a chat two runs recorded is held while either of them moves", () => {
+  // A related run that carried on in an earlier run's conversation recorded
+  // it too, and it is that run's to hold while it works there.
+  const first = run({ id: "r0", status: "done" });
+  const carryOn = run({ id: "r1", chats: { c1: { url: "https://claude.ai/chat/" + CONV_A } } });
+  const h = held([first, carryOn], { conv: CONV_A, keyId: "key-rasho" });
+  assert.ok(h);
+  assert.equal(h.runId, "r1");
+  assert.equal(h.via, "chat");
 });
 
 test("another matter's chat is left alone", () => {
