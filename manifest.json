@@ -57,6 +57,7 @@
         "src/log.js",
         "src/predict.js",
         "src/daily.js",
+        "src/weeks.js",
         "src/weights.js",
         "src/split.js",
         "src/jobstore.js",

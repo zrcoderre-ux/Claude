@@ -46,6 +46,71 @@
 
         <div class="head">
           <div class="dot"></div>
+          <h1>Weekly Baseline, by Plan</h1>
+        </div>
+        <p class="sub">
+          One row per <b>weekly window</b>, tagged with the <b>plan</b> it ran
+          under. claude.ai reports usage only as a share of <i>your plan's own</i>
+          limit, so 40% of a Max 20x week and 40% of a Max 5x week are different
+          amounts of work. Recording the plan with each week, and how much of the
+          week a full 5-hour session costs, puts both plans in one unit so they can
+          be compared.
+        </p>
+        <p id="wk-plan" class="wk-plan"></p>
+        <div class="wk-fallback">
+          <label for="wk-fallback">If the plan can't be read from claude.ai, tag readings as</label>
+          <select id="wk-fallback">
+            <option value="">nothing (leave them untagged)</option>
+            <option value="max_20x">Max 20x</option>
+            <option value="max_5x">Max 5x</option>
+            <option value="pro">Pro</option>
+          </select>
+        </div>
+        <p id="wk-empty" class="empty">
+          No weeks recorded yet. A week starts recording the first time a
+          claude.ai tab reads your usage.
+        </p>
+        <div id="wk-plans" class="wk-plans" hidden></div>
+        <p id="wk-compare" class="wk-compare" hidden></p>
+        <div class="toolbar" id="wk-tools" hidden>
+          <button id="wk-download" class="primary" type="button">Download CSV</button>
+          <span id="wk-count" class="count"></span>
+        </div>
+        <div class="table-wrap" id="wk-table-wrap" hidden>
+          <table>
+            <thead>
+              <tr>
+                <th>Week ending</th>
+                <th>Plan</th>
+                <th>Weekly usage</th>
+                <th>Recorded</th>
+                <th>5-hr sessions</th>
+                <th>Weekly % per session</th>
+              </tr>
+            </thead>
+            <tbody id="wk-body"></tbody>
+          </table>
+        </div>
+        <p id="wk-note" class="footnote" hidden>
+          <b>Weekly usage</b> is the highest reading of the week, which is the
+          whole week's usage when a reading landed within 6 hours of the reset.
+          A week read earlier than that is marked <b>at least</b>, since anything
+          used after the last reading (a cloud Claude Code session overnight, a
+          phone) isn't in it; only complete weeks set the typical week. Keep a
+          claude.ai tab open in Chrome over the weekly reset to make a week
+          complete. <b>Weekly % per session</b> is how much of the week a full
+          5-hour session costs, from the two meters' paired rises. Anthropic
+          publishes the session limit as a multiple of Pro's (Max 5x is 5×, Max
+          20x is 20×) and no figure for the week, so that rate is what converts a
+          week into <b>Pro sessions</b>: the unit both plans share. The
+          comparison is only as good as the weeks are alike — a week of mostly
+          Sonnet costs differently from one of mostly Opus.
+        </p>
+
+        <hr class="divider" />
+
+        <div class="head">
+          <div class="dot"></div>
           <h1>Chat vs Cowork vs Claude Code</h1>
         </div>
         <p class="sub">
@@ -285,6 +350,7 @@
 
     <script src="log.js"></script>
     <script src="daily.js"></script>
+    <script src="weeks.js"></script>
     <script src="usagewarn.js"></script>
     <script src="wfusage.js"></script>
     <script src="incognito.js"></script>

@@ -352,3 +352,52 @@ test("a reset absurdly far in the future is rejected", () => {
   const out = H.harvest({ resets_at: Math.floor((NOW + 90 * 24 * 3600_000) / 1000) }, opts, {});
   assert.equal(out.resetAt, undefined);
 });
+
+// ---- the plan an org is on (GET /api/organizations) --------------------
+const ORG_A = "11111111-1111-4111-8111-111111111111";
+const ORG_B = "22222222-2222-4222-8222-222222222222";
+
+test("parsePlan reads the multiple out of the org's rate-limit tier", () => {
+  const orgs = [{ uuid: ORG_A, name: "me", capabilities: ["chat", "claude_max"], rate_limit_tier: "default_claude_max_20x" }];
+  assert.deepEqual(H.parsePlan(orgs), { org: ORG_A, id: "max_20x", raw: "default_claude_max_20x" });
+  orgs[0].rate_limit_tier = "default_claude_max_5x";
+  assert.equal(H.parsePlan(orgs).id, "max_5x");
+});
+
+test("parsePlan falls back to the capability when no tier names a multiple", () => {
+  assert.equal(H.parsePlan([{ uuid: ORG_A, capabilities: ["chat", "claude_max"] }]).id, "max");
+  assert.equal(H.parsePlan([{ uuid: ORG_A, capabilities: ["chat", "claude_pro"] }]).id, "pro");
+  assert.equal(H.parsePlan([{ uuid: ORG_A, capabilities: ["chat"] }]), null);
+});
+
+test("parsePlan finds the org nested in a bootstrap payload", () => {
+  const boot = { account: { uuid: ORG_B, memberships: [{ organization: { uuid: ORG_A, rate_limit_tier: "default_claude_max_5x" } }] } };
+  assert.equal(H.parsePlan(boot).id, "max_5x");
+});
+
+test("parsePlan answers for the org the usage URL is on", () => {
+  const orgs = [
+    { uuid: ORG_A, rate_limit_tier: "default_claude_max_20x" },
+    { uuid: ORG_B, rate_limit_tier: "default_claude_max_5x" },
+  ];
+  assert.equal(H.parsePlan(orgs, ORG_B).id, "max_5x");
+  assert.equal(H.parsePlan(orgs, ORG_A).id, "max_20x");
+});
+
+test("parsePlan won't guess between two orgs on different plans", () => {
+  const orgs = [
+    { uuid: ORG_A, rate_limit_tier: "default_claude_max_20x" },
+    { uuid: ORG_B, rate_limit_tier: "default_claude_max_5x" },
+  ];
+  assert.equal(H.parsePlan(orgs), null);
+  assert.equal(H.parsePlan(orgs, "33333333-3333-4333-8333-333333333333"), null);
+  // ...but two orgs that agree are one answer.
+  orgs[1].rate_limit_tier = "default_claude_max_20x";
+  assert.equal(H.parsePlan(orgs).id, "max_20x");
+});
+
+test("parsePlan is null on anything that isn't an org list", () => {
+  assert.equal(H.parsePlan(null), null);
+  assert.equal(H.parsePlan("default_claude_max_20x"), null);
+  assert.equal(H.parsePlan({ five_hour: { utilization: 5 } }), null);
+});

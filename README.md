@@ -73,6 +73,10 @@ bottom-right corner of [claude.ai](https://claude.ai).
   [Where your usage goes](#where-your-usage-goes-chat-cowork-code).
 - **Usage log + CSV** (Options) — records when you hit 100% and the usage % at
   each 5-hour reset; export to a spreadsheet.
+- **Weekly baseline, by plan** (Options) — one record per weekly window,
+  tagged with the plan it ran under, so a week on Max 20x can be put beside a
+  week on Max 5x in one unit. Exports to CSV. See
+  [Comparing plans: the weekly baseline](#comparing-plans-the-weekly-baseline).
 - **Scheduled sends** — queue files (pick individually or **a whole folder**) +
   an optional prompt to a **new chat, a Project, or the chat you're currently
   in**, to send at a set time or when usage next resets. Set them up from the
@@ -3596,6 +3600,59 @@ properties matter about that rule:
 - The evidence counters are fed **only by live readings**, never by a gap's own
   attribution, so the division can't drift off feeding on its own guesses.
 
+## Comparing plans: the weekly baseline
+
+**Options → Weekly Baseline, by Plan** keeps one record per weekly window,
+built for one question: how much usage does a week on one plan give you,
+against a week on another? The meter alone can't answer it. claude.ai reports
+usage only as a share of **your plan's own** limit, so 40% of a Max 20x week
+and 40% of a Max 5x week are different amounts of work. Before this, nothing
+the meter kept said which plan a reading came from.
+
+**The plan is read, not assumed.** Each page load (and every hour after)
+reads `/api/organizations` and looks at what the org the usage URL is on says
+about its tier: a tier string naming a multiple (`default_claude_max_20x`)
+wins, a bare `claude_max` / `claude_pro` capability says the family without
+the multiple (`src/harvest.js`, `parsePlan`). That shape isn't documented, so
+the page says exactly what it found and when, and a **fallback** setting tags
+readings when nothing could be read. A fetch that comes back but names no plan
+**stops** the remembered plan from tagging further weeks; a fetch that fails
+keeps it. A member of two orgs on different plans gets no answer rather than a
+guess.
+
+**What each week records** (`src/weeks.js`):
+
+- **Its peak.** The weekly meter is cumulative within a window, so the last
+  reading before the reset is the week's whole usage, however late in the week
+  the watching started. What it can miss is the **end**. A week whose last
+  reading came more than 6 hours before its reset is marked **at least**, and
+  only complete weeks set the typical week. Keep a claude.ai tab open over the
+  weekly reset to make a week complete. Cloud Claude Code sessions draw on the
+  same limit with no tab open, so the tail matters.
+- **The exchange rate between the two meters**: weekly %-points per full
+  5-hour session, from their paired rises (both read off the same response).
+  Anthropic publishes the session limit as a multiple of Pro's (Max 5x is 5×,
+  Max 20x is 20×) and **no figure for the week**, so this rate is what converts
+  a week into **Pro sessions**, the unit both plans share:
+  `allowance = (100 ÷ weekly % per session) × the plan's multiple`.
+  Unlike `src/predict.js`, a reading where only the weekly meter ticked is
+  still paired, because dropping the readings where the session meter happened
+  not to cross an integer leaves the weekly side short.
+- **Each 5-hour session's peak**, so a Max 20x baseline can say how many of its
+  sessions went past 25%, the point where a Max 5x session would already have
+  been used up.
+
+Once two plans each have enough paired readings, the page states how many
+times one plan's week holds the other's, and what your typical week on the
+larger plan would be as a share of the smaller one's. Weeks under no recorded
+plan, or under two (a change mid-week), are listed but never compared. A week
+Anthropic reset early is marked **cut short** and kept out of the typical week.
+
+What it can't control: the comparison is only as good as the weeks are alike.
+A week of mostly Sonnet costs differently from one of mostly Opus, and both
+meters are whole-number percentages, so the rate firms up over days rather
+than hours.
+
 ## Usage-pace warnings
 
 The meter tells you where you are; this tells you when where you are is a
@@ -3857,6 +3914,7 @@ src/status.js          Pure status.claude.com model + the scheduled-send gate
 src/usagewarn.js       Daily-share + weekly-milestone warnings (pure)
 src/split.js           Chat vs Cowork vs Code attribution, incl. gaps (pure)
 src/daily.js           Per-day attribution of weekly-limit usage (pure)
+src/weeks.js           One record per weekly window, by plan: peak, session rate, plan comparison (pure)
 src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/wfexport.js        Workflow export/import bundles: what travels (pure)
@@ -3907,6 +3965,7 @@ test/estimate.test.js  Unit tests for the tenths-place calibrator
 test/status.test.js    Unit tests for the status model + hold decisions
 test/usagewarn.test.js Unit tests for the pace warnings + their re-arming
 test/split.test.js     Unit tests for surface attribution and gap splitting
+test/weeks.test.js     Unit tests for the weekly ledger, the plan tag and the comparison
 test/workflow.test.js  Unit tests for the workflow model + run transitions
 test/toc.test.js       Unit tests for the table-of-contents labelling
 test/stamp.test.js     Unit tests for turn times and the gaps between them

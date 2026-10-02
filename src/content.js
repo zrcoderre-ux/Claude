@@ -20,6 +20,8 @@
   const LOG_KEY = "cum_log"; // journal of hit-100 / window-reset events
   const PREDICT_KEY = "cum_predict"; // session↔weekly correlation model
   const DAILY_KEY = "cum_daily"; // per-day weekly-usage attribution
+  const WEEKS_KEY = "cum_weeks"; // one record per weekly window, tagged by plan
+  const PLAN_KEY = "cum_plan"; // the plan readings are tagged with (src/weeks.js)
   const SPLIT_KEY = "cum_split"; // chat vs Cowork vs Claude Code usage split
   const JOBS_KEY = "cum_jobs"; // scheduled sends (read only, for the held count)
   const STATUS_KEY = "cum_status"; // status.claude.com snapshot (background polls)
@@ -77,6 +79,13 @@
   // is the worker's — see the "Usage-pace warnings" section below.
   let todayPct = null; // weekly %-points attributed to the current local date
   let warnCfg = { enabled: true, dailyShare: null };
+  // The plan each weekly reading is tagged with. Read off /api/organizations on
+  // every page load and every PLAN_READ_MS after; the answer is shared through
+  // storage, so the Options page's fallback reaches every tab. Hourly, because
+  // readings tagged with the old plan after a change make the next week "mixed"
+  // and keep it out of the comparison entirely.
+  let planCfg = null;
+  const PLAN_READ_MS = 60 * 60 * 1000;
 
   // ---- Persistence -------------------------------------------------------
   function save() {
@@ -108,6 +117,7 @@
               WARN_CFG_KEY,
               DAILY_KEY,
               JOBS_KEY,
+              PLAN_KEY,
             ],
             (res) => {
               if (res && res[STORAGE_KEY]) {
@@ -125,6 +135,7 @@
               readWarnCfg(res && res[WARN_CFG_KEY]);
               todayPct = todayFrom(res && res[DAILY_KEY]);
               heldSends = countHeld(res && res[JOBS_KEY]);
+              planCfg = (res && res[PLAN_KEY]) || null;
               resolve();
             }
           );
@@ -229,6 +240,71 @@
     }
     // Home vs Code split is handled separately so it can content-attribute a gap.
     updateSplit(weeklyPct);
+  }
+
+  // ---- Weekly ledger, by plan (src/weeks.js) ------------------------------
+  // Every reading of the usage endpoint goes in — not only the ones that moved
+  // the meter — because a week's peak is only trusted when a reading landed
+  // near its end, and an hour of unchanged readings before the reset is exactly
+  // what proves it. Session and weekly come from the SAME response, so the
+  // exchange rate between them never pairs a fresh weekly with a stale session.
+  // Identical readings are written at most every WEEK_NOTE_MS per tab.
+  const WEEK_NOTE_MS = 5 * 60 * 1000;
+  let lastWeekNote = { key: null, at: 0 };
+
+  function pct2(frac) {
+    return Math.round(frac * 10000) / 100;
+  }
+
+  function noteWeek(data) {
+    const W = window.CUMWeeks;
+    if (!W || !data || data.weeklyPercent == null) return;
+    const now = Date.now();
+    const r = {
+      at: now,
+      weeklyPct: pct2(data.weeklyPercent),
+      weeklyResetAt: data.weeklyResetAt != null ? data.weeklyResetAt : null,
+      sessionPct: data.percent != null ? pct2(data.percent) : null,
+      sessionResetAt: data.resetAt != null ? data.resetAt : null,
+      plan: W.effectivePlan(planCfg, now).id,
+    };
+    const key = [r.weeklyPct, r.weeklyResetAt, r.sessionPct, r.sessionResetAt, r.plan].join("|");
+    if (key === lastWeekNote.key && now - lastWeekNote.at < WEEK_NOTE_MS) return;
+    lastWeekNote = { key, at: now };
+    try {
+      chrome.storage.local.get(WEEKS_KEY, (res) => {
+        chrome.storage.local.set({ [WEEKS_KEY]: W.observe(res && res[WEEKS_KEY], r) });
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function orgOfUrl(u) {
+    const m = /organizations\/([0-9a-f-]{36})/i.exec(u || "");
+    return m ? m[1] : null;
+  }
+
+  // Ask the page script to read the plan. `force` on page load; otherwise only
+  // once the shared answer is PLAN_READ_MS old.
+  function requestPlan(force) {
+    if (!window.CUMWeeks) return;
+    const checked = planCfg && planCfg.checkedAt;
+    if (!force && checked && Date.now() - checked < PLAN_READ_MS) return;
+    sendCommand({ type: "readPlan", orgHint: orgOfUrl(manualUrl || learnedUrl) });
+  }
+
+  function storePlanRead(read) {
+    const W = window.CUMWeeks;
+    if (!W) return;
+    try {
+      chrome.storage.local.get(PLAN_KEY, (res) => {
+        planCfg = W.notePlanRead(res && res[PLAN_KEY], read, Date.now());
+        chrome.storage.local.set({ [PLAN_KEY]: planCfg });
+      });
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   // ---- Chat vs Cowork vs Code usage split --------------------------------
@@ -474,6 +550,9 @@
   // Merge a fresh reading. We keep the most recently observed values; a reset
   // timestamp that has already elapsed is dropped.
   function applyReading(data) {
+    // First, and off the raw payload: a reading the weekly ledger keeps must not
+    // depend on the pill drawing without a hitch.
+    noteWeek(data);
     let changed = false;
     if (data.resetAt != null && data.resetAt > Date.now()) {
       if (data.resetAt !== state.resetAt) {
@@ -672,6 +751,7 @@
     } else {
       sendCommand({ type: "discover" });
     }
+    requestPlan(false);
     // Show a "checking" state briefly; clear it if nothing arrives.
     if (!state.updatedAt) {
       probing = true;
@@ -1951,6 +2031,7 @@
       applyReading(p.data);
     }
     if (p.projects) mergeProjects(p.projects, p.full);
+    if (p.planRead) storePlanRead(p.planRead);
     if (p.codeSessions) mergeCodeSessions(p.codeSessions);
     if (p.homeActivityAt != null && (lastHomeActivityAt == null || p.homeActivityAt > lastHomeActivityAt))
       lastHomeActivityAt = p.homeActivityAt;
@@ -2026,6 +2107,7 @@
         calib = makeCalibrator(); // rebuild from the (possibly cleared) snapshot
         render();
       }
+      if (changes[PLAN_KEY]) planCfg = changes[PLAN_KEY].newValue || null;
       if (changes[MANUAL_URL_KEY]) {
         manualUrl = changes[MANUAL_URL_KEY].newValue || null;
         requestBaseline();
@@ -2105,6 +2187,7 @@
     reconstructMissedReset();
     // Kick off a proactive baseline read, then keep it fresh.
     requestBaseline();
+    requestPlan(true);
     startPolling();
     // And a service-status read, so a tab opened mid-outage warns immediately
     // rather than at the worker's next poll.

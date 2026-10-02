@@ -92,6 +92,9 @@ test("each module publishes the global the next one reads", () => {
     "CUMUpFiles",
     "CUMLeaks",
     "CUMKeyFile",
+    // content.js tags and records every weekly reading through this; without
+    // it the plan comparison quietly has no data.
+    "CUMWeeks",
   ];
   const missing = wanted.filter((g) => !loaded.win[g]);
   assert.deepEqual(missing, [], "never published: " + missing.join(", "));
