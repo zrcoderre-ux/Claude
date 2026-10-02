@@ -107,7 +107,6 @@
         "The messages show the fakes while " +
         (st.hold && st.hold.name ? "“" + st.hold.name + "”" : "a run") +
         " is working" +
-        (st.hold && st.hold.via === "key" ? " on this matter" : "") +
         ", and the titles keep their real names. A run's hand-off can fall back " +
         "to the text on screen, so this is not the control for it: pause the run — " +
         "or let it finish, hold or fail — and the messages come back by themselves."

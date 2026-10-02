@@ -3151,24 +3151,20 @@ hand-off could carry a real name into the next chat, which is the one thing the
 pseudonymization exists to prevent.
 
 So the message translation stands down by itself while a run is **moving**, and
-the conversation shows the fakes exactly as claude.ai wrote them. Two things are
-held, because a run reaches further than the URLs it has written down so far:
+the conversations it has **recorded** — the chats it is driving — show the fakes
+exactly as claude.ai wrote them. Nothing else is held: not another matter's chat
+in the next tab, not your own chats on the same case, and not a finished run's
+chats while a different run on that case keeps working.
 
-- **The chats the run names** — the conversations it is driving.
-- **Any chat on the run's key that no run has recorded** — a run is a *matter*
-  and a matter has one key, so the chat a run opened a beat ago and hasn't
-  recorded yet is held too. Another matter's chat, in the next tab, keeps its
-  real names.
+There used to be a second arm: **every chat on the run's key**, meant to cover
+the chat a run opened a beat ago and hadn't recorded yet. It protected nothing.
+A conversation gets a key only by being attached to one directly or by a run
+recording it, so a run's unrecorded chat has no key and nothing translated to
+hold back. What it did reach was every other chat on the case, which kept
+showing the fakes for as long as any run on that case was moving — after the
+run you were looking at had finished.
 
-**A finished run's chats are not held by another run on the same case.** A chat
-a run has recorded belongs to that run, and only a run that recorded it holds
-it. Before this, the key arm reached every chat on the key, so with two runs on
-one matter (or related runs sharing a group's key) the first run's chats kept
-showing the fakes after it finished, until the last run on the case stopped. A
-recorded chat can't be the moving run's unrecorded one, so nothing was being
-protected by holding it.
-
-**The chat titles are not held**, in either arm. The hold is about what a
+**The chat titles are not held.** The hold is about what a
 hand-off can *pick up*, and a title is the one thing on the page nothing reads:
 the Chat rename asks the conversation API what a chat is called, the Cowork one
 reads its control's `aria-label` (which is never translated), and the title a

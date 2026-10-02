@@ -1685,22 +1685,17 @@
   // the Cowork one reads an aria-label, and the title a run writes is its own
   // name run through the key first — titlePlan above). Holding the titles
   // bought nothing and cost the reader the line naming the case, in the very
-  // minutes a run was working it. Two arms, because a run reaches further
-  // than the URLs it has written down so far:
+  // minutes a run was working it.
   //
-  //   - "chat": a conversation the run names among its own.
-  //   - "key":  a conversation on the run's KEY that NO run has recorded. A
-  //             run is a MATTER and a matter has one key, so this covers the
-  //             chat the run opened a beat ago and hasn't recorded yet — the
-  //             window where the first arm is still blind.
-  //
-  // A conversation some run HAS recorded is that run's, and only a run that
-  // recorded it holds it. It cannot be the moving run's unrecorded chat — it is
-  // recorded — and holding it through the key arm is how a finished run's chats
-  // kept showing the fakes for as long as ANY other run on the same case was
-  // moving (two runs on one matter, related runs sharing a group's key): the
-  // run was over, and its chats stayed held until the last run on the case
-  // stopped.
+  // And only the conversations the run has RECORDED among its own. There used
+  // to be a second arm — every chat on the run's KEY, for the chat a run opened
+  // a beat ago and hadn't recorded yet. It protected nothing: a conversation
+  // gets a key only from a direct attachment (cum_pseudo_chats, which runs never
+  // write) or from a run recording it, so a run's unrecorded chat has no key and
+  // nothing translated to hold back. What it did reach was every OTHER chat on
+  // the case — a finished run's, your own — which kept showing the fakes for as
+  // long as any run on that case was moving (the owner's report: "it keeps
+  // holding the key even after the run is finished").
   //
   // MOVING is the whole test, and the hold is DERIVED rather than stored: it is
   // only ever a reading of the run's own status, so a run that pauses, is held
@@ -1727,20 +1722,13 @@
     return false;
   }
 
-  // runs: every run in the store. opts: { conv, keyId, now, beats, staleMs,
-  // keyIdFor }. `keyIdFor` resolves a run's key the way the rest of the feature
-  // does — a run with none of its own answers to its GROUP's (W.runPseudoKey) —
-  // and defaults to the run's own id so the decision is testable on its own.
+  // runs: every run in the store. opts: { conv, now, beats, staleMs }. Answers
+  // the moving run that recorded `conv`, or null.
   function runTranslationHold(runs, opts) {
     const o = opts || {};
     const now = typeof o.now === "number" ? o.now : Date.now();
     const staleMs = typeof o.staleMs === "number" ? o.staleMs : HOLD_STALE_MS;
     const beats = o.beats || {};
-    const keyIdFor =
-      typeof o.keyIdFor === "function" ? o.keyIdFor : (r) => (r && r.pseudoKeyId) || null;
-    // Recorded by any run at all, moving or not — a finished run's chat is
-    // still that run's.
-    const recorded = (runs || []).some((r) => runNamesConv(r, o.conv));
     for (const run of runs || []) {
       // Every other status is a run that is not going to paste anything: draft,
       // queued, held, paused, failed, canceled, done.
@@ -1751,12 +1739,8 @@
         beat
       );
       if (!(at > 0) || now - at > staleMs) continue; // nothing alive is driving it
-      const via = runNamesConv(run, o.conv)
-        ? "chat"
-        : !recorded && o.keyId && keyIdFor(run) === o.keyId
-        ? "key"
-        : null;
-      if (via) return { runId: run.id, name: String(run.name || "").trim(), via: via };
+      if (runNamesConv(run, o.conv))
+        return { runId: run.id, name: String(run.name || "").trim(), via: "chat" };
     }
     return null;
   }

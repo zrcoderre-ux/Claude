@@ -244,9 +244,7 @@
       return (
         "The messages show the fakes while " +
         (st.hold.name ? "“" + st.hold.name + "”" : "a run") +
-        " is running" +
-        (st.hold.via === "key" ? " on this matter" : "") +
-        "." +
+        " is running." +
         titles
       );
     if (st.paused)
