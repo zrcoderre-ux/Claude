@@ -190,9 +190,9 @@ test("the cap halves both sums while preserving the ratio", () => {
 });
 
 
-// ---- Cowork, the third surface -------------------------------------------
+// ---- Cowork: kept apart inside, shown as Chat ------------------------------
 
-test("a Cowork reading is its own bucket, not chat and not code", () => {
+test("a Cowork reading is kept apart inside but shown as Chat", () => {
   const m = feed([
     { weeklyPct: 0, weeklyResetAt: WR, surface: "chat" },
     { weeklyPct: 10, weeklyResetAt: WR, surface: "chat" }, // +10 chat
@@ -203,9 +203,9 @@ test("a Cowork reading is its own bucket, not chat and not code", () => {
   assert.equal(Math.round(m.cowork), 6);
   assert.equal(Math.round(m.code), 4);
   const s = S.share(m);
-  assert.equal(Math.round(s.chatPct), 50);
-  assert.equal(Math.round(s.coworkPct), 30);
+  assert.equal(Math.round(s.chatPct), 80);
   assert.equal(Math.round(s.codePct), 20);
+  assert.equal(s.coworkPct, undefined, "nothing reports Cowork as its own share");
 });
 
 test("Cowork increments teach no rate — the content probe cannot see one", () => {
@@ -220,8 +220,6 @@ test("a model stored before Cowork existed reads as no Cowork, not as NaN", () =
   const old = { chat: 30, code: 10, lastW: 40, wKey: 10000, lastAt: 5, rNum: 2, rDen: 1000 };
   const s = S.share(old);
   assert.equal(s.total, 40);
-  assert.equal(s.cowork, 0);
-  assert.equal(s.coworkPct, 0);
   assert.equal(Math.round(s.chatPct), 75);
   // ...and it keeps accumulating from where it was.
   const m = S.observe(old, { weeklyPct: 45, weeklyResetAt: WR, surface: "cowork" });

@@ -194,42 +194,34 @@ test("sameConversationUrl matches the same chat across query/hash/slash and PWA"
   assert.equal(J.sameConversationUrl(cc, "https://claude.ai/new"), false);
 });
 
-// ---- cowork ---------------------------------------------------------------
+// ---- Chat and Cowork, merged ------------------------------------------------
 
-test("a job says nothing about the surface unless it was asked to", () => {
-  const j = J.newJob({ name: "x" }, "id", NOW);
-  assert.equal(j.surface, null);
+test("a new job carries no surface, and no approval unless it was asked", () => {
+  const j = J.newJob({ name: "x", surface: "cowork" }, "id", NOW);
+  assert.equal("surface" in j, false, "claude.ai merged Chat and Cowork — nothing to pick");
   assert.equal(j.approval, null);
-  assert.equal(J.surfaceLabel(j), "");
+  assert.equal(J.approvalLabel(j), "");
 });
 
 const PROJ = "019f3fcd-9b35-7715-b2cc-b227512b5459";
+// A job as it sits in storage from before the merge, set up on Cowork.
+const legacy = (f) => Object.assign(J.newJob(f, "id", NOW), { surface: "cowork" });
 
-test("a cowork job with a project opens straight at the project's page, by its id", () => {
-  // Choosing it from the composer home's menu meant a list that only loads in
-  // a tab someone is looking at, matched by a scraped name.
-  const j = J.newJob(
-    { surface: "cowork", projectUuid: PROJ, projectHref: "/cowork/project/" + PROJ, projectName: "Cutlist" },
-    "id",
-    NOW
-  );
-  assert.equal(J.targetUrl(j), "https://claude.ai/cowork/project/" + PROJ);
-});
-
-test("a cowork job's project address is built from the id, never a Chat sidebar link", () => {
-  const j = J.newJob(
-    { surface: "cowork", projectUuid: PROJ, projectHref: "/project/" + PROJ, projectName: "Cutlist" },
-    "id",
-    NOW
-  );
+test("a stored Cowork job with a project still opens at the project's page, by its id", () => {
+  const j = legacy({ projectUuid: PROJ, projectHref: "/project/" + PROJ, projectName: "Cutlist" });
   assert.equal(J.targetUrl(j), "https://claude.ai/cowork/project/" + PROJ);
   // An id that only the href carries still counts.
-  const k = J.newJob({ surface: "cowork", projectHref: "/project/" + PROJ }, "id", NOW);
-  assert.equal(J.targetUrl(k), "https://claude.ai/cowork/project/" + PROJ);
+  assert.equal(J.targetUrl(legacy({ projectHref: "/project/" + PROJ })), "https://claude.ai/cowork/project/" + PROJ);
+  assert.equal(J.targetUrl(legacy({})), "https://claude.ai/new");
 });
 
-test("a cowork job with no project still goes to the composer home", () => {
-  assert.equal(J.targetUrl(J.newJob({ surface: "cowork" }, "id", NOW)), "https://claude.ai/new");
+test("a new job with a project goes to the project it was given", () => {
+  assert.equal(
+    J.targetUrl(J.newJob({ projectUuid: PROJ, projectHref: "/project/" + PROJ }, "id", NOW)),
+    "https://claude.ai/project/" + PROJ
+  );
+  assert.equal(J.targetUrl(J.newJob({ projectHref: "/cowork/project/abc" }, "id", NOW)), "https://claude.ai/cowork/project/abc");
+  assert.equal(J.targetUrl(J.newJob({ projectUuid: PROJ }, "id", NOW)), "https://claude.ai/cowork/project/" + PROJ);
 });
 
 test("projectPageId is the project a job opens at, with targetUrl's precedence", () => {
@@ -241,33 +233,29 @@ test("projectPageId is the project a job opens at, with targetUrl's precedence",
   // does in targetUrl — the tab is not opened at the project's page then.
   assert.equal(J.projectPageId(J.newJob({ projectUuid: PROJ, chatUrl: "/chat/abc" }, "id", NOW)), null);
   assert.equal(J.projectPageId(J.newJob({ projectUuid: PROJ, codeRepo: "a/b" }, "id", NOW)), null);
-  // A workflow chat's target carries the same names.
-  assert.equal(J.projectPageId({ projectUuid: PROJ, surface: "cowork" }), PROJ);
 });
 
-test("a chat job with a project still goes to the project, as it always did", () => {
-  const j = J.newJob({ projectHref: "/cowork/project/abc" }, "id", NOW);
-  assert.equal(J.targetUrl(j), "https://claude.ai/cowork/project/abc");
+test("projectPageAt reads a project page's id off the address a send opens", () => {
+  assert.equal(J.projectPageAt("https://claude.ai/cowork/project/" + PROJ), PROJ);
+  assert.equal(J.projectPageAt("/cowork/project/" + PROJ.toUpperCase()), PROJ);
+  assert.equal(J.projectPageAt("https://claude.ai/project/" + PROJ), null, "not a page the check knows");
+  assert.equal(J.projectPageAt("https://claude.ai/new"), null);
+  assert.equal(J.projectPageAt(null), null);
 });
 
-test("an existing conversation still wins over the surface", () => {
-  const j = J.newJob({ surface: "cowork", chatUrl: "/chat/abc" }, "id", NOW);
-  assert.equal(J.targetUrl(j), "https://claude.ai/chat/abc");
+test("an existing conversation still wins over a stored surface", () => {
+  assert.equal(J.targetUrl(legacy({ chatUrl: "/chat/abc" })), "https://claude.ai/chat/abc");
 });
 
-test("a cowork job with no destination reads as a Cowork session", () => {
-  assert.equal(J.targetLabel(J.newJob({ surface: "cowork" }, "id", NOW)), "New Cowork session");
-  assert.equal(J.targetLabel(J.newJob({ surface: "chat" }, "id", NOW)), "New chat");
+test("a job with no destination is a new chat, whatever it was set up on", () => {
+  assert.equal(J.targetLabel(legacy({})), "New chat");
+  assert.equal(J.targetLabel(J.newJob({}, "id", NOW)), "New chat");
 });
 
-test("the surface chip names the approval mode only where there is one", () => {
+test("the row names the approval mode only when the job set one", () => {
   require("../src/cowork.js");
-  assert.equal(J.surfaceLabel(J.newJob({ surface: "chat", approval: "skip" }, "i", NOW)), "Chat");
-  assert.equal(
-    J.surfaceLabel(J.newJob({ surface: "cowork", approval: "skip" }, "i", NOW)),
-    "Cowork · Skip all approvals"
-  );
-  assert.equal(J.surfaceLabel(J.newJob({ surface: "cowork" }, "i", NOW)), "Cowork");
+  assert.equal(J.approvalLabel(J.newJob({ approval: "skip" }, "i", NOW)), "Skip all approvals");
+  assert.equal(J.approvalLabel(J.newJob({}, "i", NOW)), "");
 });
 
 test("cleanProjectName strips the chats-toggle caption a live run was armed with", () => {

@@ -35,11 +35,12 @@ bottom-right corner of [claude.ai](https://claude.ai).
   *Allow for this chat* — so nothing is granted beyond the single call in front of
   it. You are approving those calls sight-unseen, which is why it's off by
   default and has its own switch rather than riding on auto-continue's.
-- **Approvals on Cowork sends** — the approval mode every Cowork send applies
-  when its job or step names none, because Cowork does not keep the mode between
-  sessions. Leave as-is by default. See [Cowork](#cowork).
-- **Borrow focus to load a Cowork project list** (opt-in, separate toggle) —
-  lets a Cowork send bring its own window in front for a bounded time when its
+- **Default approval mode** — the approval mode every send applies, where the
+  composer shows an approval control, when its job or step names none, because
+  claude.ai does not keep the mode between sessions. Leave as-is by default. See
+  [Cowork](#cowork).
+- **Borrow focus to load a project list** (opt-in, separate toggle) —
+  lets a send on the Cowork-style composer bring its own window in front for a bounded time when its
   project list will not load in a tab that is merely visible, and give the
   screen back afterwards. Off by default because it takes the screen. A send
   with a project now opens the project's own page instead of the list, so this
@@ -69,8 +70,8 @@ bottom-right corner of [claude.ai](https://claude.ai).
   mostly on is left off the rows that are on it. See
   [Recents, by repo](#recents-by-repo).
 - **Where your usage goes** (Options) — a pie of your weekly usage across
-  **Chat**, **Cowork** and **Claude Code**. See
-  [Where your usage goes](#where-your-usage-goes-chat-cowork-code).
+  **Chat** and **Claude Code**. See
+  [Where your usage goes](#where-your-usage-goes-chat-and-code).
 - **Usage log + CSV** (Options) — records when you hit 100% and the usage % at
   each 5-hour reset; export to a spreadsheet.
 - **Weekly baseline, by plan** (Options) — one record per weekly window,
@@ -495,8 +496,9 @@ removable chips and are snapshotted at queue time. A folder hands over the files
 inside it and not the folder — see [Dropping a folder](#dropping-a-folder) for
 what the walk skips and where it stops. Pick a **target**: a new
 chat, a Project, or — when opened from the pill while viewing a conversation —
-**this chat**. Pick a **surface** — Chat or Cowork — and, in Cowork, how much
-Claude may do unattended; see [Cowork](#cowork). Each job stores your files inside the extension
+**this chat**, and optionally how much Claude may do unattended (the approval
+mode, applied where the composer shows that control); see [Cowork](#cowork).
+There is no Chat-or-Cowork choice any more — claude.ai merged the two. Each job stores your files inside the extension
 (`chrome.storage`, `unlimitedStorage`) plus an optional prompt. Triggers:
 
 - **When usage resets** — fires just after your 5-hour window rolls over (uses
@@ -531,18 +533,34 @@ time it's open.
 
 ## Cowork
 
-Cowork is the other half of claude.ai's composer — the **Chat / Cowork** toggle
-on the home screen, which swaps in a Project menu and a control saying how much
-Claude may do without asking: **Manually approve**, **Automatically approve**,
-**Skip all approvals**. A scheduled send and a workflow chat can each name a
-surface, and a Cowork one can name an approval mode.
+**claude.ai has merged Chat and Cowork (October 2026), and so has this
+extension — as far as anything you choose goes.** A scheduled send or a
+workflow chat no longer picks a surface; the forms have no Chat-or-Cowork
+field, a job's row names no surface, and the usage pie has no Cowork slice.
+What is *not* merged yet is the plumbing underneath. The two composers' send
+paths were never confirmed interchangeable, and which one the merged claude.ai
+actually runs on hasn't been seen yet — so both drivers stay, and **the page
+picks between them**: a Cowork address, or a composer that reads as Cowork (its
+toggle, or the approval control only that composer has shown), goes through
+the Cowork driver below; anything else goes through the Chat one. A job or
+workflow saved before the merge that was set up on Cowork keeps the address it
+was set up against (its project's `/cowork/project/{uuid}` page); nothing new
+stores a surface. Once the merged composer has been seen, the driver it doesn't
+use can go. The rest of this section describes the Cowork-style composer and
+its driver as they were built.
+
+That composer carries a Project menu and a control saying how much Claude may
+do without asking: **Manually approve**, **Automatically approve**, **Skip all
+approvals**. A scheduled send and a workflow chat can each name an approval
+mode, applied wherever the composer shows that control; on one that doesn't,
+the send goes and its note says the mode wasn't set.
 
 **The approval mode is set because Cowork does not keep it.** It was removed as
 a setting once, on the belief that the control was sticky — that a new tab came
 up on whatever was last chosen by hand. The owner's finding is that it is not
 kept between sessions, so a send that says nothing lands on whatever claude.ai
 chose. So it is back: a job or a workflow step can name its mode, and the
-popup's **Approvals on Cowork sends** is the default every Cowork send applies
+popup's **Default approval mode** is the default every send applies
 when its job names none (a job that chose still wins). Set that to **Skip all
 approvals** and every unattended session runs with the brakes off. The switch
 is made on the composer — the home, or a project's own page — before the
@@ -634,16 +652,14 @@ Three things about it shape how this works, and none of them is obvious:
   switch off, the send says exactly that in its note rather than failing
   silently: *borrowing focus was not done: off — the popup's switch is not on*.
 
-Both fields default to **leave as-is**, the same contract the model picker has:
-a job that never mentions the surface never touches it, so nothing that predates
-this behaves differently. And a mode asked for on a page with no approval
+The approval field defaults to **leave as-is**, the same contract the model
+picker has: a job that never mentions it never touches the control. And a mode asked for on a page with no approval
 control is **not** quietly treated as satisfied — the message goes, but the
 send reports that the mode was ignored and names what the page was showing
 instead, because "it must have worked" is exactly the assumption that hides a
 markup change until it has cost a week of runs.
 
-In a workflow the surface belongs to the **chat** (a conversation can't be half
-in Cowork) and the approval mode works like the model: set on the chat, and
+In a workflow the approval mode works like the model: set on the chat, and
 overridable **per step**, leaving the conversation on it for the steps after —
 so one chat can research with the brakes off and then edit a filing with them on.
 
@@ -652,6 +668,9 @@ session too, on Cowork's own terms — it borrows this driver's attachment
 evidence and renames the session through its header control.
 
 ### Cowork sends run on their own driver
+
+*(Still true underneath the merge — see the top of this section: the page,
+not the job, now decides when this driver runs.)*
 
 Cowork is **not Chat with a different address**, and nothing built for Chat is
 assumed to work there until it has been *seen* working there. The run that made
@@ -3613,36 +3632,31 @@ session touched what. The button's tooltip counts them (`2 rows have no repo
 known yet`), so a list that is mostly dim is a fact you can see rather than a
 mystery — open one of those sessions once and its row is named from then on.
 
-## Where your usage goes: Chat, Cowork, Code
+## Where your usage goes: Chat and Code
 
-**Options → Chat vs Cowork vs Claude Code** is a pie of which surface your weekly
-usage was spent on. Three buckets, because Cowork is a surface of its own and not
-a flavour of chat — a Cowork session costs what it costs, and folding it into
-Home hid that.
+**Options → Chat vs Claude Code** is a pie of where your weekly usage was spent.
+Two slices: Chat and Code. There used to be a third, Cowork, but claude.ai has
+merged Chat and Cowork, so Cowork usage is shown as Chat.
 
-**Live readings are attributed to the surface you're on**, which the tab can read
-directly. Code is the one an address settles (`/code`). Cowork mostly isn't:
-a session lands on `/cowork/cse_<id>`, but the composer home stays `/new`
-whichever surface it's set to, and the setting is sticky across tabs — so the URL
-answers where it can, and where it can't the page's own **Chat/Cowork toggle**
-does (one of the few pieces confirmed to work on both surfaces). A `/chat/`
-conversation is Chat whatever the account-wide toggle was last left on.
+**Live readings are attributed to the tab you're on**, which the tab can read
+directly. Code is the one an address settles (`/code`); everything else is Chat.
 
 **A gap is where the evidence runs out.** When usage rises with no tab watching
 — your phone, another browser, a tab that was closed — the extension asks
 `chat_conversations_v2` which Home chats were touched during the gap, and how
 much content they grew by, and gives the chats their measured share. Neither a
-Cowork session nor a Code session appears in that listing (a Cowork session lives
-under `/conversations`), so **what's left over is Cowork-or-Code with nothing to
-tell them apart**.
+Code session nor a Cowork-style session appears in that listing (a Cowork-style
+session lives under `/conversations`), so **what's left over could be either
+with nothing to tell them apart**.
 
-That remainder is divided in the proportion those two have been seen **live** —
-readings where the surface was read off the page rather than inferred. Two
-properties matter about that rule:
+That remainder is divided in the proportion the two have been seen **live** —
+readings where the tab was read off the page rather than inferred — and the
+Cowork-style share is then shown as Chat. That's why `src/split.js` still keeps
+a Cowork bucket internally, even though no one sees it: the blind spot is real
+whatever the product calls it. Two properties matter about that rule:
 
-- It **never invents Cowork out of nothing**. An account that has never had a
-  Cowork reading gets the whole remainder as Code, which is exactly what this did
-  before Cowork was a bucket.
+- It **never invents Chat out of nothing**. An account that has never had a
+  Cowork-style reading gets the whole remainder as Code.
 - The evidence counters are fed **only by live readings**, never by a gap's own
   attribution, so the division can't drift off feeding on its own guesses.
 

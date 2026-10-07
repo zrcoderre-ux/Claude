@@ -3255,12 +3255,12 @@ test("a step that overrides approval sets it, and the chat stays there", () => {
   assert.equal(plan[3].approvalOn, "skip");
 });
 
-test("every step carries its chat's surface, so a resumed run lands right way up", () => {
+test("no step carries a surface — the page picks the driver now", () => {
   const plan = W.planRun(coworkWorkflow());
-  assert.deepEqual(plan.map((p) => p.surface), ["cowork", "cowork", "cowork", "cowork"]);
+  assert.deepEqual(plan.map((p) => p.surface), [undefined, undefined, undefined, undefined]);
 });
 
-test("a pause step has no surface and no approval to set", () => {
+test("a pause step has no approval to set", () => {
   const wf = W.newWorkflow(
     {
       chats: [{ id: "a", name: "A", surface: "cowork", approval: "skip" }],
@@ -3275,7 +3275,6 @@ test("a pause step has no surface and no approval to set", () => {
   );
   const plan = W.planRun(wf);
   const pause = plan.find((p) => p.kind === "pause");
-  assert.equal(pause.surface, null);
   assert.equal(pause.approval, null);
 });
 

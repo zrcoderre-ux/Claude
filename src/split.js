@@ -1,5 +1,12 @@
 /**
- * Claude Usage Meter — Chat vs Cowork vs Claude Code usage split (pure module).
+ * Claude Usage Meter — Chat vs Claude Code usage split (pure module).
+ *
+ * claude.ai has merged Chat and Cowork, so share() reports them as one: Chat.
+ * The model below still keeps a `cowork` bucket internally, and on purpose —
+ * a Cowork-style session lives under /conversations rather than
+ * chat_conversations_v2, so the gap probe still cannot see it, and the gap
+ * arithmetic needs to know how much usage that blind spot has carried live.
+ * It is bookkeeping, not a category anyone is shown.
  *
  * Attributes each rise in the weekly meter to the surface of the tab that
  * observed it — an ordinary chat, a Cowork session, or a Claude Code (/code)
@@ -203,19 +210,19 @@
     return { chatDelta: chatDelta, coworkDelta: rest.coworkDelta, codeDelta: rest.codeDelta };
   }
 
-  // { chat, cowork, code, total, chatPct, coworkPct, codePct } — the Pcts are
-  // 0..100 and sum to 100 (or to 0 when nothing has been observed).
+  // { chat, code, total, chatPct, codePct } — the Pcts are 0..100 and sum to
+  // 100 (or to 0 when nothing has been observed). Chat includes the internal
+  // Cowork bucket: the two are one product now.
   function share(model) {
     const m = carry(model);
-    const total = m.chat + m.cowork + m.code;
+    const chat = m.chat + m.cowork;
+    const total = chat + m.code;
     const pct = (v) => (total > 0 ? (v / total) * 100 : 0);
     return {
-      chat: m.chat,
-      cowork: m.cowork,
+      chat: chat,
       code: m.code,
       total: total,
-      chatPct: pct(m.chat),
-      coworkPct: pct(m.cowork),
+      chatPct: pct(chat),
       codePct: pct(m.code),
     };
   }

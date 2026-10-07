@@ -148,14 +148,12 @@
       `<datalist id="cumjf-repo-list"></datalist></div>` +
       `<label class="cumjf-label">Model</label>` +
       `<select class="cumjf-model"></select>` +
-      `<label class="cumjf-label">Chat or Cowork</label>` +
-      `<select class="cumjf-surface"></select>` +
-      `<div class="cumjf-approval-row" hidden>` +
+      `<div class="cumjf-approval-row">` +
       `<label class="cumjf-label">Approvals</label>` +
       `<select class="cumjf-approval"></select>` +
-      `<p class="cumjf-hint">Cowork does not keep this between sessions, so a send ` +
-      `sets it: what you pick here, else the default in the extension's popup, ` +
-      `else nothing is touched.</p></div>` +
+      `<p class="cumjf-hint">Applied where the composer shows an approval control. ` +
+      `claude.ai does not keep it between sessions, so a send sets it: what you ` +
+      `pick here, else the default in the extension's popup, else nothing is touched.</p></div>` +
       `<label class="cumjf-label">When to send</label>` +
       `<div class="cumjf-when">` +
       `<label class="cumjf-radio"><input type="radio" name="cumjf-trig" value="reset" checked /> When usage resets</label>` +
@@ -183,7 +181,6 @@
       repo: q(".cumjf-repo"),
       repoList: q("#cumjf-repo-list"),
       model: q(".cumjf-model"),
-      surface: q(".cumjf-surface"),
       approvalRow: q(".cumjf-approval-row"),
       approval: q(".cumjf-approval"),
       time: q(".cumjf-time"),
@@ -339,7 +336,7 @@
     }
     ui.target.addEventListener("change", syncRepoRow);
 
-    // ---- surface (Chat / Cowork) ----
+    // ---- approval mode ----
     const K = typeof CUMCowork !== "undefined" ? CUMCowork : null;
     function fillSelect(sel, options, value) {
       if (!sel) return;
@@ -352,17 +349,7 @@
       }
       sel.value = value || "";
     }
-    // Approvals are Cowork's alone: in Chat there is no such control, so a
-    // field offering one would be promising something the send can't keep.
-    function syncApprovalRow() {
-      if (ui.approvalRow) ui.approvalRow.hidden = !ui.surface || ui.surface.value !== "cowork";
-    }
-    if (K) {
-      fillSelect(ui.surface, K.surfaceOptions(), "");
-      fillSelect(ui.approval, K.modeOptions(), "");
-    }
-    if (ui.surface) ui.surface.addEventListener("change", syncApprovalRow);
-    syncApprovalRow();
+    if (K) fillSelect(ui.approval, K.modeOptions(), "");
 
     // ---- repos (for the Claude Code repo picker) ----
     function fillRepos(repos) {
@@ -523,12 +510,7 @@
           files: metas,
           trigger,
           model: ui.model.value,
-          surface: (ui.surface && ui.surface.value) || "",
-          // Only when it can be honoured. A mode saved against a Chat job would
-          // sit in storage looking like a promise and be quietly ignored on
-          // every send.
-          approval:
-            ui.surface && ui.surface.value === "cowork" ? (ui.approval && ui.approval.value) || "" : "",
+          approval: (ui.approval && ui.approval.value) || "",
         };
         const tv = ui.target.value;
         if (tv === "chat") {
@@ -579,9 +561,7 @@
       ui.name.value = "";
       ui.prompt.value = "";
       ui.model.value = "";
-      if (ui.surface) ui.surface.value = "";
       if (ui.approval) ui.approval.value = "";
-      syncApprovalRow();
       files = [];
       renderFiles();
       // Back to "reset" trigger.
@@ -618,9 +598,7 @@
         ui.model.appendChild(o);
       }
       ui.model.value = job.model || "";
-      if (ui.surface) ui.surface.value = job.surface || "";
       if (ui.approval) ui.approval.value = job.approval || "";
-      syncApprovalRow();
       // Trigger.
       const isTime = job.trigger && job.trigger.type === "time";
       const radio = el.querySelector(`input[name="cumjf-trig"][value="${isTime ? "time" : "reset"}"]`);

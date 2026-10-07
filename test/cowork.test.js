@@ -136,19 +136,9 @@ test("a surface is not guessed from a longer string", () => {
   assert.equal(K.surfaceFromLabel(null), "");
 });
 
-test("a surface round-trips and describes itself", () => {
+test("a surface round-trips", () => {
   for (const s of K.SURFACES) assert.equal(K.surfaceFromLabel(K.labelForSurface(s.key)), s.key);
-  assert.equal(K.describeSurface(""), "Leave as-is");
-  assert.equal(K.describeSurface("cowork"), "Cowork");
   assert.equal(K.labelForSurface("nonsense"), "");
-});
-
-test("the surface picker offers 'leave as-is' first too", () => {
-  const opts = K.surfaceOptions();
-  assert.deepEqual(
-    opts.map((o) => o.value),
-    ["", "chat", "cowork"]
-  );
 });
 
 test("reconcileSurface answers the same four ways", () => {

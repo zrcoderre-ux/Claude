@@ -1314,17 +1314,28 @@ async function hostWindow() {
   });
 }
 
+// Where a run opens a chat it has no link for yet. A chat saved before
+// claude.ai merged Chat and Cowork, and set up on Cowork, keeps the Cowork
+// project address it was set up against (see targetUrl); nothing new carries a
+// surface.
+function chatTargetUrl(chat) {
+  const t = (chat && chat.target) || {};
+  return J.targetUrl({
+    projectHref: t.projectHref || null,
+    projectUuid: t.projectUuid || null,
+    codeRepo: t.codeRepo || null,
+    surface: t.surface || null,
+  });
+}
+
+// The project page a fresh chat opens at, by id, or null — so the page checks
+// the address only when the tab was actually sent to a project's own page.
+function chatProjectPage(chat) {
+  return J.projectPageAt(chatTargetUrl(chat));
+}
+
 async function stepTab(run, savedUrl, chat) {
-  const url =
-    savedUrl ||
-    J.targetUrl({
-      projectHref: (chat.target && chat.target.projectHref) || null,
-      projectUuid: (chat.target && chat.target.projectUuid) || null,
-      codeRepo: (chat.target && chat.target.codeRepo) || null,
-      // targetUrl opens a Cowork chat with a project straight at the project's
-      // page, by its id, and one without at the composer home.
-      surface: (chat.target && chat.target.surface) || null,
-    });
+  const url = savedUrl || chatTargetUrl(chat);
   // Reuse only where the address is a conversation this run already has. A
   // fresh composer is /new, and matching THAT against a shared window's tabs
   // would hand the step whatever new chat you happened to have open.
@@ -1608,17 +1619,14 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
     title: naming.title,
     titleHeld: naming.held,
     codeRepo: m.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
-    // Only on the way in. Once a conversation exists the toggle isn't on the
-    // page any more, and the project is the address the chat was opened at.
-    surface: !saved.url ? m.surface || null : null,
     approval: m.approval || null,
+    // Only on the way in: the project is the address the chat was opened at,
+    // so the page can check it landed there.
     coworkProject:
-      m.surface === "cowork" && m.firstInChat && !saved.url
+      m.firstInChat && !saved.url && chatProjectPage(chat)
         ? (chat.target && chat.target.projectName) || null
         : null,
-    // The project the tab was opened at, so the page can check it landed there.
-    coworkProjectId:
-      m.surface === "cowork" && m.firstInChat && !saved.url ? J.projectPageId(chat.target) : null,
+    coworkProjectId: m.firstInChat && !saved.url ? chatProjectPage(chat) : null,
   };
 
   let res;
@@ -1919,17 +1927,13 @@ async function driveRun(runId, opts) {
         title: naming.title,
         titleHeld: naming.held,
         codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
-        // Only on the way in — see the wave payload for why.
-        surface: !saved.url ? step.surface || null : null,
         approval: step.approval || null,
+        // Only on the way in — see the wave payload for why.
         coworkProject:
-          step.surface === "cowork" && step.firstInChat && !saved.url
+          step.firstInChat && !saved.url && chatProjectPage(chat)
             ? (chat.target && chat.target.projectName) || null
             : null,
-        coworkProjectId:
-          step.surface === "cowork" && step.firstInChat && !saved.url
-            ? J.projectPageId(chat.target)
-            : null,
+        coworkProjectId: step.firstInChat && !saved.url ? chatProjectPage(chat) : null,
       };
       let res = await sendStep(tab.id, payload);
 

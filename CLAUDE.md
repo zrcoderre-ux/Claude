@@ -69,10 +69,22 @@ than inline in the wiring.
 - **claude.ai's DOM and API shapes are unversioned.** Match button labels exactly,
   guard every parse, and keep the heuristics in a tested pure module so a shape
   change is a small edit rather than an investigation.
-- **Cowork is not Chat with a different address (standing instruction from the
-  repo owner).** Never assume plumbing built for Chat works on Cowork — build
-  parallel Cowork paths unless a piece has been CONFIRMED working on both
-  surfaces. Confirmed so far: the Chat/Cowork toggle, the approval menu, the
+- **claude.ai merged Chat and Cowork (repo owner, October 2026) — the
+  distinction is gone from everything the user CHOOSES.** Jobs and workflow
+  chats carry no surface (a stored legacy `surface: "cowork"` is honoured only
+  by `targetUrl`, for the address it was set up against), the forms offer no
+  Chat/Cowork picker, the approval mode is offered everywhere and applied where
+  the composer shows the control, and the usage pie is Chat vs Code (the
+  Cowork bucket survives only inside `src/split.js` as gap bookkeeping). Do
+  not reintroduce a user-facing surface choice.
+- **…but the send plumbing is NOT merged yet: the page picks the driver.**
+  Which composer the merged claude.ai runs on hasn't been seen, so both
+  drivers stay and `CUMCoworkSend.applies()` decides from the page (a Cowork
+  address or a composer that reads as Cowork). Once the merged composer has
+  been seen, retire the driver it doesn't use. Until then the old rule holds
+  for the plumbing: **Cowork is not Chat with a different address.** Never
+  assume plumbing built for Chat works on Cowork — keep parallel Cowork paths
+  unless a piece has been CONFIRMED working on both. Confirmed so far: the Chat/Cowork toggle, the approval menu, the
   model menu, and generic mechanics (clicks, menu open/close, hidden-tab
   sleeps). The approval mode is NOT kept between sessions (owner's finding,
   September 2026) — it was removed as a setting once on the belief that it was
