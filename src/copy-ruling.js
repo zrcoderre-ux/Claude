@@ -52,24 +52,8 @@
   const HOVER_MS = 400; // floor between hover-driven placement passes
   const FEEDBACK_MS = 2200;
 
-  const ASSISTANT_SELECTORS = [
-    '[data-testid="assistant-message"]',
-    ".font-claude-response",
-    ".font-claude-message",
-  ];
-  function assistantMessages() {
-    for (const sel of ASSISTANT_SELECTORS) {
-      let nodes;
-      try {
-        nodes = document.querySelectorAll(sel);
-      } catch (e) {
-        continue;
-      }
-      const list = Array.from(nodes).filter((el) => !C.isOurs(el));
-      if (list.length) return list;
-    }
-    return [];
-  }
+  // Which elements are replies is written down once, in src/replycopy.js.
+  const assistantMessages = RC.assistantMessages;
 
   function streaming(el) {
     try {
@@ -600,10 +584,15 @@
     return btn;
   }
 
-  // Beside the copy box, in claude.ai's own action bar. Placed there rather
-  // than floated anywhere of our own: this is a copy control, and the place a
-  // copy control is looked for is next to the other one.
+  // Beside the copy box, in claude.ai's own action bar, where there is one: this
+  // is a copy control, and the place a copy control is looked for is next to
+  // the other one. Where there isn't — the merged Chat/Cowork page drew no bar
+  // this could find, and the button simply never appeared — it goes in a row
+  // of its own under the reply. T.rulingSpot makes the call.
+  const placed = new WeakMap(); // reply → our button
+  const wantedSince = new WeakMap(); // reply → when it first wanted one
   function place() {
+    const now = Date.now();
     for (const msgEl of assistantMessages()) {
       // Asked first because it is the cheap question, and because on most
       // replies the answer is no: only where there is actually a ruling to
@@ -611,20 +600,40 @@
       // pasted into a minute order is worse than none, and the heading shows up
       // early in the stream.
       const wanted = T.mentionsRuling(msgEl.textContent) && !streaming(msgEl);
-      const bar = RC.findCopyButton(msgEl);
-      if (!bar) continue; // the action bar can be hover-revealed; try again later
-      const row = bar.parentElement;
-      if (!row) continue;
-      const has = row.querySelector("." + CLASS);
-      if (!wanted) {
-        if (has) has.remove();
-        continue;
+      let mine = placed.get(msgEl) || null;
+      // claude.ai rebuilds its action bar on hover, taking our button with it.
+      if (mine && !mine.isConnected) {
+        placed.delete(msgEl);
+        mine = null;
       }
-      if (has) continue;
+      if (!wanted) wantedSince.delete(msgEl);
+      else if (!wantedSince.has(msgEl)) wantedSince.set(msgEl, now);
+      const bar = wanted && !mine ? RC.findCopyButton(msgEl) : null;
+      const spot = T.rulingSpot({
+        wanted,
+        placed: !!mine,
+        bar: !!(bar && bar.parentElement),
+        waitedMs: wanted ? now - wantedSince.get(msgEl) : 0,
+      });
       try {
-        row.insertBefore(build(msgEl), bar.nextSibling);
+        if (spot === "remove") {
+          const row = mine.closest(".cum-ruling-row");
+          (row || mine).remove();
+          placed.delete(msgEl);
+        } else if (spot === "bar") {
+          const btn = build(msgEl);
+          bar.parentElement.insertBefore(btn, bar.nextSibling);
+          placed.set(msgEl, btn);
+        } else if (spot === "below" && msgEl.parentElement) {
+          const row = document.createElement("div");
+          row.className = "cum-ruling-row";
+          const btn = build(msgEl);
+          row.appendChild(btn);
+          msgEl.parentElement.insertBefore(row, msgEl.nextSibling);
+          placed.set(msgEl, btn);
+        }
       } catch (e) {
-        /* a row that won't take it is a button we simply don't offer */
+        /* a page that won't take it is a button we simply don't offer */
       }
     }
   }

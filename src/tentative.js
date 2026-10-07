@@ -356,7 +356,36 @@
     };
   }
 
+  /**
+   * Where the Copy-ruling button goes on one reply, this pass.
+   *
+   *   wanted    the reply has a ruling and has finished being written
+   *   placed    our button for this reply is still on the page
+   *   bar       claude.ai's own copy control for this reply was found
+   *   waitedMs  how long this reply has been wanted with no button
+   *
+   * → "remove" | "keep" | "bar" | "below" | "wait"
+   *
+   * Beside claude.ai's copy control where there is one. Where there isn't —
+   * the merged Chat/Cowork page draws its action bar differently, and a button
+   * that only ever went into a bar it could find simply never appeared — it
+   * goes in a row of its own under the reply, after a grace long enough for a
+   * bar that is merely slow (or hover-revealed on the newest reply) to turn up
+   * first. A button that is already placed stays where it is: hopping between
+   * the two spots as the bar comes and goes would be worse than either.
+   */
+  const BELOW_AFTER_MS = 2500;
+  function rulingSpot(o) {
+    const s = o || {};
+    if (!s.wanted) return s.placed ? "remove" : "keep";
+    if (s.placed) return "keep";
+    if (s.bar) return "bar";
+    return (s.waitedMs || 0) >= BELOW_AFTER_MS ? "below" : "wait";
+  }
+
   const api = {
+    rulingSpot,
+    BELOW_AFTER_MS,
     bareLine,
     mentionsRuling,
     isBreak,

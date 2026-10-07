@@ -1498,6 +1498,8 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
 }
 
 .cum-ruling-btn:hover { background: rgba(0, 0, 0, 0.06); opacity: 1; }
+/* Under the reply, where no copy control of claude.ai's could be found. */
+.cum-ruling-row { display: flex; margin: 4px 0 8px; }
 .cum-ruling-btn:disabled { opacity: 0.55; cursor: default; }
 .cum-ruling-btn.cum-ruling-bad { color: #d23f31; border-color: rgba(210, 63, 49, 0.5); }
 .cum-ruling-ico { font-size: 12px; line-height: 1; opacity: 0.75; }

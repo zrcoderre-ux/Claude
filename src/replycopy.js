@@ -94,6 +94,43 @@
     return null;
   }
 
+  // Assistant turns, newest last. The same cascade src/autodownload.js walks,
+  // with its two lessons: claude.ai nests a matching element inside a matching
+  // element (so only the OUTERMOST is a turn — the inner one is the prose, too
+  // deep for the action bar to be found from), and it uses the response font
+  // for furniture too (a project's title inside a link), which is never a
+  // reply. `[data-is-streaming]` is the last resort, for a page that marks its
+  // turns with nothing else — the Copy-ruling button used to stop at the font
+  // classes and found no reply at all on such a page.
+  const ASSISTANT_SELECTORS = [
+    '[data-testid="assistant-message"]',
+    ".font-claude-response",
+    ".font-claude-message",
+    "[data-is-streaming]",
+  ];
+  const NOT_A_MESSAGE = 'a[href],button,[role="button"],[data-testid="file-thumbnail"]';
+  function assistantMessages() {
+    for (const sel of ASSISTANT_SELECTORS) {
+      let nodes;
+      try {
+        nodes = document.querySelectorAll(sel);
+      } catch (e) {
+        continue;
+      }
+      const list = Array.from(nodes).filter((el) => {
+        if (!el || C.isOurs(el)) return false;
+        try {
+          return !el.closest(NOT_A_MESSAGE);
+        } catch (e) {
+          return true;
+        }
+      });
+      const outer = list.filter((el) => !list.some((o) => o !== el && o.contains(el)));
+      if (outer.length) return outer;
+    }
+    return [];
+  }
+
   function findCopyButton(msgEl) {
     if (!msgEl) return null;
     return searchOut(msgEl, true) || searchOut(msgEl, false);
@@ -145,5 +182,5 @@
   }
 
 
-  root.CUMReplyCopy = { copyish, inReplyActionBar, findCopyButton, hover, copyViaButton, COPY_WAIT_MS };
+  root.CUMReplyCopy = { assistantMessages, copyish, inReplyActionBar, findCopyButton, hover, copyViaButton, COPY_WAIT_MS };
 })(typeof globalThis !== "undefined" ? globalThis : this);

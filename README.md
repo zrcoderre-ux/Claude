@@ -2298,6 +2298,17 @@ ruling, since the point is text you can paste straight in. It copies the
 rather than as `**NATURE OF PROCEEDINGS**` — see [what lands on the
 clipboard](#what-lands-on-the-clipboard).
 
+**Where claude.ai's action bar can't be found, it goes under the reply.**
+After claude.ai merged Chat and Cowork, the button stopped appearing: it was
+only ever put *into* an action bar it could find, from replies found by a
+shorter list of markers than the rest of the extension uses. Replies are now
+found the one way `src/replycopy.js` writes down (the outermost element only,
+never a link or button wearing the reply font, `[data-is-streaming]` as the
+last resort), and a reply whose copy control hasn't turned up within a couple
+of seconds gets the button in a row of its own directly underneath it. Once
+placed, it stays where it is rather than hopping into the bar when the bar
+appears on hover (`T.rulingSpot`).
+
 It appears **only on a reply that has a ruling in it**, and not while one is
 still being written. A second copy control under every answer in every chat
 would be clutter, and half a ruling pasted into a minute order is worse than
