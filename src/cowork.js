@@ -255,17 +255,6 @@
     return s ? s.label : "";
   }
 
-  function describeSurface(key) {
-    const s = surfaceByKey(key);
-    return s ? s.label : "Leave as-is";
-  }
-
-  function surfaceOptions() {
-    return [{ value: INHERIT, label: "Leave as-is" }].concat(
-      SURFACES.map((s) => ({ value: s.key, label: s.label }))
-    );
-  }
-
   /**
    * The surface in force, from whatever the page is willing to say.
    *
@@ -917,8 +906,6 @@
     INHERIT,
     surfaceFromLabel,
     labelForSurface,
-    describeSurface,
-    surfaceOptions,
     reconcileSurface,
     surfaceFromEvidence,
     approvalApplies,

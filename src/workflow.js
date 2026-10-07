@@ -92,15 +92,15 @@
         projectName: f.projectName || (f.target && f.target.projectName) || null,
         projectHref: f.projectHref || (f.target && f.target.projectHref) || null,
         codeRepo: trimmed(f.codeRepo || (f.target && f.target.codeRepo)) || null,
-        // Which surface this chat opens on. It sits in `target` beside the
-        // project because it is a fact about where the chat lives, and because
-        // CUMJobs.targetUrl() reads these same names — a chat that says
-        // "cowork" has to resolve the way a job does: to its project's own
-        // page when it has one, else to the composer home.
+        // Kept only for chats saved before claude.ai merged Chat and Cowork:
+        // one set up on Cowork still opens at the address it was set up
+        // against (CUMJobs.targetUrl reads these same names). Nothing offers a
+        // surface any more, so a new chat never has one.
         surface: trimmed(f.surface || (f.target && f.target.surface)) || null,
       },
       model: trimmed(f.model) || null,
-      // How much Claude may do unattended, in Cowork. On the chat rather than
+      // How much Claude may do unattended, where the composer offers an
+      // approval control. On the chat rather than
       // in `target`, because it is not part of the address: it is the same kind
       // of per-turn setting as the model, and a step can override it.
       approval: trimmed(f.approval) || null,
@@ -1173,7 +1173,6 @@
           model: null,
           modelOn: null,
           modelOverride: false,
-          surface: null,
           approval: null,
           approvalOn: null,
           docIds: [],
@@ -1186,7 +1185,6 @@
       const model = trimmed(s.model) || (firstInChat ? trimmed(chat.model) : null) || null;
       const was = on.get(s.chatId) || null;
       if (model) on.set(s.chatId, model);
-      const surface = trimmed((chat.target && chat.target.surface) || "") || null;
       const approval = trimmed(s.approval) || (firstInChat ? trimmed(chat.approval) : null) || null;
       const approvalWas = approvalOn.get(s.chatId) || null;
       if (approval) approvalOn.set(s.chatId, approval);
@@ -1241,11 +1239,6 @@
         model: model && model !== was ? model : null,
         // What it will answer on either way, for the surfaces that report it.
         modelOn: model || was || null,
-        // The surface is the chat's, never a step's: a conversation cannot be
-        // half in Cowork, and a step that changed it mid-run would be asking
-        // for a different chat. Sent on every step so a resumed run lands the
-        // right way up, which costs one already-there check.
-        surface: surface,
         // Approval switches like the model does — only when it actually
         // changes, since setting the mode you're on is a menu opened for
         // nothing and one more thing to go wrong.

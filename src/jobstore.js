@@ -33,11 +33,11 @@
       chatTitle: f.chatTitle || null,
       codeRepo: (f.codeRepo || "").trim() || null, // "owner/name" → new Claude Code chat on that repo
       model: (f.model || "").trim() || null, // "" / null → leave the picker as-is
-      // Which surface to send on, and — in Cowork — how much Claude may do
-      // unattended. Both carry the same contract as `model`: "" / null means
-      // leave the control alone, because the Chat/Cowork choice is remembered
-      // for the whole account and a job that never asked must not move it.
-      surface: (f.surface || "").trim() || null, // "" / null | "chat" | "cowork"
+      // How much Claude may do unattended, where the composer offers an
+      // approval control. Same contract as `model`: "" / null means leave the
+      // control alone. (There is no surface field any more: claude.ai merged
+      // Chat and Cowork, so a job no longer picks one — the page in front of
+      // the send decides which driver handles it.)
       approval: (f.approval || "").trim() || null, // "" / null | "manual" | "auto" | "skip"
       trigger:
         f.trigger && f.trigger.type === "time"
@@ -93,11 +93,10 @@
     }
     if (job && job.codeRepo) return ORIGIN + "/code"; // fresh Claude Code session
     const project = projectPageId(job);
-    // A Cowork job with a project opens straight into it, by id. Choosing it
-    // from the composer home's menu instead meant a list that only loads in a
-    // tab someone is looking at, matched by a scraped name — and stood runs
-    // down over both. Built from the id rather than taken from projectHref,
-    // which can be a Chat sidebar link.
+    // A job stored before claude.ai merged Chat and Cowork, and set up on
+    // Cowork, keeps the address it was set up against: its project's Cowork
+    // page, by id. Nothing new is stored with a surface — this only honours
+    // what is already on disk.
     if (job && job.surface === "cowork")
       return ORIGIN + (project ? "/cowork/project/" + project : "/new");
     if (job && job.projectHref) return ORIGIN + job.projectHref;
@@ -112,18 +111,24 @@
     if (job.codeRepo) return "→ Claude Code: " + job.codeRepo;
     if (job.projectName) return "→ " + (stripNonText(job.projectName) || job.projectName);
     if (job.projectUuid) return "→ project";
-    return job && job.surface === "cowork" ? "New Cowork session" : "New chat";
+    return "New chat";
   }
 
-  // What a job says about the surface, for the row that lists it. Empty when it
-  // says nothing — a job that leaves the toggle alone has nothing to report,
-  // and a chip saying "Chat" would be a claim it never made.
-  function surfaceLabel(job) {
-    if (!job || !job.surface) return "";
+  // What a job says about the approval mode, for the row that lists it. Empty
+  // when it says nothing — a job that leaves the control alone has nothing to
+  // report.
+  function approvalLabel(job) {
+    if (!job || !job.approval) return "";
     const K = typeof CUMCowork !== "undefined" ? CUMCowork : null;
-    const surface = K ? K.describeSurface(job.surface) : job.surface;
-    if (job.surface !== "cowork" || !job.approval) return surface;
-    return surface + " · " + (K ? K.describeMode(job.approval) : job.approval);
+    return K ? K.describeMode(job.approval) : job.approval;
+  }
+
+  // The project page a send opens at, by id, read off the address it opens —
+  // so the page is asked to check it landed on a project page only when the
+  // tab was actually sent to one.
+  function projectPageAt(url) {
+    const m = /^(?:https?:\/\/[^/]+)?\/cowork\/project\/([0-9a-f-]{36})\/?$/i.exec(String(url || ""));
+    return m ? m[1].toLowerCase() : null;
   }
 
   // A job still on its way out: queued, or held back by an outage.
@@ -285,7 +290,8 @@
     projectPageId,
     targetUrl,
     targetLabel,
-    surfaceLabel,
+    approvalLabel,
+    projectPageAt,
     isQueued,
     heldJobs,
     hasHeldJobs,

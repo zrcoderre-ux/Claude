@@ -1386,19 +1386,17 @@
   // not available, repo picker missing) that must not stop the send.
   async function sendMessage(opts) {
     const o = opts || {};
-    // Cowork is not Chat with a different address, and nothing below is
-    // trusted there. The Cowork driver (src/cowork-composer.js) takes those
-    // sends whole; this function is the CHAT path. If that driver isn't
-    // loaded, a Cowork send fails loudly rather than proceeding on plumbing
-    // built for another surface — the failure that taught this rule was a run
-    // that switched its model and then silently did nothing else.
+    // claude.ai merged Chat and Cowork, so a send no longer asks for either —
+    // but the two composers' plumbing has not been confirmed interchangeable,
+    // so the PAGE picks the driver. One that reads as Cowork (its address, or
+    // its approval control) goes through src/cowork-composer.js whole; this
+    // function is the Chat path. If that driver isn't loaded on a Cowork page,
+    // the send fails loudly rather than proceeding on plumbing built for the
+    // other composer.
     const cw = root.CUMCoworkSend;
     if (cw && cw.applies(o)) return cw.send(o);
     const kc = K();
-    if (
-      kc &&
-      (kc.surfaceFromLabel(o.surface || "") === "cowork" || kc.isCoworkUrl(location.href))
-    )
+    if (kc && kc.isCoworkUrl(location.href))
       return {
         ok: false,
         error: "this is a Cowork send and the Cowork driver isn't loaded",
@@ -1421,44 +1419,14 @@
     if (why) return standDown(why);
 
     if (files.length) await waitFor(findFileInput, 15000); // may legitimately not exist
-    let editor = await waitFor(findEditor);
+    const editor = await waitFor(findEditor);
     if (!editor) return { ok: false, error: "prompt editor not found", notes };
 
-    // The surface comes first, and before anything is typed: switching it
-    // re-renders the composer, so a prompt inserted beforehand would be thrown
-    // away with the old one, and the editor handle we hold would go stale.
-    const k = K();
-    let surfaceWas = "";
-    if (k && o.surface) {
-      try {
-        surfaceWas = currentSurface();
-        const r = await selectSurface(o.surface);
-        // With the reason. A run is unattended by definition, so the note is
-        // the only place it can say WHICH part failed — and "unsupported" on
-        // its own, without that, cost several rounds to diagnose by hand.
-        if (r === "unsupported")
-          notes.push(
-            "no Chat/Cowork toggle on this page — sent on whichever it was (" + surfaceWhy() + ")"
-          );
-        else if (r === "failed")
-          notes.push("couldn't switch to " + k.describeSurface(o.surface) + " (" + surfaceWhy() + ")");
-        else if (r === "ok" && surfaceWas && surfaceWas !== k.surfaceFromLabel(o.surface)) {
-          editor = (await waitFor(findEditor)) || editor;
-        } else {
-          surfaceWas = "";
-        }
-      } catch (e) {
-        notes.push("Chat/Cowork switch failed");
-        surfaceWas = "";
-      }
-    }
-
-    // Approval modes and projects are Cowork furniture, and Cowork sends never
-    // reach this function — the driver above takes them. A job carrying either
-    // onto the Chat path is on the wrong surface, and quietly obliging would
-    // mean hunting for controls this page doesn't have. Said, never silent.
-    if (o.approval || o.coworkProject)
-      notes.push("Cowork settings (approval/project) ignored — this send is on Chat");
+    // The approval control lives on the composer the Cowork driver handles,
+    // and that driver took the send above if the page showed one. Here there
+    // is nothing to set, and quietly dropping the job's mode would hide it.
+    // Said, never silent.
+    if (o.approval) notes.push("approval mode not set — this composer shows no approval control");
 
     if (o.codeRepo) {
       try {
@@ -1511,29 +1479,11 @@
     why = halted();
     if (why) return standDown(why);
 
-    // Put the toggle back if we moved it. It is a preference for the whole
-    // account rather than for this tab, so a 3am job that switches to Cowork
-    // and walks away changes which surface the next window opens on. Once the
-    // message has gone the composer home is gone with it and there is nothing
-    // left to click — so this tries, and says so plainly when it can't.
-    const restore = async () => {
-      if (!k || !surfaceWas) return;
-      let ok = false;
-      try {
-        ok = (await selectSurface(surfaceWas)) === "ok";
-      } catch (e) {
-        ok = false;
-      }
-      const note = k.surfaceLeftNote(surfaceWas, ok);
-      if (note) notes.push(note);
-    };
-
     const before = ((editor && editor.textContent) || "").trim();
     const send = await waitSendEnabled(15000);
     if (send && !sendDisabled(send)) {
       robustClick(send);
       if (await confirmSent(before)) {
-        await restore();
         return { ok: true, notes };
       }
     }
@@ -1550,7 +1500,6 @@
         }
       }
       if (await confirmSent(before)) {
-        await restore();
         return { ok: true, notes };
       }
     }

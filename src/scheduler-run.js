@@ -26,18 +26,18 @@
     const { files, missing } = await C.filesFromStorage(job.files);
     if (missing) return { ok: false, error: "missing file bytes: " + missing };
 
+    const projectAt = window.CUMJobs.projectPageAt(window.CUMJobs.targetUrl(job));
     const res = await C.sendMessage({
       files,
       text: job.prompt || "",
       model: job.model || null,
       codeRepo: job.codeRepo || null,
-      surface: job.surface || null,
       approval: job.approval || null,
-      // A Cowork job with a project opens at that project's page; the id goes
-      // with the send so the page can check that is where it landed, and the
-      // name so the run's notes can say which project it was.
-      coworkProject: job.surface === "cowork" ? job.projectName || null : null,
-      coworkProjectId: job.surface === "cowork" ? window.CUMJobs.projectPageId(job) : null,
+      // A job opened at a project's own page (/cowork/project/<id>): the id
+      // goes with the send so the page can check that is where it landed, and
+      // the name so the run's notes can say which project it was.
+      coworkProject: projectAt ? job.projectName || null : null,
+      coworkProjectId: projectAt,
     });
     const note = res.notes && res.notes.length ? res.notes.join("; ") : null;
     if (!res.ok) return { ok: false, error: res.error, note };

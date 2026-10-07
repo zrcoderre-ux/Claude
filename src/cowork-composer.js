@@ -26,6 +26,11 @@
  *
  * The decisions (which phases apply, what counts as an attachment landing,
  * what counts as a message leaving) live in src/cowork.js, pure and tested.
+ *
+ * claude.ai has since merged Chat and Cowork, and jobs no longer choose
+ * between them. This driver stays, picked by the page rather than the job
+ * (see applies), until it is known which composer's plumbing the merged
+ * claude.ai actually runs on.
  */
 (function () {
   "use strict";
@@ -38,16 +43,12 @@
   const norm = (s) => String(s || "").replace(/\s+/g, " ").trim();
 
   /**
-   * Should this driver take the send? Yes when the job asks for Cowork, when
-   * the page is a Cowork address, or when the composer in front of us is on
-   * Cowork and the job expressed no preference. A job that asks for Chat is
-   * never ours — the Chat driver flips the toggle itself.
+   * Should this driver take the send? claude.ai merged Chat and Cowork, so a
+   * job no longer says which it wants — the page does. Ours when the address
+   * is a Cowork one, or when the composer in front of us reads as Cowork (its
+   * toggle, or the approval control only this composer has shown).
    */
-  function applies(o) {
-    const j = o || {};
-    const want = K.surfaceFromLabel(j.surface || "");
-    if (want === "chat") return false;
-    if (want === "cowork") return true;
+  function applies() {
     if (K.isCoworkUrl(location.href)) return true;
     try {
       return C.currentSurface() === "cowork";

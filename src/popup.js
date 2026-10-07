@@ -287,14 +287,14 @@
     const label = el.coworkApproval.options[el.coworkApproval.selectedIndex];
     saveCowork(
       coworkCfg.approval
-        ? "Cowork sends default to " + ((label && label.textContent) || coworkCfg.approval)
-        : "Cowork approvals left as-is"
+        ? "Sends default to " + ((label && label.textContent) || coworkCfg.approval)
+        : "Approvals left as-is"
     );
   });
 
   el.coworkFocus.addEventListener("change", () => {
     coworkCfg.borrowFocus = el.coworkFocus.checked;
-    saveCowork(coworkCfg.borrowFocus ? "A Cowork project list may borrow focus" : "Focus is never borrowed");
+    saveCowork(coworkCfg.borrowFocus ? "A project list may borrow focus" : "Focus is never borrowed");
   });
 
   el.acMax.addEventListener("change", () => {

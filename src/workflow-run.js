@@ -1248,7 +1248,6 @@
         text: msg.text || "",
         model: msg.model || null,
         codeRepo: msg.codeRepo || null,
-        surface: msg.surface || null,
         approval: msg.approval || null,
         coworkProject: msg.coworkProject || null,
         coworkProjectId: msg.coworkProjectId || null,
