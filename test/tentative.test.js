@@ -552,3 +552,23 @@ test("a heading sharing its line still starts the ruling where nothing starts wi
   assert.equal(p.start, 0);
   assert.equal(p.reason, null);
 });
+
+// ---- where the button goes ------------------------------------------------
+
+test("rulingSpot: beside claude.ai's copy control when there is one", () => {
+  assert.equal(T.rulingSpot({ wanted: true, placed: false, bar: true, waitedMs: 0 }), "bar");
+});
+
+test("rulingSpot: under the reply once no copy control has turned up", () => {
+  assert.equal(T.rulingSpot({ wanted: true, bar: false, waitedMs: 0 }), "wait");
+  assert.equal(T.rulingSpot({ wanted: true, bar: false, waitedMs: T.BELOW_AFTER_MS - 1 }), "wait");
+  assert.equal(T.rulingSpot({ wanted: true, bar: false, waitedMs: T.BELOW_AFTER_MS }), "below");
+});
+
+test("rulingSpot: a placed button stays put, and goes when there's no ruling", () => {
+  assert.equal(T.rulingSpot({ wanted: true, placed: true, bar: true }), "keep");
+  assert.equal(T.rulingSpot({ wanted: true, placed: true, bar: false }), "keep");
+  assert.equal(T.rulingSpot({ wanted: false, placed: true }), "remove");
+  assert.equal(T.rulingSpot({ wanted: false, placed: false }), "keep");
+  assert.equal(T.rulingSpot(null), "keep");
+});
