@@ -2,40 +2,77 @@ const test = require("node:test");
 const assert = require("node:assert");
 const K = require("../src/cowork.js");
 
+// The menu is headed "Permission mode" and has two rows (owner's report,
+// October 2026): Manual, "Claude asks before using new tools or opening new
+// sites", and Auto, "Claude runs on its own and pauses to ask if anything looks
+// unsafe". Skip all approvals is gone.
+
 test("a mode is read from the label claude.ai actually renders", () => {
+  assert.equal(K.modeFromLabel("Manual"), "manual");
+  assert.equal(K.modeFromLabel("Auto"), "auto");
+  // The names it wore before still mean the same modes.
   assert.equal(K.modeFromLabel("Manually approve"), "manual");
   assert.equal(K.modeFromLabel("Automatically approve"), "auto");
-  assert.equal(K.modeFromLabel("Skip all approvals"), "skip");
+  // A page still saying Skip is a page this no longer recognises — read as
+  // nothing, never quietly as some other mode.
+  assert.equal(K.modeFromLabel("Skip all approvals"), "");
 });
 
-test("the menu row runs the name into its description, so matching is by prefix", () => {
-  // Exactly the strings the probe pulled off the live menu.
-  assert.equal(
-    K.modeFromLabel("Manually approveClaude pauses so you can approve each action"),
-    "manual"
-  );
-  assert.equal(
-    K.modeFromLabel("Automatically approveClaude runs on its own and pauses to ask"),
-    "auto"
-  );
-  assert.equal(
-    K.modeFromLabel("Skip all approvalsClaude never pauses, even for unsafe actions"),
-    "skip"
-  );
+test("the menu row runs the name into its description, so a row is matched by prefix", () => {
+  // The rows as the owner read them off the live menu, name and description
+  // run together the way textContent gives them.
+  const manual = "ManualClaude asks before using new tools or opening new sites";
+  const auto = "AutoClaude runs on its own and pauses to ask if anything looks unsafe";
+  assert.equal(K.rowIsMode(manual, "manual"), true);
+  assert.equal(K.rowIsMode(auto, "auto"), true);
+  assert.equal(K.rowIsMode(manual, "auto"), false);
+  assert.equal(K.rowIsMode(auto, "manual"), false);
+  // The old rows still match their modes.
+  assert.equal(K.rowIsMode("Manually approveClaude pauses so you can approve each action", "manual"), true);
+  assert.equal(K.rowIsMode("Automatically approveClaude runs on its own and pauses to ask", "auto"), true);
 });
 
 test("a description that mentions another mode doesn't steal the row", () => {
-  // A substring test would call this "skip". Only the opening words count.
-  assert.equal(
-    K.modeFromLabel("Manually approveUnlike skip all approvals, Claude waits"),
-    "manual"
-  );
+  // A substring test would find "auto" in this one. Only the opening words count.
+  assert.equal(K.rowIsMode("ManualUnlike Auto, Claude waits for you", "auto"), false);
+  assert.equal(K.rowIsMode("ManualUnlike Auto, Claude waits for you", "manual"), true);
+  assert.equal(K.modeFromLabel("Manually approveUnlike automatically approve, Claude waits"), "manual");
+});
+
+test("the current short names are whole words on a label — never a prefix", () => {
+  // Every visible control's label is read while hunting for the trigger; a
+  // prefix "auto" would make an Autosave button the permission control.
+  assert.equal(K.modeFromLabel("Autosave"), "");
+  assert.equal(K.modeFromLabel("Automatic retries"), "");
+  assert.equal(K.modeFromLabel("Manuals and guides"), "");
 });
 
 test("the short form on the trigger, and a stored key, both read back", () => {
   assert.equal(K.modeFromLabel("Auto"), "auto");
   assert.equal(K.modeFromLabel("auto"), "auto");
-  assert.equal(K.modeFromLabel("skip"), "skip");
+  assert.equal(K.modeFromLabel("manual"), "manual");
+});
+
+test("a stored Skip reads as Auto, the nearest mode left", () => {
+  // A job, chat, step or popup default saved when Skip existed asked for
+  // Claude to work unattended. Reading it as "leave it" would drop the send
+  // back onto Manual — the thing the setting was there to get away from.
+  assert.equal(K.modeFromStored("skip"), "auto");
+  assert.equal(K.modeFromStored("Skip all approvals"), "auto");
+  assert.equal(K.modeFromStored("manual"), "manual");
+  assert.equal(K.modeFromStored("Auto"), "auto");
+  assert.equal(K.modeFromStored(""), "");
+  assert.equal(K.modeFromStored(null), "");
+  assert.equal(K.modeFromStored("whatever"), "");
+  // Everything that reads a setting goes through it.
+  assert.equal(K.effectiveApproval("skip", ""), "auto");
+  assert.equal(K.effectiveApproval("", "skip"), "auto");
+  assert.equal(K.coworkSettings({ approval: "skip" }).approval, "auto");
+  assert.equal(K.describeMode("skip"), "Auto");
+  assert.equal(K.reconcile("skip", "Manual"), "set");
+  assert.equal(K.reconcile("skip", "Auto"), "ok");
+  assert.equal(K.rowIsMode("AutoClaude runs on its own", "skip"), true);
+  assert.equal(K.approvalTook({ triggerText: "Auto" }, "skip"), true);
 });
 
 test("anything unrecognised is 'leave it alone', never a guess", () => {
@@ -48,7 +85,7 @@ test("anything unrecognised is 'leave it alone', never a guess", () => {
 
 test("whitespace and case in the page's markup don't matter", () => {
   assert.equal(K.modeFromLabel("  automatically   approve  "), "auto");
-  assert.equal(K.modeFromLabel("SKIP ALL APPROVALS"), "skip");
+  assert.equal(K.modeFromLabel("  MANUAL "), "manual");
 });
 
 test("a label round-trips back out for finding the control", () => {
@@ -59,25 +96,32 @@ test("a label round-trips back out for finding the control", () => {
 
 test("an unset mode describes itself as leaving the page alone", () => {
   assert.equal(K.describeMode(""), "Leave as-is");
-  assert.equal(K.describeMode("manual"), "Manually approve");
+  assert.equal(K.describeMode("manual"), "Manual");
+  assert.equal(K.describeMode("auto"), "Auto");
 });
 
 test("the picker offers 'leave as-is' first, the way the model select does", () => {
   const opts = K.modeOptions();
-  assert.equal(opts.length, 4);
+  assert.equal(opts.length, 3);
   assert.equal(opts[0].value, "");
   assert.deepEqual(
-    opts.slice(1).map((o) => o.value),
-    ["manual", "auto", "skip"]
+    opts.slice(1).map((o) => [o.value, o.label]),
+    [
+      ["manual", "Manual"],
+      ["auto", "Auto"],
+    ]
   );
 });
 
 test("rowIsMode asks the prefix question the other way round", () => {
-  const row = "Skip all approvalsClaude never pauses, even for unsafe actions";
-  assert.equal(K.rowIsMode(row, "skip"), true);
+  const row = "AutoClaude runs on its own and pauses to ask if anything looks unsafe";
+  assert.equal(K.rowIsMode(row, "auto"), true);
   assert.equal(K.rowIsMode(row, "manual"), false);
   assert.equal(K.rowIsMode(row, ""), false);
-  assert.equal(K.rowIsMode("", "skip"), false);
+  assert.equal(K.rowIsMode("", "auto"), false);
+  // The menu's own heading is not a row for either mode.
+  assert.equal(K.rowIsMode("Permission mode", "manual"), false);
+  assert.equal(K.rowIsMode("Permission mode", "auto"), false);
 });
 
 // ---- reconcile ------------------------------------------------------------
@@ -109,7 +153,7 @@ test("a job that asked, on a page with no approval control, is NOT quietly ok", 
 test("the note is empty when nothing happened and loud when it didn't", () => {
   assert.equal(K.reconcileNote("", "Automatically approve"), "");
   assert.equal(K.reconcileNote("auto", "Automatically approve"), "");
-  assert.match(K.reconcileNote("manual", "Automatically approve"), /Manually approve/);
+  assert.match(K.reconcileNote("manual", "Auto"), /permission mode set to Manual/);
   assert.match(K.reconcileNote("manual", ""), /isn't in Cowork/);
 });
 
@@ -305,13 +349,14 @@ test("how a tab gets looked at depends on where the screen is", () => {
 test("the popup's Cowork settings normalise to a mode key and a boolean", () => {
   assert.deepEqual(K.coworkSettings(null), { approval: "", borrowFocus: false, runAuto: true });
   assert.deepEqual(K.coworkSettings({}), { approval: "", borrowFocus: false, runAuto: true });
-  assert.deepEqual(K.coworkSettings({ approval: "skip", borrowFocus: true, runAuto: false }), {
-    approval: "skip",
+  assert.deepEqual(K.coworkSettings({ approval: "auto", borrowFocus: true, runAuto: false }), {
+    approval: "auto",
     borrowFocus: true,
     runAuto: false,
   });
   // A label stored instead of a key still names the mode; junk names nothing.
-  assert.equal(K.coworkSettings({ approval: "Skip all approvals" }).approval, "skip");
+  assert.equal(K.coworkSettings({ approval: "Manual" }).approval, "manual");
+  assert.equal(K.coworkSettings({ approval: "Automatically approve" }).approval, "auto");
   assert.equal(K.coworkSettings({ approval: "whatever" }).approval, "");
   // Only a real true switches focus-borrowing on.
   assert.equal(K.coworkSettings({ borrowFocus: 1 }).borrowFocus, false);
@@ -353,21 +398,22 @@ test("the run rule applies only at a run's start, only where nothing asked, only
 });
 
 test("the run rule moves Manual to Auto and nothing else", () => {
-  const manual = K.runApproval("Manually approve");
+  const manual = K.runApproval("Manual");
   assert.equal(manual.mode, "auto");
-  assert.match(manual.why, /switched from Manually approve to Automatically approve/);
-  // The short form and the stored key name the same mode.
-  assert.equal(K.runApproval("Manual").mode, "auto");
+  assert.match(manual.why, /switched from Manual to Auto/);
+  // The old name and the stored key name the same mode.
+  assert.equal(K.runApproval("Manually approve").mode, "auto");
   assert.equal(K.runApproval("manual").mode, "auto");
   // Already there.
-  const auto = K.runApproval("Automatically approve");
+  const auto = K.runApproval("Auto");
   assert.equal(auto.mode, "");
-  assert.match(auto.why, /already on Automatically approve/);
-  // Skip is MORE permissive than Auto; turning it down would put approvals back
-  // into a run set up not to have them.
+  assert.match(auto.why, /already on Auto/);
+  assert.equal(K.runApproval("Automatically approve").mode, "");
+  // A page still showing the retired Skip is not one this can read, so it is
+  // left as it is rather than moved on a guess.
   const skip = K.runApproval("Skip all approvals");
   assert.equal(skip.mode, "");
-  assert.match(skip.why, /already on Skip all approvals/);
+  assert.match(skip.why, /couldn't be read/);
   // A page that won't say is left alone, and says so — never a guess.
   const unread = K.runApproval("");
   assert.equal(unread.mode, "");
@@ -376,10 +422,10 @@ test("the run rule moves Manual to Auto and nothing else", () => {
 });
 
 test("a send applies the job's approval, else the popup's default, else nothing", () => {
-  assert.equal(K.effectiveApproval("manual", "skip"), "manual");
-  assert.equal(K.effectiveApproval("", "skip"), "skip");
-  assert.equal(K.effectiveApproval(null, "skip"), "skip");
-  assert.equal(K.effectiveApproval(undefined, "Skip all approvals"), "skip");
+  assert.equal(K.effectiveApproval("manual", "auto"), "manual");
+  assert.equal(K.effectiveApproval("", "auto"), "auto");
+  assert.equal(K.effectiveApproval(null, "manual"), "manual");
+  assert.equal(K.effectiveApproval(undefined, "Automatically approve"), "auto");
   assert.equal(K.effectiveApproval("", ""), "");
   assert.equal(K.effectiveApproval("", null), "");
   // The default never overrides a job that chose — and junk on either side
@@ -804,12 +850,13 @@ test("a short filename must appear whole — its letters alone vouch for nothing
 
 test("the approval switch is believed when the page says so, not when a menu closes", () => {
   // The trigger's own aria-label is the mode in force.
+  assert.equal(K.approvalTook({ triggerLabel: "Auto" }, "auto"), true);
   assert.equal(K.approvalTook({ triggerLabel: "Automatically approve" }, "auto"), true);
-  assert.equal(K.approvalTook({ triggerLabel: "Skip all approvals" }, "skip"), true);
+  assert.equal(K.approvalTook({ triggerLabel: "Manual" }, "manual"), true);
   // The row marking itself checked is the same word said earlier.
-  assert.equal(K.approvalTook({ triggerLabel: "Manually approve", rowChecked: true }, "auto"), true);
+  assert.equal(K.approvalTook({ triggerLabel: "Manual", rowChecked: true }, "auto"), true);
   // Neither is not evidence — that is as true of Escape.
-  assert.equal(K.approvalTook({ triggerLabel: "Manually approve" }, "auto"), false);
+  assert.equal(K.approvalTook({ triggerLabel: "Manual" }, "auto"), false);
   assert.equal(K.approvalTook({}, "auto"), false);
   assert.equal(K.approvalTook({ triggerLabel: "Automatically approve" }, "nonsense"), false);
   assert.equal(K.approvalTook(null, "auto"), false);
@@ -877,22 +924,24 @@ test("the accordion icon's glyph never reaches the project menu's filter", () =>
 });
 
 test("a control's mode is read off everything it says, not just an exact label", () => {
-  // The known shape.
-  assert.equal(K.modeFromCaption({ ariaLabel: "Skip all approvals" }), "skip");
+  // The known shapes.
+  assert.equal(K.modeFromCaption({ ariaLabel: "Auto" }), "auto");
+  assert.equal(K.modeFromCaption({ ariaLabel: "Manually approve" }), "manual");
   // A label that says MORE than the mode's name — the shape that lost a live
   // send when only an exact aria-label counted.
-  assert.equal(K.modeFromCaption({ ariaLabel: "Approval mode: Skip all approvals" }), "skip");
-  assert.equal(K.modeFromCaption({ ariaLabel: "Skip all approvals, change" }), "skip");
-  // The title, and the visible words, including the short form it renders
-  // when there is no room.
+  assert.equal(K.modeFromCaption({ ariaLabel: "Permission mode: Auto" }), "auto");
+  assert.equal(K.modeFromCaption({ ariaLabel: "Approval mode: Automatically approve" }), "auto");
+  assert.equal(K.modeFromCaption({ ariaLabel: "Manually approve, change" }), "manual");
+  // The title, and the visible words.
   assert.equal(K.modeFromCaption({ title: "Automatically approve" }), "auto");
-  assert.equal(K.modeFromCaption({ text: "Skip" }), "skip");
-  assert.equal(K.modeFromCaption({ ariaLabel: "", text: "Manually approve" }), "manual");
+  assert.equal(K.modeFromCaption({ text: "Manual" }), "manual");
+  // A trigger labelled "Permission mode" whose words say the mode.
+  assert.equal(K.modeFromCaption({ ariaLabel: "Permission mode", text: "Auto" }), "auto");
   // A bare string is read as the label.
-  assert.equal(K.modeFromCaption("Manually approve"), "manual");
+  assert.equal(K.modeFromCaption("Manual"), "manual");
   // The label outranks the words: the widened net never outvotes what
   // claude.ai actually labelled the control.
-  assert.equal(K.modeFromCaption({ ariaLabel: "Skip all approvals", text: "Manual" }), "skip");
+  assert.equal(K.modeFromCaption({ ariaLabel: "Auto", text: "Manual" }), "auto");
   // Nothing to go on stays nothing.
   assert.equal(K.modeFromCaption({ ariaLabel: "Send message" }), "");
   assert.equal(K.modeFromCaption(null), "");
@@ -901,18 +950,27 @@ test("a control's mode is read off everything it says, not just an exact label",
 test("a caption naming two modes names neither", () => {
   // Prose about approvals is not a control set to one of them.
   assert.equal(
-    K.modeNamedWithin("Choose between Manually approve and Skip all approvals"),
+    K.modeNamedWithin("Choose between Manually approve and Automatically approve"),
     ""
   );
+  assert.equal(K.modeNamedWithin("Permission mode: Manual or Auto"), "");
   assert.equal(K.modeNamedWithin("Approval mode: Automatically approve"), "auto");
+  assert.equal(K.modeNamedWithin("Permission mode: Manual"), "manual");
+  // The short words count only where the text says it is about permissions:
+  // "auto" turns up in too many labels to be read on its own.
+  assert.equal(K.modeNamedWithin("Auto-save drafts"), "");
+  assert.equal(K.modeNamedWithin("Turn on auto mode"), "");
   // ...and a whole rendered turn that mentions a mode is not a control either.
-  assert.equal(K.modeNamedWithin("x".repeat(200) + "Skip all approvals"), "");
+  assert.equal(K.modeNamedWithin("x".repeat(200) + "Automatically approve"), "");
 });
 
 test("a relabelled approval control is still the approval control", () => {
   // Named modes, obviously.
-  assert.equal(K.isApprovalControl({ ariaLabel: "Skip all approvals" }), true);
+  assert.equal(K.isApprovalControl({ ariaLabel: "Manual" }), true);
   assert.equal(K.isApprovalControl({ text: "Auto" }), true);
+  // What the control calls itself now: the menu is headed "Permission mode".
+  assert.equal(K.isApprovalControl({ ariaLabel: "Permission mode" }), true);
+  assert.equal(K.isApprovalControl({ title: "Change permission mode" }), true);
   // A trigger that says what it IS without saying what it is ON: the mode is
   // unreadable, but the menu still opens and the right row can still be
   // pressed, so this must not read as "this page has no approval control".
@@ -932,27 +990,27 @@ test("a relabelled approval control is still the approval control", () => {
 });
 
 test("the switch is believed off the trigger's words too, and disbelieved off them", () => {
-  // The control that renders "Skip" with no label is the page saying skip.
-  assert.equal(K.approvalTook({ triggerText: "Skip" }, "skip"), true);
+  // The control that renders "Auto" with no label is the page saying auto.
+  assert.equal(K.approvalTook({ triggerText: "Auto" }, "auto"), true);
+  assert.equal(K.approvalTook({ triggerLabel: "Permission mode", triggerText: "Auto" }, "auto"), true);
   assert.equal(K.approvalTook({ triggerTitle: "Automatically approve" }, "auto"), true);
   // A trigger still reading the old mode does not cancel the row's tick — a
   // hidden Cowork tab renders that trigger late, and the tick got there first.
-  assert.equal(K.approvalTook({ triggerText: "Manual", rowChecked: true }, "skip"), true);
+  assert.equal(K.approvalTook({ triggerText: "Manual", rowChecked: true }, "auto"), true);
   // ...but on its own, the wrong mode is the wrong mode.
-  assert.equal(K.approvalTook({ triggerText: "Manual" }, "skip"), false);
+  assert.equal(K.approvalTook({ triggerText: "Manual" }, "auto"), false);
   // With the trigger saying nothing at all, the row's tick is still evidence.
-  assert.equal(K.approvalTook({ triggerLabel: "Approvals", rowChecked: true }, "skip"), true);
+  assert.equal(K.approvalTook({ triggerLabel: "Permission mode", rowChecked: true }, "auto"), true);
 });
 
 test("a send that could not set the mode says what it ran under instead", () => {
   assert.equal(
-    K.approvalMissedNote("skip", "no approval control on this page", "manual"),
-    "approval NOT set to Skip all approvals (no approval control on this page) — " +
-      "sent under Manually approve"
+    K.approvalMissedNote("auto", "no approval control on this page", "manual"),
+    "permission mode NOT set to Auto (no approval control on this page) — sent under Manual"
   );
   // Nothing readable on the page, so nothing is claimed about it.
   assert.equal(
-    K.approvalMissedNote("skip", "", ""),
-    "approval NOT set to Skip all approvals — sent under whatever mode the page was already in"
+    K.approvalMissedNote("auto", "", ""),
+    "permission mode NOT set to Auto — sent under whatever mode the page was already in"
   );
 });

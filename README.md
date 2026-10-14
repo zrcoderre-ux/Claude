@@ -35,15 +35,14 @@ bottom-right corner of [claude.ai](https://claude.ai).
   *Allow for this chat* — so nothing is granted beyond the single call in front of
   it. You are approving those calls sight-unseen, which is why it's off by
   default and has its own switch rather than riding on auto-continue's.
-- **Default approval mode** — the approval mode every send applies, where the
+- **Default permission mode** — the permission mode (Manual or Auto) every send applies, where the
   composer shows an approval control, when its job or step names none, because
   claude.ai does not keep the mode between sessions. Leave as-is by default. See
   [Cowork](#cowork).
-- **Runs start on Automatically approve** (on, its own switch) — a workflow
-  run's first message into each conversation moves **Manually approve** to
-  **Automatically approve**, so the run doesn't stall on its first tool call.
-  Nothing else: Auto and Skip are left alone, and a mode you set wins. See [A
-  run starts on Auto](#a-run-starts-on-auto).
+- **Runs start on Auto** (on, its own switch) — a workflow run's first
+  message into each conversation moves the permission mode from **Manual** to
+  **Auto**, so the run doesn't stall on its first tool call. A mode you set
+  still wins. See [A run starts on Auto](#a-run-starts-on-auto).
 - **Borrow focus to load a project list** (opt-in, separate toggle) —
   lets a send on the Cowork-style composer bring its own window in front for a bounded time when its
   project list will not load in a tab that is merely visible, and give the
@@ -562,19 +561,29 @@ use can go. The rest of this section describes the Cowork-style composer and
 its driver as they were built.
 
 That composer carries a Project menu and a control saying how much Claude may
-do without asking: **Manually approve**, **Automatically approve**, **Skip all
-approvals**. A scheduled send and a workflow chat can each name an approval
-mode, applied wherever the composer shows that control; on one that doesn't,
+do without asking. Its menu is headed **Permission mode** and has two rows
+(October 2026): **Manual** — *Claude asks before using new tools or opening
+new sites* — and **Auto** — *Claude runs on its own and pauses to ask if
+anything looks unsafe*. (It used to offer three, worded **Manually approve**,
+**Automatically approve** and **Skip all approvals**; the old names of the two
+that remain are still read.) A scheduled send and a workflow chat can each name
+a mode, applied wherever the composer shows that control; on one that doesn't,
 the send goes and its note says the mode wasn't set.
+
+**Skip all approvals is gone, and a saved Skip now means Auto.** A send, a
+workflow chat or step, or the popup default saved with Skip asked for Claude to
+work unattended, and Auto is the nearest mode left; reading it as "leave it"
+would have dropped those sends back onto Manual. The forms and the popup show a
+saved Skip as Auto, and a send that applies one says so in its trail. A page
+still showing Skip is not one this reads — the mode counts as unknown there.
 
 **The approval mode is set because Cowork does not keep it.** It was removed as
 a setting once, on the belief that the control was sticky — that a new tab came
 up on whatever was last chosen by hand. The owner's finding is that it is not
 kept between sessions, so a send that says nothing lands on whatever claude.ai
 chose. So it is back: a job or a workflow step can name its mode, and the
-popup's **Default approval mode** is the default every send applies
-when its job names none (a job that chose still wins). Set that to **Skip all
-approvals** and every unattended session runs with the brakes off. The switch
+popup's **Default permission mode** is the default every send applies
+when its job names none (a job that chose still wins). The switch
 is made on the composer — the home, or a project's own page — before the
 message goes and verified off the control's own words.
 
@@ -582,11 +591,11 @@ message goes and verified off the control's own words.
 instruction, September 2026, reversing what this used to do). It used to fail
 the send outright, on the reasoning that a session under a mode nobody chose is
 worse than one that waits; a live run then stood down over a page that was
-*already* on Skip, and the work simply never happened. The mode the page is
+*already* on the mode it wanted, and the work simply never happened. The mode the page is
 already in is one claude.ai chose, and a run that never happens is the worse
 outcome — so the send goes, and the job's note says loudly what was asked for,
 why the switch failed, and which mode the message actually ran under:
-*approval NOT set to Skip all approvals (…) — sent under Manually approve*.
+*permission mode NOT set to Auto (…) — sent under Manual*.
 
 Three things about it shape how this works, and none of them is obvious:
 
@@ -598,11 +607,15 @@ Three things about it shape how this works, and none of them is obvious:
   `aria-label` **is** the mode in force. Reading only that exact label was what
   produced the stand-down above, so the control is now found by everything it
   says about itself — an `aria-label` that says more than the mode's name
-  (*Approval mode: Skip all approvals*), a `title`, the visible words it renders
-  when there is no room (*Skip*), and failing all of those, a control whose
-  label merely says it is about approvals, which can still be opened and its
-  row pressed. A caption naming *two* modes names neither — that is prose about
-  approvals, not a control set to one. `findApprovalTrigger` is the one
+  (*Permission mode: Auto*), a `title`, the visible words it renders (*Manual*),
+  and failing all of those, a control whose label merely says it is the
+  permission mode (or, in the old wording, about approvals), which can still be
+  opened and its row pressed. The short names are read as whole words only,
+  never as prefixes — an *Autosave* button is not the permission control — and
+  inside the opened menu a row is matched by how it opens, since its text runs
+  the name into the description (*AutoClaude runs on its own…*). A caption
+  naming *two* modes names neither — that is prose about permissions, not a
+  control set to one. `findApprovalTrigger` is the one
   implementation; the Upload folder button's anchor uses it rather than
   carrying a second finder of its own.
 - **The choice is remembered for the whole account, not the tab.** Set Cowork in
@@ -677,35 +690,31 @@ so one chat can research with the brakes off and then edit a filing with them on
 
 #### A run starts on Auto
 
-A new session comes up on whatever mode claude.ai chooses, and when that is
-**Manually approve**, a workflow run stalls on its first tool call, waiting
+A new session comes up on whatever permission mode claude.ai chooses, and
+when that is **Manual**, a workflow run stalls on its first tool call, waiting
 for a click nobody is there to make. So **a run's first message into each
-conversation reads the approval control, and moves Manually approve to
-Automatically approve.** It is on by default, with its own switch in the popup
-(**Runs start on Automatically approve**), because the owner asked for runs to
-behave this way.
+conversation reads the permission-mode control, and moves Manual to Auto.** It
+is on by default, with its own switch in the popup (**Runs start on Auto**),
+because the owner asked for runs to behave this way.
 
 It is deliberately narrow:
 
-- **Only Manual moves, and only to Auto.** A page already on Automatically
-  approve is where it is going. A page on **Skip all approvals** is left there,
-  because Skip is *more* permissive than Auto; turning it down would put
-  approvals back into a run set up not to have them.
+- **Only Manual moves.** A page already on Auto is where it is going. A control
+  whose mode can't be read is left alone rather than moved on a guess.
 - **Only where nothing asked.** A mode set on the chat or the step, or the
-  popup's **Default approval mode**, is a choice someone made, and it is applied
-  as made. A chat you want to run under Manually approve is a chat set to
-  Manually approve. The rule replaces "leave it as it is", not a setting.
+  popup's **Default permission mode**, is a choice someone made, and it is
+  applied as made. A chat you want to run under Manual is a chat set to Manual.
+  The rule replaces "leave it as it is", not a setting.
 - **Only at the start.** Each conversation's first message in the run, or the
   first message into a conversation the run hasn't opened yet, which covers a
   re-run starting part-way in. Later steps leave the mode alone, so one you
   switch by hand mid-run stays where you put it.
 - **Only runs.** Scheduled sends are untouched.
-- **Said, both ways.** A switch it made is in the run's notes (*switched from
-  Manually approve to Automatically approve — a run starts on Auto*). A switch
-  it could not make is loud, and the message still goes, the same as any other
-  approval switch (*approval NOT set to Automatically approve (…) — sent under
-  Manually approve*). A control whose mode can't be read is left alone, and the
-  send's trail says so.
+- **Said, both ways.** A switch it made is in the run's notes (*permission
+  mode switched from Manual to Auto — a run starts on Auto*). A switch it could
+  not make is loud, and the message still goes, the same as any other mode
+  switch (*permission mode NOT set to Auto (…) — sent under Manual*). A control
+  whose mode can't be read is left alone, and the send's trail says so.
 
 The decisions are `runRuleApplies` and `runApproval` in `src/cowork.js`
 (tested); the driver reads the page at its approval phase.
@@ -1950,7 +1959,7 @@ run never fails over furniture.
 on a reply once the text has held still for six seconds — safe in Chat, where an
 open response stream *proves* that a pause is a tool call rather than a finished
 answer. Cowork shows the page no stream at all, so that proof is gone on exactly
-the surface that runs tools between sentences and, on **Manually approve**, sits
+the surface that runs tools between sentences and, on **Manual**, sits
 still on purpose while it waits for you. Where nothing about the network is
 knowable, the text has to hold still for **thirty seconds across twelve looks**
 instead. The cost is seconds on a step that takes minutes; the cost of being
@@ -2223,7 +2232,7 @@ marked LEAKS never uploads](#a-folder-marked-leaks-never-uploads).
 It sits **in claude.ai's own composer row**, wherever there is a composer to put
 papers into:
 
-- **To the right of Skip all approvals** on Cowork.
+- **To the right of the permission-mode control** (Manual / Auto) on Cowork.
 - **To the right of the Chat/Cowork toggle** on the composer home.
 - **To the left of Send** in an ordinary chat conversation, which carries
   neither of those controls.
@@ -4139,7 +4148,7 @@ src/jobstore.js        Pure scheduled-send job model
 src/workflow.js        Pure multi-chat workflow model, run state + pre-built
 src/wfexport.js        Workflow export/import bundles: what travels (pure)
 src/dropdir.js         A dropped folder, taken apart: walk, skips, caps, case folders (pure)
-src/cowork.js          Chat/Cowork surface + approval modes (pure)
+src/cowork.js          Chat/Cowork surface + permission modes (pure)
 src/inject.js          MAIN-world interceptor + proactive baseline fetch
 src/content.js         ISOLATED-world UI + state + live countdown
 src/content.css        Floating-button styles (light + dark)

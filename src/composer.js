@@ -1064,8 +1064,11 @@
     const k = K();
     if (!k) return null;
     for (const m of k.MODES) {
-      const b = document.querySelector('button[aria-label="' + m.label + '" i]');
-      if (b && !isOurs(b)) return b;
+      const names = typeof k.modeNames === "function" ? k.modeNames(m.key) : [m.label];
+      for (const name of names) {
+        const b = document.querySelector('button[aria-label="' + name + '" i]');
+        if (b && !isOurs(b)) return b;
+      }
     }
     if (typeof k.modeFromCaption !== "function") return null;
     let list;
