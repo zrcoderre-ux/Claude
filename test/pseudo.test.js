@@ -1745,6 +1745,99 @@ test("sendHoldNote: one name is named, several are counted", () => {
   assert.ok(/“Helen Rasho”/.test(P.sendHoldNote([HIT, { fake: "x" }, null])));
 });
 
+// ---- a paste, read before claude.ai takes it --------------------------------
+//
+// claude.ai turns a long paste into an attachment, and from then on the draft
+// warning and the send gate — which read the editor — never see it. So the
+// paste itself is read, before claude.ai decides its shape.
+
+test("pasteHold: a person's paste carrying a real value is asked about, whatever its length", () => {
+  const v = P.pasteHold({ hits: [HIT], trusted: true });
+  assert.equal(v.hold, true);
+  assert.deepStrictEqual(v.hits, [HIT]);
+  // Absent is the human case, as with the gate.
+  assert.equal(P.pasteHold({ hits: [HIT, HIT2] }).hold, true);
+});
+
+test("pasteHold: nothing to ask about lets the paste straight through", () => {
+  assert.equal(P.pasteHold({ hits: [] }).hold, false);
+  assert.equal(P.pasteHold({}).hold, false);
+  assert.equal(P.pasteHold(null).hold, false);
+  // Rows with no real value are not hits.
+  assert.equal(P.pasteHold({ hits: [{ fake: "x" }, null] }).hold, false);
+});
+
+test("pasteHold: the extension's own pastes, files, pincites and an answered paste are never held", () => {
+  // Its own hand-back is a dispatched paste; holding it would ask forever.
+  assert.equal(P.pasteHold({ hits: [HIT], trusted: false }).hold, false);
+  // A file paste is the upload guard's to judge.
+  assert.equal(P.pasteHold({ hits: [HIT], files: true }).hold, false);
+  // Published citations out of Lexis are declared safe, here as in the draft.
+  assert.equal(P.pasteHold({ hits: [HIT], pincite: true }).hold, false);
+  // Paste as is that claude.ai didn't take back: the operator already answered.
+  assert.equal(P.pasteHold({ hits: [HIT], allowed: true }).hold, false);
+});
+
+test("cleanPaste: the key run forward, offered only when nothing real is left", () => {
+  const key = warnKey();
+  const text = "Helen Rasho banked at Cross River Bank. RASHO's account.";
+  const c = P.cleanPaste(P.compileForward(key), P.compileReals(key), text);
+  assert.equal(c.text, "Mara Quenby banked at Elm Street Bank. QUENBY'S account.");
+  assert.equal(c.ok, true);
+  assert.deepStrictEqual(c.left, []);
+  assert.equal(c.count, 3);
+  // The same translation the key panel's cleaner makes.
+  assert.equal(c.text, P.translate(P.compileForward(key), text).text);
+});
+
+test("cleanPaste: no forward map, or a real value still standing, is no cleaned version", () => {
+  const key = warnKey();
+  const none = P.cleanPaste(null, P.compileReals(key), "Helen Rasho");
+  assert.equal(none.ok, false);
+  assert.equal(none.text, "Helen Rasho");
+  assert.deepStrictEqual(none.left.map((h) => h.real), ["Helen Rasho"]);
+  // A forward map that knows less than the warning does leaves a real name
+  // behind — and a paste half-cleaned is not "with the fakes".
+  const partial = P.cleanPaste(
+    P.compileForward({ warn: [{ real: "Rasho", fake: "Quenby" }] }),
+    P.compileReals(key),
+    "Rasho at Cross River Bank"
+  );
+  assert.equal(partial.ok, false);
+  assert.deepStrictEqual(partial.left.map((h) => h.real), ["Cross River Bank"]);
+  // Nothing swapped is nothing to offer either.
+  assert.equal(P.cleanPaste(P.compileForward(key), P.compileReals(key), "no names here").ok, false);
+});
+
+test("pasteNote: names one value, counts several, and says why it is asked at the paste", () => {
+  const one = P.pasteNote([HIT], { canClean: true });
+  assert.equal(one.head, P.PASTE_HEAD);
+  assert.match(one.body, /“Helen Rasho”, a real value/);
+  assert.match(one.body, /attachment, where the draft warning cannot see it/);
+  assert.match(one.body, /Paste with the fakes swaps it/);
+  assert.equal(one.clean, "Paste with the fakes");
+  assert.equal(one.asIs, "Paste as is");
+  assert.equal(one.cancel, "Don't paste");
+  const many = P.pasteNote([HIT, HIT2], { canClean: true });
+  assert.match(many.body, /2 real values/);
+  assert.match(many.body, /swaps them/);
+});
+
+test("pasteNote: says why there is no cleaned version when there isn't one", () => {
+  const master = P.pasteNote([HIT], { canClean: false, master: true });
+  assert.match(master.body, /master key/);
+  assert.ok(!/Paste with the fakes swaps/.test(master.body));
+  const left = P.pasteNote([HIT], { canClean: false, left: [HIT] });
+  assert.match(left.body, /no cleaned version to offer/);
+});
+
+test("pasteMissNote: a hand-back that did not land says the next move", () => {
+  assert.match(P.pasteMissNote("clean"), /nothing was pasted/);
+  assert.match(P.pasteMissNote("clean"), /Copy the cleaned text/);
+  assert.match(P.pasteMissNote("asis"), /nothing was pasted/);
+  assert.match(P.pasteMissNote("asis"), /goes straight through this time/);
+});
+
 // ---- quote marks are interchangeable ---------------------------------------
 //
 // The key holds what the PDF or the operator typed, usually a straight mark;

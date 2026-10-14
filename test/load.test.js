@@ -363,6 +363,30 @@ test("the send gate is wired, and a page with no key attached holds nothing", ()
   assert.equal(prevented, 0, "a page with no key attached must never hold a send");
 });
 
+test("a page with no key attached holds no paste", () => {
+  // The paste check (src/pseudo-view.js, deciding by P.pasteHold) holds a paste
+  // carrying a real name before claude.ai can turn it into an attachment. On a
+  // page with no key — every page until one is loaded — it must hold nothing:
+  // a composer that swallowed every paste would be the extension wedging
+  // claude.ai shut. Called, not counted.
+  const win = loaded.win;
+  const of = (type) => win.__listeners.filter(([t]) => t === type).map(([, fn]) => fn);
+  assert.ok(of("paste").length > 1, "the paste check is not listening");
+  const target = win.document.createElement("div");
+  let prevented = 0;
+  const text = "Helen Rasho banked at Cross River Bank. ".repeat(2000);
+  for (const fn of of("paste"))
+    fn({
+      isTrusted: true,
+      target: target,
+      clipboardData: { files: [], types: ["text/plain"], getData: (t) => (t === "text/plain" ? text : "") },
+      preventDefault: () => prevented++,
+      stopPropagation: () => {},
+      stopImmediatePropagation: () => {},
+    });
+  assert.equal(prevented, 0, "a page with no key attached must never hold a paste");
+});
+
 test("no file declares one function name twice in one scope", () => {
   // A function declaration does not scope to where it is written: two of them
   // sharing a name at the top level of one IIFE are ONE binding, and the later

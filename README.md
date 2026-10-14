@@ -151,7 +151,8 @@ bottom-right corner of [claude.ai](https://claude.ai).
   read back in the real case name and number too, in the header, the sidebar
   and the tab, while the title claude.ai stores stays the fake — a warning
   fires if you
-  type a **real** value into the composer, and the key file itself is **blocked
+  type a **real** value into the composer (or **paste** one, long pastes that
+  claude.ai turns into attachments included), and the key file itself is **blocked
   from being uploaded** into any chat unless you expressly override. See
   [Pseudonym translation](#pseudonym-translation).
 
@@ -2860,6 +2861,49 @@ wedged shut by the extension's own failure would be worse than the warning this
 replaced. The decision is `P.sendHold` in `src/pseudo.js` (tested); the wiring
 in `src/pseudo-view.js` catches the two ways a person sends, in the capture
 phase, before claude.ai's own handlers see them.
+
+### A long paste is read before it lands
+
+claude.ai turns a long paste into an **attachment** — a card above the draft
+rather than text in it. The banner and the send gate above read the *draft*,
+so a paste that became an attachment used to carry a party's real name to
+Claude without either of them ever seeing it, and with no text in the draft to
+type a fake over.
+
+So **the paste itself is read**, in the paste event, before claude.ai decides
+what shape it takes. A paste into the composer carrying a real value from this
+chat's key is held, and a dialog names each real value with the fake the chat
+should say instead. Three ways out:
+
+- **Paste with the fakes** — every real value swapped for its fake, the same
+  translation the key button's cleaner makes, and handed to claude.ai as the
+  paste, in plain text, since the formatted copy still holds the real names. claude.ai still decides whether it becomes an attachment. Focus starts
+  here. It is offered only when the cleaned text has no real value left in it;
+  a half-cleaned paste is not "with the fakes". It is never offered under the
+  master key, which knows the parties but not the whole case.
+- **Paste as is** — the paste exactly as it was, formatting included. That is
+  the same decision as the banner's ✕, so a short paste that lands in the draft
+  is not warned about and held all over again for the same names.
+- **Don't paste** — nothing goes in. Escape and a click outside mean this too.
+
+**Every** paste carrying a real value is asked about, not only long ones. Which
+pastes become attachments is claude.ai's call and its threshold isn't
+published; a guessed one that turned out lower than claude.ai's would be a
+paste going into an attachment unread, which is the gap this closes.
+
+The hand-back is confirmed: it counts as landed when claude.ai's editor took
+the paste, or when the draft or the attachment row changed. If it did not land,
+a notice says so. For the cleaned text, the notice has **Copy the cleaned
+text**, which pastes straight through because nothing real is left in it. For
+Paste as is, pasting again sends the same text through without the question,
+once and for two minutes.
+
+Same boundaries as the gate: the composer only, in a chat with a key attached;
+never a paste the extension made itself; never a pincite paste; never a file
+paste, which [the upload guard](#a-pdf-asks-before-it-uploads) judges. With no
+key attached nothing is held. The decision is `P.pasteHold` in `src/pseudo.js`
+(tested); the wiring is in `src/pseudo-view.js`. On Cowork, the capture is the same
+generic mechanics as on Chat but unconfirmed there.
 
 ### The titles read back in the real name
 

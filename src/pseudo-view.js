@@ -29,6 +29,11 @@
  *      banner naming the fake to use instead. Warn, never rewrite — the
  *      composer belongs to the user.
  *
+ *      A PASTE is read before claude.ai takes it, because claude.ai turns a
+ *      long one into an attachment the draft warning never sees. One carrying
+ *      a real value is held behind a question — with the fakes, as is, or not
+ *      at all — and the answer is handed back to claude.ai as the paste.
+ *
  *      Anything else on the page you can TYPE INTO is the composer for this
  *      purpose, and Claude's draft-email card is the case that raised it: it
  *      renders inside the reply but is editable in place, so what it holds is
@@ -1514,6 +1519,313 @@
         ev.preventDefault();
         ev.stopImmediatePropagation();
       }
+    },
+    true
+  );
+
+  // ---- a paste, read before claude.ai takes it ---------------------------------
+  //
+  // The decision is P.pasteHold (pure, tested, and documented there). The gap
+  // it closes: claude.ai turns a long paste into an attachment rather than text
+  // in the draft, and the banner and the gate above read only the draft — so a
+  // long paste of a party's real name used to ride the message unseen. The
+  // paste is read here, in the capture phase, before claude.ai's handlers
+  // decide what shape it takes; one carrying a real value is held and asked
+  // about, and whatever the operator chooses is handed back to claude.ai as a
+  // paste, so claude.ai still decides the shape.
+  //
+  // Scope is the draft warning's own: the composer's editor, in a chat with a
+  // key attached. Fail-open the same way — no key, no hits, nothing held.
+  //
+  // Cowork note (CLAUDE.md): paste capture on window and a dispatched paste are
+  // generic mechanics; the hand-back is judged first by whether a handler took
+  // the event (it prevents the default), which needs no Chat-only chip
+  // selector. Treat Cowork as best-effort until seen working there.
+
+  // A Paste as is that claude.ai didn't take back: the same text, pasted again
+  // within this window, goes straight through — the operator already answered.
+  const PASTE_ALLOW_MS = 120000;
+  let pasteAllow = null; // { text, until }
+
+  const pasteWait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function pasteLines(hits) {
+    const out = [];
+    for (const h of hits.slice(0, 4)) {
+      const line = document.createElement("div");
+      line.className = "cum-pseudo-paste-line";
+      const real = document.createElement("b");
+      real.textContent = "“" + h.real + "”";
+      const fake = document.createElement("b");
+      fake.textContent = "“" + h.fake + "”";
+      line.append(real, " — the chat should say ", fake);
+      out.push(line);
+    }
+    if (hits.length > 4) {
+      const more = document.createElement("div");
+      more.className = "cum-pseudo-paste-line";
+      more.textContent = "…and " + (hits.length - 4) + " more.";
+      out.push(more);
+    }
+    return out;
+  }
+
+  /**
+   * Ask. Resolves "clean", "asis" or "cancel". The safe answers are the easy
+   * ones: focus starts on Paste with the fakes where there is one (else on
+   * Don't paste), and Escape and a click outside both mean don't paste.
+   */
+  function pasteDialog(hits, words, canClean) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "cum-pseudo-guard";
+      const box = document.createElement("div");
+      box.className = "cum-pseudo-guard-box";
+      const h = document.createElement("div");
+      h.className = "cum-pseudo-guard-head";
+      h.textContent = words.head;
+      box.appendChild(h);
+      for (const line of pasteLines(hits)) box.appendChild(line);
+      const p = document.createElement("p");
+      p.textContent = words.body;
+      box.appendChild(p);
+      const row = document.createElement("div");
+      row.className = "cum-pseudo-guard-row";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.textContent = words.cancel;
+      const asIs = document.createElement("button");
+      asIs.type = "button";
+      asIs.className = "cum-pseudo-guard-send";
+      asIs.textContent = words.asIs;
+      let clean = null;
+      if (canClean) {
+        clean = document.createElement("button");
+        clean.type = "button";
+        clean.className = "cum-pseudo-guard-keep";
+        clean.textContent = words.clean;
+      } else {
+        cancel.className = "cum-pseudo-guard-keep";
+      }
+      row.append(cancel, asIs);
+      if (clean) row.appendChild(clean);
+      box.appendChild(row);
+      overlay.appendChild(box);
+      let settled = false;
+      const done = (choice) => {
+        if (settled) return;
+        settled = true;
+        overlay.remove();
+        resolve(choice);
+      };
+      cancel.addEventListener("click", () => done("cancel"));
+      asIs.addEventListener("click", () => done("asis"));
+      if (clean) clean.addEventListener("click", () => done("clean"));
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) done("cancel");
+      });
+      overlay.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        e.stopPropagation();
+        done("cancel");
+      });
+      document.documentElement.appendChild(overlay);
+      (clean || cancel).focus();
+    });
+  }
+
+  /** The hand-back that did not land, said out loud — with the way out on it. */
+  function pasteMissNotice(text, cleaned) {
+    const overlay = document.createElement("div");
+    overlay.className = "cum-pseudo-guard";
+    const box = document.createElement("div");
+    box.className = "cum-pseudo-guard-box";
+    const h = document.createElement("div");
+    h.className = "cum-pseudo-guard-head";
+    h.textContent = "That paste did not go in";
+    const p = document.createElement("p");
+    p.textContent = text;
+    const row = document.createElement("div");
+    row.className = "cum-pseudo-guard-row";
+    const ok = document.createElement("button");
+    ok.type = "button";
+    ok.textContent = "OK";
+    row.appendChild(ok);
+    if (cleaned) {
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "cum-pseudo-guard-keep";
+      copy.textContent = "Copy the cleaned text";
+      copy.addEventListener("click", () => {
+        const said = (t) => (copy.textContent = t);
+        try {
+          navigator.clipboard.writeText(cleaned).then(
+            () => said("Copied — paste it now"),
+            () => said("Couldn't copy — use the key button's cleaner")
+          );
+        } catch (e) {
+          said("Couldn't copy — use the key button's cleaner");
+        }
+      });
+      row.appendChild(copy);
+    } else {
+      ok.className = "cum-pseudo-guard-keep";
+    }
+    box.append(h, p, row);
+    overlay.appendChild(box);
+    const done = () => overlay.remove();
+    ok.addEventListener("click", done);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) done();
+    });
+    document.documentElement.appendChild(overlay);
+    ok.focus();
+  }
+
+  /**
+   * Give the paste back to claude.ai, where it was made, and say whether it
+   * landed. The editor gets its focus and selection back first — the dialog
+   * took both — and a moment to take them, so the paste replaces what the
+   * operator had selected rather than landing wherever the caret drifted.
+   *
+   * Landed means a handler TOOK it (prevented the default: claude.ai's editor
+   * does that for every paste it handles, attachment or text), or the draft or
+   * the attachment row visibly changed.
+   */
+  async function handBackPaste(dt, target, range) {
+    const ed = editorEl();
+    if (!ed) return false;
+    const el = target && target.isConnected && ed.contains(target) ? target : ed;
+    try {
+      ed.focus();
+      const sel = window.getSelection();
+      if (range && sel && ed.contains(range.startContainer)) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    } catch (e) {
+      /* the paste goes wherever the editor puts it */
+    }
+    await pasteWait(60);
+    const C = window.CUMComposer;
+    const textOf = () => {
+      const e = editorEl();
+      return e ? e.innerText || e.textContent || "" : "";
+    };
+    const chips = () => {
+      try {
+        return C && C.countChips ? C.countChips() : 0;
+      } catch (e) {
+        return 0;
+      }
+    };
+    const beforeText = textOf();
+    const beforeChips = chips();
+    let taken = false;
+    try {
+      taken = !el.dispatchEvent(
+        new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: dt })
+      );
+    } catch (e) {
+      taken = false;
+    }
+    if (taken) return true;
+    for (let i = 0; i < 6; i++) {
+      await pasteWait(250);
+      if (textOf() !== beforeText || chips() > beforeChips) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Paste as is landed: the operator has just said, with the names in front of
+   * them, that these go as written — the same decision as the banner's ✕. So a
+   * draft carrying only those names is not warned about and held all over
+   * again. A draft with any other real name in it still is.
+   */
+  function releasePasted(hits) {
+    const names = new Set(hits.map((h) => P.fold(h.real)));
+    setTimeout(() => {
+      const read = draftReals();
+      if (!read || !read.hits.length) return;
+      if (!read.hits.every((h) => names.has(P.fold(h.real)))) return;
+      warnDismissed = P.draftWarnSig(read.hits);
+      if (sendHeld && sendHeld.sig === warnDismissed) sendHeld = null;
+      checkComposer();
+    }, 300);
+  }
+
+  async function askPaste(snap, hits, text, carried, target, range) {
+    const master = !!(snap.key && snap.key.master);
+    const cleaned = master ? null : P.cleanPaste(snap.forward, snap.compiledReals, text);
+    const canClean = !!(cleaned && cleaned.ok);
+    const words = P.pasteNote(hits, { canClean: canClean, master: master, left: cleaned ? cleaned.left : [] });
+    const choice = await pasteDialog(hits, words, canClean);
+    if (choice !== "clean" && choice !== "asis") return;
+    const dt = new DataTransfer();
+    if (choice === "clean") dt.setData("text/plain", cleaned.text);
+    else for (const [type, value] of carried) dt.setData(type, value);
+    const landed = await handBackPaste(dt, target, range);
+    if (landed) {
+      if (choice === "asis") releasePasted(hits);
+      return;
+    }
+    if (choice === "asis") pasteAllow = { text: text, until: Date.now() + PASTE_ALLOW_MS };
+    const note = P.pasteMissNote(choice);
+    try {
+      console.warn("[claude-usage-meter] paste check: " + note);
+    } catch (e) {
+      /* ignore */
+    }
+    pasteMissNotice(note, choice === "clean" ? cleaned.text : "");
+  }
+
+  window.addEventListener(
+    "paste",
+    (ev) => {
+      if (!ev.isTrusted) return; // the extension's own pastes, this check's hand-back included
+      if (!active || !active.compiledReals || !active.compiledReals.rx) return;
+      if (!inEditor(ev.target)) return;
+      const dt = ev.clipboardData;
+      if (!dt) return;
+      const text = dt.getData("text/plain") || "";
+      const files = !!(dt.files && dt.files.length);
+      const allowed = !!(pasteAllow && pasteAllow.text === text && Date.now() < pasteAllow.until);
+      if (allowed) pasteAllow = null;
+      const draft = draftReals();
+      const v = P.pasteHold({
+        hits: text && !files ? P.findReals(active.compiledReals, text) : [],
+        pincite: P.isPincitePaste(text) || !!(draft && draft.pincite),
+        trusted: true,
+        files: files,
+        allowed: allowed,
+      });
+      if (!v.hold) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      // Everything the paste carried, read NOW: clipboardData is unreadable
+      // once this handler returns, and Paste as is has to hand back exactly
+      // what was pasted — the formatted copy as well as the plain one.
+      const carried = [];
+      for (const type of Array.from(dt.types || [])) {
+        if (type === "Files") continue;
+        try {
+          carried.push([type, dt.getData(type)]);
+        } catch (e) {
+          /* a type the browser won't hand over is not pasted back */
+        }
+      }
+      if (!carried.some(([type]) => type === "text/plain")) carried.push(["text/plain", text]);
+      let range = null;
+      try {
+        const sel = window.getSelection();
+        range = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      } catch (e) {
+        range = null;
+      }
+      hideTip();
+      askPaste(active, v.hits, text, carried, ev.target, range);
     },
     true
   );

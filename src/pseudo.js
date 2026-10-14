@@ -1190,6 +1190,117 @@
     };
   }
 
+  // ---- a paste, read before claude.ai takes it -------------------------------
+  //
+  // The draft warning and the send gate both read the EDITOR. claude.ai turns a
+  // long paste into an attachment instead of text in the draft, and from then
+  // on there is no draft text for either of them to read and nothing to type a
+  // fake over: the real names ride the message inside the attachment, unseen.
+  //
+  // Which pastes become attachments is claude.ai's call, made at the paste, and
+  // its threshold is not published. So the paste is read at the one moment
+  // that is the same for both shapes — the paste event, before claude.ai's own
+  // handlers — and EVERY paste carrying a real value is asked about, not only
+  // long ones. A guessed threshold that turned out lower than claude.ai's would
+  // be a paste going into an attachment unread, which is the gap this closes.
+  //
+  // Same rules as the gate, for the same reasons: never a paste the extension
+  // dispatched itself (its own hand-back included), never a pincite paste, and
+  // fail-open by construction — no key attached, no hits, nothing held.
+
+  const PASTE_HEAD = "Real names in what you're pasting";
+
+  /**
+   * Whether a paste into the composer has to be asked about first.
+   *
+   *   hits     real values in the PASTED text (findReals on it)
+   *   pincite  the pasted text, or the draft it lands in, is a pincite paste
+   *   trusted  a person's own paste; false for one the extension dispatched
+   *   files    the paste carries files — the upload guard's business, not this
+   *   allowed  a one-shot pass for exactly this text: the operator already
+   *            chose Paste as is and claude.ai did not take it back
+   *
+   * Answers { hold, why, hits }.
+   */
+  function pasteHold(ev) {
+    const e = ev || {};
+    const hits = (e.hits || []).filter((h) => h && h.real);
+    const free = (why) => ({ hold: false, why: why, hits: hits });
+    if (e.trusted === false) return free("not the user's own paste");
+    if (e.files) return free("a file paste");
+    if (e.pincite) return free("a pincite paste");
+    if (e.allowed) return free("already answered: paste as is");
+    if (!hits.length) return free("no real values in the paste");
+    return { hold: true, why: "real values in the paste", hits: hits };
+  }
+
+  /**
+   * The cleaned version of a paste: the key run forward (real → fake), the
+   * same translation the key panel's cleaner makes. `ok` only when something
+   * was swapped and nothing real is left — a half-cleaned paste offered as
+   * "with the fakes" would be the one thing worse than asking.
+   */
+  function cleanPaste(forward, compiledReals, text) {
+    const src = String(text == null ? "" : text);
+    if (!forward || !forward.rx) return { text: src, count: 0, left: findReals(compiledReals, src), ok: false };
+    const r = translate(forward, src);
+    const left = findReals(compiledReals, r.text);
+    return { text: r.text, count: r.count, left: left, ok: r.count > 0 && !left.length };
+  }
+
+  /**
+   * The question's words. `opts.canClean` says a cleaned version exists;
+   * otherwise `opts.master` (the chat carries the distilled master key, which
+   * must never clean a case's text) or a non-empty `opts.left` says why not.
+   *
+   * Returns { head, body, clean, asIs, cancel }.
+   */
+  function pasteNote(hits, opts) {
+    const o = opts || {};
+    const list = (hits || []).filter((h) => h && h.real);
+    const n = list.length;
+    const one = n === 1;
+    const them = one ? "it" : "them";
+    let body =
+      "This paste carries " +
+      (one ? "“" + list[0].real + "”, a real value" : n + " real values") +
+      ". claude.ai can turn a long paste into an attachment, where the draft warning cannot see it, " +
+      "so it is checked here, before claude.ai takes it.";
+    if (o.canClean) {
+      body += " Paste with the fakes swaps " + them + " the way the key's cleaner does.";
+    } else if (o.master) {
+      body +=
+        " This chat's key is the master key, which knows the parties but not the whole case, so it " +
+        "will not clean the text for you — clean it with the case's own key, or paste it as is.";
+    } else if ((o.left || []).length) {
+      body += " Not every one of " + them + " could be swapped, so there is no cleaned version to offer.";
+    }
+    return {
+      head: PASTE_HEAD,
+      body: body,
+      clean: "Paste with the fakes",
+      asIs: "Paste as is",
+      cancel: "Don't paste",
+    };
+  }
+
+  /**
+   * What is owed when the hand-back did not land. A choice the operator made
+   * that silently did nothing is the failure this extension is built against,
+   * and each way out says the next move.
+   */
+  function pasteMissNote(choice) {
+    if (choice === "clean")
+      return (
+        "claude.ai didn't take the cleaned text back from the extension, so nothing was pasted. " +
+        "Copy the cleaned text and paste it yourself — with no real names in it, it goes straight through."
+      );
+    return (
+      "claude.ai didn't take the paste back from the extension, so nothing was pasted. Paste " +
+      "again — the same text goes straight through this time, without the question."
+    );
+  }
+
   // ---- a copy that carries the real names ------------------------------------
   //
   // The display translation's boundary was always "what LEAVES the page reads
@@ -1851,6 +1962,11 @@
     sendHold,
     sendHoldNote,
     SEND_HOLD_HEAD,
+    pasteHold,
+    cleanPaste,
+    pasteNote,
+    pasteMissNote,
+    PASTE_HEAD,
     RELEASE_INPUT_WATCH_MS,
     releaseDeadline,
     releaseNext,
