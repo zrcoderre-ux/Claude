@@ -1473,6 +1473,203 @@
     return null;
   }
 
+  // ---- the last door for a PDF: the send ---------------------------------------
+  //
+  // The decision is CUMPdfFlag.sendAsks (pure, tested, and documented there).
+  // The upload guard further down holds a PDF at the pick — when the pick
+  // reaches the page as an event. claude.ai's own "+ Add files" was seen to get
+  // one past it (owner's report, October 2026), so the message is asked about
+  // too, whatever door the PDF came in by: before a person's Enter or click
+  // sends, the composer is read for the PDFs it is carrying, and one nobody
+  // has said yes to holds the send behind the question.
+  //
+  // Not a pseudonym matter, so it does not wait for a key: it runs on every
+  // page with a composer. It runs after the real-name gate, so a draft held for
+  // a real name says that first.
+
+  let pdfAsking = false;
+  let pdfForgetTimer = null;
+  // PDFs claude.ai's own upload responses reported, where the page can see them
+  // (Chat). Names only, since the last message went, in this conversation.
+  let pdfUploads = { conv: "", names: [] };
+
+  try {
+    window.addEventListener("message", (event) => {
+      if (event.source !== window) return;
+      const C = window.CUMComposer;
+      const m = event.data;
+      if (!C || !m || m.__channel !== C.CHANNEL || !m.payload || !m.payload.upload) return;
+      const name = String(m.payload.upload.file_name || "").trim();
+      const PF = window.CUMPdfFlag;
+      if (!name || !PF || !PF.isPdfName(name)) return;
+      const conv = location.pathname;
+      if (pdfUploads.conv !== conv) pdfUploads = { conv: conv, names: [] };
+      if (pdfUploads.names.indexOf(name) === -1) pdfUploads.names.push(name);
+    });
+  } catch (e) {
+    /* the composer's own words still say what it carries */
+  }
+
+  /**
+   * The composer box: the smallest ancestor of the editor that also holds the
+   * send control — on both surfaces that box holds the attachment cards too.
+   * Never one that holds the conversation's turns: a PDF named in a reply is
+   * not a PDF in this message.
+   */
+  function composerBox() {
+    const ed = editorEl();
+    if (!ed) return null;
+    let send = null;
+    try {
+      const CW = window.CUMCoworkSend;
+      const C = window.CUMComposer;
+      send = (CW && CW.findSend && CW.findSend()) || (C && C.findSend && C.findSend()) || null;
+    } catch (e) {
+      send = null;
+    }
+    const tooWide = (el) => {
+      try {
+        return !!el.querySelector(MSG_SEL);
+      } catch (e) {
+        return true;
+      }
+    };
+    let el = ed.parentElement;
+    for (let i = 0; el && el !== document.body && i < 12; i++, el = el.parentElement) {
+      if (tooWide(el)) break;
+      if (send && el.contains(send)) return el;
+    }
+    const form = ed.closest && ed.closest("form");
+    if (form && !tooWide(form)) return form;
+    const up = ed.parentElement && ed.parentElement.parentElement;
+    return up && !tooWide(up) ? up : null;
+  }
+
+  /**
+   * The composer's own words outside the draft: each leaf's text, and each
+   * label, title and alt. The draft is left out — a file NAMED in the message
+   * is not a file attached to it — and so is anything of the extension's own.
+   */
+  function composerWords() {
+    const box = composerBox();
+    if (!box) return [];
+    const ed = editorEl();
+    const C = window.CUMComposer;
+    const ours = (el) => {
+      try {
+        return !!(C && C.isOurs && C.isOurs(el));
+      } catch (e) {
+        return false;
+      }
+    };
+    const out = [];
+    const stack = [box];
+    let seen = 0;
+    while (stack.length && seen < 3000) {
+      const el = stack.pop();
+      seen++;
+      if (!el || el === ed || ours(el)) continue;
+      for (const a of ["aria-label", "title", "alt"]) {
+        const v = el.getAttribute && el.getAttribute(a);
+        if (v) out.push(v);
+      }
+      const kids = el.children || [];
+      if (!kids.length) {
+        const t = (el.textContent || "").trim();
+        if (t && t.length <= 300) out.push(t);
+      } else for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]);
+    }
+    return out;
+  }
+
+  /** Whether the composer is showing an attachment at all, as far as it can tell. */
+  function composerShowsAttachment(words) {
+    const C = window.CUMComposer;
+    try {
+      if (C && C.countChips && C.countChips() > 0) return true;
+    } catch (e) {
+      /* the words below still answer */
+    }
+    const PF = window.CUMPdfFlag;
+    const shown = PF ? PF.pdfsShown(words) : { names: [], unnamed: 0 };
+    return shown.names.length > 0 || shown.unnamed > 0;
+  }
+
+  /** Forget what was said yes to, once the message carrying it has gone. */
+  function pdfSent() {
+    if (pdfForgetTimer) clearTimeout(pdfForgetTimer);
+    pdfForgetTimer = setTimeout(() => {
+      pdfForgetTimer = null;
+      const PC = window.CUMPdfConfirm;
+      if (PC && PC.forget) PC.forget();
+      pdfUploads = { conv: location.pathname, names: [] };
+    }, 3000);
+  }
+
+  /**
+   * Judge a send for PDFs. Returns true when it must not go — and puts the
+   * question, whose yes sends it.
+   */
+  function pdfGate(ev) {
+    if (!ev || ev.isTrusted === false) return false; // the extension's own sends
+    const PF = window.CUMPdfFlag;
+    const PC = window.CUMPdfConfirm;
+    if (!PF || !PF.sendAsks) return false;
+    if (pdfAsking) return true; // the question is already up: this is the same send
+    const words = composerWords();
+    const said = PC && PC.confirmed ? PC.confirmed() : { names: [], sig: "" };
+    const v = PF.sendAsks({
+      shown: PF.pdfsShown(words),
+      uploaded: pdfUploads.conv === location.pathname ? pdfUploads.names : [],
+      attachments: composerShowsAttachment(words),
+      confirmed: said.names,
+      confirmedSig: said.sig,
+      trusted: true,
+    });
+    if (!v.hold) {
+      if (v.names.length || v.unnamed) pdfSent();
+      return false;
+    }
+    if (!PC || !PC.ask) {
+      // Nothing to ask with: the send stays held, and says why. A PDF is never
+      // let through because the thing that asks about it is missing.
+      guardNotice(
+        "Not sent: this message carries a PDF (" + (v.names.join(", ") || "a PDF") + "), and the " +
+          "PDF question isn't loaded on this page to ask about it. Reload the page, or remove the PDF."
+      );
+      return true;
+    }
+    pdfAsking = true;
+    PC.ask(document, PF.sendPrompt(v.names, v.unnamed)).then((ok) => {
+      // Released a beat later: the click that raised the question is still
+      // delivering its mousedown and click, and they belong to this send.
+      setTimeout(() => (pdfAsking = false), 400);
+      if (!ok) return;
+      if (PC.rememberSend) PC.rememberSend(v.sig, v.names);
+      // The yes sends it — through the composer's own control, as a click the
+      // gates know is not a person's. Where there is no control to press, the
+      // next Enter goes, because the yes is remembered.
+      setTimeout(() => {
+        try {
+          const CW = window.CUMCoworkSend;
+          const C = window.CUMComposer;
+          const btn = (CW && CW.findSend && CW.findSend()) || (C && C.findSend && C.findSend());
+          if (btn && C && C.robustClick) {
+            C.robustClick(btn);
+            // That send is the one the yes was for: forget it once it has gone,
+            // so the next message's PDF — even one of the same name — is asked
+            // about afresh. Our own click passes the gate unjudged, so it would
+            // never reach the forgetting a person's own send does.
+            pdfSent();
+          }
+        } catch (e) {
+          /* the next Enter sends */
+        }
+      }, 450);
+    });
+    return true;
+  }
+
   // Enter is how a draft leaves on both surfaces. Shift+Enter is a newline and
   // is left alone, and so is an Enter mid-composition (an IME candidate being
   // accepted is not a send).
@@ -1481,7 +1678,7 @@
     (ev) => {
       if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing) return;
       if (!inEditor(ev.target)) return;
-      if (sendGate(ev)) {
+      if (sendGate(ev) || pdfGate(ev)) {
         ev.preventDefault();
         ev.stopImmediatePropagation();
       }
@@ -1497,7 +1694,7 @@
       (ev) => {
         if (ev.button != null && ev.button !== 0) return;
         if (!sendControlOf(ev.target)) return;
-        if (sendGate(ev)) {
+        if (sendGate(ev) || pdfGate(ev)) {
           ev.preventDefault();
           ev.stopImmediatePropagation();
         }
@@ -1515,7 +1712,7 @@
       const form = ev.target;
       const ed = editorEl();
       if (!ed || !form || !form.contains || !form.contains(ed)) return;
-      if (sendGate(ev)) {
+      if (sendGate(ev) || pdfGate(ev)) {
         ev.preventDefault();
         ev.stopImmediatePropagation();
       }
@@ -2321,6 +2518,8 @@
       return { files: s.rest, released: [] };
     }
     const ok = await PC.ask(document, PF.prompt(names, s.rest.length));
+    // Said yes to here, so the send doesn't ask about the same PDF again.
+    if (ok && PC.remember) PC.remember(names);
     return ok ? { files: files, released: names } : { files: s.rest, released: [] };
   }
 

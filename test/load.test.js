@@ -363,6 +363,62 @@ test("the send gate is wired, and a page with no key attached holds nothing", ()
   assert.equal(prevented, 0, "a page with no key attached must never hold a send");
 });
 
+test("a send carrying a PDF is held at the last door, however the PDF got there", () => {
+  // claude.ai's own "+ Add files" got a PDF past the pick guard, so the send
+  // itself asks: an Enter in the composer, with a PDF card showing that nobody
+  // said yes to, must not reach claude.ai. Called, not counted — and with NO
+  // key attached, because this is not a pseudonym matter.
+  //
+  // Each case on a page of its own: while a question is up, the gate rightly
+  // swallows the rest of that same send, so cases cannot share one.
+  function composerWith(caption, remembered) {
+    const { win } = loadAll();
+    const doc = win.document;
+    const box = doc.createElement("form");
+    const editor = doc.createElement("div");
+    editor.setAttribute("contenteditable", "true");
+    const card = doc.createElement("div");
+    const name = doc.createElement("span");
+    name.textContent = caption;
+    card.appendChild(name);
+    box.append(card, editor);
+    doc.body.appendChild(box);
+    // The stub finds nothing by selector; point the composer's own finders here.
+    win.CUMComposer.findEditor = () => editor;
+    editor.closest = (sel) => (/form/.test(String(sel)) ? box : null);
+    if (remembered) win.CUMPdfConfirm.remember(remembered);
+    let prevented = 0;
+    for (const [type, fn] of win.__listeners)
+      if (type === "keydown")
+        fn({
+          key: "Enter",
+          shiftKey: false,
+          isComposing: false,
+          isTrusted: true,
+          target: editor,
+          preventDefault: () => prevented++,
+          stopPropagation: () => {},
+          stopImmediatePropagation: () => {},
+        });
+    const asked = doc.documentElement.children.filter((c) => c.className === "cum-pdf-ask");
+    return { prevented: prevented, asked: asked };
+  }
+
+  const held = composerWith("Smith complaint.pdf");
+  assert.ok(held.prevented > 0, "an Enter carrying an unconfirmed PDF went straight to claude.ai");
+  assert.ok(held.asked.length >= 1, "the send was held but nothing asked");
+  assert.match(held.asked[0].textContent, /Smith complaint\.pdf/);
+
+  // Said yes to already — at the pick, or by the Folder button: it goes.
+  const yes = composerWith("Smith complaint.pdf", ["Smith complaint.pdf"]);
+  assert.equal(yes.prevented, 0, "a PDF already said yes to was asked about again");
+
+  // No PDF in the message at all: it goes.
+  const none = composerWith("notes.txt");
+  assert.equal(none.prevented, 0, "a message with no PDF in it was held");
+  assert.equal(none.asked.length, 0);
+});
+
 test("a page with no key attached holds no paste", () => {
   // The paste check (src/pseudo-view.js, deciding by P.pasteHold) holds a paste
   // carrying a real name before claude.ai can turn it into an attachment. On a

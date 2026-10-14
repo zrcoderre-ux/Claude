@@ -577,7 +577,11 @@
       return s.rest;
     }
     const ok = await PC.ask(document, PF.prompt(s.pdfs, s.rest.length));
-    if (ok) return files;
+    if (ok) {
+      // Said yes to here, so the send doesn't ask about the same PDF again.
+      if (PC.remember) PC.remember(s.pdfs.map((f) => f.name));
+      return files;
+    }
     lines.push(PF.heldNote(s.pdfs));
     return s.rest;
   }
