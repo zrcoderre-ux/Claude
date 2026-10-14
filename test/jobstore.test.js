@@ -254,7 +254,8 @@ test("a job with no destination is a new chat, whatever it was set up on", () =>
 
 test("the row names the approval mode only when the job set one", () => {
   require("../src/cowork.js");
-  assert.equal(J.approvalLabel(J.newJob({ approval: "skip" }, "i", NOW)), "Skip all approvals");
+  // Skip is gone from claude.ai's menu; a job that stored it reads as Auto.
+  assert.equal(J.approvalLabel(J.newJob({ approval: "skip" }, "i", NOW)), "Auto");
   assert.equal(J.approvalLabel(J.newJob({}, "i", NOW)), "");
 });
 

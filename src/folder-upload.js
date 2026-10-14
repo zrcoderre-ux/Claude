@@ -2,7 +2,7 @@
  * Claude Usage Meter — Upload folder (ISOLATED world content script).
  *
  * A button in claude.ai's own composer row — to the RIGHT of the approval
- * control ("Skip all approvals") on Cowork, to the right of the Chat/Cowork
+ * control (the permission mode, Manual / Auto) on Cowork, to the right of the Chat/Cowork
  * toggle on the composer home, and to the LEFT of Send in an ordinary chat,
  * which carries neither of those. On a conversation that does not exist yet
  * AND on one that already does. It does to the conversation you are typing in
@@ -970,7 +970,7 @@
 
   // ---- placement -----------------------------------------------------------
   //
-  // Beside the composer's OWN controls — next to "Skip all approvals" on
+  // Beside the composer's OWN controls — next to the permission-mode control on
   // Cowork, next to the Chat/Cowork toggle where there is no approval control
   // (the owner's instruction, and it reads right: what this button does is an
   // upload, and that row is where the composer's own furniture lives). The

@@ -175,7 +175,10 @@
     ],
     (res) => {
       coworkCfg = Object.assign(coworkCfg, (res && res[COWORK_KEY]) || {});
-      el.coworkApproval.value = coworkCfg.approval || "";
+      // Read the way a send reads it: the retired Skip shows as the Auto it now
+      // sends under, rather than as a blank that would look like "leave as-is".
+      const KC = window.CUMCowork;
+      el.coworkApproval.value = (KC ? KC.modeFromStored(coworkCfg.approval) : coworkCfg.approval) || "";
       el.coworkFocus.checked = coworkCfg.borrowFocus === true;
       if (el.coworkRunAuto) el.coworkRunAuto.checked = coworkCfg.runAuto !== false;
       render(res && res[STORAGE_KEY]);
@@ -305,7 +308,7 @@
     el.coworkRunAuto.addEventListener("change", () => {
       coworkCfg.runAuto = el.coworkRunAuto.checked;
       saveCowork(
-        coworkCfg.runAuto ? "Runs move Manual to Auto at the start" : "Runs leave the approval mode as it is"
+        coworkCfg.runAuto ? "Runs move Manual to Auto at the start" : "Runs leave the permission mode as it is"
       );
     });
 

@@ -161,32 +161,31 @@
       load; toggle off/on to resume.</p>
 
     <label class="toggle" for="cowork-approval">
-      <span>Default approval mode</span>
+      <span>Default permission mode</span>
     </label>
     <select id="cowork-approval" class="pseudo-select">
       <option value="">Leave as-is</option>
-      <option value="manual">Manually approve</option>
-      <option value="auto">Automatically approve</option>
-      <option value="skip">Skip all approvals</option>
+      <option value="manual">Manual</option>
+      <option value="auto">Auto</option>
     </select>
-    <p class="hint">Leave as-is by default. claude.ai does not keep its approval
+    <p class="hint">Leave as-is by default. claude.ai does not keep its permission
       mode between sessions, so a scheduled send or workflow step that names no
       mode lands on whatever claude.ai chose. Set one here and every send whose
-      composer shows an approval control applies it; a job or step that names its own mode still
-      wins. <b>Skip all approvals</b> lets Claude act unattended for the whole
-      session.</p>
+      composer shows the permission-mode control applies it; a job or step that
+      names its own mode still wins. <b>Manual</b>: Claude asks before using new
+      tools or opening new sites. <b>Auto</b>: Claude runs on its own and pauses
+      to ask if anything looks unsafe.</p>
 
     <label class="toggle">
       <input id="cowork-run-auto" type="checkbox" />
-      <span>Runs start on Automatically approve</span>
+      <span>Runs start on Auto</span>
     </label>
     <p class="hint">On. A workflow run's first message into each conversation
-      moves <b>Manually approve</b> to <b>Automatically approve</b>, so the run
-      doesn't stall waiting for you to approve its first tool call. It changes
-      nothing else: a page already on Auto or on <b>Skip all approvals</b> is
-      left alone, a mode set on the chat, the step or above still wins, later
-      steps leave a mode you switched by hand where it is, and scheduled sends
-      are untouched. The run's notes say when it made the switch.</p>
+      moves the permission mode from <b>Manual</b> to <b>Auto</b>, so the run
+      doesn't stall waiting for you to approve its first tool call. A mode set
+      on the chat, the step or above still wins, later steps leave a mode you
+      switched by hand where it is, and scheduled sends are untouched. The
+      run's notes say when it made the switch.</p>
 
     <label class="toggle">
       <input id="cowork-focus" type="checkbox" />
@@ -268,6 +267,7 @@
     </button>
 
     <script src="status.js"></script>
+    <script src="cowork.js"></script>
     <script src="autodl.js"></script>
     <script src="xlsxread.js"></script>
     <script src="pseudo.js"></script>

@@ -149,9 +149,9 @@
       `<label class="cumjf-label">Model</label>` +
       `<select class="cumjf-model"></select>` +
       `<div class="cumjf-approval-row">` +
-      `<label class="cumjf-label">Approvals</label>` +
+      `<label class="cumjf-label">Permission mode</label>` +
       `<select class="cumjf-approval"></select>` +
-      `<p class="cumjf-hint">Applied where the composer shows an approval control. ` +
+      `<p class="cumjf-hint">Manual or Auto, applied where the composer shows its permission-mode control. ` +
       `claude.ai does not keep it between sessions, so a send sets it: what you ` +
       `pick here, else the default in the extension's popup, else nothing is touched.</p></div>` +
       `<label class="cumjf-label">When to send</label>` +
@@ -637,7 +637,10 @@
         ui.model.appendChild(o);
       }
       ui.model.value = job.model || "";
-      if (ui.approval) ui.approval.value = job.approval || "";
+      // Read the way a send reads it, so a job saved with the retired Skip shows
+      // (and saves back) as the Auto it now sends under, not as a blank that
+      // would quietly drop the setting the next time the job is saved.
+      if (ui.approval) ui.approval.value = (K ? K.modeFromStored(job.approval) : job.approval) || "";
       // Trigger.
       const isTime = job.trigger && job.trigger.type === "time";
       const radio = el.querySelector(`input[name="cumjf-trig"][value="${isTime ? "time" : "reset"}"]`);

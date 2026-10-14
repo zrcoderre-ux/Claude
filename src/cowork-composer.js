@@ -1092,7 +1092,13 @@
     // on whatever claude.ai chose — which is why the default exists.
     const prefs = await coworkSettings();
     const approval = K.effectiveApproval(j.approval, prefs.approval);
-    const approvalFrom = approval && !K.modeFromLabel(j.approval) ? " (the popup's default)" : "";
+    const approvalFrom = !approval
+      ? ""
+      : !K.modeFromStored(j.approval)
+      ? " (the popup's default)"
+      : K.modeRetired(j.approval)
+      ? " (saved as Skip all approvals, which claude.ai no longer offers — Auto is the nearest)"
+      : "";
     // Where nothing asked for a mode, a run's first message into this
     // conversation moves Manually approve to Auto (K.runApproval) — read off
     // the page at the approval phase, since it depends on what the page is on.
@@ -1160,7 +1166,7 @@
             continue;
           }
           target = rr.mode;
-          from = " (run start: was Manually approve)";
+          from = " (run start: was Manual)";
           ruled = rr.why;
         }
         let r;

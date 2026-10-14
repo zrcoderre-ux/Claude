@@ -23,14 +23,30 @@
 (function (root) {
   "use strict";
 
-  // The three approval modes, in the order the menu lists them. `key` is what a
-  // job stores; `label` is the trigger's aria-label and the menu row's opening
-  // words; `short` is what the trigger renders when there's no room ("Auto").
+  // The permission modes, in the order the menu lists them. claude.ai's menu
+  // is headed "Permission mode" and has two rows (owner's report, October
+  // 2026), each name running straight into its description in the row's text:
+  //
+  //   Manual  "Claude asks before using new tools or opening new sites"
+  //   Auto    "Claude runs on its own and pauses to ask if anything looks unsafe"
+  //
+  // `key` is what a job stores; `label` is the mode's name as the menu and the
+  // trigger show it now; `was` is the name it wore before ("Manually approve"),
+  // still read, so a page or a stored label in the old words means the same
+  // mode rather than nothing.
   const MODES = [
-    { key: "manual", label: "Manually approve", short: "Manual" },
-    { key: "auto", label: "Automatically approve", short: "Auto" },
-    { key: "skip", label: "Skip all approvals", short: "Skip" },
+    { key: "manual", label: "Manual", was: "Manually approve" },
+    { key: "auto", label: "Auto", was: "Automatically approve" },
   ];
+
+  // Skip all approvals is gone from the menu. A job, chat, step or popup default
+  // that stored it asked for Claude to work unattended, and Auto is the nearest
+  // mode left — so a STORED Skip reads as Auto (modeFromStored). Never as "leave
+  // it": that would drop the send back onto whatever claude.ai chose, which is
+  // the Manual the setting was there to get away from. The page is never read
+  // this way: a control still saying Skip is a control this module no longer
+  // recognises, and says so.
+  const RETIRED = { skip: "auto", "skip all approvals": "auto" };
 
   // Cowork's own default, and the one the extension leaves alone. A job that
   // stores "" means "whatever the page is already on" — the same contract
@@ -58,23 +74,46 @@
   }
 
   /**
-   * The mode a label names. Accepts the trigger's aria-label, a menu row's full
-   * text (which runs the name into its description — "Manually approveClaude
-   * pauses so you can approve each action"), the short form, or a stored key.
-   * Returns a mode key, or "" for anything it doesn't recognise.
+   * The mode a label names. Accepts the trigger's aria-label or words, a stored
+   * key, the mode's name ("Auto"), or its old name — which, being long and
+   * specific, is read by prefix, the way a row ran it into its description
+   * ("Manually approveClaude pauses…"). Returns a mode key, or "" for anything
+   * it doesn't recognise.
    *
-   * Prefix, not equality: the row text carries its description with no
-   * separator, so an exact match would never fire and a substring match would
-   * let a description mentioning another mode win.
+   * The CURRENT names are short words and are matched whole: this reads every
+   * visible control's label while hunting for the trigger, and a prefix "auto"
+   * would make an "Autosave" button the permission control. Menu rows, which
+   * do run "AutoClaude runs on its own…" together, are rowIsMode's to read.
    */
   function modeFromLabel(label) {
     const t = lower(label);
     if (!t) return INHERIT;
     const byKey = modeByKey(t);
     if (byKey) return byKey.key;
-    for (const m of MODES) if (t.indexOf(m.label.toLowerCase()) === 0) return m.key;
-    for (const m of MODES) if (t === m.short.toLowerCase()) return m.key;
+    for (const m of MODES) if (t === m.label.toLowerCase()) return m.key;
+    for (const m of MODES) if (t.indexOf(m.was.toLowerCase()) === 0) return m.key;
     return INHERIT;
+  }
+
+  /**
+   * The mode a SETTING names — a job's, a chat's, a step's, the popup's
+   * default. modeFromLabel, plus the retired Skip read as Auto (see RETIRED).
+   */
+  function modeFromStored(value) {
+    const t = lower(value);
+    if (Object.prototype.hasOwnProperty.call(RETIRED, t)) return RETIRED[t];
+    return modeFromLabel(value);
+  }
+
+  /** Whether a stored value is the retired Skip, read as Auto (see RETIRED). */
+  function modeRetired(value) {
+    return Object.prototype.hasOwnProperty.call(RETIRED, lower(value));
+  }
+
+  /** Every name a mode has worn, current first — for finding its trigger by label. */
+  function modeNames(key) {
+    const m = modeByKey(key);
+    return m ? [m.label, m.was] : [];
   }
 
   /**
@@ -114,20 +153,35 @@
 
   /**
    * The one mode named inside `text`, or "" for none — and "" for more than
-   * one, which is a sentence about approvals rather than a control set to one.
-   * Length-capped: a whole rendered turn mentioning a mode is not a control.
+   * one, which is a sentence about permissions rather than a control set to
+   * one. Length-capped: a whole rendered turn mentioning a mode is not a
+   * control.
+   *
+   * The old long names count anywhere in it. The current short words only
+   * count where the text says what it is about — "Permission mode: Auto",
+   * "Approval: Manual" — and then only as whole words: "auto" alone turns up
+   * in too many labels to be read as this control's mode.
    */
   function modeNamedWithin(text) {
     const t = lower(text);
     if (!t || t.length > 120) return INHERIT;
     let found = INHERIT;
     for (const m of MODES) {
-      if (t.indexOf(m.label.toLowerCase()) === -1) continue;
+      if (t.indexOf(m.was.toLowerCase()) === -1) continue;
+      if (found && found !== m.key) return INHERIT;
+      found = m.key;
+    }
+    if (found || !SAYS_PERMISSION_RE.test(t)) return found;
+    for (const m of MODES) {
+      if (!new RegExp("(^|[^a-z])" + m.label.toLowerCase() + "([^a-z]|$)").test(t)) continue;
       if (found && found !== m.key) return INHERIT;
       found = m.key;
     }
     return found;
   }
+
+  // What the control calls itself: "Permission mode" now, "approval" before.
+  const SAYS_PERMISSION_RE = /(^|[^a-z])(permission mode|permissions?|approvals?)([^a-z]|$)/;
 
   /**
    * Whether a control is the approval control at all — either because it names
@@ -148,20 +202,20 @@
     if (modeFromCaption(e)) return true;
     for (const v of [e.ariaLabel, e.title]) {
       const t = lower(v);
-      if (t && t.length <= 40 && /(^|[^a-z])approvals?([^a-z]|$)/.test(t)) return true;
+      if (t && t.length <= 40 && SAYS_PERMISSION_RE.test(t)) return true;
     }
     return false;
   }
 
-  /** The aria-label claude.ai uses for a mode, for finding its trigger or row. */
+  /** The mode's name as claude.ai shows it, for finding its trigger or row. */
   function labelForMode(key) {
-    const m = modeByKey(key);
+    const m = modeByKey(modeFromStored(key));
     return m ? m.label : "";
   }
 
-  /** What to show a person: the label, or a word saying we won't touch it. */
+  /** What to show a person: the mode's name, or a word saying we won't touch it. */
   function describeMode(key) {
-    const m = modeByKey(key);
+    const m = modeByKey(modeFromStored(key));
     return m ? m.label : "Leave as-is";
   }
 
@@ -174,13 +228,17 @@
 
   /**
    * Whether a menu row is the one for `key`. The row's text opens with the
-   * mode's name and continues into its description, so this is the prefix test
-   * that `modeFromLabel` would apply, asked the other way round.
+   * mode's name and runs straight on into its description — "ManualClaude asks
+   * before using new tools…", "AutoClaude runs on its own…" — so this is a
+   * prefix test, on the current name or the old one. Safe as a prefix here and
+   * nowhere else: it is only ever asked of the rows of the menu the permission
+   * control opened, where "auto" cannot be anything but Auto.
    */
   function rowIsMode(rowText, key) {
-    const m = modeByKey(key);
+    const m = modeByKey(modeFromStored(key));
     if (!m) return false;
-    return lower(rowText).indexOf(m.label.toLowerCase()) === 0;
+    const t = lower(rowText);
+    return t.indexOf(m.label.toLowerCase()) === 0 || t.indexOf(m.was.toLowerCase()) === 0;
   }
 
   /**
@@ -199,7 +257,7 @@
    * the caller is expected to say so rather than send anyway.
    */
   function reconcile(wanted, current) {
-    const want = modeFromLabel(wanted);
+    const want = modeFromStored(wanted);
     if (!want) return "inherit";
     const have = modeFromLabel(current);
     if (!have) return "unknown";
@@ -210,7 +268,7 @@
   function reconcileNote(wanted, current) {
     switch (reconcile(wanted, current)) {
       case "set":
-        return "approval set to " + describeMode(wanted);
+        return "permission mode set to " + describeMode(wanted);
       case "unknown":
         return "asked for " + describeMode(wanted) + " but this page isn't in Cowork — sent as-is";
       default:
@@ -678,7 +736,7 @@
   function coworkSettings(stored) {
     const s = stored && typeof stored === "object" ? stored : {};
     return {
-      approval: modeFromLabel(s.approval) || INHERIT,
+      approval: modeFromStored(s.approval) || INHERIT,
       borrowFocus: s.borrowFocus === true,
       runAuto: s.runAuto !== false,
     };
@@ -686,17 +744,15 @@
 
   // ---- a run starts on Auto ------------------------------------------------
   //
-  // A new session comes up on whatever approval mode claude.ai chooses, and
-  // when that is Manually approve a workflow run stalls on its first tool call,
-  // waiting for a click nobody is there to make. So a run's FIRST message into
-  // a conversation — the moment that conversation's mode is decided for the
-  // run — moves Manually approve to Automatically approve.
+  // A new session comes up on whatever permission mode claude.ai chooses, and
+  // when that is Manual — "Claude asks before using new tools or opening new
+  // sites" — a workflow run stalls on its first tool call, waiting for a click
+  // nobody is there to make. So a run's FIRST message into a conversation —
+  // the moment that conversation's mode is decided for the run — moves Manual
+  // to Auto.
   //
-  // Only that one move. Automatically approve is already where it is going,
-  // and Skip all approvals is MORE permissive than Auto: someone chose it, and
-  // turning it down to Auto would put approvals back into a run set up not to
-  // have them. And only where nothing asked: a step's or chat's own mode, or
-  // the popup's default, is a choice someone made, and it is applied as made
+  // Only where nothing asked: a step's or chat's own mode, or the popup's
+  // default, is a choice someone made, and it is applied as made
   // (effectiveApproval) — this rule is what replaces "leave it as it is", not
   // what overrides a setting. Later steps in the same conversation are left
   // alone, so a mode switched by hand mid-run stays switched.
@@ -710,12 +766,12 @@
    *   runAuto   the popup's switch
    */
   function runRuleApplies(asked, runStart, runAuto) {
-    return !modeFromLabel(asked) && !!runStart && runAuto !== false;
+    return !modeFromStored(asked) && !!runStart && runAuto !== false;
   }
 
   /**
    * What the run rule does on a page showing `current`. Returns { mode, why }:
-   * `mode` is "auto" when the page is on Manually approve and "" otherwise,
+   * `mode` is "auto" when the page is on Manual and "" otherwise,
    * and `why` is the sentence the run's notes carry either way.
    */
   function runApproval(current) {
@@ -723,12 +779,12 @@
     if (!have)
       return {
         mode: INHERIT,
-        why: "the approval mode couldn't be read, so it was left as it is",
+        why: "the permission mode couldn't be read, so it was left as it is",
       };
     if (have === "manual")
       return {
         mode: "auto",
-        why: "switched from Manually approve to Automatically approve — a run starts on Auto",
+        why: "permission mode switched from Manual to Auto — a run starts on Auto",
       };
     return { mode: INHERIT, why: "already on " + describeMode(have) };
   }
@@ -739,7 +795,7 @@
    * has, so an unset default moves nothing.
    */
   function effectiveApproval(jobApproval, defaultApproval) {
-    return modeFromLabel(jobApproval) || modeFromLabel(defaultApproval) || INHERIT;
+    return modeFromStored(jobApproval) || modeFromStored(defaultApproval) || INHERIT;
   }
 
   /**
@@ -909,7 +965,7 @@
    * earlier. A menu merely closing is neither — that is as true of Escape.
    */
   function approvalTook(ev, wanted) {
-    const want = modeByKey(lower(wanted));
+    const want = modeByKey(modeFromStored(wanted));
     if (!want) return false;
     const e = ev || {};
     const says = modeFromCaption({
@@ -933,7 +989,7 @@
   function approvalMissedNote(wanted, why, current) {
     const on = modeFromLabel(current);
     return (
-      "approval NOT set to " + describeMode(wanted) +
+      "permission mode NOT set to " + describeMode(wanted) +
       (why ? " (" + norm(why) + ")" : "") +
       " — sent under " +
       (on ? describeMode(on) : "whatever mode the page was already in")
@@ -964,6 +1020,9 @@
     approvalApplies,
     surfaceLeftNote,
     modeFromLabel,
+    modeFromStored,
+    modeRetired,
+    modeNames,
     modeFromCaption,
     modeNamedWithin,
     isApprovalControl,

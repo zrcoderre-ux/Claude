@@ -454,7 +454,7 @@
               : `<option value="">Default (leave current model)</option>`
           )
           .join("");
-        const approvalOpts = optionsFor(K ? K.modeOptions() : [], "Approvals: leave as-is");
+        const approvalOpts = optionsFor(K ? K.modeOptions() : [], "Permission mode: leave as-is");
         card.innerHTML =
           `<div class="cumwf-card-head"><span class="cumwf-card-title">Chat ${esc(
             "ABCDEF"[i] || i + 1
@@ -464,7 +464,7 @@
           `<select class="wf-chat-target"><option value="new">New chat — no project</option>${projOpts}` +
           `<option value="code">New Claude Code chat (pick a repo)</option></select>` +
           `<select class="wf-chat-model">${modelOpts}</select>` +
-          `<select class="wf-chat-approval" title="How much Claude may do unattended, where the composer shows an approval control">${approvalOpts}</select>` +
+          `<select class="wf-chat-approval" title="Permission mode — Manual or Auto, where the composer shows that control">${approvalOpts}</select>` +
           `</div>` +
           `<input class="wf-chat-repo" type="text" placeholder="owner/name" value="${esc(
             (chat.target && chat.target.codeRepo) || ""
@@ -486,7 +486,8 @@
         if (!targetEl.value) targetEl.value = "new";
         modelEl.value = chat.model || "";
         const approvalEl = card.querySelector(".wf-chat-approval");
-        approvalEl.value = chat.approval || "";
+        // A stored Skip (retired) shows as the Auto it now runs under.
+        approvalEl.value = (K ? K.modeFromStored(chat.approval) : chat.approval) || "";
         const syncRepo = () => (repoEl.hidden = targetEl.value !== "code");
         syncRepo();
 
@@ -1087,7 +1088,7 @@
           K && chat.approval ? K.describeMode(chat.approval) : "whatever the chat is on";
         const stepApprovalOpts = optionsFor(
           K ? K.modeOptions() : [],
-          "Approvals: " + inheritedApproval
+          "Permission mode: " + inheritedApproval
         );
         card.setAttribute("data-step-id", step.id);
         card.innerHTML =
@@ -1101,7 +1102,7 @@
             : "") +
           `<select class="wf-step-chat" style="width:auto">${chatOpts}</select>` +
           `<select class="wf-step-model" style="width:auto" title="Which model answers this step">${stepModelOpts}</select>` +
-          `<select class="wf-step-approval" style="width:auto" title="How much Claude may do unattended on this step">${stepApprovalOpts}</select>` +
+          `<select class="wf-step-approval" style="width:auto" title="Permission mode for this step — Manual or Auto">${stepApprovalOpts}</select>` +
           `<button class="cumwf-btn mini wf-up" type="button" title="Move up">↑</button>` +
           `<button class="cumwf-btn mini wf-down" type="button" title="Move down">↓</button>` +
           // Add HERE, rather than at the bottom and then dragged up. Next to
@@ -1173,7 +1174,7 @@
         stepModelEl.addEventListener("change", () => (step.model = stepModelEl.value || null));
         const stepApprovalEl = card.querySelector(".wf-step-approval");
         if (stepApprovalEl) {
-          stepApprovalEl.value = step.approval || "";
+          stepApprovalEl.value = (K ? K.modeFromStored(step.approval) : step.approval) || "";
           stepApprovalEl.addEventListener("change", () => (step.approval = stepApprovalEl.value || null));
         }
         wirePromptComplete(card.querySelector(".wf-step-prompt"), card.querySelector(".cumwf-ac"), step);

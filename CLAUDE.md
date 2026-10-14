@@ -60,11 +60,10 @@ than inline in the wiring.
   folded into an existing toggle, because the toggles carry different risks.
   Permission prompts especially: only ever click the narrowest grant
   (`Allow once`), never one that outlives the prompt. One exception, by the
-  owner's request (October 2026): **Runs start on Automatically approve** ships
-  ON — a run's first message into a conversation moves Manually approve to
-  Automatically approve (`CUMCowork.runApproval`). It still has its own switch,
-  and it never touches Skip, a mode someone set, or a scheduled send. Do not
-  flip it back to off.
+  owner's request (October 2026): **Runs start on Auto** ships ON — a run's
+  first message into a conversation moves the permission mode from Manual to
+  Auto (`CUMCowork.runApproval`). It still has its own switch, and it never
+  touches a mode someone set or a scheduled send. Do not flip it back to off.
 - **No warning about the key READER, anywhere (standing instruction from the
   repo owner, September 2026).** A key or a master-key case made under an
   older `PARSE_VERSION` is re-read silently where its workbook was kept and
@@ -89,8 +88,9 @@ than inline in the wiring.
   been seen, retire the driver it doesn't use. Until then the old rule holds
   for the plumbing: **Cowork is not Chat with a different address.** Never
   assume plumbing built for Chat works on Cowork — keep parallel Cowork paths
-  unless a piece has been CONFIRMED working on both. Confirmed so far: the Chat/Cowork toggle, the approval menu, the
-  model menu, and generic mechanics (clicks, menu open/close, hidden-tab
+  unless a piece has been CONFIRMED working on both. Confirmed so far: the Chat/Cowork toggle, the approval menu (now
+  headed "Permission mode", with only Manual and Auto — Skip is gone, and a
+  saved Skip is read as Auto by `modeFromStored`), the model menu, and generic mechanics (clicks, menu open/close, hidden-tab
   sleeps). The approval mode is NOT kept between sessions (owner's finding,
   September 2026) — it was removed as a setting once on the belief that it was
   sticky, and restored; a send sets it from the job, else from the popup's
