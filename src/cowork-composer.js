@@ -1093,12 +1093,16 @@
     const prefs = await coworkSettings();
     const approval = K.effectiveApproval(j.approval, prefs.approval);
     const approvalFrom = approval && !K.modeFromLabel(j.approval) ? " (the popup's default)" : "";
+    // Where nothing asked for a mode, a run's first message into this
+    // conversation moves Manually approve to Auto (K.runApproval) — read off
+    // the page at the approval phase, since it depends on what the page is on.
+    const runRule = K.runRuleApplies(approval, j.runStart, prefs.runAuto);
     const onSession = !onHome && !onProjectPage;
     const phases = K.coworkPhases({
       onSession: onSession,
       onProjectPage: onProjectPage,
       projectId: !!projectId,
-      approval: !!approval,
+      approval: !!approval || runRule,
       project: !!project,
       model: !!j.model,
       files: !!files.length,
@@ -1139,14 +1143,39 @@
         // Switching re-renders the composer; a handle held across it is stale.
         editor = (await C.waitFor(C.findEditor, 15000)) || editor;
       } else if (phase === "approval") {
+        let target = approval;
+        let from = approvalFrom;
+        let ruled = ""; // the run rule's own sentence, when it is what moved the mode
+        if (!target) {
+          // The run rule: only what the page is on decides it.
+          let was = "";
+          try {
+            was = C.currentApproval();
+          } catch (e) {
+            was = "";
+          }
+          const rr = K.runApproval(was);
+          if (!rr.mode) {
+            say("approval", rr.why + " (run start)");
+            continue;
+          }
+          target = rr.mode;
+          from = " (run start: was Manually approve)";
+          ruled = rr.why;
+        }
         let r;
         try {
-          r = await selectApproval(approval);
+          r = await selectApproval(target);
         } catch (e) {
           r = { ok: false, why: String((e && e.message) || e) };
         }
-        if (r.ok) say("approval", K.describeMode(approval) + approvalFrom + " (" + r.why + ")");
-        else {
+        if (r.ok) {
+          // The run rule's switch is said on the run, not only in the trail:
+          // the extension changed a setting nobody configured for this chat,
+          // and that is owed a line where the operator reads the run.
+          if (ruled) notes.push(ruled);
+          say("approval", K.describeMode(target) + from + " (" + r.why + ")");
+        } else {
           // Survivable, like the model — the owner's instruction, September
           // 2026, reversing what this used to do. A send that stands down over
           // the approval mode leaves the work undone, and the work not
@@ -1161,7 +1190,7 @@
           } catch (e) {
             now = "";
           }
-          notes.push(K.approvalMissedNote(approval, r.why + approvalFrom, now));
+          notes.push(K.approvalMissedNote(target, r.why + from, now));
           say("approval", "NOT set (" + r.why + ") — sent under " +
             (now ? K.describeMode(now) : "the page's own mode"));
         }

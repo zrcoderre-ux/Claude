@@ -59,7 +59,12 @@ than inline in the wiring.
   clicker and every automation in here starts off, with its own switch — never
   folded into an existing toggle, because the toggles carry different risks.
   Permission prompts especially: only ever click the narrowest grant
-  (`Allow once`), never one that outlives the prompt.
+  (`Allow once`), never one that outlives the prompt. One exception, by the
+  owner's request (October 2026): **Runs start on Automatically approve** ships
+  ON — a run's first message into a conversation moves Manually approve to
+  Automatically approve (`CUMCowork.runApproval`). It still has its own switch,
+  and it never touches Skip, a mode someone set, or a scheduled send. Do not
+  flip it back to off.
 - **No warning about the key READER, anywhere (standing instruction from the
   repo owner, September 2026).** A key or a master-key case made under an
   older `PARSE_VERSION` is re-read silently where its workbook was kept and

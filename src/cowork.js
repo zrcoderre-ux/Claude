@@ -668,7 +668,10 @@
 
   // The popup's Cowork settings. `approval` is the mode a send applies when
   // the job names none; `borrowFocus` allows the project-list ladder's last
-  // rung, which takes the screen for a few seconds and so is opt-in.
+  // rung, which takes the screen for a few seconds and so is opt-in; `runAuto`
+  // is the run rule below (runApproval), and is ON unless switched off — the
+  // owner asked for runs to start on Auto (October 2026), so it ships doing
+  // that, with its own switch to stop it.
   const COWORK_KEY = "cum_cowork";
 
   /** The popup's Cowork settings, normalised from whatever storage holds. */
@@ -677,7 +680,57 @@
     return {
       approval: modeFromLabel(s.approval) || INHERIT,
       borrowFocus: s.borrowFocus === true,
+      runAuto: s.runAuto !== false,
     };
+  }
+
+  // ---- a run starts on Auto ------------------------------------------------
+  //
+  // A new session comes up on whatever approval mode claude.ai chooses, and
+  // when that is Manually approve a workflow run stalls on its first tool call,
+  // waiting for a click nobody is there to make. So a run's FIRST message into
+  // a conversation — the moment that conversation's mode is decided for the
+  // run — moves Manually approve to Automatically approve.
+  //
+  // Only that one move. Automatically approve is already where it is going,
+  // and Skip all approvals is MORE permissive than Auto: someone chose it, and
+  // turning it down to Auto would put approvals back into a run set up not to
+  // have them. And only where nothing asked: a step's or chat's own mode, or
+  // the popup's default, is a choice someone made, and it is applied as made
+  // (effectiveApproval) — this rule is what replaces "leave it as it is", not
+  // what overrides a setting. Later steps in the same conversation are left
+  // alone, so a mode switched by hand mid-run stays switched.
+
+  /**
+   * Whether the run rule applies to this send at all.
+   *
+   *   asked     the mode the send already applies (effectiveApproval); any
+   *             mode at all means someone chose, and the rule stands aside
+   *   runStart  this is a run's first message into this conversation
+   *   runAuto   the popup's switch
+   */
+  function runRuleApplies(asked, runStart, runAuto) {
+    return !modeFromLabel(asked) && !!runStart && runAuto !== false;
+  }
+
+  /**
+   * What the run rule does on a page showing `current`. Returns { mode, why }:
+   * `mode` is "auto" when the page is on Manually approve and "" otherwise,
+   * and `why` is the sentence the run's notes carry either way.
+   */
+  function runApproval(current) {
+    const have = modeFromLabel(current);
+    if (!have)
+      return {
+        mode: INHERIT,
+        why: "the approval mode couldn't be read, so it was left as it is",
+      };
+    if (have === "manual")
+      return {
+        mode: "auto",
+        why: "switched from Manually approve to Automatically approve — a run starts on Auto",
+      };
+    return { mode: INHERIT, why: "already on " + describeMode(have) };
   }
 
   /**
@@ -945,6 +998,8 @@
     COWORK_KEY,
     coworkSettings,
     effectiveApproval,
+    runRuleApplies,
+    runApproval,
     coworkPhases,
     attachOutcome,
     nameSeen,

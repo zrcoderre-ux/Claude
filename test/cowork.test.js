@@ -303,11 +303,12 @@ test("how a tab gets looked at depends on where the screen is", () => {
 });
 
 test("the popup's Cowork settings normalise to a mode key and a boolean", () => {
-  assert.deepEqual(K.coworkSettings(null), { approval: "", borrowFocus: false });
-  assert.deepEqual(K.coworkSettings({}), { approval: "", borrowFocus: false });
-  assert.deepEqual(K.coworkSettings({ approval: "skip", borrowFocus: true }), {
+  assert.deepEqual(K.coworkSettings(null), { approval: "", borrowFocus: false, runAuto: true });
+  assert.deepEqual(K.coworkSettings({}), { approval: "", borrowFocus: false, runAuto: true });
+  assert.deepEqual(K.coworkSettings({ approval: "skip", borrowFocus: true, runAuto: false }), {
     approval: "skip",
     borrowFocus: true,
+    runAuto: false,
   });
   // A label stored instead of a key still names the mode; junk names nothing.
   assert.equal(K.coworkSettings({ approval: "Skip all approvals" }).approval, "skip");
@@ -316,6 +317,62 @@ test("the popup's Cowork settings normalise to a mode key and a boolean", () => 
   assert.equal(K.coworkSettings({ borrowFocus: 1 }).borrowFocus, false);
   assert.equal(K.coworkSettings({ borrowFocus: "true" }).borrowFocus, false);
   assert.equal(K.COWORK_KEY, "cum_cowork");
+});
+
+// ---- a run starts on Auto ---------------------------------------------------
+//
+// A new session comes up on whatever approval mode claude.ai chooses, and a
+// run that lands on Manually approve stalls on its first tool call with nobody
+// there to click. The rule moves Manual to Auto at a run's first message into a
+// conversation, and does nothing else.
+
+test("runs start on Auto unless the popup's switch says otherwise", () => {
+  // On by default — the owner asked for it — and only a real false turns it off.
+  assert.equal(K.coworkSettings({}).runAuto, true);
+  assert.equal(K.coworkSettings({ runAuto: true }).runAuto, true);
+  assert.equal(K.coworkSettings({ runAuto: false }).runAuto, false);
+  assert.equal(K.coworkSettings({ runAuto: 0 }).runAuto, true);
+});
+
+test("the run rule applies only at a run's start, only where nothing asked, only while on", () => {
+  assert.equal(K.runRuleApplies("", true, true), true);
+  assert.equal(K.runRuleApplies(null, true, undefined), true);
+  // A mode someone chose — the step's, the chat's, the popup's default — is
+  // applied as chosen; the rule replaces "leave it", it never overrides a setting.
+  assert.equal(K.runRuleApplies("manual", true, true), false);
+  assert.equal(K.runRuleApplies("Skip all approvals", true, true), false);
+  assert.equal(K.runRuleApplies("auto", true, true), false);
+  // Not the run's first message into this conversation: a mode switched by
+  // hand mid-run stays where it was put. And scheduled sends never say runStart.
+  assert.equal(K.runRuleApplies("", false, true), false);
+  assert.equal(K.runRuleApplies("", undefined, true), false);
+  // Switched off in the popup.
+  assert.equal(K.runRuleApplies("", true, false), false);
+  // Junk asked is nothing asked.
+  assert.equal(K.runRuleApplies("whatever", true, true), true);
+});
+
+test("the run rule moves Manual to Auto and nothing else", () => {
+  const manual = K.runApproval("Manually approve");
+  assert.equal(manual.mode, "auto");
+  assert.match(manual.why, /switched from Manually approve to Automatically approve/);
+  // The short form and the stored key name the same mode.
+  assert.equal(K.runApproval("Manual").mode, "auto");
+  assert.equal(K.runApproval("manual").mode, "auto");
+  // Already there.
+  const auto = K.runApproval("Automatically approve");
+  assert.equal(auto.mode, "");
+  assert.match(auto.why, /already on Automatically approve/);
+  // Skip is MORE permissive than Auto; turning it down would put approvals back
+  // into a run set up not to have them.
+  const skip = K.runApproval("Skip all approvals");
+  assert.equal(skip.mode, "");
+  assert.match(skip.why, /already on Skip all approvals/);
+  // A page that won't say is left alone, and says so — never a guess.
+  const unread = K.runApproval("");
+  assert.equal(unread.mode, "");
+  assert.match(unread.why, /couldn't be read/);
+  assert.equal(K.runApproval(null).mode, "");
 });
 
 test("a send applies the job's approval, else the popup's default, else nothing", () => {

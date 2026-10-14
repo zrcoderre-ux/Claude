@@ -177,6 +177,18 @@
       session.</p>
 
     <label class="toggle">
+      <input id="cowork-run-auto" type="checkbox" />
+      <span>Runs start on Automatically approve</span>
+    </label>
+    <p class="hint">On. A workflow run's first message into each conversation
+      moves <b>Manually approve</b> to <b>Automatically approve</b>, so the run
+      doesn't stall waiting for you to approve its first tool call. It changes
+      nothing else: a page already on Auto or on <b>Skip all approvals</b> is
+      left alone, a mode set on the chat, the step or above still wins, later
+      steps leave a mode you switched by hand where it is, and scheduled sends
+      are untouched. The run's notes say when it made the switch.</p>
+
+    <label class="toggle">
       <input id="cowork-focus" type="checkbox" />
       <span>Borrow focus to load a project list</span>
     </label>
