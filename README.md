@@ -39,6 +39,11 @@ bottom-right corner of [claude.ai](https://claude.ai).
   composer shows an approval control, when its job or step names none, because
   claude.ai does not keep the mode between sessions. Leave as-is by default. See
   [Cowork](#cowork).
+- **Runs start on Automatically approve** (on, its own switch) — a workflow
+  run's first message into each conversation moves **Manually approve** to
+  **Automatically approve**, so the run doesn't stall on its first tool call.
+  Nothing else: Auto and Skip are left alone, and a mode you set wins. See [A
+  run starts on Auto](#a-run-starts-on-auto).
 - **Borrow focus to load a project list** (opt-in, separate toggle) —
   lets a send on the Cowork-style composer bring its own window in front for a bounded time when its
   project list will not load in a tab that is merely visible, and give the
@@ -669,6 +674,41 @@ markup change until it has cost a week of runs.
 In a workflow the approval mode works like the model: set on the chat, and
 overridable **per step**, leaving the conversation on it for the steps after —
 so one chat can research with the brakes off and then edit a filing with them on.
+
+#### A run starts on Auto
+
+A new session comes up on whatever mode claude.ai chooses, and when that is
+**Manually approve**, a workflow run stalls on its first tool call, waiting
+for a click nobody is there to make. So **a run's first message into each
+conversation reads the approval control, and moves Manually approve to
+Automatically approve.** It is on by default, with its own switch in the popup
+(**Runs start on Automatically approve**), because the owner asked for runs to
+behave this way.
+
+It is deliberately narrow:
+
+- **Only Manual moves, and only to Auto.** A page already on Automatically
+  approve is where it is going. A page on **Skip all approvals** is left there,
+  because Skip is *more* permissive than Auto; turning it down would put
+  approvals back into a run set up not to have them.
+- **Only where nothing asked.** A mode set on the chat or the step, or the
+  popup's **Default approval mode**, is a choice someone made, and it is applied
+  as made. A chat you want to run under Manually approve is a chat set to
+  Manually approve. The rule replaces "leave it as it is", not a setting.
+- **Only at the start.** Each conversation's first message in the run, or the
+  first message into a conversation the run hasn't opened yet, which covers a
+  re-run starting part-way in. Later steps leave the mode alone, so one you
+  switch by hand mid-run stays where you put it.
+- **Only runs.** Scheduled sends are untouched.
+- **Said, both ways.** A switch it made is in the run's notes (*switched from
+  Manually approve to Automatically approve — a run starts on Auto*). A switch
+  it could not make is loud, and the message still goes, the same as any other
+  approval switch (*approval NOT set to Automatically approve (…) — sent under
+  Manually approve*). A control whose mode can't be read is left alone, and the
+  send's trail says so.
+
+The decisions are `runRuleApplies` and `runApproval` in `src/cowork.js`
+(tested); the driver reads the page at its approval phase.
 
 [Upload folder](#uploading-a-case-folder-into-a-chat) works on a new Cowork
 session too, on Cowork's own terms — it borrows this driver's attachment

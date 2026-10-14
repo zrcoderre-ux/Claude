@@ -1249,6 +1249,7 @@
         model: msg.model || null,
         codeRepo: msg.codeRepo || null,
         approval: msg.approval || null,
+        runStart: !!msg.runStart,
         coworkProject: msg.coworkProject || null,
         coworkProjectId: msg.coworkProjectId || null,
         stop: () => halted,

@@ -37,6 +37,7 @@
     allowOnce: document.getElementById("allow-once"),
     coworkApproval: document.getElementById("cowork-approval"),
     coworkFocus: document.getElementById("cowork-focus"),
+    coworkRunAuto: document.getElementById("cowork-run-auto"),
     acMax: document.getElementById("ac-max"),
     autoDownload: document.getElementById("auto-download"),
     dlMax: document.getElementById("dl-max"),
@@ -148,7 +149,9 @@
   let dlCfg = { enabled: false, max: 20, catchUp: false, lookbackMin: 10 };
   let statusCfg = { warn: true, holdSends: true, defaultModel: "" };
   let warnCfg = { enabled: true, dailyShare: null };
-  let coworkCfg = { approval: "", borrowFocus: false };
+  // runAuto is ON unless switched off: the owner asked for runs to start on
+  // Auto (CUMCowork.runApproval), so an unset value means on.
+  let coworkCfg = { approval: "", borrowFocus: false, runAuto: true };
 
   function saveWarnCfg(msg) {
     chrome.storage.local.set({ [WARN_CFG_KEY]: warnCfg }, () => msg && flash(msg));
@@ -174,6 +177,7 @@
       coworkCfg = Object.assign(coworkCfg, (res && res[COWORK_KEY]) || {});
       el.coworkApproval.value = coworkCfg.approval || "";
       el.coworkFocus.checked = coworkCfg.borrowFocus === true;
+      if (el.coworkRunAuto) el.coworkRunAuto.checked = coworkCfg.runAuto !== false;
       render(res && res[STORAGE_KEY]);
       if (res && res[MANUAL_URL_KEY]) el.endpoint.value = res[MANUAL_URL_KEY];
       el.showOverage.checked = !!(res && res[OVERAGE_KEY]);
@@ -296,6 +300,14 @@
     coworkCfg.borrowFocus = el.coworkFocus.checked;
     saveCowork(coworkCfg.borrowFocus ? "A project list may borrow focus" : "Focus is never borrowed");
   });
+
+  if (el.coworkRunAuto)
+    el.coworkRunAuto.addEventListener("change", () => {
+      coworkCfg.runAuto = el.coworkRunAuto.checked;
+      saveCowork(
+        coworkCfg.runAuto ? "Runs move Manual to Auto at the start" : "Runs leave the approval mode as it is"
+      );
+    });
 
   el.acMax.addEventListener("change", () => {
     let n = parseInt(el.acMax.value, 10);

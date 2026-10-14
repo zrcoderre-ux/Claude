@@ -1620,6 +1620,11 @@ async function runMember(runId, run, src, plan, opened, waveStartedAt) {
     titleHeld: naming.held,
     codeRepo: m.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
     approval: m.approval || null,
+    // The run's first message into this conversation — where a page on
+    // Manually approve is moved to Auto (CUMCowork.runApproval). A chat the
+    // run hasn't opened yet counts too, so a re-run starting part-way in still
+    // starts each fresh conversation on Auto.
+    runStart: !!(m.firstInChat || !saved.url),
     // Only on the way in: the project is the address the chat was opened at,
     // so the page can check it landed there.
     coworkProject:
@@ -1928,6 +1933,8 @@ async function driveRun(runId, opts) {
         titleHeld: naming.held,
         codeRepo: step.firstInChat && !saved.url ? (chat.target && chat.target.codeRepo) || null : null,
         approval: step.approval || null,
+        // The run's first message into this conversation — see the wave payload.
+        runStart: !!(step.firstInChat || !saved.url),
         // Only on the way in — see the wave payload for why.
         coworkProject:
           step.firstInChat && !saved.url && chatProjectPage(chat)
