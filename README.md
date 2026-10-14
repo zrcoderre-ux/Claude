@@ -110,6 +110,12 @@ bottom-right corner of [claude.ai](https://claude.ai).
   button, a scheduled send's files, a workflow's documents. The whole folder,
   refused out loud, whatever the marker is buried under. See [A folder marked
   LEAKS never uploads](#a-folder-marked-leaks-never-uploads).
+- **A PDF asks before it uploads** — pick a PDF through claude.ai's own upload
+  button, drop it, paste it, or let the Upload folder button reach one, and it
+  is held behind a question naming it until you press **Upload anyway**. A
+  scheduled send or a workflow asks when the PDF is added, while you are there
+  to answer. See [A PDF asks before it
+  uploads](#a-pdf-asks-before-it-uploads).
 - **Copy ruling** — a second copy button in claude.ai's own action bar, beside
   the one that copies the whole reply. It copies **only the tentative ruling**:
   NATURE OF PROCEEDINGS through the end of the CONCLUSION, without the note
@@ -1123,6 +1129,58 @@ The bar is applied **when the folder is picked**, which is the only moment the
 folder is still known — a run holds files, not the folder they came out of. A
 run built before you marked a folder is holding files that were allowed in at
 the time; delete them from the run.
+
+### A PDF asks before it uploads
+
+The pseudonymized papers reach claude.ai as **text** — the `Text Files` a case
+folder holds, and the combined file built out of them. A PDF is the other kind
+of paper: most often an original, the filing as served, in the real names. So
+**a PDF never uploads on the strength of a pick alone.** Every door asks first,
+naming the file, and only the affirmative button lets it through:
+
+- **claude.ai's own upload button**, and a PDF **dropped** on the page or
+  **pasted** into it. The pick is held before claude.ai's own handlers see it —
+  where the [key guard](#pseudonym-translation) stands — and what you let
+  through with **Upload anyway** is handed back and confirmed the same way the
+  key guard's release is, said out loud if it never lands.
+- **The Upload folder button**, before anything reaches the composer. A PDF
+  under `Text Files` used to go up beside the combined file without a word; now
+  it is asked about, and one you keep out is named in the card.
+- **A scheduled send's files and a workflow run's documents** — asked when the
+  PDF is **added**, not when it goes. Those uploads happen later and on their
+  own, often with nobody at the screen, and a question put to an empty room
+  would be a send that silently never leaves. The button there reads **Add
+  PDF**, because adding it is what you are agreeing to.
+
+What it holds and what it doesn't:
+
+- **Only the PDFs wait.** Pick a PDF with three text files and the text files
+  go on; **Keep it out** keeps out exactly the PDF.
+- **No is the easy answer.** Focus starts on Keep it out, and Escape and a click
+  outside the box both mean no.
+- **A PDF is known by its name or its type** — `brief.pdf`, `BRIEF.PDF`, or a
+  PDF saved without its extension that the browser still reads as
+  `application/pdf`.
+- **One PDF is asked about once.** The extension's own uploads — a scheduled
+  send, a workflow step, the Folder button, the guard's own release — reach
+  claude.ai's input as synthetic events carrying files you already answered
+  for, and they pass. Only a person's own pick, drop or paste is asked about at
+  the page, and a drop onto the extension's own send-form drop zone is left to
+  that form, which asks for itself.
+- **A PDF picked on an input that isn't the composer's** — a project's own
+  upload, say — goes back to that same input when you let it through, never
+  onto the chat composer instead. (The key guard's release now does the same.)
+- **If the question isn't loaded, the PDF stays out** and the note says so. A
+  PDF is never let through because the thing that asks about it is missing.
+
+What it can't see: a file added from Google Drive or another integration is not
+picked from this computer, so there is no pick to hold. On Cowork the
+interception is the same generic DOM mechanics as on Chat, but — as with the key
+guard — it is confirmed only on Chat. And a send or a run built before this
+existed holds files that were allowed in at the time.
+
+The decisions are `src/pdfflag.js` (pure, tested in `test/pdfflag.test.js`);
+the dialog every door shows is `src/pdf-confirm.js`.
 
 ### Steps that run at the same time
 
@@ -2167,8 +2225,10 @@ Press it, pick the matter's folder, and:
   `END FILE` markers — byte for byte the file a run builds (`W.bundleText`).
   Twelve attachments are twelve things claude.ai may or may not read; one
   labelled file is one. What isn't text — a PDF, a Word file — can't be
-  concatenated and goes up on its own beside it, and a single text file is
-  already one upload, so nothing is combined with itself.
+  concatenated and goes up on its own beside it (a PDF only once you have said
+  yes to it — see [A PDF asks before it uploads](#a-pdf-asks-before-it-uploads)),
+  and a single text file is already one upload, so nothing is combined with
+  itself.
 - **The `pseudonym_key.xlsx` is loaded, never uploaded.** It is parsed into the
   extension's key library under the case folder's name — the same entry the run
   editor's picker and the popup show — and attached to the conversation once it
@@ -2730,7 +2790,9 @@ before claude.ai's own handlers ever see the event. The extension's **own**
 pickers are not uploads and are not asked about — [Upload
 folder](#uploading-a-case-folder-into-a-chat) reads a case folder locally
 and parses the key into the library — but what that button then hands to
-claude.ai goes through this guard like anything else.
+claude.ai goes through this guard like anything else. The same guard asks
+about a **PDF**, by its own narrower rule — see [A PDF asks before it
+uploads](#a-pdf-asks-before-it-uploads).
 
 What you let through is **handed back and confirmed**, not merely re-fired.
 The release goes through the same attach ladder the scheduled sends and the
@@ -2744,7 +2806,9 @@ said out loud in a dialog naming the file, what was tried, and what was seen;
 a release that half-landed stops rather than dropping the files in a second
 door on top (that would attach the taken ones twice) and says to look at the
 composer before sending. A confirmed release says nothing — the chips are the
-word.
+word. A file picked on a file input that is **not** the composer's — a
+project's own upload, say — goes back to that same input instead, and only
+there: the composer's ladder would have attached a project's file to a chat.
 
 ### A real name in the draft stops the send
 
@@ -4014,6 +4078,8 @@ src/upfiles.js         The files you uploaded: whose, where the bytes are, what'
 src/up-files.js        The Files button and panel — downloads them again
 src/folderup.js        A case folder into a new chat: what goes up, what it's called (pure)
 src/folder-upload.js   The Upload folder button on a new conversation
+src/pdfflag.js         A PDF uploads only on your say-so: which doors ask, and the words (pure)
+src/pdf-confirm.js     The PDF question on screen, shared by every door that asks
 src/replycopy.js       claude.ai's copy box: where it is, and what it wrote
 src/tentative.js       The tentative ruling out of a reply (pure)
 src/copy-ruling.js     The Copy-ruling button, beside claude.ai's own Copy
@@ -4050,6 +4116,7 @@ test/tentative.test.js Unit tests for the ruling's start and end boundaries
 test/xlsxread.test.js  Unit tests for the .xlsx reader (zip + sheet XML)
 test/pseudo.test.js    Unit tests for the pseudonym key logic
 test/folderup.test.js  Unit tests for the case folder taken into a new chat
+test/pdfflag.test.js   Unit tests for when a PDF is asked about, and what is said
 test/upfiles.test.js   Unit tests for getting an uploaded file back
 test/coderepo.test.js  Unit tests for the repo behind a Recents row (branch traps included)
 icons/                 Generated PNG icons (16/48/128)

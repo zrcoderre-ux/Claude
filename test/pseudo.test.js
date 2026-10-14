@@ -1609,6 +1609,25 @@ test("releaseNote: a driver's own evidence is said as it worded it, and a caveat
   assert.ok(/This is Chat's evidence\.$/.test(caveat), caveat);
 });
 
+test("releaseNote: a file handed back to the input it was picked on is not sent to the composer", () => {
+  // A project's own upload is not the chat composer. Telling somebody to drag
+  // that file onto the composer would attach a project's paper to a chat.
+  const there = P.releaseNote(
+    ["brief.pdf"],
+    "",
+    { ok: false, uploads: 0, chips: 0 },
+    1,
+    "",
+    "the file input it was picked on"
+  );
+  assert.match(there, /never confirmed 1 file landing through the file input it was picked on \(0 upload confirmations/);
+  assert.match(there, /Look where you picked it from/);
+  assert.ok(!/composer/.test(there), there);
+  // And the composer's own wording is untouched without it.
+  assert.match(P.releaseNote(["a.pdf"], "the file input", { ok: false }, 1, ""), /landing on the composer/);
+  assert.equal(P.releaseNote(["a.pdf"], "x", { ok: true }, 1, "", "the file input it was picked on"), "");
+});
+
 test("the release's clocks: a short look at the input, a deadline that scales", () => {
   assert.ok(P.RELEASE_INPUT_WATCH_MS >= 8000 && P.RELEASE_INPUT_WATCH_MS <= 30000);
   assert.equal(P.releaseDeadline(1), 120000);

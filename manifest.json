@@ -65,6 +65,8 @@
         "src/jobstore.js",
         "src/dropdir.js",
         "src/leaks.js",
+        "src/pdfflag.js",
+        "src/pdf-confirm.js",
         "src/jobform.js",
         "src/status.js",
         "src/workflow.js",

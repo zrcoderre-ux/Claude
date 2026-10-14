@@ -91,6 +91,10 @@ test("each module publishes the global the next one reads", () => {
     "CUMFaking",
     "CUMUpFiles",
     "CUMLeaks",
+    // Every upload door asks about a PDF through these two; a door that finds
+    // either missing holds the PDF back rather than letting it through.
+    "CUMPdfFlag",
+    "CUMPdfConfirm",
     "CUMKeyFile",
     // content.js tags and records every weekly reading through this; without
     // it the plan comparison quietly has no data.
@@ -150,6 +154,80 @@ test("the LEAKS gate loads before every door that has to consult it", () => {
   assert.ok(opt("leaks.js") !== -1, "the LEAKS gate is not on the options page");
   for (const door of ["jobform.js", "workflowform.js"])
     assert.ok(opt("leaks.js") < opt(door), "leaks.js loads too late for " + door);
+});
+
+test("the PDF flag loads before every door that asks about a PDF", () => {
+  // src/pdfflag.js decides and src/pdf-confirm.js asks. The doors read both by
+  // name when a pick arrives, and one that finds either missing holds the PDF
+  // back — so a module loading late is every PDF in the extension held, and
+  // manifest order is what keeps them early. Asserted on both pages.
+  const order = contentScripts();
+  const at = (f) => order.indexOf(f);
+  const html = fs.readFileSync(path.join(ROOT, "src/options.html"), "utf8");
+  const scripts = Array.from(html.matchAll(/<script src="([^"]+)"/g)).map((m) => m[1]);
+  const opt = (f) => scripts.indexOf(f);
+  for (const m of ["pdfflag.js", "pdf-confirm.js"]) {
+    assert.ok(at("src/" + m) !== -1, m + " is not in the manifest");
+    for (const door of ["src/jobform.js", "src/folder-upload.js", "src/pseudo-view.js"])
+      assert.ok(at("src/" + m) < at(door), m + " loads too late for " + door);
+    assert.ok(opt(m) !== -1, m + " is not on the options page");
+    for (const door of ["jobform.js", "workflowform.js"])
+      assert.ok(opt(m) < opt(door), m + " loads too late for " + door);
+  }
+});
+
+test("a PDF a person picks, drops or pastes is held for the question; the extension's own hand-offs are not", async () => {
+  // The listeners src/pseudo-view.js registers on window, CALLED rather than
+  // counted. claude.ai's own upload button opens a file input, so a pick on it
+  // arrives as a trusted change event — and must stop here, before claude.ai's
+  // handlers see it. A scheduled send, a workflow step or the Folder button
+  // reaches the same input as a SYNTHETIC event carrying files that were asked
+  // about where they came in, and holding one of those would wedge a send
+  // nobody is watching.
+  const { win } = loadAll();
+  const of = (type) => win.__listeners.filter(([t]) => t === type).map(([, fn]) => fn);
+  const pdf = new win.File([], "Smith complaint.pdf", { type: "application/pdf" });
+  const txt = new win.File([], "combined-documents.txt", { type: "text/plain" });
+  const fire = (type, ev) => {
+    let stopped = 0;
+    const e = Object.assign(
+      { isTrusted: true, stopImmediatePropagation: () => stopped++, preventDefault: () => {} },
+      ev
+    );
+    for (const fn of of(type)) fn(e);
+    return stopped;
+  };
+  const input = (files, cls) => {
+    const el = win.document.createElement("input");
+    el.type = "file";
+    el.files = files;
+    if (cls) el.className = cls;
+    win.document.body.appendChild(el);
+    return el;
+  };
+  assert.ok(of("change").length && of("drop").length && of("paste").length, "the upload guard is not listening");
+
+  assert.equal(fire("change", { target: input([pdf]) }), 1, "a person's PDF pick went straight to claude.ai");
+  assert.equal(fire("change", { target: input([txt, pdf]) }), 1, "a PDF among other papers went straight through");
+  assert.equal(fire("change", { target: input([pdf]), isTrusted: false }), 0, "the extension's own hand-off was held");
+  assert.equal(fire("change", { target: input([txt]) }), 0, "a pick with no PDF in it was held");
+  assert.equal(fire("change", { target: input([pdf], "cumjf-files") }), 0, "the extension's own picker was held");
+
+  const zone = win.document.createElement("div");
+  const onZone = win.document.createElement("p");
+  onZone.closest = (sel) => (/\.cumjf-drop/.test(String(sel)) ? zone : null);
+  const page = win.document.createElement("div");
+  assert.equal(fire("drop", { target: page, dataTransfer: { files: [pdf] } }), 1, "a dropped PDF went straight through");
+  assert.equal(fire("drop", { target: onZone, dataTransfer: { files: [pdf] } }), 0, "the send form's own drop zone was held");
+  assert.equal(fire("paste", { target: page, clipboardData: { files: [pdf] } }), 1, "a pasted PDF went straight through");
+  assert.equal(fire("paste", { target: page, clipboardData: { files: [txt] } }), 0, "a pasted text file was held");
+
+  // And what was held is asked about, on screen, by name.
+  await new Promise((r) => setImmediate(r));
+  const asked = win.document.documentElement.children.filter((c) => c.className === "cum-pdf-ask");
+  assert.ok(asked.length >= 1, "a held PDF was never asked about");
+  assert.match(asked[0].textContent, /Smith complaint\.pdf is a PDF/);
+  assert.match(asked[0].textContent, /Keep it out/);
 });
 
 test("the key-file store loads before every door that keeps a workbook", () => {
