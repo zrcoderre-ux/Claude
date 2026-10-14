@@ -456,7 +456,7 @@
       };
     }
 
-    const files = await buildUploads(plan, lines);
+    const files = await pdfsAsked(await buildUploads(plan, lines), lines);
     if (!files.length) {
       say(lines, true);
       return;
@@ -546,6 +546,40 @@
     // The last word on the bar that matters most: a spreadsheet — which is what
     // a pseudonym key is — never reaches the composer, whatever came before.
     return out.filter((f) => f && !F.isSpreadsheet(f.name));
+  }
+
+  /**
+   * A PDF uploads only on the operator's say-so (src/pdfflag.js), and this
+   * button's own attach is a synthetic pick the page-side guard lets past —
+   * so the question is put here, before anything reaches the composer. What
+   * is kept out is said in the card. With the question not loaded the PDFs
+   * stay out and that is said too: a PDF is never let through because the
+   * thing that asks about it is missing.
+   */
+  async function pdfsAsked(files, lines) {
+    const PF = window.CUMPdfFlag;
+    const PC = window.CUMPdfConfirm;
+    if (!PF) {
+      lines.push(
+        "Nothing was uploaded — the PDF flag isn't loaded on this page, so the folder could not be " +
+          "checked for PDFs. Reload the page and pick it again."
+      );
+      return [];
+    }
+    const s = PF.split(files);
+    if (!s.pdfs.length) return files;
+    if (!PC || !PC.ask) {
+      lines.push(
+        PF.heldNote(s.pdfs) +
+          " The PDF question isn't loaded on this page, so it could not be asked. Reload the page " +
+          "and pick the folder again."
+      );
+      return s.rest;
+    }
+    const ok = await PC.ask(document, PF.prompt(s.pdfs, s.rest.length));
+    if (ok) return files;
+    lines.push(PF.heldNote(s.pdfs));
+    return s.rest;
   }
 
   /**

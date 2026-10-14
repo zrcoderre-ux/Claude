@@ -218,14 +218,53 @@
       return res;
     }
 
-    function addFiles(list) {
+    // A PDF uploads only on the operator's say-so (src/pdfflag.js), and a
+    // send's upload happens later, on its own — so the question is put now,
+    // when the PDF is ADDED, while somebody is here to answer it. The send
+    // itself is never held for it. With the question not loaded the PDFs stay
+    // out and that is said: a PDF is never let in because the thing that asks
+    // about it is missing.
+    async function pdfsAsked(list) {
+      const PF = root.CUMPdfFlag;
+      const PC = root.CUMPdfConfirm;
+      if (!PF) {
+        flash(
+          "The PDF flag is not loaded, so nothing was added — the files could not be checked " +
+            "for PDFs. Reload this page and pick them again.",
+          true
+        );
+        return null;
+      }
+      const s = PF.split(list);
+      if (!s.pdfs.length) return list;
+      if (!PC || !PC.ask) {
+        flash(PF.heldNote(s.pdfs, { queued: true }) + " The PDF question isn't loaded — reload this page.", true);
+        return s.rest;
+      }
+      const ok = await PC.ask(doc, PF.prompt(s.pdfs, s.rest.length, { queued: true }));
+      if (ok) return list;
+      flash(PF.heldNote(s.pdfs, { queued: true }), true);
+      return s.rest;
+    }
+
+    async function addFiles(list) {
       const gated = leaksHeld(Array.from(list || []));
       if (!gated) return;
-      list = gated.files;
+      // Only what is new is asked about: a PDF already on this send was asked
+      // about when it came in.
       const have = new Set(files.map(key));
-      for (const f of list || []) {
+      const fresh = [];
+      for (const f of gated.files || []) {
         if (have.has(key(f))) continue;
         have.add(key(f));
+        fresh.push(f);
+      }
+      const taken = await pdfsAsked(fresh);
+      if (!taken) return;
+      const now = new Set(files.map(key));
+      for (const f of taken) {
+        if (now.has(key(f))) continue; // came in by another door while the question was up
+        now.add(key(f));
         files.push(f);
       }
       renderFiles();

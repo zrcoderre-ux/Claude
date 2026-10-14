@@ -51,6 +51,13 @@
  *      rather than left to be noticed at send time — one bare re-dispatched
  *      event used to be the whole hand-off, and claude.ai ignored it.
  *
+ *      The same guard asks about a PDF (src/pdfflag.js): one picked through
+ *      claude.ai's own upload button, dropped or pasted by a person is held
+ *      until "Upload anyway", because the pseudonymized papers go up as text
+ *      and a PDF is most often an original. Only a person's own event is
+ *      asked about — the extension's sends carry files asked about where they
+ *      were picked — and only the PDFs wait: the rest of the batch goes on.
+ *
  * Cowork note (see CLAUDE.md): the guard intercepts the page's file-chooser,
  * drop and paste events, which are generic DOM mechanics — but it is CONFIRMED
  * only on Chat. Cowork's upload traffic runs in a worker no page hook sees, so
@@ -1832,6 +1839,13 @@
   // same listeners while a genuinely new pick during that window is still
   // vetted. A boolean could not do that: the ladder is asynchronous, and a
   // flag left up across it would have waved a second pick through.
+  //
+  // PDFs ride the same machinery with a narrower trigger (CUMPdfFlag.asksAtPage):
+  // a TRUSTED event only, and never one landing on the extension's own drop
+  // zone, which asks for itself. Every hand-off the extension makes — a
+  // scheduled send, a workflow step, the Folder button, this guard's own
+  // release — is a synthetic event whose files were asked about at the door
+  // they came in by; asking again would wedge a send nobody is watching.
 
   const inFlight = new Map();
 
@@ -1839,7 +1853,12 @@
     return [f && f.name, f && f.size, f && f.lastModified].join("\u0000");
   }
 
-  function passing(files) {
+  // Only ever a SYNTHETIC event: the ladder dispatches its own, and a person's
+  // pick is trusted. Without that, re-picking a file whose earlier release
+  // was still being watched — up to the release deadline, minutes — matched
+  // its fingerprint and went straight through unasked.
+  function passing(files, ev) {
+    if (ev && ev.isTrusted) return false;
     if (!files.length || !inFlight.size) return false;
     for (const f of files) if (!inFlight.has(fingerprint(f))) return false;
     return true;
@@ -1943,16 +1962,77 @@
     ok.focus();
   }
 
-  async function vet(files) {
+  /**
+   * Vet a batch: the key first, since it is the whole map, then — when this
+   * event is one that asks (askPdf) — the PDFs among whatever is still going.
+   * Each question holds back only its own files.
+   */
+  async function vet(files, askPdf) {
     const keyFiles = [];
     const clean = [];
     for (const f of files) {
       if (await isKeyFile(f)) keyFiles.push(f);
       else clean.push(f);
     }
-    if (!keyFiles.length) return { files: files, released: [] };
-    const ok = await guardDialog(keyFiles.map((f) => f.name), clean.length);
-    return { files: ok ? files : clean, released: ok ? keyFiles.map((f) => f.name) : [] };
+    let out = files;
+    let released = [];
+    if (keyFiles.length) {
+      const ok = await guardDialog(keyFiles.map((f) => f.name), clean.length);
+      if (ok) released = keyFiles.map((f) => f.name);
+      else out = clean;
+    }
+    if (askPdf && out.length) {
+      const r = await vetPdfs(out);
+      out = r.files;
+      released = released.concat(r.released);
+    }
+    return { files: out, released: released };
+  }
+
+  /**
+   * Ask about the PDFs in a batch. With the question itself not loaded the
+   * PDFs are held and that is said: a PDF is never let through because the
+   * thing that asks about it is missing.
+   */
+  async function vetPdfs(files) {
+    const PF = window.CUMPdfFlag;
+    const PC = window.CUMPdfConfirm;
+    const s = PF.split(files);
+    if (!s.pdfs.length) return { files: files, released: [] };
+    const names = s.pdfs.map((f) => f.name);
+    if (!PC || !PC.ask) {
+      guardNotice(
+        PF.heldNote(names) +
+          " The PDF question isn't loaded on this page, so it could not be asked. Reload the page " +
+          "and pick it again."
+      );
+      return { files: s.rest, released: [] };
+    }
+    const ok = await PC.ask(document, PF.prompt(names, s.rest.length));
+    return ok ? { files: files, released: names } : { files: s.rest, released: [] };
+  }
+
+  /**
+   * Does this event have to ask about its PDFs? A person's own pick, drop or
+   * paste, off the extension's own furniture (CUMPdfFlag.asksAtPage).
+   */
+  function pdfAsks(ev, files, ours) {
+    const PF = window.CUMPdfFlag;
+    return !!(PF && PF.asksAtPage && PF.asksAtPage({ trusted: !!(ev && ev.isTrusted), ours: ours, files: files }));
+  }
+
+  /**
+   * The extension's own drop zones — the scheduled-send form's, the run
+   * editor's — take a drop for themselves and ask about a PDF when it is
+   * added. Only the zones: a PDF dropped on the pill or a tray button is still
+   * a PDF reaching claude.ai's own drop handling, and is asked about here.
+   */
+  function onOurDropZone(el) {
+    try {
+      return !!(el && el.closest && el.closest(".cumjf-drop, .cumwf-drop"));
+    } catch (e) {
+      return false;
+    }
   }
 
   function fileList(files) {
@@ -1980,6 +2060,25 @@
   }
 
   /**
+   * Is this file input the composer's? The one the composer module would pick,
+   * or any input inside the composer's own form. Where that cannot be worked
+   * out the answer is yes — the composer's ladder, which is what every release
+   * went through before an input of a project's own was told apart from it.
+   */
+  function composersInput(input) {
+    const C = window.CUMComposer;
+    try {
+      if (input === C.findFileInput()) return true;
+      const ed = C.findEditor && C.findEditor();
+      const scope = ed && (ed.closest("form") || ed.closest('[class*="composer" i]'));
+      if (!scope) return true;
+      return scope.contains(input);
+    } catch (e) {
+      return true;
+    }
+  }
+
+  /**
    * Hand a vetted release back to claude.ai and confirm it landed.
    *
    * Cowork goes through its own driver (CUMCoworkSend.attachFiles): its
@@ -1991,13 +2090,35 @@
    * than drops (P.releaseNext): a second door on top of a half-taken first
    * would attach the taken files twice.
    *
+   * A pick made on a file input that is NOT the composer's — a project's own
+   * "upload from device", say — goes back to that same input and nowhere
+   * else: the composer's ladder would attach a project's file to a chat, and
+   * a drop on the composer as the fallback would do the same.
+   *
    * Returns the note to show, "" for a confirmed landing.
    */
-  async function handOff(files, target) {
+  async function handOff(files, target, origin) {
     const C = window.CUMComposer;
     const CW = window.CUMCoworkSend;
     const n = files.length;
     const surface = surfaceHere();
+    if (origin && origin.isConnected && !composersInput(origin)) {
+      const there = "the file input it was picked on";
+      let how = ""; // the note already says where — it IS the one door tried
+      let res = { ok: false, uploads: 0, chips: 0 };
+      try {
+        const baseChips = C.countChips();
+        C.setFiles(origin, files);
+        res = await C.waitUploads(n, P.releaseDeadline(n), { baseChips: baseChips, idleMs: P.RELEASE_INPUT_WATCH_MS });
+      } catch (e) {
+        how = "handing it back, which threw";
+      }
+      const caveat =
+        surface === "cowork"
+          ? "This is a Cowork page, whose uploads run where the extension can't see them, so not seeing it land proves nothing either way."
+          : "";
+      return { ok: !!res.ok, how: how, res: res, caveat: caveat, where: there };
+    }
     if (surface === "cowork" && CW && CW.attachFiles) {
       const r = await CW.attachFiles(files, P.releaseDeadline(n));
       return { ok: !!r.ok, how: r.how || "", res: { ok: !!r.ok, why: r.why || "" }, caveat: "" };
@@ -2050,10 +2171,12 @@
   /**
    * Vet a batch and let through what the operator allows. `fire` is the bare
    * re-dispatch for a page without the composer; `target` is where a drop
-   * landed, if it was a drop.
+   * landed, if it was a drop; `opts.origin` is the file input a pick was made
+   * on, and `opts.askPdf` says this event asks about its PDFs.
    */
-  function guard(files, target, fire) {
-    vet(files).then(async (v) => {
+  function guard(files, target, fire, opts) {
+    const o = opts || {};
+    vet(files, !!o.askPdf).then(async (v) => {
       const release = v.files;
       if (!release.length) return;
       const C = window.CUMComposer;
@@ -2064,7 +2187,7 @@
       const free = holdInFlight(release);
       let out;
       try {
-        out = await handOff(release, target);
+        out = await handOff(release, target, o.origin);
       } catch (e) {
         out = { ok: false, how: "", res: { ok: false, why: "threw: " + String((e && e.message) || e) }, caveat: "" };
       } finally {
@@ -2072,9 +2195,9 @@
       }
       if (out.ok) return;
       const names = v.released.length ? v.released : release.map((f) => f.name);
-      const text = P.releaseNote(names, out.how, out.res, release.length, out.caveat);
+      const text = P.releaseNote(names, out.how, out.res, release.length, out.caveat, out.where);
       try {
-        console.warn("[claude-usage-meter] key-upload guard: " + text);
+        console.warn("[claude-usage-meter] upload guard: " + text);
       } catch (e) {
         /* ignore */
       }
@@ -2096,16 +2219,24 @@
       const C = window.CUMComposer;
       if (C && C.isOurs && C.isOurs(input)) return;
       const files = Array.from(input.files);
-      if (passing(files)) return; // the ladder's own hand-off, already vetted
-      if (!files.some((f) => suspectName(f.name))) return;
+      if (passing(files, ev)) return; // the ladder's own hand-off, already vetted
+      // claude.ai's own upload button opens this input, so a PDF picked through
+      // it is asked about here — before claude.ai's handlers ever see the pick.
+      const askPdf = pdfAsks(ev, files, false);
+      if (!askPdf && !files.some((f) => suspectName(f.name))) return;
       ev.stopImmediatePropagation();
       ev.preventDefault();
       input.value = "";
-      guard(files, null, (release) => {
-        input.files = fileList(release).files;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-      });
+      guard(
+        files,
+        null,
+        (release) => {
+          input.files = fileList(release).files;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        },
+        { askPdf: askPdf, origin: input }
+      );
     },
     true
   );
@@ -2115,22 +2246,28 @@
     (ev) => {
       const dt = ev.dataTransfer;
       const files = dt && dt.files ? Array.from(dt.files) : [];
-      if (!files.length || passing(files)) return;
-      if (!files.some((f) => suspectName(f.name))) return;
+      if (!files.length || passing(files, ev)) return;
+      const askPdf = pdfAsks(ev, files, onOurDropZone(ev.target));
+      if (!askPdf && !files.some((f) => suspectName(f.name))) return;
       ev.stopImmediatePropagation();
       ev.preventDefault();
       const target = ev.target;
-      guard(files, target, (release) => {
-        const el = (target && target.isConnected && target) || document.body;
-        el.dispatchEvent(
-          new DragEvent("drop", {
-            bubbles: true,
-            cancelable: true,
-            composed: true,
-            dataTransfer: fileList(release),
-          })
-        );
-      });
+      guard(
+        files,
+        target,
+        (release) => {
+          const el = (target && target.isConnected && target) || document.body;
+          el.dispatchEvent(
+            new DragEvent("drop", {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              dataTransfer: fileList(release),
+            })
+          );
+        },
+        { askPdf: askPdf }
+      );
     },
     true
   );
@@ -2140,21 +2277,27 @@
     (ev) => {
       const dt = ev.clipboardData;
       const files = dt && dt.files ? Array.from(dt.files) : [];
-      if (!files.length || passing(files)) return;
-      if (!files.some((f) => suspectName(f.name))) return;
+      if (!files.length || passing(files, ev)) return;
+      const askPdf = pdfAsks(ev, files, false);
+      if (!askPdf && !files.some((f) => suspectName(f.name))) return;
       ev.stopImmediatePropagation();
       ev.preventDefault();
       const target = ev.target;
-      guard(files, target, (release) => {
-        const el = (target && target.isConnected && target) || document.body;
-        el.dispatchEvent(
-          new ClipboardEvent("paste", {
-            bubbles: true,
-            cancelable: true,
-            clipboardData: fileList(release),
-          })
-        );
-      });
+      guard(
+        files,
+        target,
+        (release) => {
+          const el = (target && target.isConnected && target) || document.body;
+          el.dispatchEvent(
+            new ClipboardEvent("paste", {
+              bubbles: true,
+              cancelable: true,
+              clipboardData: fileList(release),
+            })
+          );
+        },
+        { askPdf: askPdf }
+      );
     },
     true
   );

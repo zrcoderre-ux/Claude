@@ -754,13 +754,42 @@
       return res;
     }
 
-    function addFiles(list) {
+    // A PDF uploads only on the operator's say-so (src/pdfflag.js), and a run
+    // uploads its documents on its own schedule — so the question is put now,
+    // when the PDF is ADDED, while somebody is here to answer it. The run is
+    // never held for it. With the question not loaded the PDFs stay out and
+    // that is said: a PDF is never let in because the thing that asks about it
+    // is missing.
+    async function pdfsAsked(list) {
+      const PF = root.CUMPdfFlag;
+      const PC = root.CUMPdfConfirm;
+      if (!PF) {
+        flash(
+          "The PDF flag is not loaded, so nothing was added — the files could not be checked " +
+            "for PDFs. Reload this page and pick them again.",
+          true
+        );
+        return null;
+      }
+      const s = PF.split(list);
+      if (!s.pdfs.length) return list;
+      if (!PC || !PC.ask) {
+        flash(PF.heldNote(s.pdfs, { queued: true }) + " The PDF question isn't loaded — reload this page.", true);
+        return s.rest;
+      }
+      const ok = await PC.ask(doc, PF.prompt(s.pdfs, s.rest.length, { queued: true }));
+      if (ok) return list;
+      flash(PF.heldNote(s.pdfs, { queued: true }), true);
+      return s.rest;
+    }
+
+    async function addFiles(list) {
       // Before the spreadsheet diversion below, which would otherwise read the
       // marker itself as a candidate pseudonym key.
       const gated = leaksHeld(Array.from(list || []));
       if (!gated) return;
       list = gated.files;
-      const incoming = [];
+      const fresh = [];
       const have = new Set((wf.docs || []).map(docKey));
       let dupes = 0;
       for (const f of list || []) {
@@ -773,9 +802,19 @@
           continue;
         }
         have.add(docKey(f));
-        incoming.push(f);
+        fresh.push(f);
       }
       if (dupes) flash(dupes === 1 ? "1 file was already here." : dupes + " files were already here.");
+      // Only what is new is asked about: a PDF already among the documents was
+      // asked about when it came in.
+      const taken = await pdfsAsked(fresh);
+      if (!taken) return;
+      const now = new Set((wf.docs || []).map(docKey));
+      const incoming = taken.filter((f) => {
+        if (now.has(docKey(f))) return false; // came in by another door while the question was up
+        now.add(docKey(f));
+        return true;
+      });
       for (const f of incoming) {
         const id = uuid();
         pendingFiles.set(id, f);

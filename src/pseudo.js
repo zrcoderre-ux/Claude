@@ -178,10 +178,17 @@
    *             what is said and the counts are not invented
    *   expected  how many were handed over
    *   caveat    a surface note ("Cowork's own upload driver isn't loaded…"), or ""
+   *   where     "" for the composer. Otherwise the place the files went back to
+   *             instead — the file input they were PICKED on, when that input
+   *             is not the composer's (a project's own upload, say) — and the
+   *             note speaks about that place: telling somebody to drag a
+   *             project's file onto the chat composer would put it in the
+   *             wrong place
    */
-  function releaseNote(names, how, res, expected, caveat) {
+  function releaseNote(names, how, res, expected, caveat, where) {
     const r = res || {};
     if (r.ok) return "";
+    const there = String(where || "").trim();
     const list = (names || []).filter(Boolean);
     const said = list.length ? list.join(", ") : "the file";
     const want = Math.max(0, Number(expected) || list.length || 1);
@@ -195,9 +202,11 @@
     const partial = !why && (uploads > 0 || chips > 0);
     return (
       "Upload anyway was pressed for " + said + ", but claude.ai never confirmed " +
-      want + (want === 1 ? " file" : " files") + " landing on the composer" +
+      want + (want === 1 ? " file" : " files") + (there ? " landing through " + there : " landing on the composer") +
       (how ? " (tried " + how + "; " : " (") + seen + ")." +
-      (partial
+      (there
+        ? " Look where you picked it from: what is not there did not go up. Pick it there again to retry; the same question will be asked."
+        : partial
         ? " Some of it may be attached and the rest not — look at the composer before sending, and add what is missing by hand."
         : " Look at the composer: what is not on it did not go up. Drag the file onto the composer to try again; the same question will be asked.") +
       (caveat ? " " + caveat : "")
