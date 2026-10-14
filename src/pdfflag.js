@@ -170,6 +170,143 @@
       : "Held back " + what + " — a PDF uploads only when you say so.";
   }
 
+  // ---- the last door: the send ------------------------------------------------
+  //
+  // Every door above asks when it can SEE the pick. claude.ai's own "+ Add
+  // files" was seen to get a PDF past all of them (owner's report, October
+  // 2026): its pick never reached the page as an event the guard could hold —
+  // a file input that isn't in the document, or the browser's own file picker,
+  // tells nobody but claude.ai. So the message itself is the last door. Before
+  // a send goes, the composer is read for what it is CARRYING, however it got
+  // there, and a PDF nobody has said yes to holds the send behind the question.
+  //
+  // What the composer carries is read off its own words, outside the draft:
+  // each leaf's text and each label, title and alt in the composer box. A PDF
+  // card names its file there ("brief.pdf", "Remove brief.pdf"), or at least
+  // says "PDF"; the network's own record of an upload (claude.ai's upload
+  // response, where the page can see it) counts too, while the composer is
+  // still showing an attachment. Erring towards asking is the direction this
+  // is built in: a question too many costs a click; one too few is an
+  // original in the real names reaching Claude.
+
+  // A file name ending .pdf, as it sits inside a longer caption: everything
+  // before it that a file name may hold, back to a character none can. Leading
+  // words ("Remove brief.pdf") ride along, and sameName forgives them.
+  const PDF_IN_TEXT_RE = /([^\\/:*?"<>|\r\n\t]{1,200}?\.pdf)(?![a-z0-9])/i;
+  const BADGE_RE = /^\s*pdf\s*$/i;
+
+  const fold = (v) => str(v).replace(/\s+/g, " ").trim().toLowerCase();
+
+  /** The PDF file name a caption carries, or "". */
+  function pdfNameIn(text) {
+    const t = str(text);
+    if (!t || t.length > 300) return "";
+    const m = t.match(PDF_IN_TEXT_RE);
+    return m ? m[1].replace(/\s+/g, " ").trim() : "";
+  }
+
+  /**
+   * Whether two captions name the same file: equal, or one is the other with
+   * words in front of it ("Remove brief.pdf" and "brief.pdf"), the words ending
+   * at a space or punctuation — so "notbrief.pdf" is not "brief.pdf".
+   */
+  function sameName(a, b) {
+    const x = fold(a);
+    const y = fold(b);
+    if (!x || !y) return false;
+    if (x === y) return true;
+    const [long, short] = x.length > y.length ? [x, y] : [y, x];
+    if (!long.endsWith(short)) return false;
+    return /[^a-z0-9]$/.test(long.slice(0, long.length - short.length));
+  }
+
+  /**
+   * The PDFs a composer is showing, from its own words (`strings`): distinct
+   * names, shortest form kept, and a count of "PDF" badges that no name
+   * accounts for — a card that says only what it is still says it is a PDF.
+   */
+  function pdfsShown(strings) {
+    const found = [];
+    let badges = 0;
+    for (const s of strings || []) {
+      if (BADGE_RE.test(str(s))) {
+        badges++;
+        continue;
+      }
+      const n = pdfNameIn(s);
+      if (!n) continue;
+      const at = found.findIndex((f) => sameName(f, n));
+      if (at === -1) found.push(n);
+      else if (n.length < found[at].length) found[at] = n;
+    }
+    return { names: found, unnamed: Math.max(0, badges - found.length) };
+  }
+
+  /** One signature per set of PDFs, order- and case-blind. */
+  function pdfSig(names, unnamed) {
+    const list = (names || []).map(fold).filter(Boolean).sort();
+    return list.join("\u0000") + "#" + Math.max(0, Number(unnamed) || 0);
+  }
+
+  /**
+   * Whether this send has to ask first.
+   *
+   *   shown          pdfsShown(...) — what the composer shows
+   *   uploaded       PDF names claude.ai's upload responses reported since the
+   *                  last send, where the page can see them (Chat)
+   *   attachments    the composer is showing an attachment at all; an upload
+   *                  only counts while it is, so one removed since is not
+   *                  asked about forever
+   *   confirmed      names said yes to already — at the pick, by the Folder
+   *                  button, or at an earlier send of this same draft
+   *   confirmedSig   the set a send-time yes was given for, which is what
+   *                  covers a card showing only "PDF"
+   *   trusted        a person's own Enter or click; the extension's sends
+   *                  were asked about where their files came in
+   *
+   * Answers { hold, names, unnamed, sig }.
+   */
+  function sendAsks(ev) {
+    const e = ev || {};
+    const shown = e.shown || { names: [], unnamed: 0 };
+    const names = (shown.names || []).slice();
+    if (e.attachments)
+      for (const u of e.uploaded || [])
+        if (isPdfName(u) && !names.some((n) => sameName(n, u))) names.push(str(u).trim());
+    const unnamed = Math.max(0, Number(shown.unnamed) || 0);
+    const sig = pdfSig(names, unnamed);
+    const free = (why) => ({ hold: false, why: why, names: names, unnamed: unnamed, sig: sig });
+    if (e.trusted === false) return free("not the user's own send");
+    if (!names.length && !unnamed) return free("no PDF in the message");
+    if (e.confirmedSig && e.confirmedSig === sig) return free("said yes to at this send");
+    const yes = e.confirmed || [];
+    const open = names.filter((n) => !yes.some((c) => sameName(c, n)));
+    if (!open.length && !unnamed) return free("every PDF was said yes to");
+    return { hold: true, why: "an unconfirmed PDF in the message", names: names, unnamed: unnamed, sig: sig };
+  }
+
+  /** The send-time question's words: { head, body, keep, go }. */
+  function sendPrompt(names, unnamed) {
+    const list = (names || []).filter(Boolean);
+    const extra = Math.max(0, Number(unnamed) || 0);
+    const n = list.length + extra;
+    const one = n === 1;
+    const said = list.length
+      ? nameList(list) + (extra ? " and " + extra + " more " + plural(extra, "PDF", "PDFs") : "")
+      : one ? "a PDF" : n + " PDFs";
+    return {
+      head: one ? "Send this PDF to Claude?" : "Send these " + n + " PDFs to Claude?",
+      body:
+        "This message carries " + said + ". The pseudonymized papers go up as text, so a PDF is " +
+        "most often an original, in the real names. Send " + plural(n, "it", "them") +
+        " only if you mean Claude to read " + plural(n, "it", "them") + ". To send without " +
+        plural(n, "it", "them") + ", choose Don't send, remove " + plural(n, "its card", "their cards") +
+        " from the message, and send again.",
+      keep: "Don't send",
+      go: one ? "Send with the PDF" : "Send with the PDFs",
+    };
+  }
+
   const api = {
     MAX_NAMED,
     PDF_TYPE,
@@ -180,6 +317,12 @@
     nameList,
     prompt,
     heldNote,
+    pdfNameIn,
+    sameName,
+    pdfsShown,
+    pdfSig,
+    sendAsks,
+    sendPrompt,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMPdfFlag = api;

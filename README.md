@@ -116,9 +116,10 @@ bottom-right corner of [claude.ai](https://claude.ai).
   LEAKS never uploads](#a-folder-marked-leaks-never-uploads).
 - **A PDF asks before it uploads** — pick a PDF through claude.ai's own upload
   button, drop it, paste it, or let the Upload folder button reach one, and it
-  is held behind a question naming it until you press **Upload anyway**. A
-  scheduled send or a workflow asks when the PDF is added, while you are there
-  to answer. See [A PDF asks before it
+  is held behind a question naming it until you press **Upload anyway**. And
+  whatever door it came in by, a message carrying a PDF nobody said yes to does
+  not send until you do. A scheduled send or a workflow asks when the PDF is
+  added, while you are there to answer. See [A PDF asks before it
   uploads](#a-pdf-asks-before-it-uploads).
 - **Copy ruling** — a second copy button in claude.ai's own action bar, beside
   the one that copies the whole reply. It copies **only the tentative ruling**:
@@ -1201,6 +1202,28 @@ naming the file, and only the affirmative button lets it through:
   own, often with nobody at the screen, and a question put to an empty room
   would be a send that silently never leaves. The button there reads **Add
   PDF**, because adding it is what you are agreeing to.
+- **The send itself — the last door, whatever the PDF came in by.** claude.ai's
+  own **+ Add files** was seen to get a PDF past every door above (October
+  2026): its pick never reaches the page as an event anything can hold — a
+  file input that isn't in the document, or the browser's own file picker,
+  tells nobody but claude.ai. So before your Enter or your click on Send goes,
+  the composer is read for what it is **carrying**: a card naming a `.pdf`, a
+  card badged **PDF**, or a PDF claude.ai's own upload response reported while
+  the composer still shows an attachment. One nobody has said yes to holds the
+  send behind **Send this PDF to Claude?** — **Don't send** (focused) keeps the
+  message and its PDF where they are, so you can remove the card and send
+  without it; **Send with the PDF** sends it. A PDF already said yes to — at
+  the pick, by the Folder button, or at this send — is not asked about again
+  for this message, and the next message asks afresh, even about a PDF of the
+  same name. Your draft is never what is read: a file *named* in the message
+  is not a file attached to it.
+
+  What this door can and can't stop: a PDF that slipped past the pick was
+  already uploaded to claude.ai when you attached it, so this is what stops it
+  reaching the **conversation** — and Claude — not what stops the upload. It
+  needs no key and runs on every page with a composer, after the [real-name
+  gate](#a-real-name-in-the-draft-stops-the-send), so a draft held for a real
+  name says that first.
 
 What it holds and what it doesn't:
 
@@ -1229,8 +1252,10 @@ interception is the same generic DOM mechanics as on Chat, but — as with the k
 guard — it is confirmed only on Chat. And a send or a run built before this
 existed holds files that were allowed in at the time.
 
-The decisions are `src/pdfflag.js` (pure, tested in `test/pdfflag.test.js`);
-the dialog every door shows is `src/pdf-confirm.js`.
+The decisions are `src/pdfflag.js` (pure, tested in `test/pdfflag.test.js`),
+the send's among them (`sendAsks`, `pdfsShown`); the dialog every door shows,
+and the page's record of what has been said yes to, is `src/pdf-confirm.js`;
+the send's wiring sits beside the real-name gate in `src/pseudo-view.js`.
 
 ### Steps that run at the same time
 

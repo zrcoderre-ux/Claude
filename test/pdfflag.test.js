@@ -133,3 +133,109 @@ test("what is said after a no names what was kept out", () => {
   );
   assert.equal(PF.heldNote([]), "");
 });
+
+// ---- the last door: the send -------------------------------------------------
+//
+// claude.ai's own "+ Add files" got a PDF past every door that watches the
+// pick, so the message itself is asked about: whatever the composer is
+// carrying, a PDF nobody said yes to holds the send.
+
+test("a PDF's name is found inside the caption that carries it", () => {
+  assert.equal(PF.pdfNameIn("Smith complaint.pdf"), "Smith complaint.pdf");
+  assert.equal(PF.pdfNameIn("brief.PDF · 2 MB"), "brief.PDF");
+  assert.equal(PF.pdfNameIn("Remove brief.pdf"), "Remove brief.pdf");
+  assert.equal(PF.pdfNameIn("brief.pdfx"), "");
+  assert.equal(PF.pdfNameIn("combined-documents.txt"), "");
+  assert.equal(PF.pdfNameIn(""), "");
+  // A whole paragraph is not a caption.
+  assert.equal(PF.pdfNameIn("x".repeat(400) + " brief.pdf"), "");
+});
+
+test("captions naming the same file are the same file — but a longer name is not", () => {
+  assert.ok(PF.sameName("brief.pdf", "Remove brief.pdf"));
+  assert.ok(PF.sameName("Remove brief.pdf", "BRIEF.pdf"));
+  assert.ok(PF.sameName("brief.pdf", "brief.pdf"));
+  assert.ok(!PF.sameName("brief.pdf", "notbrief.pdf"));
+  assert.ok(!PF.sameName("brief.pdf", "reply.pdf"));
+  assert.ok(!PF.sameName("", "brief.pdf"));
+});
+
+test("what the composer shows: names once each, and a PDF badge no name accounts for", () => {
+  // A card's name, its remove button's label, and its type badge are one PDF.
+  assert.deepStrictEqual(
+    PF.pdfsShown(["Smith complaint.pdf", "Remove Smith complaint.pdf", "PDF", "12 pages"]),
+    { names: ["Smith complaint.pdf"], unnamed: 0 }
+  );
+  // A card that says only what it is still says it is a PDF.
+  assert.deepStrictEqual(PF.pdfsShown(["PDF"]), { names: [], unnamed: 1 });
+  assert.deepStrictEqual(PF.pdfsShown(["a.pdf", "PDF", "PDF"]), { names: ["a.pdf"], unnamed: 1 });
+  // Nothing PDF about it.
+  assert.deepStrictEqual(PF.pdfsShown(["combined-documents.txt", "Send message", "Opus"]), {
+    names: [],
+    unnamed: 0,
+  });
+  assert.deepStrictEqual(PF.pdfsShown(null), { names: [], unnamed: 0 });
+});
+
+test("a send carrying a PDF nobody said yes to is held", () => {
+  const v = PF.sendAsks({ shown: PF.pdfsShown(["brief.pdf"]), trusted: true });
+  assert.equal(v.hold, true);
+  assert.deepStrictEqual(v.names, ["brief.pdf"]);
+  // A badge alone holds too: erring towards asking.
+  assert.equal(PF.sendAsks({ shown: PF.pdfsShown(["PDF"]) }).hold, true);
+});
+
+test("a PDF said yes to — at the pick, by the Folder button, or at this send — goes", () => {
+  const shown = PF.pdfsShown(["brief.pdf", "Remove brief.pdf"]);
+  assert.equal(PF.sendAsks({ shown: shown, confirmed: ["brief.pdf"] }).hold, false);
+  // A yes for one PDF is not a yes for another.
+  assert.equal(
+    PF.sendAsks({ shown: PF.pdfsShown(["brief.pdf", "exhibit.pdf"]), confirmed: ["brief.pdf"] }).hold,
+    true
+  );
+  // A badge with no name can only be said yes to at the send, by its signature.
+  const badge = PF.pdfsShown(["PDF"]);
+  const first = PF.sendAsks({ shown: badge, confirmed: ["brief.pdf"] });
+  assert.equal(first.hold, true);
+  assert.equal(PF.sendAsks({ shown: badge, confirmedSig: first.sig }).hold, false);
+  // ...and that signature is this set's, not the next one's.
+  assert.equal(
+    PF.sendAsks({ shown: PF.pdfsShown(["PDF", "PDF", "x.pdf"]), confirmedSig: first.sig }).hold,
+    true
+  );
+});
+
+test("an upload the page saw counts while the composer still shows an attachment", () => {
+  const nothingShown = PF.pdfsShown([]);
+  const v = PF.sendAsks({ shown: nothingShown, uploaded: ["brief.pdf"], attachments: true });
+  assert.equal(v.hold, true);
+  assert.deepStrictEqual(v.names, ["brief.pdf"]);
+  // Removed since, and nothing attached now: not asked about forever.
+  assert.equal(PF.sendAsks({ shown: nothingShown, uploaded: ["brief.pdf"], attachments: false }).hold, false);
+  // Not a PDF, not counted.
+  assert.equal(PF.sendAsks({ shown: nothingShown, uploaded: ["notes.txt"], attachments: true }).hold, false);
+  // The same PDF the composer names is one PDF, not two.
+  const both = PF.sendAsks({ shown: PF.pdfsShown(["brief.pdf"]), uploaded: ["brief.pdf"], attachments: true });
+  assert.deepStrictEqual(both.names, ["brief.pdf"]);
+});
+
+test("the extension's own sends, and a message with no PDF, are never held", () => {
+  assert.equal(PF.sendAsks({ shown: PF.pdfsShown(["brief.pdf"]), trusted: false }).hold, false);
+  assert.equal(PF.sendAsks({ shown: PF.pdfsShown(["notes.txt"]) }).hold, false);
+  assert.equal(PF.sendAsks({}).hold, false);
+  assert.equal(PF.sendAsks(null).hold, false);
+});
+
+test("the send's question names what it carries and says how to send without it", () => {
+  const one = PF.sendPrompt(["brief.pdf"], 0);
+  assert.equal(one.head, "Send this PDF to Claude?");
+  assert.match(one.body, /^This message carries brief\.pdf\./);
+  assert.match(one.body, /remove its card from the message/);
+  assert.equal(one.keep, "Don't send");
+  assert.equal(one.go, "Send with the PDF");
+  const two = PF.sendPrompt(["a.pdf"], 1);
+  assert.equal(two.head, "Send these 2 PDFs to Claude?");
+  assert.match(two.body, /a\.pdf and 1 more PDF/);
+  assert.equal(two.go, "Send with the PDFs");
+  assert.match(PF.sendPrompt([], 1).body, /carries a PDF\./);
+});

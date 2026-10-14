@@ -123,5 +123,40 @@
     });
   }
 
-  root.CUMPdfConfirm = { ask: ask };
+  // What this page has said yes to, so the last door — the send (see
+  // CUMPdfFlag.sendAsks) — asks only about a PDF nobody has. Filled at the
+  // pick, by the Folder button, and by a yes at the send itself; emptied once a
+  // message carrying them has gone, so the next message's PDF of the same name
+  // is asked about afresh. In memory and per page: a reload forgets, which
+  // errs towards asking.
+  const said = { names: [], sig: "" };
+
+  function remember(names) {
+    for (const n of names || []) {
+      const v = String(n == null ? "" : n).trim();
+      if (v && said.names.indexOf(v) === -1) said.names.push(v);
+    }
+  }
+
+  function rememberSend(sig, names) {
+    said.sig = String(sig || "");
+    remember(names);
+  }
+
+  function confirmed() {
+    return { names: said.names.slice(), sig: said.sig };
+  }
+
+  function forget() {
+    said.names = [];
+    said.sig = "";
+  }
+
+  root.CUMPdfConfirm = {
+    ask: ask,
+    remember: remember,
+    rememberSend: rememberSend,
+    confirmed: confirmed,
+    forget: forget,
+  };
 })(typeof globalThis !== "undefined" ? globalThis : this);
