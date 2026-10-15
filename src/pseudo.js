@@ -185,6 +185,17 @@
    *             project's file onto the chat composer would put it in the
    *             wrong place
    */
+  /**
+   * Whether an unconfirmed hand-back puts its notice on screen. Not for a
+   * batch carrying a PDF (owner's instruction, October 2026): the
+   * confirmation misses PDF uploads that did land, so the notice went off on
+   * every one, and a PDF that really did not go up shows by its missing chip.
+   * The console line still records it.
+   */
+  function releaseNoticeShown(names) {
+    return !(names || []).some((n) => /\.pdf$/i.test(String(n || "").trim()));
+  }
+
   function releaseNote(names, how, res, expected, caveat, where) {
     const r = res || {};
     if (r.ok) return "";
@@ -1971,6 +1982,7 @@
     releaseDeadline,
     releaseNext,
     releaseNote,
+    releaseNoticeShown,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMPseudo = api;

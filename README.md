@@ -1193,7 +1193,9 @@ naming the file, and only the affirmative button lets it through:
   **pasted** into it. The pick is held before claude.ai's own handlers see it —
   where the [key guard](#pseudonym-translation) stands — and what you let
   through with **Upload anyway** is handed back and confirmed the same way the
-  key guard's release is, said out loud if it never lands.
+  key guard's release is. No notice is put up for a PDF that is not confirmed:
+  the confirmation missed PDFs that did land, and one that did not shows by its
+  missing chip on the composer (the miss is still written to the console).
 - **The Upload folder button**, before anything reaches the composer. A PDF
   under `Text Files` used to go up beside the combined file without a word; now
   it is asked about, and one you keep out is named in the card.
