@@ -1590,6 +1590,13 @@ test("releaseNote: silent when it landed, loud and specific when it did not", ()
   assert.ok(!/Some of it may be attached/.test(dead));
 });
 
+test("releaseNoticeShown: no on-screen notice for a batch carrying a PDF", () => {
+  assert.equal(P.releaseNoticeShown(["pseudonym_key.xlsx"]), true);
+  assert.equal(P.releaseNoticeShown(["Motion.PDF"]), false);
+  assert.equal(P.releaseNoticeShown(["key.xlsx", "a.pdf"]), false);
+  assert.equal(P.releaseNoticeShown([]), true);
+});
+
 test("releaseNote: a partial landing says to look before sending", () => {
   const part = P.releaseNote(["a.xlsx", "b.pdf"], "the file input", { ok: false, uploads: 1, chips: 1 }, 2, "");
   assert.match(part, /a\.xlsx, b\.pdf/);

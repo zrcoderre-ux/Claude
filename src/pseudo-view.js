@@ -2340,7 +2340,9 @@
   // was an "Upload anyway" the operator pressed and a file that never went up,
   // with nothing on screen to say so. Now a release that cannot be confirmed
   // says so loudly (P.releaseNote), and a release that is confirmed says
-  // nothing — the chips are the word.
+  // nothing — the chips are the word. A batch with a PDF in it says nothing
+  // either way (P.releaseNoticeShown): the confirmation missed PDFs that did
+  // land, and one that did not shows by its missing chip.
   //
   // `inFlight` holds the files being handed over, by fingerprint rather than by
   // object identity (a File that has been through a DataTransfer may not be
@@ -2712,7 +2714,7 @@
       } catch (e) {
         /* ignore */
       }
-      guardNotice(text);
+      if (P.releaseNoticeShown(release.map((f) => f.name))) guardNotice(text);
     });
   }
 
