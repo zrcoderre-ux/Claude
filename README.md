@@ -3331,9 +3331,22 @@ It is recognised two ways:
   `, 50 Cal.4th at p. 105`, or a volume and reporter after a comma where the
   name has a `v.` or an `In re` in it. The name is read backwards from the tail
   and stops at the sentence it stands in — `Plaintiff Doe relies on Smith v.
-  Jones (2010)…` holds `Smith v. Jones` and still translates `Doe`. A
-  parenthetical directly after the cite's page (`(Smith)`, `(conc. opn. of
-  Liu, J.)`) is held with it.
+  Jones (2010)…` holds `Smith v. Jones` and still translates `Doe`. A writ's
+  real party in interest (`Smith v. Superior Court (Jones) (2010)…`) is part
+  of the name, and a parenthetical directly after the cite's page (`(Smith)`,
+  `(conc. opn. of Liu, J.)`) is held with it.
+
+**This case's own caption, cited, still reverses.** PDF-Linker scrubs a cited
+`X v. Y` whose two sides are both mostly this case's **own** parties — the
+caption recited with a year, or the case's own prior appeal — so Claude reads
+that one in the fakes, and holding it would leave it there. The key marks its
+own parties the way PDF-Linker does (a `person` or `entity` row whose Source is
+`spreadsheet` or `--term`), and a cited name whose sides are both mostly those
+parties' fakes is translated like any other text; the same goes for an italic
+run. The test is the scrubber's own (half or more of each side's words, from
+three letters, with `Inc.`, `the`, `Plaintiff` and the like not counted), so
+the way back restores exactly what the way out replaced. A key with no
+`Source` column marks nobody, and every cited name holds.
 
 **The miss runs the safe way.** Where the extension can't tell, a fake that
 should have reversed is left as a fake — which is the thing a check for

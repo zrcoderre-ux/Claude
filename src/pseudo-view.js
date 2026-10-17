@@ -354,9 +354,9 @@
   // left as Claude wrote it (P.citationSpans): an italic run of case-name
   // length, or a fake inside a citation's name in plain text. Titles pass
   // nothing and translate whole.
-  function inCitationItalic(node, el) {
+  function inCitationItalic(node, el, compiled) {
     const it = node.parentElement && node.parentElement.closest(P.CITATION_ITALIC_SEL);
-    return !!it && el.contains(it) && P.isCitationItalic(it.textContent);
+    return !!it && el.contains(it) && P.isCitationItalic(it.textContent, compiled.own);
   }
 
   function swapIn(el, compiled, messages) {
@@ -374,7 +374,7 @@
       }
       if (skippable(node.parentElement)) continue;
       const r =
-        messages && inCitationItalic(node, el)
+        messages && inCitationItalic(node, el, compiled)
           ? { text: text, count: 0 }
           : P.translate(compiled, text, { citations: !!messages });
       if (r.count > 0) {

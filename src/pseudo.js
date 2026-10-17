@@ -286,7 +286,10 @@
   //      differ only in a straight or curly apostrophe are one name, not an
   //      ambiguous fake to retire, and a possessive typed with a left-hand
   //      curly mark derives its bare name like any other.
-  const PARSE_VERSION = 4;
+  //   5  the case's OWN parties are marked (Source and Category, PDF-Linker's
+  //      own test), so a citation that is this case's caption or prior appeal
+  //      reverses rather than being held as a published case (ownFakes).
+  const PARSE_VERSION = 5;
 
   /** Was this stored key built by an older reader than the one running now? */
   function keyNeedsReparse(key) {
@@ -399,6 +402,13 @@
   }
 
   const ALT_STATUS = "alt spelling"; // forward-only: fake belongs to the canonical row
+  // The case's OWN parties — the rows the key was built from, out of the
+  // E-Court template ("spreadsheet") or typed in as a term — rather than a
+  // name harvested from the papers. PDF-Linker's own test (pseudo-key's
+  // OWN_SOURCES / OWN_CATEGORIES), which decides when a cited "X v. Y" is this
+  // case's caption and is scrubbed with the rest.
+  const OWN_SOURCES = new Set(["spreadsheet", "--term"]);
+  const OWN_CATEGORIES = new Set(["person", "entity", "person-token", "entity-token"]);
 
   // A POSSESSIVE is the party's own name, not a second party — PDF-Linker's
   // own rule (its registry draws on the affix-stripped core). Every apostrophe
@@ -437,6 +447,8 @@
       const fakeCol = heads.indexOf("replacement");
       const statusCol = heads.indexOf("status");
       const occCol = heads.indexOf("occurrences");
+      const srcCol = heads.indexOf("source");
+      const catCol = heads.indexOf("category");
       for (let i = hi + 1; i < rows.length; i++) {
         const row = rows[i] || [];
         const real = String(row[realCol] == null ? "" : row[realCol]).trim();
@@ -453,6 +465,7 @@
           alt: statusCol !== -1 && fold(row[statusCol]) === ALT_STATUS,
           occ: isFinite(occ) && occ > 0 ? occ : 0,
           pinned: pinned,
+          own: srcCol !== -1 && catCol !== -1 && OWN_SOURCES.has(fold(row[srcCol])) && OWN_CATEGORIES.has(fold(row[catCol])),
         });
       }
     }
@@ -471,7 +484,7 @@
       const baseFake = e.fake.replace(POSS_TAIL_RE, "");
       if (!baseReal || !baseFake || haveReal.has(fold(baseReal))) continue;
       haveReal.add(fold(baseReal));
-      derived.push({ real: baseReal, fake: baseFake, alt: e.alt, occ: 0, pinned: e.pinned });
+      derived.push({ real: baseReal, fake: baseFake, alt: e.alt, occ: 0, pinned: e.pinned, own: e.own });
     }
     for (const d of derived) entries.push(d);
 
@@ -563,6 +576,10 @@
       pairs: pairs,
       warn: warn,
       hint: hint,
+      // The fakes this case's own parties went out under — what a cited
+      // caption of THIS case reads in (see ownCaption). Applied rows only:
+      // a pinned fake is in no export.
+      ownFakes: entries.filter((e) => e.own && !e.alt && !e.pinned).map((e) => e.fake),
       dropped: {
         keeps: keeps,
         ambiguous: ambiguous,
@@ -905,7 +922,7 @@
     const pairs = (key && key.pairs) || [];
     const map = new Map(pairs.map((p) => [fold(p.fake), p.real]));
     const rx = buildMatcher(pairs.map((p) => p.fake));
-    return { rx: rx, map: map };
+    return { rx: rx, map: map, own: ownWordsOf(key && key.ownFakes) };
   }
 
   /**
@@ -924,7 +941,7 @@
     let spans = null; // read on the first match, so text with no fake costs nothing
     const out = text.replace(compiled.rx, (m, offset) => {
       if (opts && opts.citations) {
-        if (!spans) spans = citationSpans(text);
+        if (!spans) spans = citationSpans(text, { own: compiled.own });
         if (spans.some((s) => offset < s[1] && offset + m.length > s[0])) {
           kept++;
           return m;
@@ -979,10 +996,11 @@
   const CITATION_ITALIC_SEL = "em,i,cite";
   const CITATION_ITALIC_MAX = 160;
 
-  // A short run of italics — the length of a case name, not of emphasised prose.
-  function isCitationItalic(text) {
+  // A short run of italics — the length of a case name, not of emphasised
+  // prose — and not this case's own caption (`own`, compile's).
+  function isCitationItalic(text, own) {
     const t = String(text == null ? "" : text).trim();
-    return t.length > 0 && t.length <= CITATION_ITALIC_MAX;
+    return t.length > 0 && t.length <= CITATION_ITALIC_MAX && !ownCaption(t, own || null);
   }
 
   // "Cal.4th", "Cal.App.5th", "F.3d", "F. Supp. 2d", "U.S.", "S.Ct.", "WL".
@@ -993,7 +1011,9 @@
   // ("v.", "In re", "Estate of"…) to count — a bare volume-and-reporter after
   // a comma is too loose to trust alone; the rest are not.
   const CITATION_TAILS = [
-    { re: new RegExp("\\s*" + YEAR_PAREN + "\\s*" + VOLUME + "\\s+" + REPORTER, "g"), shaped: false },
+    // A writ's real party in interest, in its own parentheses before the
+    // year — "Smith v. Superior Court (Doe) (2010)" — is part of the name.
+    { re: new RegExp("\\s*(\\([^()\\d\\n]{1,80}\\))?\\s*" + YEAR_PAREN + "\\s*" + VOLUME + "\\s+" + REPORTER, "g"), shaped: false },
     { re: /,\s*supra\b/g, shaped: false },
     { re: new RegExp(",\\s*" + VOLUME + "\\s+" + REPORTER + "\\s+at\\s+pp?\\.", "g"), shaped: false },
     { re: new RegExp(",\\s*\\d+\\s+" + REPORTER + "\\s+\\d+", "g"), shaped: true },
@@ -1063,13 +1083,66 @@
     return start;
   }
 
+  // THIS CASE'S OWN CAPTION, cited. PDF-Linker scrubs a cited "X v. Y" whose
+  // two sides are both mostly this case's own parties — the caption recited,
+  // or the case's own prior appeal — so Claude reads it in the fakes, and the
+  // way back must restore it. The same test as the scrubber's (textdoc's
+  // sideIsOwn), asked of the fakes: a word counts from three letters, and the
+  // words that identify nobody (a firm's furniture, the small words, a role)
+  // are not counted at all.
+  const CAPTION_FILLER = new Set(
+    (
+      "inc llc llp lp corp corporation co company ltd na pc plc the and of for " +
+      "plaintiff plaintiffs defendant defendants petitioner petitioners respondent respondents " +
+      "appellant appellants appellee appellees cross-complainant cross-defendant real party interest"
+    ).split(" ")
+  );
+
+  // A word's base: no edge punctuation, no possessive, lower case.
+  function wordBase(w) {
+    return foldQuotes(String(w == null ? "" : w))
+      .replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "")
+      .replace(/'s$/i, "")
+      .toLowerCase();
+  }
+
+  function ownWordsOf(values) {
+    const out = new Set();
+    for (const v of values || []) {
+      for (const w of String(v).split(/\s+/)) {
+        const b = wordBase(w);
+        if (b.length >= 3 && !CAPTION_FILLER.has(b)) out.add(b);
+      }
+    }
+    return out.size ? out : null;
+  }
+
+  function sideIsOwn(side, own) {
+    const words = String(side)
+      .split(/[\s,]+/)
+      .map(wordBase)
+      .filter((b) => b.length >= 3 && !CAPTION_FILLER.has(b) && !/^\d+$/.test(b));
+    const hits = words.filter((b) => own.has(b)).length;
+    return hits > 0 && hits * 2 >= words.length;
+  }
+
+  /** Whether a case name is this case's own caption: both sides of its "v." mostly `own`. */
+  function ownCaption(name, own) {
+    if (!own) return false;
+    const v = /\s(vs?\.)\s/.exec(String(name == null ? "" : name));
+    if (!v) return false;
+    return sideIsOwn(name.slice(0, v.index), own) && sideIsOwn(name.slice(v.index + v[0].length), own);
+  }
+
   /**
    * The [start, end) ranges of `text` that are case names in a citation,
    * found by the citation's tail. Each tail is a separate question; spans may
-   * overlap and the caller only asks whether a match touches one.
+   * overlap and the caller only asks whether a match touches one. `opts.own`
+   * (compile's) lets this case's own caption, cited, through.
    */
-  function citationSpans(text) {
+  function citationSpans(text, opts) {
     const src = String(text == null ? "" : text);
+    const own = (opts && opts.own) || null;
     const spans = [];
     for (const tail of CITATION_TAILS) {
       tail.re.lastIndex = 0;
@@ -1077,8 +1150,12 @@
       while ((m = tail.re.exec(src))) {
         const start = nameStart(src, m.index);
         if (start < 0) continue;
-        if (tail.shaped && !CASE_SHAPE_RE.test(src.slice(start, m.index))) continue;
-        spans.push([start, m.index]);
+        const name = src.slice(start, m.index);
+        if (tail.shaped && !CASE_SHAPE_RE.test(name)) continue;
+        if (ownCaption(name, own)) continue;
+        // The writ's real party rides with the name it belongs to.
+        const end = m[1] ? m.index + m[0].indexOf(m[1]) + m[1].length : m.index;
+        spans.push([start, end]);
       }
     }
     CITATION_PAREN_RE.lastIndex = 0;
@@ -2087,6 +2164,7 @@
     translate,
     citationSpans,
     isCitationItalic,
+    ownCaption,
     CITATION_ITALIC_SEL,
     CITATION_ITALIC_MAX,
     compileReals,
