@@ -3310,6 +3310,28 @@ has a ✕. A [peek](#pseudonym-translation) stands it down — no message text i
 swapped, so nothing swapped can be copied out of one — and so does a run's
 hold, for the messages it covers.
 
+### Swapped names are marked
+
+The same marking the PDF viewer's text reader uses: every real name the display
+swapped in is **lightly highlighted**, and **hovering** one shows the pseudonym
+underneath — `Pseudonym: Ingrid Strangeways` — which is what Claude saw in its
+place. A name held in a [citation](#case-names-in-citations-stay-as-claude-wrote-them)
+is no swap and carries no mark, so what is marked is exactly what was changed.
+
+The controls are in the [key button](#the-key-button)'s panel, under the status:
+**Mark pseudonyms** turns the highlight and the hover off, and the swatch and
+slider beside it set the **colour and intensity** (the reader's defaults, a
+light cyan at 0.18). They are written the moment you choose them and every
+claude.ai tab follows. The messages and the chat titles are both marked — the
+same swaps the badge counts.
+
+**Nothing in claude.ai's page is changed to draw them.** The marks are painted
+with Chrome's CSS Custom Highlight API over the swapped text rather than by
+wrapping each name in an element, which on a React page is the edit that
+breaks a streaming reply. It also means a copy — ⌘C or [Copy
+ruling](#copying-just-the-ruling) — carries the text and never the mark. The
+settings and the hit-test live in `src/pseudomark.js`.
+
 ### Case names in citations stay as Claude wrote them
 
 Claude only ever sees the fakes, so a case it **cites** is a published case,

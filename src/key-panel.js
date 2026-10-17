@@ -307,6 +307,64 @@
     return box;
   }
 
+  // ---- the marks -------------------------------------------------------------
+  //
+  // The PDF viewer's "Mark pseudonyms", with its swatch and slider: every
+  // swapped name lightly highlighted, the pseudonym shown on hover. Written
+  // the moment it is chosen, and every claude.ai tab follows (src/pseudo-view.js
+  // listens). Nothing here touches what Claude sees or what a copy carries.
+
+  function drawMarks() {
+    const MK = window.CUMPseudoMark;
+    const cur = V && V.mark ? V.mark() : null;
+    if (!MK || !cur || !cur.can) return null;
+    const box = el("div", "cum-key-marks");
+    const save = (patch) => set({ [MK.MARK_KEY]: MK.normalizeMark(Object.assign({}, V.mark(), patch)) });
+
+    const on = el("label", "cum-key-mark-on");
+    const tick = el("input");
+    tick.type = "checkbox";
+    tick.checked = cur.on;
+    on.append(tick, document.createTextNode(" Mark pseudonyms"));
+
+    const swatch = el("input", "cum-key-mark-swatch");
+    swatch.type = "color";
+    swatch.value = cur.color;
+    swatch.title = "The highlight's colour";
+    swatch.disabled = !cur.on;
+    swatch.addEventListener("input", () => save({ color: swatch.value }));
+
+    const strength = el("input", "cum-key-mark-alpha");
+    strength.type = "range";
+    strength.min = String(Math.round(MK.ALPHA_MIN * 100));
+    strength.max = String(Math.round(MK.ALPHA_MAX * 100));
+    strength.value = String(Math.round(cur.alpha * 100));
+    strength.title = "How strong the highlight is";
+    strength.disabled = !cur.on;
+    strength.addEventListener("input", () => save({ alpha: Number(strength.value) / 100 }));
+
+    // The panel is not rebuilt under a focused input, so the switch keeps its
+    // own two controls in step.
+    tick.addEventListener("change", () => {
+      swatch.disabled = strength.disabled = !tick.checked;
+      save({ on: tick.checked });
+    });
+
+    const row = el("div", "cum-key-mark-row");
+    row.append(on, swatch, strength);
+    box.appendChild(row);
+    box.appendChild(
+      el(
+        "p",
+        "cum-key-line cum-key-dim",
+        cur.on
+          ? "Every real name swapped in is highlighted; hover one for the pseudonym Claude sees. A copy carries the text, never the mark."
+          : "Real names are swapped in unmarked."
+      )
+    );
+    return box;
+  }
+
   // ---- this chat -------------------------------------------------------------
 
   function rekey(keyId, done) {
@@ -860,6 +918,8 @@
     panel.appendChild(head);
     const body = el("div", "cum-key-body");
     body.appendChild(drawStatus(st));
+    const marks = drawMarks();
+    if (marks) body.appendChild(marks);
     body.appendChild(drawChat());
     body.appendChild(drawLibrary());
     const m = drawMaster();
