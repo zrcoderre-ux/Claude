@@ -22,6 +22,10 @@
  *                 bare surname token never rewrites part of a longer full
  *                 name; whole words only; case-insensitive with an ALL-CAPS
  *                 match mirrored, since a caption shouts its parties.
+ *   - citationSpans / isCitationItalic:  the case names in a message's
+ *                 citations, which the display leaves as Claude wrote them —
+ *                 a published case that shares a word with a fake is not
+ *                 this case's party.
  *   - compileReals / findReals:  which REAL values stand in a draft message —
  *                 the "you're about to type a real name" warning.
  *   - isKeyFileName / sheetsLookLikeKey:  is this file the key itself — the
@@ -907,12 +911,25 @@
   /**
    * Display translation. Single pass — replaced text is never re-scanned, so
    * a real value that happens to contain another row's fake word stays what
-   * the document says. Returns { text, count }.
+   * the document says. Returns { text, count, kept }.
+   *
+   * `opts.citations` leaves every fake standing inside a case name of a
+   * citation exactly as written (see citationSpans) and counts it in `kept`.
+   * Messages ask for it; titles and the cleaner do not.
    */
-  function translate(compiled, text) {
-    if (!compiled || !compiled.rx || !text) return { text: text, count: 0 };
+  function translate(compiled, text, opts) {
+    if (!compiled || !compiled.rx || !text) return { text: text, count: 0, kept: 0 };
     let count = 0;
-    const out = text.replace(compiled.rx, (m) => {
+    let kept = 0;
+    let spans = null; // read on the first match, so text with no fake costs nothing
+    const out = text.replace(compiled.rx, (m, offset) => {
+      if (opts && opts.citations) {
+        if (!spans) spans = citationSpans(text);
+        if (spans.some((s) => offset < s[1] && offset + m.length > s[0])) {
+          kept++;
+          return m;
+        }
+      }
       let mapped = compiled.map.get(fold(m));
       let suffix = "";
       if (mapped == null) {
@@ -934,7 +951,143 @@
       // possessive included, says which marks the text writes.
       return mirrorQuotes(m, applyCase(shape, mapped)) + casedSuffix(shape, suffix);
     });
-    return { text: out, count: count };
+    return { text: out, count: count, kept: kept };
+  }
+
+  // ---- case names in citations ----------------------------------------------
+  //
+  // Claude only ever sees the fakes, so a case name it CITES is a published
+  // case's name, written correctly — and a published party can share a word
+  // with one of this case's fakes. Reversing it there rewrites a correct
+  // citation into a wrong one, in the real names, and nothing downstream can
+  // tell: a check for fakes left in a minute order finds none. So the message
+  // display leaves a case name in a citation as written. The miss runs the
+  // safe way: a party's fake wrongly held here is a fake left in the text,
+  // which is exactly what that downstream check catches.
+  //
+  // Two signals, and the wiring asks the first:
+  //   ITALICS. The Style Manual italicises every case name, full or short
+  //     ("In Smith, the court…"), so a short italic run in a message is a case
+  //     name. A long one is emphasis and is translated (CITATION_ITALIC_MAX).
+  //   A CITATION'S TAIL, for a name that lost its italics — a year
+  //     parenthetical and a reporter, ", supra", or a volume and reporter
+  //     after a comma. The name is read backwards from the tail.
+  //
+  // A caption with no tail ("Doe v. Acme" in a title or a heading) is the case
+  // at bar, and translates as before.
+
+  const CITATION_ITALIC_SEL = "em,i,cite";
+  const CITATION_ITALIC_MAX = 160;
+
+  // A short run of italics — the length of a case name, not of emphasised prose.
+  function isCitationItalic(text) {
+    const t = String(text == null ? "" : text).trim();
+    return t.length > 0 && t.length <= CITATION_ITALIC_MAX;
+  }
+
+  // "Cal.4th", "Cal.App.5th", "F.3d", "F. Supp. 2d", "U.S.", "S.Ct.", "WL".
+  const REPORTER = "(?:[A-Z][A-Za-z]*\\.|[A-Z]{2,}\\b)(?:\\s?(?:[A-Z][A-Za-z]*\\.|\\d+(?:st|nd|rd|th|d)\\b))*";
+  const YEAR_PAREN = "\\([^()\\n]{0,60}?\\b(?:1[6-9]|20)\\d\\d\\b[^()\\n]{0,60}\\)";
+  const VOLUME = "(?:\\d+|_{2,})";
+  // Each tail, and whether the name before it must show a case name's shape
+  // ("v.", "In re", "Estate of"…) to count — a bare volume-and-reporter after
+  // a comma is too loose to trust alone; the rest are not.
+  const CITATION_TAILS = [
+    { re: new RegExp("\\s*" + YEAR_PAREN + "\\s*" + VOLUME + "\\s+" + REPORTER, "g"), shaped: false },
+    { re: /,\s*supra\b/g, shaped: false },
+    { re: new RegExp(",\\s*" + VOLUME + "\\s+" + REPORTER + "\\s+at\\s+pp?\\.", "g"), shaped: false },
+    { re: new RegExp(",\\s*\\d+\\s+" + REPORTER + "\\s+\\d+", "g"), shaped: true },
+  ];
+  // A parenthetical straight after a citation's page — "(Smith)", the short
+  // name it defines, or "(conc. opn. of Liu, J.)" — is the citation's too.
+  const CITATION_PAREN_RE = new RegExp(
+    YEAR_PAREN + "\\s*" + VOLUME + "\\s+" + REPORTER + "\\s+" + VOLUME +
+      "(?:,\\s*\\d+(?:[-\u2013]\\d+)?)?\\s*\\(([^()\\n]{1,80})\\)",
+    "g"
+  );
+  const CASE_SHAPE_RE =
+    /\bvs?\.(?=\s)|\bIn re\b|\bEx parte\b|\b(?:Estate|Marriage|Conservatorship|Guardianship|Adoption)\s+of\b/;
+
+  // Lowercase words a case name carries: "v.", "ex rel.", "In re", "Estate of".
+  // Not "in", "on", "under": those are the sentence the name stands in.
+  const NAME_CONNECTORS = new Set(
+    "v. vs. v ex rel. re of the and & for et al. de del della di du da la le van von der den y".split(" ")
+  );
+  // A word ending in a period that is an abbreviation inside a name, not the
+  // end of a sentence before one. Two letters (Co., Cf., Jr.) and dotted words
+  // (U.S., L.A.) need no list; three need one, since "Doe." and "Lee." end
+  // sentences.
+  const NAME_ABBREVS = new Set(
+    (
+      "inc corp ltd assn dept dist ins mut natl bros mfg sav cty comm agcy med ctr hosp univ cal mrs ave " +
+      "auth admin indus intl sys servs serv inv dev fin prods prof transp mgmt elec ry assoc"
+    ).split(" ")
+  );
+  const NAME_SCAN_MAX = 16; // words — longer than any case name, shorter than a paragraph
+
+  // One word of a case name, read backwards: "name", "stop" (the sentence the
+  // name stands in), or "open" (a "(" or "[" opening the citation — the word
+  // is in, and nothing before it is).
+  function nameWord(w) {
+    let core = w.replace(/,$/, "");
+    if (/[;:]$|["“”)\]]$/.test(core)) return "stop";
+    const opened = /^[(\["“]/.test(core);
+    core = core.replace(/^[(\["“]+/, "");
+    if (!core) return "stop";
+    let kind;
+    if (NAME_CONNECTORS.has(core)) kind = "name";
+    else if (/^[A-Z0-9]/.test(core)) {
+      if (/\.$/.test(core)) {
+        const letters = core.replace(/\./g, "");
+        const abbrev = letters.length <= 2 || /\.\S/.test(core) || NAME_ABBREVS.has(letters.toLowerCase());
+        kind = abbrev ? "name" : "stop";
+      } else kind = "name";
+    } else kind = "stop";
+    return kind === "name" && opened ? "open" : kind;
+  }
+
+  // Where the case name ending at `end` begins, or -1 when there is none.
+  function nameStart(text, end) {
+    const words = [];
+    const rx = /\S+/g;
+    let m;
+    const head = text.slice(0, end);
+    while ((m = rx.exec(head))) words.push({ at: m.index, w: m[0] });
+    let start = -1;
+    for (let i = words.length - 1, n = 0; i >= 0 && n < NAME_SCAN_MAX; i--, n++) {
+      const kind = nameWord(words[i].w);
+      if (kind === "stop") break;
+      start = words[i].at + (kind === "open" ? words[i].w.search(/[^(\["“]/) : 0);
+      if (kind === "open") break;
+    }
+    return start;
+  }
+
+  /**
+   * The [start, end) ranges of `text` that are case names in a citation,
+   * found by the citation's tail. Each tail is a separate question; spans may
+   * overlap and the caller only asks whether a match touches one.
+   */
+  function citationSpans(text) {
+    const src = String(text == null ? "" : text);
+    const spans = [];
+    for (const tail of CITATION_TAILS) {
+      tail.re.lastIndex = 0;
+      let m;
+      while ((m = tail.re.exec(src))) {
+        const start = nameStart(src, m.index);
+        if (start < 0) continue;
+        if (tail.shaped && !CASE_SHAPE_RE.test(src.slice(start, m.index))) continue;
+        spans.push([start, m.index]);
+      }
+    }
+    CITATION_PAREN_RE.lastIndex = 0;
+    let p;
+    while ((p = CITATION_PAREN_RE.exec(src))) {
+      const end = p.index + p[0].length - 1;
+      spans.push([end - p[1].length, end]);
+    }
+    return spans;
   }
 
   // The 's follows the sentence around it, not the name: shouted with a
@@ -1932,6 +2085,10 @@
     hiddenKeyCount,
     compile,
     translate,
+    citationSpans,
+    isCitationItalic,
+    CITATION_ITALIC_SEL,
+    CITATION_ITALIC_MAX,
     compileReals,
     compileForward,
     isCommonReal,
