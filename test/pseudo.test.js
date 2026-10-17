@@ -2013,3 +2013,45 @@ test("a short italic run reads as a case name, a long one as emphasis", () => {
   assert.strictEqual(P.isCitationItalic("   "), false);
   assert.strictEqual(P.isCitationItalic("x".repeat(P.CITATION_ITALIC_MAX + 1)), false);
 });
+
+test("a writ's real party in interest is part of the name it follows", () => {
+  const s = "Smith v. Superior Court (Jones) (2010) 50 Cal.4th 100";
+  assert.strictEqual(cite(s).text, s);
+  const spans = P.citationSpans(s);
+  assert.strictEqual(s.slice(spans[0][0], spans[0][1]), "Smith v. Superior Court (Jones)");
+});
+
+// PDF-Linker scrubs a cited "X v. Y" whose sides are both this case's own
+// parties (its caption, or its own prior appeal), so Claude reads it in the
+// fakes and the way back restores it.
+test("the key marks its own parties by Source and Category", () => {
+  const key = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "spreadsheet", 4],
+    ["entity", "Quillmark, Inc.", "Brackwater, Inc.", "", "", "--term", 2],
+    ["person", "Gregory Walton", "Lowther Rolleston", "", "", "harvested", 1],
+    ["address", "1 Main St", "9 Elm Rd", "", "", "spreadsheet", 1],
+  ]);
+  assert.deepStrictEqual(key.ownFakes, ["Ingrid Strangeways", "Brackwater, Inc."]);
+  assert.strictEqual(key.parsed, 5);
+});
+
+test("this case's own caption, cited, reverses; a published case beside it holds", () => {
+  const key = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "spreadsheet", 4],
+    ["entity", "Quillmark, Inc.", "Brackwater, Inc.", "", "", "spreadsheet", 2],
+    ["person", "Rasho", "Strangeways", "", "", "spreadsheet", 3],
+  ]);
+  const c = P.compile(key);
+  const s =
+    "In Strangeways v. Brackwater, Inc. (2023) 90 Cal.App.5th 100, the court remanded; " +
+    "see Strangeways v. Superior Court (2019) 7 Cal.5th 1.";
+  assert.strictEqual(
+    P.translate(c, s, { citations: true }).text,
+    "In Rasho v. Quillmark, Inc. (2023) 90 Cal.App.5th 100, the court remanded; " +
+      "see Strangeways v. Superior Court (2019) 7 Cal.5th 1."
+  );
+  assert.strictEqual(P.isCitationItalic("Strangeways v. Brackwater, Inc.", c.own), false);
+  assert.strictEqual(P.isCitationItalic("Strangeways v. Superior Court", c.own), true);
+  // A key with no Source column marks nobody, and every cited name holds.
+  assert.strictEqual(P.ownCaption("Strangeways v. Brackwater", P.compile(CITE_KEY).own), false);
+});
