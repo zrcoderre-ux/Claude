@@ -1921,3 +1921,95 @@ test("foldQuotes and mirrorQuotes", () => {
   assert.equal(P.mirrorQuotes(`x${RDQ}`, 'Robert "Bobby" Smith'), `Robert ${LDQ}Bobby${RDQ} Smith`);
   assert.equal(P.mirrorQuotes("Ashford", "O'Brien"), "O'Brien");
 });
+
+// ---- case names in citations ------------------------------------------------
+//
+// Claude sees only the fakes, so a case it cites is a published case named
+// correctly. A published party that shares a word with a fake must not be
+// rewritten into this case's real party.
+
+const CITE_KEY = {
+  pairs: [
+    { fake: "Smith", real: "Coderre" },
+    { fake: "Jones", real: "Rasho" },
+    { fake: "Doe", real: "Walton" },
+  ],
+};
+
+function cite(text) {
+  return P.translate(P.compile(CITE_KEY), text, { citations: true });
+}
+
+test("a full citation's case name is left as Claude wrote it", () => {
+  const s = "Plaintiff Doe relies on Smith v. Jones (2010) 50 Cal.4th 100, 105.";
+  const r = cite(s);
+  assert.strictEqual(r.text, "Plaintiff Walton relies on Smith v. Jones (2010) 50 Cal.4th 100, 105.");
+  assert.strictEqual(r.count, 1);
+  assert.strictEqual(r.kept, 2);
+});
+
+test("the common citation shapes all hold their names", () => {
+  const held = [
+    "In re Marriage of Smith (2005) 30 Cal.4th 100",
+    "People v. Jones (2019) 40 Cal.App.5th 200",
+    "Smith v. Superior Court (9th Cir. 2010) 600 F.3d 100",
+    "Jones v. Acme Co., Inc. (1990) 500 U.S. 100",
+    "Smith v. Jones (Jan. 5, 2026, B123456) ___ Cal.App.5th ___",
+    "Smith v. Jones (2024) 2024 WL 123456",
+    "(Smith, supra, 50 Cal.4th at p. 105)",
+    "(Jones, 40 Cal.App.5th at pp. 210-211)",
+    "Smith v. Jones, 50 F.3d 100 (9th Cir. 1995)",
+    "(See Smith v. Jones (2010) 50 Cal.4th 100; Jones v. Roe (2011) 51 Cal.4th 1.)",
+  ];
+  for (const s of held) {
+    const r = cite(s);
+    assert.strictEqual(r.text, s, s);
+    assert.strictEqual(r.count, 0, s);
+  }
+});
+
+test("a parenthetical straight after the cite is the citation's", () => {
+  const s = "Smith v. Jones (2010) 50 Cal.4th 100, 105 (Smith). Doe (Doe) disagrees.";
+  assert.strictEqual(cite(s).text, "Smith v. Jones (2010) 50 Cal.4th 100, 105 (Smith). Walton (Walton) disagrees.");
+  assert.strictEqual(cite("Jones v. Roe (2011) 51 Cal.4th 1 (conc. opn. of Smith, J.)").count, 0);
+});
+
+test("the sentence around a citation still translates", () => {
+  assert.strictEqual(
+    cite("Doe argues that Smith v. Jones (2010) 50 Cal.4th 100 controls. Doe is wrong.").text,
+    "Walton argues that Smith v. Jones (2010) 50 Cal.4th 100 controls. Walton is wrong."
+  );
+  // A sentence ending in a short surname is not an abbreviation inside the
+  // next case's name.
+  assert.strictEqual(
+    cite("The motion against Doe. Smith v. Jones (2010) 50 Cal.4th 100.").text,
+    "The motion against Walton. Smith v. Jones (2010) 50 Cal.4th 100."
+  );
+  assert.strictEqual(cite("Doe; Smith, supra, at p. 5").text, "Walton; Smith, supra, at p. 5");
+});
+
+test("a caption with no citation tail is the case at bar and translates", () => {
+  assert.strictEqual(cite("Doe v. Jones — motion for summary judgment").text, "Walton v. Rasho — motion for summary judgment");
+  // A bare volume and reporter after a comma is too loose on its own.
+  assert.strictEqual(cite("Doe, 5 Ex. 3").text, "Walton, 5 Ex. 3");
+});
+
+test("without the option nothing is held — titles and the cleaner translate whole", () => {
+  const r = P.translate(P.compile(CITE_KEY), "Smith v. Jones (2010) 50 Cal.4th 100");
+  assert.strictEqual(r.text, "Coderre v. Rasho (2010) 50 Cal.4th 100");
+  assert.strictEqual(r.kept, 0);
+});
+
+test("citationSpans covers only the case name", () => {
+  const s = "Under Smith v. Jones (2010) 50 Cal.4th 100, it fails.";
+  const spans = P.citationSpans(s);
+  assert.strictEqual(spans.length, 1);
+  assert.strictEqual(s.slice(spans[0][0], spans[0][1]), "Under Smith v. Jones");
+});
+
+test("a short italic run reads as a case name, a long one as emphasis", () => {
+  assert.strictEqual(P.isCitationItalic("Smith v. Jones"), true);
+  assert.strictEqual(P.isCitationItalic("Smith"), true);
+  assert.strictEqual(P.isCitationItalic("   "), false);
+  assert.strictEqual(P.isCitationItalic("x".repeat(P.CITATION_ITALIC_MAX + 1)), false);
+});

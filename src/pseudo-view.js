@@ -350,7 +350,16 @@
     );
   }
 
-  function swapIn(el, compiled) {
+  // `messages` — this is a message's body, where a case name in a citation is
+  // left as Claude wrote it (P.citationSpans): an italic run of case-name
+  // length, or a fake inside a citation's name in plain text. Titles pass
+  // nothing and translate whole.
+  function inCitationItalic(node, el) {
+    const it = node.parentElement && node.parentElement.closest(P.CITATION_ITALIC_SEL);
+    return !!it && el.contains(it) && P.isCitationItalic(it.textContent);
+  }
+
+  function swapIn(el, compiled, messages) {
     if (!el || !compiled || !compiled.rx) return 0;
     let total = 0;
     const walker = textWalker(el);
@@ -364,7 +373,10 @@
         continue;
       }
       if (skippable(node.parentElement)) continue;
-      const r = P.translate(compiled, text);
+      const r =
+        messages && inCitationItalic(node, el)
+          ? { text: text, count: 0 }
+          : P.translate(compiled, text, { citations: !!messages });
       if (r.count > 0) {
         node.nodeValue = r.text;
         swapped.set(node, { text: r.text, orig: text, count: r.count });
@@ -525,7 +537,7 @@
     sweepTimer = null;
     let total = 0;
     if (active && !translationOff()) {
-      for (const turn of document.querySelectorAll(MSG_SEL)) total += swapIn(turn, active.compiled);
+      for (const turn of document.querySelectorAll(MSG_SEL)) total += swapIn(turn, active.compiled, true);
     }
     // The titles are swept in every state — a peek and a run's hold are both
     // about the BODY (see titlesOff), so neither has an owner to clear.

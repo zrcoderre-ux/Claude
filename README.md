@@ -2775,7 +2775,10 @@ swept on the next extension start.
    case-insensitively, **and in the case the fake was written in** rather than
    the case the key happens to store: `John Doe` → `Zachary Coderre`,
    `JOHN DOE` → `ZACHARY CODERRE`, `john doe` → `zachary coderre`. See [Case
-   comes across with the name](#case-comes-across-with-the-name). The **key button** beside Save names
+   comes across with the name](#case-comes-across-with-the-name). A case name
+   in a **citation** is left as Claude wrote it — see [Case names in
+   citations stay as Claude wrote
+   them](#case-names-in-citations-stay-as-claude-wrote-them). The **key button** beside Save names
    the key and counts the swaps, so what you see is never silently different
    from what Claude sees — see [The key button](#the-key-button).
    **Display-only, and the boundary is structural**: the swap edits what this
@@ -3306,6 +3309,37 @@ on the next copy, clears when you copy something with no real names in it, and
 has a ✕. A [peek](#pseudonym-translation) stands it down — no message text is
 swapped, so nothing swapped can be copied out of one — and so does a run's
 hold, for the messages it covers.
+
+### Case names in citations stay as Claude wrote them
+
+Claude only ever sees the fakes, so a case it **cites** is a published case,
+named correctly. A published party can share a word with one of this case's
+fakes — `Smith v. Jones (2010) 50 Cal.4th 100`, in a case where `Smith` is the
+fake for your plaintiff — and reversing it there rewrites a correct citation
+into a wrong one, in the real names. Copied into Word, nothing would flag it:
+a check for fakes left in the document finds none.
+
+So in the **messages**, a case name in a citation is left exactly as written.
+It is recognised two ways:
+
+- **Italics.** The Style Manual italicises every case name, full or short
+  (`In *Smith*, the court…`), so a short italic run in a message — case-name
+  length, not a whole emphasised sentence — is not translated.
+- **The citation's tail**, for a name that lost its italics: a year
+  parenthetical and a reporter (`(2010) 50 Cal.4th 100`, `(9th Cir. 2010)
+  600 F.3d 100`, `(Jan. 5, 2026, B123456) ___ Cal.App.5th ___`), `, supra`,
+  `, 50 Cal.4th at p. 105`, or a volume and reporter after a comma where the
+  name has a `v.` or an `In re` in it. The name is read backwards from the tail
+  and stops at the sentence it stands in — `Plaintiff Doe relies on Smith v.
+  Jones (2010)…` holds `Smith v. Jones` and still translates `Doe`. A
+  parenthetical directly after the cite's page (`(Smith)`, `(conc. opn. of
+  Liu, J.)`) is held with it.
+
+**The miss runs the safe way.** Where the extension can't tell, a fake that
+should have reversed is left as a fake — which is the thing a check for
+leftover fakes is built to catch. A caption with no citation after it
+(`Doe v. Acme` in a heading or a title) is the case at bar and translates as
+before. Chat titles, the cleaner and the composer warning are unchanged.
 
 ### Lists reached the other way
 
