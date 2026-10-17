@@ -928,16 +928,20 @@
   /**
    * Display translation. Single pass — replaced text is never re-scanned, so
    * a real value that happens to contain another row's fake word stays what
-   * the document says. Returns { text, count, kept }.
+   * the document says. Returns { text, count, kept, spans } — `spans` is
+   * [start, end, fake] per swap, in the RETURNED text, which is where the
+   * marks are painted (src/pseudomark.js).
    *
    * `opts.citations` leaves every fake standing inside a case name of a
    * citation exactly as written (see citationSpans) and counts it in `kept`.
    * Messages ask for it; titles and the cleaner do not.
    */
   function translate(compiled, text, opts) {
-    if (!compiled || !compiled.rx || !text) return { text: text, count: 0, kept: 0 };
+    if (!compiled || !compiled.rx || !text) return { text: text, count: 0, kept: 0, spans: [] };
     let count = 0;
     let kept = 0;
+    const marks = [];
+    let shift = 0; // how far the output has run ahead of the input so far
     let spans = null; // read on the first match, so text with no fake costs nothing
     const out = text.replace(compiled.rx, (m, offset) => {
       if (opts && opts.citations) {
@@ -959,6 +963,7 @@
       }
       if (mapped == null) return m;
       count++;
+      const at = offset + shift;
       // The possessive is left off the shape reading — "QUENBY'S" is shouted,
       // "Quenby's" is ordinary prose — and it is cased separately from the
       // name, so a shouted caption gets "CODERRE'S" and a sentence
@@ -966,9 +971,12 @@
       const shape = caseShape(suffix ? m.slice(0, -suffix.length) : m);
       // Quote marks follow the text the same way case does: the whole match,
       // possessive included, says which marks the text writes.
-      return mirrorQuotes(m, applyCase(shape, mapped)) + casedSuffix(shape, suffix);
+      const to = mirrorQuotes(m, applyCase(shape, mapped)) + casedSuffix(shape, suffix);
+      marks.push([at, at + to.length, m]);
+      shift += to.length - m.length;
+      return to;
     });
-    return { text: out, count: count, kept: kept };
+    return { text: out, count: count, kept: kept, spans: marks };
   }
 
   // ---- case names in citations ----------------------------------------------

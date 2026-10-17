@@ -305,6 +305,17 @@
   // node -> the text this script last wrote there, so re-observing our own
   // write (or React writing the same fake back mid-stream) never loops.
   let swapped = new WeakMap();
+  // Every node a swap was written into, for the marks (WeakMap can't be
+  // walked). Validated against the memo on every paint, so a node restored,
+  // re-rendered by claude.ai or dropped from the page simply falls out.
+  const markNodes = new Set();
+  // The marks' state (see "the marks", below).
+  const PM = window.CUMPseudoMark;
+  let mark = PM ? PM.normalizeMark(null) : null;
+  let markStyle = null;
+  let markTip = null;
+  let hovered = null; // { node, span } under the pointer
+  const canMark = !!(PM && typeof CSS !== "undefined" && CSS.highlights && typeof Highlight === "function");
   let shown = 0; // occurrences currently swapped, for the badge
   let sweepTimer = null;
 
@@ -379,7 +390,8 @@
           : P.translate(compiled, text, { citations: !!messages });
       if (r.count > 0) {
         node.nodeValue = r.text;
-        swapped.set(node, { text: r.text, orig: text, count: r.count });
+        swapped.set(node, { text: r.text, orig: text, count: r.count, spans: r.spans });
+        markNodes.add(node);
         total += r.count;
       } else {
         swapped.set(node, { text: text, orig: text, count: 0 });
@@ -491,6 +503,7 @@
     if (translationOff()) restoreMessages();
     if (titlesOff()) restoreTitles();
     else sweepSoon();
+    paintMarks();
     render();
   }
 
@@ -546,6 +559,147 @@
       shown = total;
       titleShown = titles;
       render();
+    }
+    paintMarks();
+  }
+
+  // ---- the marks ---------------------------------------------------------------
+  //
+  // Every swapped name lightly highlighted, and the pseudonym under the pointer
+  // when you hover one — the PDF viewer's text reader, on claude.ai. Painted
+  // with the CSS Custom Highlight API over Ranges, so claude.ai's DOM is never
+  // split and nothing copied carries a mark (src/pseudomark.js says why).
+
+  // The memo entry for a node whose swap is still what the page shows, or null.
+  function liveSwap(node) {
+    const p = swapped.get(node);
+    return p && p.count > 0 && p.spans && node.isConnected && node.nodeValue === p.text ? p : null;
+  }
+
+  function paintMarks() {
+    if (!canMark) return;
+    try {
+      if (!mark.on) {
+        CSS.highlights.delete("cum-pseudo");
+        clearHover();
+        return;
+      }
+      if (!markStyle || !markStyle.isConnected) {
+        markStyle = document.createElement("style");
+        markStyle.id = "cum-pseudo-mark-style";
+        (document.head || document.documentElement).appendChild(markStyle);
+      }
+      const css = PM.markCss(mark);
+      if (markStyle.textContent !== css) markStyle.textContent = css;
+      const hl = new Highlight();
+      for (const node of markNodes) {
+        const p = liveSwap(node);
+        if (!p) {
+          markNodes.delete(node);
+          continue;
+        }
+        for (const sp of p.spans) {
+          const r = document.createRange();
+          r.setStart(node, sp[0]);
+          r.setEnd(node, sp[1]);
+          hl.add(r);
+        }
+      }
+      CSS.highlights.set("cum-pseudo", hl);
+      if (hovered && !liveSwap(hovered.node)) clearHover();
+    } catch (e) {
+      /* a page that cannot take a highlight shows the names unmarked */
+    }
+  }
+
+  function clearHover() {
+    hovered = null;
+    if (canMark) CSS.highlights.delete("cum-pseudo-hover");
+    if (markTip) markTip.hidden = true;
+  }
+
+  // The caret under the pointer, as a text node and an offset — or null when
+  // the pointer is not over text (caretRangeFromPoint snaps to the nearest
+  // character wherever it is, so the answer is checked against the name's own
+  // boxes before it is believed).
+  function swapUnder(x, y) {
+    const cr = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
+    if (!cr || cr.startContainer.nodeType !== 3) return null;
+    const node = cr.startContainer;
+    const p = markNodes.has(node) ? liveSwap(node) : null;
+    const span = p ? PM.spanAt(p.spans, cr.startOffset) : null;
+    if (!span) return null;
+    const r = document.createRange();
+    r.setStart(node, span[0]);
+    r.setEnd(node, span[1]);
+    for (const b of r.getClientRects()) {
+      if (x >= b.left - 1 && x <= b.right + 1 && y >= b.top - 1 && y <= b.bottom + 1) return { node: node, span: span, range: r, box: b };
+    }
+    return null;
+  }
+
+  function showHover(hit, x, y) {
+    if (!hovered || hovered.node !== hit.node || hovered.span !== hit.span) {
+      hovered = { node: hit.node, span: hit.span };
+      const hl = new Highlight();
+      hl.add(hit.range);
+      CSS.highlights.set("cum-pseudo-hover", hl);
+    }
+    if (!markTip || !markTip.isConnected) {
+      markTip = document.createElement("div");
+      markTip.className = "cum-pseudo-tip";
+      markTip.setAttribute("role", "tooltip");
+      document.body.appendChild(markTip);
+    }
+    markTip.textContent = PM.tipText(hit.span[2]);
+    markTip.hidden = false;
+    // Under the name, kept on screen.
+    const w = markTip.offsetWidth || 160;
+    markTip.style.left = Math.max(4, Math.min(window.innerWidth - w - 4, x - w / 2)) + "px";
+    markTip.style.top = Math.min(window.innerHeight - 30, hit.box.bottom + 6) + "px";
+  }
+
+  if (canMark) {
+    let pending = null;
+    document.addEventListener(
+      "mousemove",
+      (ev) => {
+        if (!mark.on || !markNodes.size) return;
+        const x = ev.clientX;
+        const y = ev.clientY;
+        if (pending) return;
+        pending = requestAnimationFrame(() => {
+          pending = null;
+          try {
+            const hit = swapUnder(x, y);
+            if (hit) showHover(hit, x, y);
+            else if (hovered) clearHover();
+          } catch (e) {
+            clearHover();
+          }
+        });
+      },
+      { passive: true }
+    );
+    window.addEventListener("scroll", () => hovered && clearHover(), { passive: true, capture: true });
+  }
+
+  function setMark(v) {
+    mark = PM ? PM.normalizeMark(v) : mark;
+    paintMarks();
+    render();
+  }
+
+  // Remembered per browser, and shared by every tab on claude.ai: a change in
+  // one tab's panel repaints the rest through the storage listener.
+  if (PM) {
+    try {
+      chrome.storage.local.get(PM.MARK_KEY, (r) => setMark(r && r[PM.MARK_KEY]));
+      chrome.storage.onChanged.addListener((ch, area) => {
+        if (area === "local" && ch[PM.MARK_KEY]) setMark(ch[PM.MARK_KEY].newValue);
+      });
+    } catch (e) {
+      /* the defaults stand */
     }
   }
 
@@ -850,7 +1004,8 @@
         : { text: text, count: 0 };
       if (r.count > 0) {
         node.nodeValue = r.text;
-        swapped.set(node, { text: r.text, orig: text, count: r.count });
+        swapped.set(node, { text: r.text, orig: text, count: r.count, spans: r.spans });
+        markNodes.add(node);
         total += r.count;
       } else {
         swapped.set(node, { text: text, orig: text, count: 0 });
@@ -969,6 +1124,10 @@
     },
     setPaused: function (on) {
       setPaused(on);
+    },
+    /** The marks' settings ({ on, color, alpha }), and whether this browser can paint them. */
+    mark: function () {
+      return { on: mark ? mark.on : false, color: mark ? mark.color : "", alpha: mark ? mark.alpha : 0, can: canMark };
     },
     /** Called on every render with the new state; answers an unsubscribe. */
     subscribe: function (fn) {

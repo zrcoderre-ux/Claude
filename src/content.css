@@ -1867,6 +1867,21 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
    panel's own warning colour: it still translates, by rules that were wrong. */
 .cum-key-warn-text { color: #e8a08a; }
 .cum-key-peek { margin-top: 2px; }
+.cum-key-marks { margin: 0 0 10px; }
+.cum-key-mark-row { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
+.cum-key-mark-on { display: flex; align-items: center; gap: 4px; cursor: pointer; flex: 1 1 auto; }
+.cum-key-mark-swatch { width: 26px; height: 20px; padding: 0; border: 1px solid #5a5850; border-radius: 4px; background: none; cursor: pointer; }
+.cum-key-mark-alpha { width: 84px; }
+.cum-key-mark-swatch:disabled, .cum-key-mark-alpha:disabled { opacity: 0.4; cursor: default; }
+/* The pseudonym under a marked name (src/pseudo-view.js). */
+.cum-pseudo-tip {
+  position: fixed; z-index: 2147483646; pointer-events: none;
+  padding: 3px 8px; border-radius: 5px;
+  background: #1f1e1b; color: #f4f2ec; border: 1px solid #4a4840;
+  font: 12px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); white-space: nowrap;
+}
+.cum-pseudo-tip[hidden] { display: none; }
 .cum-key-x { border: none; background: none; padding: 2px 6px; }
 .cum-key-x:hover { background: rgba(255, 255, 255, 0.1); }
 .cum-key-select {
