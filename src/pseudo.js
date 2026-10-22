@@ -832,7 +832,8 @@
    * put the key's shouted caption spelling into the middle of a sentence.
    */
   function caseShape(s) {
-    const t = String(s == null ? "" : s);
+    // A trailing 's is read past: "JOHN DOE's" is still a shout.
+    const t = String(s == null ? "" : s).replace(POSS_TAIL_RE, "");
     if (!/[A-Za-z]/.test(t)) return "none";
     // A caption shouts "McALLISTER" with the c of its Mc/Mac still small; the
     // capitals after it are what say the name is shouted.
@@ -903,7 +904,9 @@
     if (shape === "upper") return v.toUpperCase();
     if (shape === "lower") return v.toLowerCase();
     if (shape === "title") {
-      if (v !== v.toUpperCase() && v !== v.toLowerCase()) return v;
+      // A possessive row's "CODERRE's" is not a value in both cases.
+      const core = v.replace(POSS_TAIL_RE, "");
+      if (core !== core.toUpperCase() && core !== core.toLowerCase()) return v;
       let first = true;
       return v.replace(WORD_RE, (w) => {
         const out = titleWord(w, first);
@@ -965,13 +968,19 @@
       }
       let mapped = compiled.map.get(fold(m));
       let suffix = "";
+      const mp = m.match(POSS_MATCH_RE);
       if (mapped == null) {
         // A possessive of a bare value: swap the name, keep the 's as typed.
-        const mp = m.match(POSS_MATCH_RE);
         if (mp) {
           mapped = compiled.map.get(fold(m.slice(0, -mp[0].length)));
           if (mapped != null) suffix = mp[0];
         }
+      } else if (mp && POSS_TAIL_RE.test(mapped)) {
+        // A possessive ROW ("ZACHARY CODERRE's" -> "John Doe's") goes the same
+        // way as a bare name with an 's: the name is cased from the text and
+        // the 's is the text's own, not the key's.
+        mapped = mapped.replace(POSS_TAIL_RE, "");
+        suffix = mp[0];
       }
       if (mapped == null) return m;
       count++;
@@ -1301,12 +1310,20 @@
     while ((m = compiledReals.rx.exec(text))) {
       let w = compiledReals.map.get(fold(m[0]));
       let suffix = "";
+      let fake = w ? w.fake : "";
+      const mp = m[0].match(POSS_MATCH_RE);
       if (!w) {
-        const mp = m[0].match(POSS_MATCH_RE);
         if (mp) {
           w = compiledReals.map.get(fold(m[0].slice(0, -mp[0].length)));
-          if (w) suffix = mp[0];
+          if (w) {
+            suffix = mp[0];
+            fake = w.fake;
+          }
         }
+      } else if (mp && POSS_TAIL_RE.test(fake)) {
+        // A possessive row, split the way translate() splits it.
+        fake = fake.replace(POSS_TAIL_RE, "");
+        suffix = mp[0];
       }
       if (w && (!want || fold(w.real) === want)) {
         const shape = caseShape(suffix ? m[0].slice(0, -suffix.length) : m[0]);
@@ -1315,7 +1332,7 @@
           end: m.index + m[0].length,
           matched: m[0],
           real: w.real,
-          replacement: mirrorQuotes(m[0], applyCase(shape, w.fake)) + casedSuffix(shape, suffix),
+          replacement: mirrorQuotes(m[0], applyCase(shape, fake)) + casedSuffix(shape, suffix),
         });
       }
       if (m.index === compiledReals.rx.lastIndex) compiledReals.rx.lastIndex++;

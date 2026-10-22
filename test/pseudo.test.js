@@ -738,6 +738,31 @@ test("the possessive carries the case without being read as part of it", () => {
   assert.ok(P.translate(c, "John Doe's motion").text.indexOf("'S") === -1);
 });
 
+test("a possessive row is cased from the fake, not kept in the key's caps", () => {
+  // A key can carry the possessive itself — PDF-Linker writes the row the
+  // papers used, "ZACHARY CODERRE's". Its lowercase 's is not prose of its own.
+  const c = P.compile({
+    pairs: [
+      { real: "ZACHARY CODERRE's", fake: "John Doe's" },
+      { real: "ZACHARY CODERRE", fake: "John Doe" },
+    ],
+  });
+  assert.equal(P.translate(c, "John Doe's motion").text, "Zachary Coderre's motion");
+  assert.equal(P.translate(c, "John Doe\u2019s motion").text, "Zachary Coderre\u2019s motion");
+  assert.equal(P.translate(c, "JOHN DOE'S MOTION").text, "ZACHARY CODERRE'S MOTION");
+  assert.equal(P.translate(c, "JOHN DOE's motion").text, "ZACHARY CODERRE'S motion");
+  assert.equal(P.translate(c, "john doe's").text, "zachary coderre's");
+  // The same row read straight through the casing functions.
+  assert.equal(P.caseShape("JOHN DOE's"), "upper");
+  assert.equal(P.applyCase("title", "ZACHARY CODERRE's"), "Zachary Coderre's");
+  // And the other direction: Accept on a typed possessive real.
+  const w = P.compileReals({ warn: [{ real: "ZACHARY CODERRE's", fake: "JOHN DOE's" }] });
+  assert.deepStrictEqual(
+    P.draftSpans(w, "Zachary Coderre's motion").map((x) => x.replacement),
+    ["John Doe's"]
+  );
+});
+
 test("the caption's shout survives a line wrap in the middle of a name", () => {
   const c = P.compile(CASE_KEY);
   assert.equal(P.translate(c, "JOHN\n  DOE").text, "ZACHARY CODERRE");

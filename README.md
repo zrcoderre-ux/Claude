@@ -3620,6 +3620,10 @@ which makes its capitals deliberate.
 The `'s` is cased with the sentence rather than read as part of the name, which
 is why `JOHN DOE'S` is one shout and `John Doe's` is ordinary prose — never
 `John Doe'S`.
+The same holds when the key carries the possessive as a row of its own
+(`ZACHARY CODERRE's` → `John Doe's`, the way PDF-Linker writes it from the
+papers): the name is cased from the fake and the `'s` is the text's, so
+`John Doe's motion` reads `Zachary Coderre's motion`, not `ZACHARY CODERRE's`.
 
 **Cowork caveat** (the standing rule): the translation and the composer
 warning are generic DOM mechanics and should hold on both surfaces, but the
