@@ -738,6 +738,25 @@ test("the possessive carries the case without being read as part of it", () => {
   assert.ok(P.translate(c, "John Doe's motion").text.indexOf("'S") === -1);
 });
 
+test("a word the fake shares with the real is spelled the way the fake spells it", () => {
+  const c = P.compile({
+    pairs: [
+      { real: "U.S.A., INC.", fake: "SILVERGATE., INC." },
+      { real: "CROSS RIVER BANK, LLC", fake: "Zenith Bank, Llc" },
+    ],
+  });
+  // The shape alone keeps INC an abbreviation; the text says it writes "Inc".
+  assert.equal(P.translate(c, "SILVERGATE., Inc. moved.").text, "U.S.A., Inc. moved.");
+  assert.equal(P.translate(c, "Silvergate., Inc.'s motion").text, "U.S.A., Inc.'s motion");
+  assert.equal(P.translate(c, "SILVERGATE., INC.").text, "U.S.A., INC.");
+  assert.equal(P.translate(c, "silvergate., inc.").text, "u.s.a., inc.");
+  assert.equal(P.translate(c, "Zenith Bank, Llc").text, "Cross River Bank, Llc");
+  // The typeahead and Accept read the same rule the other way.
+  assert.equal(P.mirrorCase("U.S.A., Inc.", "SILVERGATE., INC."), "Silvergate., Inc.");
+  const w = P.compileReals({ warn: [{ real: "U.S.A., INC.", fake: "SILVERGATE., INC." }] });
+  assert.deepStrictEqual(P.draftSpans(w, "U.S.A., Inc. paid").map((x) => x.replacement), ["Silvergate., Inc."]);
+});
+
 test("a possessive row is cased from the fake, not kept in the key's caps", () => {
   // A key can carry the possessive itself — PDF-Linker writes the row the
   // papers used, "ZACHARY CODERRE's". Its lowercase 's is not prose of its own.

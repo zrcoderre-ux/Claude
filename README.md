@@ -3583,6 +3583,7 @@ comes back as ordinary prose.
 | `Zenith Holdings, LLC answered.` | `CROSS RIVER BANK, LLC` | `Cross River Bank, LLC answered.` |
 | `Bank of Calderon paid.` | `BANK OF AMERICA` | `Bank of America paid.` |
 | `QUENBY McALLISTER, Plaintiff,` | `ZACHARY CODERRE` | `ZACHARY CODERRE, Plaintiff,` |
+| `SILVERGATE., Inc. moved.` | `U.S.A., INC.` | `U.S.A., Inc. moved.` |
 
 Both directions run the same rule — the display swap and the cleaner's real→fake
 pass are one engine — so typing `ZACHARY CODERRE` into the composer offers
@@ -3610,6 +3611,11 @@ capitals can be destroyed, so:
 
 A caption's `McALLISTER` — the `c` of the prefix still small — reads as a shout,
 not as prose.
+
+**A word the fake shares with the real name is spelled the way the fake spells
+it**, whatever the rules above would have made of it. The text has already said
+how it writes that word: `SILVERGATE., Inc.` for a key's `U.S.A., INC.` reads
+`U.S.A., Inc.`, where titling alone would have kept `INC` as an abbreviation.
 
 The list is the one soft edge: a real value that is a **bare acronym with a vowel
 in it and isn't on the list** — stored all-caps, standing alone — comes back
