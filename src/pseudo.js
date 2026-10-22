@@ -927,9 +927,27 @@
    * the matched text and written onto the replacement, every time — including
    * when the fake has capitals of its own ("McAllister", "Zenith Holdings,
    * LLC"), which is still prose and never a reason to fall back on the key.
+   *
+   * And a word the replacement SHARES with the text is spelled exactly as the
+   * text spells it, whatever the shape would have made of it: "SILVERGATE.,
+   * Inc." for "U.S.A., INC." reads "U.S.A., Inc.", because the text has
+   * already said how it writes "Inc".
    */
   function mirrorCase(sample, value) {
-    return applyCase(caseShape(sample), value);
+    return sharedWords(sample, applyCase(caseShape(sample), value));
+  }
+
+  // Every word of `out` that also stands in `sample` (case- and quote-blind)
+  // takes the sample's spelling of it. A trailing 's on the sample is not part
+  // of its last word.
+  function sharedWords(sample, out) {
+    const spelled = new Map();
+    for (const w of String(sample == null ? "" : sample).replace(POSS_TAIL_RE, "").match(WORD_RE) || []) {
+      const k = fold(w);
+      if (!spelled.has(k)) spelled.set(k, w);
+    }
+    if (!spelled.size) return out;
+    return out.replace(WORD_RE, (w) => (spelled.has(fold(w)) ? spelled.get(fold(w)) : w));
   }
 
   /** Reversal matcher: translate() swaps every fake for its real value. */
@@ -992,7 +1010,7 @@
       const shape = caseShape(suffix ? m.slice(0, -suffix.length) : m);
       // Quote marks follow the text the same way case does: the whole match,
       // possessive included, says which marks the text writes.
-      const to = mirrorQuotes(m, applyCase(shape, mapped)) + casedSuffix(shape, suffix);
+      const to = mirrorQuotes(m, mirrorCase(suffix ? m.slice(0, -suffix.length) : m, mapped)) + casedSuffix(shape, suffix);
       marks.push([at, at + to.length, m]);
       shift += to.length - m.length;
       return to;
@@ -1332,7 +1350,9 @@
           end: m.index + m[0].length,
           matched: m[0],
           real: w.real,
-          replacement: mirrorQuotes(m[0], applyCase(shape, fake)) + casedSuffix(shape, suffix),
+          replacement:
+            mirrorQuotes(m[0], mirrorCase(suffix ? m[0].slice(0, -suffix.length) : m[0], fake)) +
+            casedSuffix(shape, suffix),
         });
       }
       if (m.index === compiledReals.rx.lastIndex) compiledReals.rx.lastIndex++;
