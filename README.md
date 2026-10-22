@@ -3565,8 +3565,12 @@ with no key and no case number in its name runs exactly as it always did.
 A key stores its real values the way they were typed into a spreadsheet — often
 shouted, because that is how a caption reads: `ZACHARY CODERRE`. That is not how
 the name should read in the middle of a sentence, and the fake standing there is
-what says so. **The case of the text wins**, every time: the shape is read off
-the fake as it appears and written onto the real name that replaces it.
+what says so. **The case of the fake wins**, every time: the shape is read off
+the fake as it appears and written onto the real name that replaces it. The key's
+own spelling of the real value never decides how it reads — not even when the
+fake has capitals of its own (`McAllister`, `Zenith Holdings, LLC`) or a small
+word in it (`Bank of Calderon`). That is still ordinary prose, and the real name
+comes back as ordinary prose.
 
 | In the chat | The key holds | You see |
 | --- | --- | --- |
@@ -3575,6 +3579,10 @@ the fake as it appears and written onto the real name that replaces it.
 | `john doe` | `ZACHARY CODERRE` | `zachary coderre` |
 | `John Doe's motion` | `ZACHARY CODERRE` | `Zachary Coderre's motion` |
 | `JOHN DOE'S MOTION` | `ZACHARY CODERRE` | `ZACHARY CODERRE'S MOTION` |
+| `Quenby McAllister moved.` | `ZACHARY CODERRE` | `Zachary Coderre moved.` |
+| `Zenith Holdings, LLC answered.` | `CROSS RIVER BANK, LLC` | `Cross River Bank, LLC answered.` |
+| `Bank of Calderon paid.` | `BANK OF AMERICA` | `Bank of America paid.` |
+| `QUENBY McALLISTER, Plaintiff,` | `ZACHARY CODERRE` | `ZACHARY CODERRE, Plaintiff,` |
 
 Both directions run the same rule — the display swap and the cleaner's real→fake
 pass are one engine — so typing `ZACHARY CODERRE` into the composer offers
@@ -3582,13 +3590,16 @@ pass are one engine — so typing `ZACHARY CODERRE` into the composer offers
 
 **What titling leaves alone is what was written deliberately.** Shouting and
 quieting a name are unambiguous; putting one back into ordinary prose is where
-capitals can be destroyed, so three things survive it:
+capitals can be destroyed, so:
 
-- **Internal capitals** — `McDonald`, `OneWest`, `d'Angelo`. Authored, and no
-  title pass overwrites them.
-- **A capital standing in a value that is otherwise ordinary text** —
-  `Cross River Bank, LLC`, `IBM Credit Corp`. It was chosen against that
-  backdrop, so there is nothing to guess about.
+- **A real value with both cases in it is already prose** — `McDonald`,
+  `OneWest Bank`, `Cross River Bank, LLC`, `IBM Credit Corp`, `Bank of America`.
+  Titling leaves it exactly as written.
+- **Only a value in one case throughout is re-cased**, word by word. Small words
+  after the first stay small (`of`, `and`, `the`, `for`, `in`, `on`, `at`, `to`,
+  `by`, `or`), so `BANK OF AMERICA` reads `Bank of America`; a `Mc` name
+  capitalises after the prefix, so `MCDONALD` reads `McDonald` (not `Mac`,
+  which is as often `Mack`).
 - **Abbreviations inside a value that is all-caps throughout**, which is the only
   place there's nothing to read: one- and two-letter words (an initial, `JR`,
   `PC`), short words with no vowel in them (`LLC`, `LLP`, `LTD`, `DDS`), and a
@@ -3596,6 +3607,9 @@ capitals can be destroyed, so three things survive it:
   words (`USA`, `INC`, `ESQ`, `IRS`, `FBI`, `IBM`…). So
   `JOHN A DOE, DDS` reads `John A Doe, DDS` and `CROSS RIVER BANK, LLC` reads
   `Cross River Bank, LLC`.
+
+A caption's `McALLISTER` — the `c` of the prefix still small — reads as a shout,
+not as prose.
 
 The list is the one soft edge: a real value that is a **bare acronym with a vowel
 in it and isn't on the list** — stored all-caps, standing alone — comes back

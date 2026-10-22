@@ -20,8 +20,8 @@
  *                 for a reason that bit here too (see appliedSheet).
  *   - compile / translate:  fake → real for DISPLAY. Longest fake first so a
  *                 bare surname token never rewrites part of a longer full
- *                 name; whole words only; case-insensitive with an ALL-CAPS
- *                 match mirrored, since a caption shouts its parties.
+ *                 name; whole words only; case-insensitive, with the real
+ *                 value written in the case the fake was (see mirrorCase).
  *   - citationSpans / isCitationItalic:  the case names in a message's
  *                 citations, which the display leaves as Claude wrote them —
  *                 a published case that shares a word with a fake is not
@@ -818,22 +818,27 @@
   }
 
   /**
-   * The shape a name is written in. Four answers, and the fourth is the point:
+   * The shape a name is written in, read off the text that stands there:
    *   upper  SHOUTED, the whole thing        (a caption, a heading)
    *   lower  quiet, the whole thing          (a slug, a lowercased list)
-   *   title  Every Word Capitalised          (ordinary prose)
-   *   mixed  anything with deliberate case inside it — "McDonald", "LLC",
-   *          "OneWest" — which is a shape no transform can be derived from,
-   *          so text of that shape is left exactly as it was written.
+   *   title  ordinary text — anything else   (prose: "John Doe", but also
+   *          "McDonald", "Zenith Holdings, LLC", "Bank of Zenith")
    * `none` is a value with no letters at all (a case number, a phone number).
+   *
+   * There is no shape that means "keep the replacement as the key stores it":
+   * text with capitals of its own inside it is still ordinary text, and the
+   * name that replaces it reads as ordinary text too. That was once a fourth
+   * shape, and every fake with an internal capital, an "LLC" or an "of" in it
+   * put the key's shouted caption spelling into the middle of a sentence.
    */
   function caseShape(s) {
     const t = String(s == null ? "" : s);
     if (!/[A-Za-z]/.test(t)) return "none";
-    if (t === t.toUpperCase()) return "upper";
+    // A caption shouts "McALLISTER" with the c of its Mc/Mac still small; the
+    // capitals after it are what say the name is shouted.
+    if (t.replace(/\bMa?c(?=[A-Z]{2})/g, (p) => p.toUpperCase()) === t.toUpperCase()) return "upper";
     if (t === t.toLowerCase()) return "lower";
-    const words = t.match(/[A-Za-z]+/g) || [];
-    return words.every((w) => /^[A-Z][a-z]*$/.test(w)) ? "title" : "mixed";
+    return "title";
   }
 
   // Abbreviations a title pass must not take the capitals off. The test that
@@ -864,38 +869,47 @@
   // titling can't produce "O'BRien" or "Coderre'S".
   const WORD_RE = /[A-Za-z]+(?:['\u2018\u2019][A-Za-z]+)*/g;
 
-  // `deliberate` — whether the value this word came out of has lowercase in it
-  // somewhere, which makes every capital in it authored rather than incidental.
-  function titleWord(w, deliberate) {
-    const up = w === w.toUpperCase();
-    const low = w === w.toLowerCase();
-    // Internal capitals — "McDonald", "OneWest", "d'Angelo" — are authored,
-    // and no title pass gets to overwrite them.
-    if (!up && !low) return w;
-    // An ALL-CAPS word standing in a value that is otherwise ordinary —
-    // "Cross River Bank, LLC", "IBM Credit Corp" — was capitalised on purpose
-    // against that backdrop, so it stays whatever it is. Only in a value that
-    // is all-caps THROUGHOUT is there nothing to read, and the guess is made.
-    if (up && (deliberate || looksAbbrev(w))) return w;
+  // The small words a title pass leaves small after the first word — "BANK OF
+  // AMERICA" reads "Bank of America", not "Bank Of America" (or "Bank OF
+  // America", which is what the two-letter abbreviation rule would make of it).
+  const SMALL_WORDS = new Set("of and the for in on at to by or".split(" "));
+
+  // One word of a value that has a single case throughout (see applyCase).
+  function titleWord(w, first) {
+    if (!first && SMALL_WORDS.has(w.toLowerCase())) return w.toLowerCase();
+    // In an all-caps value there is nothing to read, so the guess is made:
+    // an abbreviation keeps its capitals and everything else is titled.
+    if (w === w.toUpperCase() && looksAbbrev(w)) return w;
+    // "MCDONALD" is McDonald: a Mc name capitalises after the prefix. (Not
+    // Mac, which is as often Mack, Macy or Machado.)
+    if (/^mc[a-z]{2}/i.test(w)) return "Mc" + w.charAt(2).toUpperCase() + w.slice(3).toLowerCase();
     return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
   }
 
   /**
    * Write `value` in `shape`. Shouting and quieting are the whole string;
-   * titling is per word, and it genuinely re-cases — a name the key stores as
-   * "ZACHARY CODERRE" reads "Zachary Coderre" where the text is in ordinary
-   * prose, which is the point of the whole exercise. What titling leaves alone
-   * is what was deliberate: a word with internal capitals, any capital standing
-   * in a value that is otherwise ordinary text, and — in a value that is
-   * all-caps throughout, where there is nothing to read — an abbreviation.
+   * titling puts a name into ordinary prose, and it genuinely re-cases — a
+   * name the key stores as "ZACHARY CODERRE" reads "Zachary Coderre" where the
+   * text is ordinary prose, which is the point of the whole exercise.
+   *
+   * A value with BOTH cases in it — "McDonald", "Cross River Bank, LLC",
+   * "Bank of America" — is already written the way prose writes it, so titling
+   * leaves it exactly as it is. Only a value in one case throughout (shouted or
+   * quiet) is re-cased, word by word, with its small words kept small and —
+   * where it was shouted — its abbreviations kept in capitals.
    */
   function applyCase(shape, value) {
     const v = String(value == null ? "" : value);
     if (shape === "upper") return v.toUpperCase();
     if (shape === "lower") return v.toLowerCase();
     if (shape === "title") {
-      const deliberate = v !== v.toUpperCase(); // it has lowercase of its own
-      return v.replace(WORD_RE, (w) => titleWord(w, deliberate));
+      if (v !== v.toUpperCase() && v !== v.toLowerCase()) return v;
+      let first = true;
+      return v.replace(WORD_RE, (w) => {
+        const out = titleWord(w, first);
+        first = false;
+        return out;
+      });
     }
     return v;
   }
@@ -903,15 +917,13 @@
   /**
    * The replacement in the matched text's own voice.
    *
-   * THE TEXT'S CASE WINS. The key's own spelling of the real value is how it
+   * THE FAKE'S CASE WINS. The key's own spelling of the real value is how it
    * was typed into a spreadsheet, not how it should read here: a caption's
    * "ZACHARY CODERRE" belongs in a sentence as "Zachary Coderre", and the
    * fake standing in ordinary prose is what says so. So the shape is read off
-   * the matched text and written onto the replacement, every time.
-   *
-   * The one shape that yields no instruction is `mixed` — text with internal
-   * capitals of its own — and there the value is left exactly as the key
-   * stores it.
+   * the matched text and written onto the replacement, every time — including
+   * when the fake has capitals of its own ("McAllister", "Zenith Holdings,
+   * LLC"), which is still prose and never a reason to fall back on the key.
    */
   function mirrorCase(sample, value) {
     return applyCase(caseShape(sample), value);

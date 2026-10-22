@@ -627,12 +627,16 @@ const CASE_KEY = {
   ],
 };
 
-test("caseShape names the four shapes, and mixed is the one nothing is derived from", () => {
+test("caseShape reads text with capitals of its own as ordinary text", () => {
   assert.equal(P.caseShape("HELEN RASHO"), "upper");
   assert.equal(P.caseShape("helen rasho"), "lower");
   assert.equal(P.caseShape("Helen Rasho"), "title");
-  assert.equal(P.caseShape("McDonald"), "mixed");
-  assert.equal(P.caseShape("Cross River Bank, LLC"), "mixed");
+  assert.equal(P.caseShape("McDonald"), "title");
+  assert.equal(P.caseShape("Cross River Bank, LLC"), "title");
+  assert.equal(P.caseShape("Bank of Zenith"), "title");
+  // A caption's Mc keeps its small c; the capitals after it are the shout.
+  assert.equal(P.caseShape("McALLISTER"), "upper");
+  assert.equal(P.caseShape("JOHN MacDONALD"), "upper");
   assert.equal(P.caseShape("24STCV01234"), "upper"); // its letters are shouted
   assert.equal(P.caseShape("(213) 555-0134"), "none"); // no letters to read
 });
@@ -666,7 +670,36 @@ test("shouting and quieting are the whole string, and an apostrophe isn't a word
   assert.equal(P.applyCase("lower", "ZACHARY CODERRE"), "zachary coderre");
   assert.equal(P.applyCase("title", "john's"), "John's");
   assert.equal(P.applyCase("title", "john\u2019s"), "John\u2019s");
-  assert.equal(P.applyCase("mixed", "ZACHARY CODERRE"), "ZACHARY CODERRE", "nothing to derive");
+});
+
+test("titling keeps the small words small and leaves a value in both cases alone", () => {
+  assert.equal(P.applyCase("title", "BANK OF AMERICA"), "Bank of America");
+  assert.equal(P.applyCase("title", "THE BANK OF NEW YORK"), "The Bank of New York");
+  assert.equal(P.applyCase("title", "smith and jones"), "Smith and Jones");
+  assert.equal(P.applyCase("title", "MCCARTHY"), "McCarthy");
+  assert.equal(P.applyCase("title", "MACK"), "Mack");
+  // Already written the way prose writes it — nothing to re-case.
+  assert.equal(P.applyCase("title", "Bank of America"), "Bank of America");
+  assert.equal(P.applyCase("title", "Ludwig van Beethoven"), "Ludwig van Beethoven");
+});
+
+test("a fake with capitals of its own still says the real name reads as prose", () => {
+  const c = P.compile({
+    pairs: [
+      { real: "ZACHARY CODERRE", fake: "Quenby McAllister" },
+      { real: "CROSS RIVER BANK, LLC", fake: "Zenith Holdings, LLC" },
+      { real: "BANK OF AMERICA", fake: "Bank of Calderon" },
+      { real: "MCDONALD", fake: "DeVane" },
+    ],
+  });
+  // The key's caption spelling never lands in a sentence.
+  assert.equal(P.translate(c, "Quenby McAllister moved.").text, "Zachary Coderre moved.");
+  assert.equal(P.translate(c, "Zenith Holdings, LLC answered.").text, "Cross River Bank, LLC answered.");
+  assert.equal(P.translate(c, "Bank of Calderon paid.").text, "Bank of America paid.");
+  assert.equal(P.translate(c, "DeVane's motion").text, "McDonald's motion");
+  // The fake's shout and its quiet still carry across.
+  assert.equal(P.translate(c, "QUENBY McALLISTER, Plaintiff,").text, "ZACHARY CODERRE, Plaintiff,");
+  assert.equal(P.translate(c, "bank of calderon").text, "bank of america");
 });
 
 test("the real name appears in the case the fake was written in", () => {
