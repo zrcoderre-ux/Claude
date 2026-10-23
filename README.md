@@ -3623,13 +3623,18 @@ capitals can be destroyed, so:
   `by`, `or`), so `BANK OF AMERICA` reads `Bank of America`; a `Mc` name
   capitalises after the prefix, so `MCDONALD` reads `McDonald` (not `Mac`,
   which is as often `Mack`).
-- **Abbreviations inside a value that is all-caps throughout**, which is the only
-  place there's nothing to read: one- and two-letter words (an initial, `JR`,
-  `PC`), short words with no vowel in them (`LLC`, `LLP`, `LTD`, `DDS`), and a
-  short list of the ones that carry a vowel and would otherwise come out as
-  words (`USA`, `INC`, `ESQ`, `IRS`, `FBI`, `IBM`…). So
-  `JOHN A DOE, DDS` reads `John A Doe, DDS` and `CROSS RIVER BANK, LLC` reads
-  `Cross River Bank, LLC`.
+- **Abbreviations inside a shouted value keep their capitals — only the listed
+  ones.** A fixed list of entity forms and professional suffixes (`LLC`, `LLP`,
+  `PC`, `LTD`, `INC`, `ESQ`, `MD`, `DDS`…), companies known by their letters
+  (`PNC`, `IBM`, `CVS`…), agencies (`IRS`, `FBI`, `EEOC`, `LAPD`…) and
+  generational suffixes (`II`, `III`, `IV`…). Every other word is titled,
+  however short: `ED SMITH` reads `Ed Smith` and `LY NG` reads `Ly Ng`, where a
+  guess that read any two-letter or vowel-less word as an abbreviation once left
+  them shouted. So `JOHN A DOE, DDS` reads `John A Doe, DDS`, `PNC BANK` reads
+  `PNC Bank`, and `CROSS RIVER BANK, LLC` reads `Cross River Bank, LLC`. An
+  abbreviation missing from the list comes out titled (`Xyz`); add it to
+  `KEEP_UPPER` in `src/pseudo.js`. The same list is in My-Macros
+  (`DeAnonymize.bas`, `IsKeptAbbrev`), so Word and the browser agree.
 
 A caption's `McALLISTER` — the `c` of the prefix still small — reads as a shout,
 not as prose, and titles with its prefix as written (`MacDONALD` → `MacDonald`,
