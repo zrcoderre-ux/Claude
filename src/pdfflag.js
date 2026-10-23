@@ -1,11 +1,15 @@
 /**
- * Claude Usage Meter — a PDF uploads only on your say-so (pure).
+ * Claude Usage Meter — a PDF or a Word document uploads only on your say-so
+ * (pure).
  *
  * The pseudonymized papers reach claude.ai as TEXT — the Text Files a case
  * folder holds, the combined file built out of them. A PDF is the other kind
  * of paper: most often an original, the filing as served, in the real names.
- * So a PDF is never uploaded on the strength of a pick alone. Every door asks
- * first, by name, and the answer has to be an affirmative one:
+ * A Word document is the same: the draft as written, or a filing as received,
+ * in the real names — re-anonymizing a draft writes TEXT, not another .docx.
+ * So neither is uploaded on the strength of a pick alone. Every door asks
+ * first, by name, and the answer has to be an affirmative one. (Every "PDF"
+ * below reads "PDF or Word document"; the module keeps its name.)
  *
  *   claude.ai's OWN doors — its upload button (the file input it opens), a
  *   drop on the page, a paste. Asked in src/pseudo-view.js, beside the key
@@ -29,7 +33,7 @@
  * watching and wedge a send where nobody is.
  *
  * Other files in the same batch are never held: the question is about the
- * PDFs, and "Keep it out" keeps out exactly those.
+ * PDFs and Word documents, and "Keep it out" keeps out exactly those.
  *
  * Pure: no DOM, no chrome. Files are duck-typed ({ name, type }), and entries
  * the way src/dropdir.js produces them ({ file, path }) are read too, so the
@@ -42,6 +46,17 @@
 
   const PDF_RE = /\.pdf$/i;
   const PDF_TYPE = "application/pdf";
+  // Word's own formats: the document, the macro document and the templates,
+  // old binary and Open XML alike.
+  const WORD_EXT = "docx?|docm|dotx?|dotm";
+  const WORD_RE = new RegExp("\\.(?:" + WORD_EXT + ")$", "i");
+  const WORD_TYPES = [
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+    "application/vnd.ms-word.document.macroenabled.12",
+    "application/vnd.ms-word.template.macroenabled.12",
+  ];
 
   // How many names a question spells out before it counts the rest. A dialog
   // listing forty exhibits is a dialog nobody reads to the end.
@@ -49,6 +64,15 @@
 
   function isPdfName(name) {
     return PDF_RE.test(str(name).trim());
+  }
+
+  function isWordName(name) {
+    return WORD_RE.test(str(name).trim());
+  }
+
+  /** A name the question is asked about: a PDF's or a Word document's. */
+  function isHeldName(name) {
+    return isPdfName(name) || isWordName(name);
   }
 
   /** A File, or the file inside a walked entry. */
@@ -66,11 +90,26 @@
     return isPdfName(f.name) || str(f.type).trim().toLowerCase() === PDF_TYPE;
   }
 
-  /** The PDFs, and everything else, each in the order it came. */
+  /** Is this a Word document? By name, or by the type the browser read off it. */
+  function isWord(x) {
+    const f = fileOf(x);
+    if (!f) return false;
+    return isWordName(f.name) || WORD_TYPES.indexOf(str(f.type).trim().toLowerCase()) !== -1;
+  }
+
+  /** Is this a file the question is asked about — a PDF or a Word document? */
+  function isHeld(x) {
+    return isPdf(x) || isWord(x);
+  }
+
+  /**
+   * The PDFs and Word documents, and everything else, each in the order it
+   * came. `pdfs` is the held files, Word documents among them.
+   */
   function split(list) {
     const pdfs = [];
     const rest = [];
-    for (const x of list || []) (isPdf(x) ? pdfs : rest).push(x);
+    for (const x of list || []) (isHeld(x) ? pdfs : rest).push(x);
     return { pdfs: pdfs, rest: rest };
   }
 
@@ -88,7 +127,7 @@
   function asksAtPage(o) {
     const e = o || {};
     if (!e.trusted || e.ours) return false;
-    return (e.files || []).some(isPdf);
+    return (e.files || []).some(isHeld);
   }
 
   function names(list) {
@@ -112,6 +151,40 @@
 
   const plural = (n, one, many) => (n === 1 ? one : many);
 
+  const PDF_KIND = { one: "PDF", many: "PDFs", a: "a PDF" };
+  const WORD_KIND = { one: "Word document", many: "Word documents", a: "a Word document" };
+  const BOTH_KIND = { one: "PDF or Word document", many: "PDFs and Word documents", a: "a PDF or Word document" };
+
+  /**
+   * What the files are called — PDF_KIND, WORD_KIND, or BOTH_KIND for a batch
+   * of both. Files are read by name and type, bare names by name; `words` is a
+   * count of Word documents with no name to read (a "DOCX" badge), `pdfs` the
+   * same for PDFs.
+   */
+  function kindOf(list, pdfs, words) {
+    let pdf = (Number(pdfs) || 0) > 0;
+    let word = (Number(words) || 0) > 0;
+    for (const x of list || []) {
+      const f = fileOf(x);
+      if (f && typeof f === "object" ? isWord(f) : isWordName(f)) word = true;
+      else pdf = true;
+    }
+    if (word && !pdf) return WORD_KIND;
+    if (word) return BOTH_KIND;
+    return PDF_KIND;
+  }
+
+  // Why a held file is asked about, for the kinds in the batch.
+  function why(kind) {
+    const was =
+      kind === WORD_KIND
+        ? "a Word document is most often the draft itself or an original"
+        : kind === BOTH_KIND
+          ? "a PDF or a Word document is most often an original"
+          : "a PDF is most often an original";
+    return "The pseudonymized papers go up as text, so " + was + ", in the real names.";
+  }
+
   /**
    * The question, in words. `pdfs` are the PDFs (files or names), `others`
    * how many other files came with them, and `opts.queued` says the PDF is
@@ -130,13 +203,13 @@
     const rest = Math.max(0, Number(others) || 0);
     const list = nameList(pdfs) || "This file";
     const it = plural(n, "it", "them");
+    const k = kindOf(pdfs);
     const head = o.queued
-      ? plural(n, "Add this PDF?", "Add these " + n + " PDFs?")
-      : plural(n, "Upload this PDF?", "Upload these " + n + " PDFs?");
+      ? plural(n, "Add this " + k.one + "?", "Add these " + n + " " + k.many + "?")
+      : plural(n, "Upload this " + k.one + "?", "Upload these " + n + " " + k.many + "?");
     const body =
-      list + plural(n, " is a PDF.", " are PDFs.") +
-      " The pseudonymized papers go up as text, so a PDF is most often an original, " +
-      "in the real names. " +
+      list + plural(n, " is " + k.a + ".", " are " + k.many + ".") +
+      " " + why(k) + " " +
       (o.queued
         ? plural(n, "It", "They") + " will upload when this goes out, with nobody there to ask then — " +
           "so " + plural(n, "it is", "they are") + " asked about now. " +
@@ -151,7 +224,7 @@
       head: head,
       body: body,
       keep: o.queued ? plural(n, "Leave it out", "Leave them out") : plural(n, "Keep it out", "Keep them out"),
-      go: o.queued ? plural(n, "Add PDF", "Add PDFs") : "Upload anyway",
+      go: o.queued ? plural(n, "Add " + k.one, "Add " + k.many) : "Upload anyway",
     };
   }
 
@@ -164,10 +237,11 @@
     const n = names(pdfs).length;
     if (!n) return "";
     const list = nameList(pdfs);
-    const what = n === 1 ? list : n + " PDFs (" + list + ")";
+    const k = kindOf(pdfs);
+    const what = n === 1 ? list : n + " " + k.many + " (" + list + ")";
     return o.queued
-      ? "Left out " + what + " — a PDF is added only when you say so."
-      : "Held back " + what + " — a PDF uploads only when you say so.";
+      ? "Left out " + what + " — " + k.a + " is added only when you say so."
+      : "Held back " + what + " — " + k.a + " uploads only when you say so.";
   }
 
   // ---- the last door: the send ------------------------------------------------
@@ -192,12 +266,17 @@
   // A file name ending .pdf, as it sits inside a longer caption: everything
   // before it that a file name may hold, back to a character none can. Leading
   // words ("Remove brief.pdf") ride along, and sameName forgives them.
-  const PDF_IN_TEXT_RE = /([^\\/:*?"<>|\r\n\t]{1,200}?\.pdf)(?![a-z0-9])/i;
+  // A Word document's card is read the same way: "decl.docx", or a "DOCX" badge.
+  const PDF_IN_TEXT_RE = new RegExp(
+    "([^\\\\/:*?\"<>|\\r\\n\\t]{1,200}?\\.(?:pdf|" + WORD_EXT + "))(?![a-z0-9])",
+    "i"
+  );
   const BADGE_RE = /^\s*pdf\s*$/i;
+  const WORD_BADGE_RE = new RegExp("^\\s*(?:" + WORD_EXT + ")\\s*$", "i");
 
   const fold = (v) => str(v).replace(/\s+/g, " ").trim().toLowerCase();
 
-  /** The PDF file name a caption carries, or "". */
+  /** The PDF or Word file name a caption carries, or "". */
   function pdfNameIn(text) {
     const t = str(text);
     if (!t || t.length > 300) return "";
@@ -221,16 +300,22 @@
   }
 
   /**
-   * The PDFs a composer is showing, from its own words (`strings`): distinct
-   * names, shortest form kept, and a count of "PDF" badges that no name
-   * accounts for — a card that says only what it is still says it is a PDF.
+   * The PDFs and Word documents a composer is showing, from its own words
+   * (`strings`): distinct names, shortest form kept, and a count of "PDF" and
+   * "DOCX" badges that no name accounts for — a card that says only what it
+   * is still says what it is. `unnamedWord` is how many of those are Word's.
    */
   function pdfsShown(strings) {
     const found = [];
     let badges = 0;
+    let wordBadges = 0;
     for (const s of strings || []) {
       if (BADGE_RE.test(str(s))) {
         badges++;
+        continue;
+      }
+      if (WORD_BADGE_RE.test(str(s))) {
+        wordBadges++;
         continue;
       }
       const n = pdfNameIn(s);
@@ -239,7 +324,10 @@
       if (at === -1) found.push(n);
       else if (n.length < found[at].length) found[at] = n;
     }
-    return { names: found, unnamed: Math.max(0, badges - found.length) };
+    const words = found.filter(isWordName).length;
+    const unnamedPdf = Math.max(0, badges - (found.length - words));
+    const unnamedWord = Math.max(0, wordBadges - words);
+    return { names: found, unnamed: unnamedPdf + unnamedWord, unnamedWord: unnamedWord };
   }
 
   /** One signature per set of PDFs, order- and case-blind. */
@@ -272,46 +360,65 @@
     const names = (shown.names || []).slice();
     if (e.attachments)
       for (const u of e.uploaded || [])
-        if (isPdfName(u) && !names.some((n) => sameName(n, u))) names.push(str(u).trim());
+        if (isHeldName(u) && !names.some((n) => sameName(n, u))) names.push(str(u).trim());
     const unnamed = Math.max(0, Number(shown.unnamed) || 0);
+    const unnamedWord = Math.min(unnamed, Math.max(0, Number(shown.unnamedWord) || 0));
     const sig = pdfSig(names, unnamed);
-    const free = (why) => ({ hold: false, why: why, names: names, unnamed: unnamed, sig: sig });
+    const free = (reason) => ({ hold: false, why: reason, names: names, unnamed: unnamed, unnamedWord: unnamedWord, sig: sig });
     if (e.trusted === false) return free("not the user's own send");
-    if (!names.length && !unnamed) return free("no PDF in the message");
+    if (!names.length && !unnamed) return free("no PDF or Word document in the message");
     if (e.confirmedSig && e.confirmedSig === sig) return free("said yes to at this send");
     const yes = e.confirmed || [];
     const open = names.filter((n) => !yes.some((c) => sameName(c, n)));
-    if (!open.length && !unnamed) return free("every PDF was said yes to");
-    return { hold: true, why: "an unconfirmed PDF in the message", names: names, unnamed: unnamed, sig: sig };
+    if (!open.length && !unnamed) return free("every PDF and Word document was said yes to");
+    return {
+      hold: true,
+      why: "an unconfirmed PDF or Word document in the message",
+      names: names,
+      unnamed: unnamed,
+      unnamedWord: unnamedWord,
+      sig: sig,
+    };
   }
 
-  /** The send-time question's words: { head, body, keep, go }. */
-  function sendPrompt(names, unnamed) {
+  /**
+   * The send-time question's words: { head, body, keep, go }. `unnamedWord`
+   * is how many of the `unnamed` cards are Word's ("DOCX" badges).
+   */
+  function sendPrompt(names, unnamed, unnamedWord) {
     const list = (names || []).filter(Boolean);
     const extra = Math.max(0, Number(unnamed) || 0);
+    const extraWord = Math.min(extra, Math.max(0, Number(unnamedWord) || 0));
     const n = list.length + extra;
     const one = n === 1;
+    const k = kindOf(list, extra - extraWord, extraWord);
+    const more = kindOf([], extra - extraWord, extraWord);
     const said = list.length
-      ? nameList(list) + (extra ? " and " + extra + " more " + plural(extra, "PDF", "PDFs") : "")
-      : one ? "a PDF" : n + " PDFs";
+      ? nameList(list) + (extra ? " and " + extra + " more " + plural(extra, more.one, more.many) : "")
+      : one ? k.a : n + " " + k.many;
     return {
-      head: one ? "Send this PDF to Claude?" : "Send these " + n + " PDFs to Claude?",
+      head: one ? "Send this " + k.one + " to Claude?" : "Send these " + n + " " + k.many + " to Claude?",
       body:
-        "This message carries " + said + ". The pseudonymized papers go up as text, so a PDF is " +
-        "most often an original, in the real names. Send " + plural(n, "it", "them") +
+        "This message carries " + said + ". " + why(k) + " Send " + plural(n, "it", "them") +
         " only if you mean Claude to read " + plural(n, "it", "them") + ". To send without " +
         plural(n, "it", "them") + ", choose Don't send, remove " + plural(n, "its card", "their cards") +
         " from the message, and send again.",
       keep: "Don't send",
-      go: one ? "Send with the PDF" : "Send with the PDFs",
+      go: one ? "Send with the " + k.one : "Send with the " + k.many,
     };
   }
 
   const api = {
     MAX_NAMED,
     PDF_TYPE,
+    WORD_TYPES,
     isPdfName,
+    isWordName,
+    isHeldName,
     isPdf,
+    isWord,
+    isHeld,
+    kindOf,
     split,
     asksAtPage,
     nameList,

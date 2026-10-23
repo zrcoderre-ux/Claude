@@ -39,8 +39,9 @@ test("a walked entry is read the same as a file, so every door gets the same ans
 test("split keeps both halves in the order they came", () => {
   const a = file("a.txt"), b = file("b.pdf"), c = file("c.docx"), d = file("d.PDF");
   const s = PF.split([a, b, c, d]);
-  assert.deepEqual(s.pdfs, [b, d]);
-  assert.deepEqual(s.rest, [a, c]);
+  // A Word document is held with the PDFs.
+  assert.deepEqual(s.pdfs, [b, c, d]);
+  assert.deepEqual(s.rest, [a]);
   assert.deepEqual(PF.split(null), { pdfs: [], rest: [] });
 });
 
@@ -65,8 +66,8 @@ test("the extension's own drop zones ask for themselves", () => {
   assert.equal(PF.asksAtPage({ trusted: true, ours: true, files: [file("brief.pdf")] }), false);
 });
 
-test("a batch with no PDF in it never asks", () => {
-  assert.equal(PF.asksAtPage({ trusted: true, files: [file("combined-documents.txt"), file("brief.docx")] }), false);
+test("a batch with no PDF or Word document in it never asks", () => {
+  assert.equal(PF.asksAtPage({ trusted: true, files: [file("combined-documents.txt"), file("Tentative.md")] }), false);
   assert.equal(PF.asksAtPage({ trusted: true, files: [] }), false);
   assert.equal(PF.asksAtPage(null), false);
 });
@@ -164,17 +165,18 @@ test("what the composer shows: names once each, and a PDF badge no name accounts
   // A card's name, its remove button's label, and its type badge are one PDF.
   assert.deepStrictEqual(
     PF.pdfsShown(["Smith complaint.pdf", "Remove Smith complaint.pdf", "PDF", "12 pages"]),
-    { names: ["Smith complaint.pdf"], unnamed: 0 }
+    { names: ["Smith complaint.pdf"], unnamed: 0, unnamedWord: 0 }
   );
   // A card that says only what it is still says it is a PDF.
-  assert.deepStrictEqual(PF.pdfsShown(["PDF"]), { names: [], unnamed: 1 });
-  assert.deepStrictEqual(PF.pdfsShown(["a.pdf", "PDF", "PDF"]), { names: ["a.pdf"], unnamed: 1 });
+  assert.deepStrictEqual(PF.pdfsShown(["PDF"]), { names: [], unnamed: 1, unnamedWord: 0 });
+  assert.deepStrictEqual(PF.pdfsShown(["a.pdf", "PDF", "PDF"]), { names: ["a.pdf"], unnamed: 1, unnamedWord: 0 });
   // Nothing PDF about it.
   assert.deepStrictEqual(PF.pdfsShown(["combined-documents.txt", "Send message", "Opus"]), {
     names: [],
     unnamed: 0,
+    unnamedWord: 0,
   });
-  assert.deepStrictEqual(PF.pdfsShown(null), { names: [], unnamed: 0 });
+  assert.deepStrictEqual(PF.pdfsShown(null), { names: [], unnamed: 0, unnamedWord: 0 });
 });
 
 test("a send carrying a PDF nobody said yes to is held", () => {
@@ -233,9 +235,63 @@ test("the send's question names what it carries and says how to send without it"
   assert.match(one.body, /remove its card from the message/);
   assert.equal(one.keep, "Don't send");
   assert.equal(one.go, "Send with the PDF");
-  const two = PF.sendPrompt(["a.pdf"], 1);
+  const two = PF.sendPrompt(["a.pdf"], 1, 0);
   assert.equal(two.head, "Send these 2 PDFs to Claude?");
   assert.match(two.body, /a\.pdf and 1 more PDF/);
   assert.equal(two.go, "Send with the PDFs");
   assert.match(PF.sendPrompt([], 1).body, /carries a PDF\./);
+});
+
+// ---- Word documents --------------------------------------------------------
+
+test("a Word document is asked about the way a PDF is", () => {
+  for (const n of ["decl.docx", "OLD.DOC", "macro.docm", "form.dotx", "form.dot", "form.dotm"]) {
+    assert.ok(PF.isWord(file(n)), n);
+    assert.ok(PF.isHeld(file(n)), n);
+    assert.ok(!PF.isPdf(file(n)), n);
+  }
+  // By the type the browser read off it, when the name says nothing.
+  assert.ok(PF.isHeld(file("scan", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")));
+  assert.ok(PF.isHeld(file("scan", "application/msword")));
+  // Not a Word document: an export of one, or a name that only contains it.
+  assert.ok(!PF.isHeld(file("Tentative.md")));
+  assert.ok(!PF.isHeld(file("decl.docx.txt")));
+  assert.ok(!PF.isHeld(file("decl.docxx")));
+  assert.equal(PF.asksAtPage({ trusted: true, files: [file("a.txt"), file("Smith Tentative.docx")] }), true);
+  assert.equal(PF.asksAtPage({ trusted: false, files: [file("Smith Tentative.docx")] }), false);
+});
+
+test("the question names a Word document as one, and a batch of both as both", () => {
+  const w = PF.prompt([file("decl.docx")], 1);
+  assert.equal(w.head, "Upload this Word document?");
+  assert.match(w.body, /^decl\.docx is a Word document\. /);
+  assert.match(w.body, /a Word document is most often the draft itself or an original, in the real names/);
+  assert.equal(w.go, "Upload anyway");
+  const both = PF.prompt([file("a.pdf"), file("b.docx")], 0, { queued: true });
+  assert.equal(both.head, "Add these 2 PDFs and Word documents?");
+  assert.equal(both.go, "Add PDFs and Word documents");
+  assert.equal(PF.prompt([file("a.pdf")], 0).head, "Upload this PDF?");
+  assert.equal(PF.heldNote([file("decl.docx")]), "Held back decl.docx — a Word document uploads only when you say so.");
+  assert.equal(
+    PF.heldNote([file("a.pdf"), file("b.doc")], { queued: true }),
+    "Left out 2 PDFs and Word documents (a.pdf and b.doc) — a PDF or Word document is added only when you say so."
+  );
+});
+
+test("the send reads a Word card off the composer and asks about it", () => {
+  assert.equal(PF.pdfNameIn("Remove decl.docx"), "Remove decl.docx");
+  const shown = PF.pdfsShown(["decl.docx", "DOCX", "Remove decl.docx", "brief.pdf", "PDF", "DOCX"]);
+  assert.deepEqual(shown, { names: ["decl.docx", "brief.pdf"], unnamed: 1, unnamedWord: 1 });
+  const v = PF.sendAsks({ shown: PF.pdfsShown(["DOCX"]), attachments: true, trusted: true });
+  assert.equal(v.hold, true);
+  const q = PF.sendPrompt(v.names, v.unnamed, v.unnamedWord);
+  assert.equal(q.head, "Send this Word document to Claude?");
+  assert.match(q.body, /^This message carries a Word document\./);
+  assert.equal(q.go, "Send with the Word document");
+  // claude.ai's upload response names it too.
+  const up = PF.sendAsks({ shown: { names: [], unnamed: 0 }, uploaded: ["decl.docx"], attachments: true, trusted: true });
+  assert.deepEqual(up.names, ["decl.docx"]);
+  assert.equal(up.hold, true);
+  assert.equal(PF.sendAsks({ shown: shown, confirmed: ["decl.docx", "brief.pdf"], trusted: true }).hold, true, "a badge no name accounts for still asks");
+  assert.match(PF.sendPrompt(["a.pdf"], 1, 1).body, /a\.pdf and 1 more Word document\./);
 });
