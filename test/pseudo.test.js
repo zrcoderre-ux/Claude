@@ -683,6 +683,45 @@ test("titling keeps the small words small and leaves a value in both cases alone
   assert.equal(P.applyCase("title", "Ludwig van Beethoven"), "Ludwig van Beethoven");
 });
 
+test("a caption's spelling with a small letter in it is still a shout", () => {
+  // One lowercase letter used to read the whole value as prose, and the
+  // shouted name went into the sentence as the key stores it.
+  assert.equal(P.applyCase("title", "CHRISTOPHER McALLISTER"), "Christopher McAllister");
+  assert.equal(P.applyCase("title", "JOHN MacDONALD"), "John MacDonald");
+  assert.equal(P.applyCase("title", "JANE DeMARCO"), "Jane DeMarco");
+  assert.equal(P.applyCase("title", "JOHN SMITH, Jr."), "John Smith, Jr.");
+  assert.equal(P.applyCase("title", "JOHN SMITH, an individual"), "John Smith, an individual");
+  assert.equal(P.applyCase("title", "ACME HOLDINGS OF CALIFORNIA, Inc."), "Acme Holdings of California, Inc.");
+  // Prose with an acronym in it is not outvoted by the acronym.
+  assert.equal(P.applyCase("title", "IBM Credit Corp"), "IBM Credit Corp");
+  assert.equal(P.applyCase("title", "NASA Ames"), "NASA Ames");
+  // The whole sentence, the way the report read.
+  const c = P.compile({
+    pairs: [
+      { real: "CHRISTOPHER McALLISTER", fake: "Cardington Claverhouse" },
+      { real: "JANE DeMARCO, an individual", fake: "Brimley Claverhouse" },
+    ],
+  });
+  assert.equal(
+    P.translate(c, "Plaintiffs Cardington Claverhouse and Brimley Claverhouse (Plaintiffs) filed this action.").text,
+    "Plaintiffs Christopher McAllister and Jane DeMarco, an individual (Plaintiffs) filed this action."
+  );
+  // A caption still shouts.
+  assert.equal(P.translate(c, "CARDINGTON CLAVERHOUSE, Plaintiff").text, "CHRISTOPHER MCALLISTER, Plaintiff");
+});
+
+test("titling a shout knows suffixes, O' names and accented letters", () => {
+  assert.equal(P.applyCase("title", "JOHN SMITH III"), "John Smith III");
+  assert.equal(P.applyCase("title", "HENRY FORD VIII"), "Henry Ford VIII");
+  assert.equal(P.applyCase("title", "MARY O'BRIEN"), "Mary O'Brien");
+  assert.equal(P.applyCase("title", "MARY O’BRIEN"), "Mary O’Brien");
+  assert.equal(P.applyCase("title", "D'ANGELO SMITH'S"), "D'Angelo Smith's");
+  assert.equal(P.applyCase("title", "JOSÉ GARCÍA"), "José García");
+  assert.equal(P.applyCase("title", "ÉMILE ZOLA"), "Émile Zola");
+  assert.equal(P.caseShape("ÉMILE"), "upper");
+  assert.equal(P.caseShape("Émile"), "title");
+});
+
 test("a fake with capitals of its own still says the real name reads as prose", () => {
   const c = P.compile({
     pairs: [

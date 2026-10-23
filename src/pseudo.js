@@ -834,7 +834,7 @@
   function caseShape(s) {
     // A trailing 's is read past: "JOHN DOE's" is still a shout.
     const t = String(s == null ? "" : s).replace(POSS_TAIL_RE, "");
-    if (!/[A-Za-z]/.test(t)) return "none";
+    if (!/\p{L}/u.test(t)) return "none";
     // A caption shouts "McALLISTER" with the c of its Mc/Mac still small; the
     // capitals after it are what say the name is shouted.
     if (t.replace(/\bMa?c(?=[A-Z]{2})/g, (p) => p.toUpperCase()) === t.toUpperCase()) return "upper";
@@ -857,18 +857,37 @@
     ).split(" ")
   );
 
+  // A generational suffix — "JOHN SMITH III" is John Smith III, not Iii.
+  const ROMAN_RE = /^X{0,3}(?:IX|IV|V?I{0,3})$/;
+
   function looksAbbrev(word) {
-    const letters = word.replace(/[^A-Za-z]/g, "");
+    const letters = word.replace(/[^\p{L}]/gu, "");
     if (!letters) return false;
     if (letters.length <= 2) return true; // an initial, or PC / NA / JR
     if (KEEP_UPPER.has(letters.toLowerCase())) return true;
-    return letters.length <= 4 && !/[AEIOUY]/i.test(letters);
+    if (ROMAN_RE.test(letters.toUpperCase())) return true;
+    // Accents off for the vowel test: "MÉN" is a word, not an abbreviation.
+    const bare = letters.normalize("NFD").replace(/\p{M}/gu, "");
+    return letters.length <= 4 && !/[AEIOUY]/i.test(bare);
   }
 
   // A word for casing purposes: letters, with an apostrophe INSIDE the word
   // rather than ending it — "O'Brien" and "Coderre's" are each one word, so
-  // titling can't produce "O'BRien" or "Coderre'S".
-  const WORD_RE = /[A-Za-z]+(?:['\u2018\u2019][A-Za-z]+)*/g;
+  // titling can't produce "O'BRien" or "Coderre'S". Letters are any script's:
+  // an ASCII-only class split "JOSÉ" at the É and wrote "JosÉ".
+  const WORD_RE = /\p{L}+(?:['\u2018\u2019]\p{L}+)*/gu;
+
+  // A shouted word that keeps a small letter in its prefix, the way a caption
+  // writes "McALLISTER", "MacDONALD" or "DeMARCO": the prefix as written, then
+  // the shouted rest.
+  const PREFIX_SHOUT_RE = /^(\p{Lu}\p{Ll}{1,2})(\p{Lu}{2,})$/u;
+
+  // Shouted: all capitals ("SMITH"), or capitals after a cased prefix
+  // ("McALLISTER"). "McDonald", "OneWest" and "Jr" are not.
+  function isShoutedWord(w) {
+    if (w === w.toUpperCase()) return w !== w.toLowerCase();
+    return PREFIX_SHOUT_RE.test(w);
+  }
 
   // The small words a title pass leaves small after the first word — "BANK OF
   // AMERICA" reads "Bank of America", not "Bank Of America" (or "Bank OF
@@ -884,7 +903,28 @@
     // "MCDONALD" is McDonald: a Mc name capitalises after the prefix. (Not
     // Mac, which is as often Mack, Macy or Machado.)
     if (/^mc[a-z]{2}/i.test(w)) return "Mc" + w.charAt(2).toUpperCase() + w.slice(3).toLowerCase();
-    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    const p = w.match(PREFIX_SHOUT_RE);
+    if (p) return p[1] + p[2].charAt(0) + p[2].slice(1).toLowerCase();
+    const out = w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    // "O'BRIEN" is O'Brien and "D'ANGELO" D'Angelo: one letter and an
+    // apostrophe is a prefix, and the name after it is capitalised too. (A
+    // possessive's 's is one letter AFTER the mark, so "SMITH'S" is untouched.)
+    return out.replace(/^(\p{L}['‘’])(\p{L})(?=\p{L})/u, (m, a, b) => a + b.toUpperCase());
+  }
+
+  // A value in both cases that is nonetheless a caption's spelling: most of its
+  // capitalised words are shouted. "JOHN SMITH, Jr.", "CHRISTOPHER McALLISTER",
+  // "JOHN SMITH, an individual". An abbreviation is no evidence either way
+  // (prose writes "IBM" too), and neither is a lowercase word.
+  function mostlyShouted(core) {
+    let shouted = 0;
+    let prose = 0;
+    for (const w of core.match(WORD_RE) || []) {
+      if (w === w.toLowerCase()) continue;
+      if (!isShoutedWord(w)) prose++;
+      else if (!(w === w.toUpperCase() && looksAbbrev(w))) shouted++;
+    }
+    return shouted > prose;
   }
 
   /**
@@ -898,6 +938,13 @@
    * leaves it exactly as it is. Only a value in one case throughout (shouted or
    * quiet) is re-cased, word by word, with its small words kept small and —
    * where it was shouted — its abbreviations kept in capitals.
+   *
+   * The exception is a caption's spelling with a small letter or two in it —
+   * "JOHN SMITH, Jr.", "CHRISTOPHER McALLISTER", "JOHN SMITH, an individual".
+   * One small letter used to be enough to read the whole value as prose, and
+   * the shouted name went into the sentence as the key stores it. Where most of
+   * its capitalised words are shouted (mostlyShouted), the shouted words are
+   * titled and the rest are left as written.
    */
   function applyCase(shape, value) {
     const v = String(value == null ? "" : value);
@@ -906,7 +953,15 @@
     if (shape === "title") {
       // A possessive row's "CODERRE's" is not a value in both cases.
       const core = v.replace(POSS_TAIL_RE, "");
-      if (core !== core.toUpperCase() && core !== core.toLowerCase()) return v;
+      if (core !== core.toUpperCase() && core !== core.toLowerCase()) {
+        if (!mostlyShouted(core)) return v;
+        let first = true;
+        return v.replace(WORD_RE, (w) => {
+          const out = isShoutedWord(w) ? titleWord(w, first) : w;
+          first = false;
+          return out;
+        });
+      }
       let first = true;
       return v.replace(WORD_RE, (w) => {
         const out = titleWord(w, first);
