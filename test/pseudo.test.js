@@ -657,8 +657,8 @@ test("titling leaves alone what was written deliberately", () => {
   // against that backdrop — there is nothing to guess about.
   assert.equal(P.applyCase("title", "Cross River Bank, LLC"), "Cross River Bank, LLC");
   assert.equal(P.applyCase("title", "IBM Credit Corp"), "IBM Credit Corp");
-  // Only inside an all-caps value is the guess made, and there an initial, a
-  // vowel-less short word, and the listed abbreviations keep their capitals.
+  // Only inside an all-caps value is the guess made, and there only the listed
+  // abbreviations keep their capitals (an initial is a capital anyway).
   assert.equal(P.applyCase("title", "JOHN A DOE"), "John A Doe");
   assert.equal(P.applyCase("title", "CROSS RIVER BANK, LLC"), "Cross River Bank, LLC");
   assert.equal(P.applyCase("title", "SMITH DDS"), "Smith DDS");
@@ -681,6 +681,27 @@ test("titling keeps the small words small and leaves a value in both cases alone
   // Already written the way prose writes it — nothing to re-case.
   assert.equal(P.applyCase("title", "Bank of America"), "Bank of America");
   assert.equal(P.applyCase("title", "Ludwig van Beethoven"), "Ludwig van Beethoven");
+});
+
+test("a short NAME is titled; only a listed abbreviation keeps its capitals", () => {
+  // The old guess (any word of one or two letters, any short word with no
+  // vowel) kept these shouted in the middle of a sentence.
+  assert.equal(P.applyCase("title", "ED SMITH"), "Ed Smith");
+  assert.equal(P.applyCase("title", "LY NG"), "Ly Ng");
+  assert.equal(P.applyCase("title", "ADA LOVELACE"), "Ada Lovelace");
+  assert.equal(P.applyCase("title", "JOHN SMITH JR"), "John Smith Jr");
+  // The list.
+  assert.equal(P.applyCase("title", "PNC BANK"), "PNC Bank");
+  assert.equal(P.applyCase("title", "CROSS RIVER BANK, LLC"), "Cross River Bank, LLC");
+  assert.equal(P.applyCase("title", "SMITH & JONES, LLP"), "Smith & Jones, LLP");
+  assert.equal(P.applyCase("title", "JOHN SMITH, MD, PC"), "John Smith, MD, PC");
+  assert.equal(P.applyCase("title", "JOHN SMITH III"), "John Smith III");
+  // A miss is one titled abbreviation, nothing worse.
+  assert.equal(P.applyCase("title", "XYZ CORP"), "Xyz Corp");
+  // The same name in a caption still shouts, whole.
+  const c = P.compile({ pairs: [{ real: "ED NG", fake: "Cardington Claverhouse" }] });
+  assert.equal(P.translate(c, "Cardington Claverhouse moved.").text, "Ed Ng moved.");
+  assert.equal(P.translate(c, "CARDINGTON CLAVERHOUSE, Plaintiff").text, "ED NG, Plaintiff");
 });
 
 test("a caption's spelling with a small letter in it is still a shout", () => {

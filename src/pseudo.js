@@ -842,33 +842,34 @@
     return "title";
   }
 
-  // Abbreviations a title pass must not take the capitals off. The test that
-  // does most of the work is mechanical: an all-caps word of four letters or
-  // fewer with no vowel in it (LLC, LLP, LP, PC, LTD, DDS, IBM, CVS) is an
-  // abbreviation, not a shouted word, and one or two letters is an initial.
-  // The short list beside it is for the ones that carry a vowel and would
-  // otherwise come out as words. It can grow; nothing depends on it being
-  // complete, and a miss costs one wrongly-titled abbreviation.
+  // Abbreviations a title pass must not take the capitals off — and ONLY these.
+  // Every other word of a shouted name is titled, however short: a guess that
+  // read any one- or two-letter word, or any short word with no vowel, as an
+  // abbreviation kept PC and LLC but also left the NAMES Ed, Ly and Ng shouted
+  // in the middle of a sentence ("ED Smith", "LY NG"). A single letter needs no
+  // entry: titled, it is a capital anyway.
+  //
+  // The same list is kept in My-Macros (DeAnonymize.bas, IsKeptAbbrev) so Word
+  // and the browser case a name the same way; change both together. It can
+  // grow, and a miss costs one wrongly-titled abbreviation ("Abc"). A word that
+  // is also a common name stays off it (Ada, Edd).
   const KEEP_UPPER = new Set(
     (
-      "usa esq dba aka fka hoa ada eeoc inc " +
+      // Entity forms and professional suffixes.
+      "llc llp lp lllp pllc plc pc pa ltd inc na dba aka fka nka hoa esq cpa md dds dmd dvm rn jd usa us " +
+      // Companies known by their letters.
+      "ibm aol pnc bmw cvs ups hsbc " +
       // Agencies and the like, which do turn up as real values in a caption.
-      "irs dmv fbi cia epa doj dhs faa atf dea sec fda fcc ftc osha ssa nlrb ibm aol"
+      "irs dmv fbi cia epa doj dhs faa atf dea sec fda fcc ftc osha ssa nlrb eeoc crd dfeh cdcr chp lapd lasd lausd dcfs ucla usc " +
+      // Generational suffixes — "JOHN SMITH III" is John Smith III, not Iii.
+      // VI and XI are left out: Vi and Xi are names.
+      "ii iii iv vii viii ix"
     ).split(" ")
   );
 
-  // A generational suffix — "JOHN SMITH III" is John Smith III, not Iii.
-  const ROMAN_RE = /^X{0,3}(?:IX|IV|V?I{0,3})$/;
-
   function looksAbbrev(word) {
     const letters = word.replace(/[^\p{L}]/gu, "");
-    if (!letters) return false;
-    if (letters.length <= 2) return true; // an initial, or PC / NA / JR
-    if (KEEP_UPPER.has(letters.toLowerCase())) return true;
-    if (ROMAN_RE.test(letters.toUpperCase())) return true;
-    // Accents off for the vowel test: "MÉN" is a word, not an abbreviation.
-    const bare = letters.normalize("NFD").replace(/\p{M}/gu, "");
-    return letters.length <= 4 && !/[AEIOUY]/i.test(bare);
+    return !!letters && KEEP_UPPER.has(letters.toLowerCase());
   }
 
   // A word for casing purposes: letters, with an apostrophe INSIDE the word
@@ -890,8 +891,7 @@
   }
 
   // The small words a title pass leaves small after the first word — "BANK OF
-  // AMERICA" reads "Bank of America", not "Bank Of America" (or "Bank OF
-  // America", which is what the two-letter abbreviation rule would make of it).
+  // AMERICA" reads "Bank of America", not "Bank Of America".
   const SMALL_WORDS = new Set("of and the for in on at to by or".split(" "));
 
   // One word of a value that has a single case throughout (see applyCase).
@@ -922,7 +922,8 @@
     for (const w of core.match(WORD_RE) || []) {
       if (w === w.toLowerCase()) continue;
       if (!isShoutedWord(w)) prose++;
-      else if (!(w === w.toUpperCase() && looksAbbrev(w))) shouted++;
+      // An initial or an abbreviation is in capitals in prose too: no evidence.
+      else if (!(w === w.toUpperCase() && (w.length <= 2 || looksAbbrev(w)))) shouted++;
     }
     return shouted > prose;
   }
