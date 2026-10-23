@@ -3596,6 +3596,14 @@ capitals can be destroyed, so:
 - **A real value with both cases in it is already prose** — `McDonald`,
   `OneWest Bank`, `Cross River Bank, LLC`, `IBM Credit Corp`, `Bank of America`.
   Titling leaves it exactly as written.
+- **…unless most of its capitalised words are shouted.** A caption's spelling
+  often has a small letter or two in it — `CHRISTOPHER McALLISTER`,
+  `JOHN SMITH, Jr.`, `JANE DOE, an individual` — and one small letter used to be
+  enough to read the whole value as prose, so the shouted name went into the
+  sentence as the key stores it. Now the shouted words are titled and the rest
+  kept as written: `Christopher McAllister`, `John Smith, Jr.`,
+  `Jane Doe, an individual`. An acronym is no evidence either way, so
+  `IBM Credit Corp` and `NASA Ames` are still left alone.
 - **Only a value in one case throughout is re-cased**, word by word. Small words
   after the first stay small (`of`, `and`, `the`, `for`, `in`, `on`, `at`, `to`,
   `by`, `or`), so `BANK OF AMERICA` reads `Bank of America`; a `Mc` name
@@ -3610,7 +3618,11 @@ capitals can be destroyed, so:
   `Cross River Bank, LLC`.
 
 A caption's `McALLISTER` — the `c` of the prefix still small — reads as a shout,
-not as prose.
+not as prose, and titles with its prefix as written (`MacDONALD` → `MacDonald`,
+`DeMARCO` → `DeMarco`). A generational suffix keeps its capitals
+(`JOHN SMITH III` → `John Smith III`), a one-letter prefix and apostrophe
+capitalise the name after them (`O'BRIEN` → `O'Brien`), and accented letters are
+letters (`JOSÉ GARCÍA` → `José García`, where it once read `JosÉ GarcÍA`).
 
 **A word the fake shares with the real name is spelled the way the fake spells
 it**, whatever the rules above would have made of it. The text has already said
