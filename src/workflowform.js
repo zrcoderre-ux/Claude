@@ -767,7 +767,7 @@
       if (!PF) {
         flash(
           "The PDF flag is not loaded, so nothing was added — the files could not be checked " +
-            "for PDFs. Reload this page and pick them again.",
+            "for PDFs and Word documents. Reload this page and pick them again.",
           true
         );
         return null;
@@ -775,7 +775,7 @@
       const s = PF.split(list);
       if (!s.pdfs.length) return list;
       if (!PC || !PC.ask) {
-        flash(PF.heldNote(s.pdfs, { queued: true }) + " The PDF question isn't loaded — reload this page.", true);
+        flash(PF.heldNote(s.pdfs, { queued: true }) + " The upload question isn't loaded — reload this page.", true);
         return s.rest;
       }
       const ok = await PC.ask(doc, PF.prompt(s.pdfs, s.rest.length, { queued: true }));

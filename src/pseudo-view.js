@@ -1672,7 +1672,7 @@
       if (!C || !m || m.__channel !== C.CHANNEL || !m.payload || !m.payload.upload) return;
       const name = String(m.payload.upload.file_name || "").trim();
       const PF = window.CUMPdfFlag;
-      if (!name || !PF || !PF.isPdfName(name)) return;
+      if (!name || !PF || !(PF.isHeldName || PF.isPdfName)(name)) return;
       const conv = location.pathname;
       if (pdfUploads.conv !== conv) pdfUploads = { conv: conv, names: [] };
       if (pdfUploads.names.indexOf(name) === -1) pdfUploads.names.push(name);
@@ -1805,13 +1805,14 @@
       // Nothing to ask with: the send stays held, and says why. A PDF is never
       // let through because the thing that asks about it is missing.
       guardNotice(
-        "Not sent: this message carries a PDF (" + (v.names.join(", ") || "a PDF") + "), and the " +
-          "PDF question isn't loaded on this page to ask about it. Reload the page, or remove the PDF."
+        "Not sent: this message carries a PDF or Word document (" + (v.names.join(", ") || "a file") +
+          "), and the upload question isn't loaded on this page to ask about it. Reload the page, or " +
+          "remove the file."
       );
       return true;
     }
     pdfAsking = true;
-    PC.ask(document, PF.sendPrompt(v.names, v.unnamed)).then((ok) => {
+    PC.ask(document, PF.sendPrompt(v.names, v.unnamed, v.unnamedWord)).then((ok) => {
       // Released a beat later: the click that raised the question is still
       // delivering its mousedown and click, and they belong to this send.
       setTimeout(() => (pdfAsking = false), 400);
@@ -2685,7 +2686,7 @@
     if (!PC || !PC.ask) {
       guardNotice(
         PF.heldNote(names) +
-          " The PDF question isn't loaded on this page, so it could not be asked. Reload the page " +
+          " The upload question isn't loaded on this page, so it could not be asked. Reload the page " +
           "and pick it again."
       );
       return { files: s.rest, released: [] };

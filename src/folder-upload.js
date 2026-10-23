@@ -562,7 +562,7 @@
     if (!PF) {
       lines.push(
         "Nothing was uploaded — the PDF flag isn't loaded on this page, so the folder could not be " +
-          "checked for PDFs. Reload the page and pick it again."
+          "checked for PDFs and Word documents. Reload the page and pick it again."
       );
       return [];
     }
@@ -571,7 +571,7 @@
     if (!PC || !PC.ask) {
       lines.push(
         PF.heldNote(s.pdfs) +
-          " The PDF question isn't loaded on this page, so it could not be asked. Reload the page " +
+          " The upload question isn't loaded on this page, so it could not be asked. Reload the page " +
           "and pick the folder again."
       );
       return s.rest;

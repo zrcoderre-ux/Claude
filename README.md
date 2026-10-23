@@ -119,7 +119,8 @@ bottom-right corner of [claude.ai](https://claude.ai).
   is held behind a question naming it until you press **Upload anyway**. And
   whatever door it came in by, a message carrying a PDF nobody said yes to does
   not send until you do. A scheduled send or a workflow asks when the PDF is
-  added, while you are there to answer. See [A PDF asks before it
+  added, while you are there to answer. A **Word document** is asked about the
+  same way, at every one of those doors. See [A PDF asks before it
   uploads](#a-pdf-asks-before-it-uploads).
 - **Copy ruling** — a second copy button in claude.ai's own action bar, beside
   the one that copies the whole reply. It copies **only the tentative ruling**:
@@ -1187,7 +1188,20 @@ The pseudonymized papers reach claude.ai as **text** — the `Text Files` a case
 folder holds, and the combined file built out of them. A PDF is the other kind
 of paper: most often an original, the filing as served, in the real names. So
 **a PDF never uploads on the strength of a pick alone.** Every door asks first,
-naming the file, and only the affirmative button lets it through:
+naming the file, and only the affirmative button lets it through.
+
+**A Word document is held the same way.** It is the draft as written, or a
+filing as received, in the real names — the re-anonymize macro writes the
+shareable copy as **text**, not as another `.docx` — so everything below that
+says "PDF" holds for a Word document too: `.docx`, `.doc`, `.docm` and the
+templates (`.dotx`, `.dot`, `.dotm`), known by name or by the type the browser
+reads off the file. The question names what it is asking about — **Upload this
+Word document?**, **Send this Word document to Claude?**, or "PDFs and Word
+documents" for a batch of both — and at the send a card naming a `.docx` or
+badged **DOCX** counts as a card badged PDF does. A `.md` or `.txt` export of a
+Word document is text, and is not asked about.
+
+The doors:
 
 - **claude.ai's own upload button**, and a PDF **dropped** on the page or
   **pasted** into it. The pick is held before claude.ai's own handlers see it —
@@ -4303,7 +4317,7 @@ src/upfiles.js         The files you uploaded: whose, where the bytes are, what'
 src/up-files.js        The Files button and panel — downloads them again
 src/folderup.js        A case folder into a new chat: what goes up, what it's called (pure)
 src/folder-upload.js   The Upload folder button on a new conversation
-src/pdfflag.js         A PDF uploads only on your say-so: which doors ask, and the words (pure)
+src/pdfflag.js         A PDF or Word document uploads only on your say-so: which doors ask, and the words (pure)
 src/pdf-confirm.js     The PDF question on screen, shared by every door that asks
 src/replycopy.js       claude.ai's copy box: where it is, and what it wrote
 src/tentative.js       The tentative ruling out of a reply (pure)
@@ -4341,7 +4355,7 @@ test/tentative.test.js Unit tests for the ruling's start and end boundaries
 test/xlsxread.test.js  Unit tests for the .xlsx reader (zip + sheet XML)
 test/pseudo.test.js    Unit tests for the pseudonym key logic
 test/folderup.test.js  Unit tests for the case folder taken into a new chat
-test/pdfflag.test.js   Unit tests for when a PDF is asked about, and what is said
+test/pdfflag.test.js   Unit tests for when a PDF or Word document is asked about, and what is said
 test/upfiles.test.js   Unit tests for getting an uploaded file back
 test/coderepo.test.js  Unit tests for the repo behind a Recents row (branch traps included)
 icons/                 Generated PNG icons (16/48/128)
