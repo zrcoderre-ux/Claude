@@ -365,15 +365,59 @@ test("an empty or headerless workbook parses to an empty key", () => {
   assert.deepStrictEqual(P.findReals(P.compileReals(key), "anything"), []);
 });
 
-test("a pincite paste declares itself and stands the warning down", () => {
-  assert.ok(P.isPincitePaste("PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS\nRasho v. Smith, 47 Cal.2d 469, 471"));
+// The first lines of the four reports the Workup Citation Cross-Opener
+// extension copies, as its content.js writes them.
+const LEXIS_SRC = "Source: Lexis+ — https://plus.lexis.com/document/?pddocfullpath=x";
+const WEST_SRC = "Source: Westlaw — https://1.next.westlaw.com/Document/I1?transitionType=Default";
+
+test("a Lexis or Westlaw report declares itself and stands the warning down", () => {
+  const pincite = [
+    "PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS",
+    "Opinions: 1 — 3 page breaks",
+    "",
+    "Each entry below is one page break…",
+    "",
+    "Opinion: Rasho v. Smith",
+    "Reporter: 47 Cal.2d 469",
+    WEST_SRC,
+  ].join("\n");
+  assert.equal(P.lawReportKind(pincite), "pincite");
+  const opinion = ["OPINION — FULL TEXT", "Rasho v. Smith", "Reporter: 47 Cal.2d 469", LEXIS_SRC, "Length: ~4,210 words"].join("\n");
+  assert.equal(P.lawReportKind(opinion), "opinion");
+  // A collection names its sources under each opinion's divider, below the preamble.
+  const opinions = [
+    "OPINIONS — FULL TEXT",
+    "Opinions: 2 — ~9,000 words in all",
+    "",
+    "The courts' opinions as published on Lexis+ and Westlaw…",
+    "",
+    "════════ OPINION 1 of 2 ════════",
+    "Rasho v. Smith",
+    WEST_SRC,
+  ].join("\n");
+  assert.equal(P.lawReportKind(opinions), "opinion");
+  assert.equal(P.lawReportKind("CODE SECTION — FULL TEXT\nCal Code Civ Proc § 437c — Motion\n" + LEXIS_SRC), "code");
+  assert.equal(P.lawReportKind("CITE CHECK — SHEPARD'S REPORT\nRasho v. Smith\n" + LEXIS_SRC), "citecheck");
+  assert.ok(P.isLawReport("CITE CHECK — SHEPARD’S REPORT\n" + LEXIS_SRC));
   // Tolerant of the dash and spacing a copy-paste mangles…
-  assert.ok(P.isPincitePaste("  pincite check - official reporter page breaks\n…"));
-  assert.ok(P.isPincitePaste("PINCITE CHECK -- OFFICIAL REPORTER PAGE BREAKS"));
-  // …but only at the START, and only these words.
-  assert.ok(!P.isPincitePaste("Re: PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS"));
-  assert.ok(!P.isPincitePaste("PINCITE CHECK for Rasho"));
-  assert.ok(!P.isPincitePaste(""));
+  assert.ok(P.isLawReport("  pincite check - official reporter page breaks\n…\nSource: Lexis+ - https://x"));
+  assert.ok(P.isLawReport("PINCITE CHECK -- OFFICIAL REPORTER PAGE BREAKS\r\n" + WEST_SRC));
+  assert.ok(P.isLawReport("Opinion – Full Text\n" + WEST_SRC));
+});
+
+test("a report header is only a report at the start, in these words, with its service's source", () => {
+  // Only at the START…
+  assert.ok(!P.isLawReport("Re: PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS\n" + LEXIS_SRC));
+  assert.ok(!P.isLawReport("Check these for Rasho:\nOPINION — FULL TEXT\n" + LEXIS_SRC));
+  // …only these words, and the header is the whole first line…
+  assert.ok(!P.isLawReport("PINCITE CHECK for Rasho\n" + LEXIS_SRC));
+  assert.ok(!P.isLawReport("OPINION — FULL TEXT of Rasho's deposition\n" + LEXIS_SRC));
+  // …and a header someone typed, with no Lexis+ or Westlaw source, is not one.
+  assert.ok(!P.isLawReport("PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS\nRasho v. Smith, 47 Cal.2d 469, 471"));
+  assert.ok(!P.isLawReport("OPINION — FULL TEXT\nHelen Rasho\nSource: my notes — https://example.com"));
+  assert.ok(!P.isLawReport("OPINION — FULL TEXT\nSource: Westlaw"));
+  assert.equal(P.lawReportKind(""), "");
+  assert.equal(P.lawReportKind(null), "");
 });
 
 test("compileForward pseudonymizes typed text: longest real first, keeps verbatim", () => {
@@ -1851,13 +1895,13 @@ test("sendHold: a real value in the draft stops the send, and says which", () =>
   assert.ok(/does not send/.test(v.note));
 });
 
-test("sendHold: a clean draft, and a pincite paste, send freely", () => {
+test("sendHold: a clean draft, and a Lexis or Westlaw report, send freely", () => {
   assert.equal(P.sendHold({ hits: [] }).hold, false);
   assert.equal(P.sendHold({}).hold, false);
   assert.equal(P.sendHold(null).hold, false);
-  // Published citations out of Lexis are declared safe, and the banner already
-  // stands down for them.
-  assert.equal(P.sendHold({ hits: [HIT], pincite: true }).hold, false);
+  // Published law out of Lexis+ or Westlaw is declared safe, and the banner
+  // already stands down for it.
+  assert.equal(P.sendHold({ hits: [HIT], report: true }).hold, false);
 });
 
 test("sendHold: closing the warning for these values releases the send", () => {
@@ -1911,13 +1955,13 @@ test("pasteHold: nothing to ask about lets the paste straight through", () => {
   assert.equal(P.pasteHold({ hits: [{ fake: "x" }, null] }).hold, false);
 });
 
-test("pasteHold: the extension's own pastes, files, pincites and an answered paste are never held", () => {
+test("pasteHold: the extension's own pastes, files, Lexis or Westlaw reports and an answered paste are never held", () => {
   // Its own hand-back is a dispatched paste; holding it would ask forever.
   assert.equal(P.pasteHold({ hits: [HIT], trusted: false }).hold, false);
   // A file paste is the upload guard's to judge.
   assert.equal(P.pasteHold({ hits: [HIT], files: true }).hold, false);
-  // Published citations out of Lexis are declared safe, here as in the draft.
-  assert.equal(P.pasteHold({ hits: [HIT], pincite: true }).hold, false);
+  // Published law out of Lexis+ or Westlaw is declared safe, here as in the draft.
+  assert.equal(P.pasteHold({ hits: [HIT], report: true }).hold, false);
   // Paste as is that claude.ai didn't take back: the operator already answered.
   assert.equal(P.pasteHold({ hits: [HIT], allowed: true }).hold, false);
 });

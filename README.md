@@ -2845,10 +2845,16 @@ swept on the next extension start.
    button both stop, and the banner says so: see [A real name in the draft stops
    the send](#a-real-name-in-the-draft-stops-the-send). Nothing else is
    rewritten without a keypress the composer would have taken anyway: the
-   composer is yours. One declared exception: a draft that
-   **begins** `PINCITE CHECK — OFFICIAL REPORTER PAGE BREAKS` is the operator
-   pasting pincites out of Lexis — published citations, always safe — and the
-   warning stands down for that draft. And **ordinary English is never
+   composer is yours. One declared exception: a draft that **begins** with a
+   report the Workup Citation Cross-Opener extension copied out of Lexis+ or
+   Westlaw is published law — always safe — and the warning stands down for
+   that draft. Those are the four reports whose first line is `PINCITE CHECK —
+   OFFICIAL REPORTER PAGE BREAKS`, `OPINION — FULL TEXT` (or `OPINIONS — FULL
+   TEXT` for a collection), `CODE SECTION — FULL TEXT` or `CITE CHECK —
+   SHEPARD'S REPORT`, and the header counts only when it is the whole first
+   line and the report also carries its service's own `Source: Lexis+ — <url>`
+   or `Source: Westlaw — <url>` line, so a heading typed over a draft of your
+   own waves nothing through (`P.lawReportKind` in `src/pseudo.js`). And **ordinary English is never
    flagged**: a key row binding a bare "as"/"and"/"was" (a stray token, a
    one-word short form) is left out of the warning — and out of the cleaner
    below — because those words are what normal writing is made of. Multi-word
@@ -2941,9 +2947,10 @@ What it deliberately does not do:
   machine-composed and travel their own path, and a gate that silently wedged a
   run would be the failure this repo forbids outright: an automation that does
   not act and does not say so. Only a real keystroke or a real click is held.
-- **It never holds a pincite paste** (a draft beginning `PINCITE CHECK —
-  OFFICIAL REPORTER PAGE BREAKS`), for the same reason the banner stands down
-  for one: published citations are declared safe.
+- **It never holds a Lexis or Westlaw report** (a draft beginning with one of
+  the Cross-Opener's pincite, opinion, code-section or Shepard's reports), for
+  the same reason the banner stands down for one: published law is declared
+  safe.
 - **It holds the composer only.** An Enter in a search field, a rename, a
   dialog is not a send and is not touched.
 
@@ -2992,7 +2999,8 @@ Paste as is, pasting again sends the same text through without the question,
 once and for two minutes.
 
 Same boundaries as the gate: the composer only, in a chat with a key attached;
-never a paste the extension made itself; never a pincite paste; never a file
+never a paste the extension made itself; never a Lexis or Westlaw report;
+never a file
 paste, which [the upload guard](#a-pdf-asks-before-it-uploads) judges. With no
 key attached nothing is held. The decision is `P.pasteHold` in `src/pseudo.js`
 (tested); the wiring is in `src/pseudo-view.js`. On Cowork, the capture is the same
