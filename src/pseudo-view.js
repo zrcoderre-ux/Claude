@@ -1429,15 +1429,15 @@
     if (!active || !active.compiledReals.rx) return null;
     const ed = editorEl();
     const text = ed ? ed.innerText || ed.textContent || "" : "";
-    // A draft opening with the PINCITE CHECK header is the operator pasting
-    // official-reporter pincites out of Lexis — published citations, declared
-    // safe. The warning stands down for that draft (P.isPincitePaste), and so
-    // does the gate.
-    const pincite = !!text && P.isPincitePaste(text);
+    // A draft opening with a Cross-Opener report — pincites, an opinion, a
+    // code section or a Shepard's report copied out of Lexis+ or Westlaw — is
+    // published law, declared safe. The warning stands down for that draft
+    // (P.isLawReport), and so does the gate.
+    const report = !!text && P.isLawReport(text);
     return {
       text: text,
-      pincite: pincite,
-      hits: text && !pincite ? P.findReals(active.compiledReals, text) : [],
+      report: report,
+      hits: text && !report ? P.findReals(active.compiledReals, text) : [],
     };
   }
 
@@ -1564,7 +1564,7 @@
     const v = P.sendHold({
       hits: read.hits,
       dismissed: warnDismissed,
-      pincite: read.pincite,
+      report: read.report,
       // A send the extension itself made is not a keystroke of the operator's
       // and is never held here; the events our own drivers dispatch are
       // untrusted by construction.
@@ -2165,7 +2165,7 @@
       const draft = draftReals();
       const v = P.pasteHold({
         hits: text && !files ? P.findReals(active.compiledReals, text) : [],
-        pincite: P.isPincitePaste(text) || !!(draft && draft.pincite),
+        report: P.isLawReport(text) || !!(draft && draft.report),
         trusted: true,
         files: files,
         allowed: allowed,

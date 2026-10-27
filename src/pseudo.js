@@ -1467,8 +1467,8 @@
   //   that silently wedged a scheduled send would be the failure CLAUDE.md
   //   forbids outright — an automation that does not act and does not say so.
   //
-  //   It never holds a pincite paste, for the same reason the banner stands
-  //   down for one: published citations out of Lexis are declared safe.
+  //   It never holds a Lexis or Westlaw report (isLawReport), for the same
+  //   reason the banner stands down for one: published law is declared safe.
   //
   // Fail-open by construction: every input comes from the key's own matcher,
   // so a page with no key attached, an unreadable key, or a module that never
@@ -1510,7 +1510,7 @@
    *              the whole draft's worth — including the one the caret prompt
    *              is offering, which is in the draft like any other
    *   dismissed  the signature the operator closed the banner for
-   *   pincite    the draft is a pincite paste (isPincitePaste)
+   *   report     the draft is a Lexis or Westlaw report (isLawReport)
    *   trusted    this is the user's own keystroke or click; false for a send
    *              the extension itself made
    *
@@ -1531,7 +1531,7 @@
       names: [],
     });
     if (e.trusted === false) return free("not the user's own send");
-    if (e.pincite) return free("a pincite paste");
+    if (e.report) return free("a Lexis or Westlaw report");
     if (!hits.length) return free("no real values in the draft");
     if (sig && sig === e.dismissed) return free("the warning was closed for these values");
     return {
@@ -1559,8 +1559,9 @@
   // be a paste going into an attachment unread, which is the gap this closes.
   //
   // Same rules as the gate, for the same reasons: never a paste the extension
-  // dispatched itself (its own hand-back included), never a pincite paste, and
-  // fail-open by construction — no key attached, no hits, nothing held.
+  // dispatched itself (its own hand-back included), never a Lexis or Westlaw
+  // report, and fail-open by construction — no key attached, no hits, nothing
+  // held.
 
   const PASTE_HEAD = "Real names in what you're pasting";
 
@@ -1568,7 +1569,8 @@
    * Whether a paste into the composer has to be asked about first.
    *
    *   hits     real values in the PASTED text (findReals on it)
-   *   pincite  the pasted text, or the draft it lands in, is a pincite paste
+   *   report   the pasted text, or the draft it lands in, is a Lexis or
+   *            Westlaw report (isLawReport)
    *   trusted  a person's own paste; false for one the extension dispatched
    *   files    the paste carries files — the upload guard's business, not this
    *   allowed  a one-shot pass for exactly this text: the operator already
@@ -1582,7 +1584,7 @@
     const free = (why) => ({ hold: false, why: why, hits: hits });
     if (e.trusted === false) return free("not the user's own paste");
     if (e.files) return free("a file paste");
-    if (e.pincite) return free("a pincite paste");
+    if (e.report) return free("a Lexis or Westlaw report");
     if (e.allowed) return free("already answered: paste as is");
     if (!hits.length) return free("no real values in the paste");
     return { hold: true, why: "real values in the paste", hits: hits };
@@ -1781,16 +1783,44 @@
     return !!hit && !hit.partial;
   }
 
-  // A draft that opens with this header is the operator pasting pincites out
-  // of Lexis — published citations, so the party-name collisions with the
-  // key's reals are authorities, not leaks (the same reason the scrubber
-  // never touches a citation). The whole draft's warning stands down; the
-  // header is the operator's own declaration, exactly like a keep. Tolerant
-  // of the dash and spacing a copy-paste mangles, not of different words.
-  const PINCITE_RE = /^\s*PINCITE\s+CHECK\s*[—–-]+\s*OFFICIAL\s+REPORTER\s+PAGE\s+BREAKS/i;
+  // A draft that opens with one of these headers is the operator pasting a
+  // report the Workup Citation Cross-Opener extension copied out of Lexis+ or
+  // Westlaw — pincites, a full opinion, a code section, a Shepard's report.
+  // Published law, so the party-name collisions with the key's reals are
+  // authorities, not leaks (the same reason the scrubber never touches a
+  // citation). The whole draft's warning stands down; the report is the
+  // operator's own declaration, exactly like a keep.
+  //
+  // Each header is the FIRST LINE of a report exactly as Cross-Opener's
+  // content.js writes it (buildCollectionReport, buildOpinionCollectionReport,
+  // buildCodeReport, buildCiteCheckReport) — the same lines its paste-watch.js
+  // keys on. A header alone is not enough: every one of those reports also
+  // carries its service's own `Source: Lexis+ — <url>` / `Source: Westlaw —
+  // <url>` line, and that is what makes it a report taken from a service
+  // rather than a heading someone typed. Tolerant of the dash, apostrophe and
+  // spacing a copy-paste mangles, not of different words.
+  const DASH = "\\s*[—–-]+\\s*";
+  const LAW_REPORTS = [
+    ["pincite", "PINCITE\\s+CHECK" + DASH + "OFFICIAL\\s+REPORTER\\s+PAGE\\s+BREAKS"],
+    ["opinion", "OPINIONS?" + DASH + "FULL\\s+TEXT"],
+    ["code", "CODE\\s+SECTION" + DASH + "FULL\\s+TEXT"],
+    ["citecheck", "CITE\\s+CHECK" + DASH + "SHEPARD[’'`]?S\\s+REPORT"],
+  ].map(([kind, head]) => [kind, new RegExp("^\\s*" + head + "[ \\t]*(?:\\r?\\n|$)", "i")]);
+  const LAW_SOURCE_RE = /^[ \t]*Source:[ \t]*(?:Lexis\+?|Westlaw)\s*[—–-]+\s*https?:\/\//im;
 
-  function isPincitePaste(text) {
-    return PINCITE_RE.test(String(text || ""));
+  /**
+   * Which Cross-Opener report `text` is — "pincite", "opinion", "code" or
+   * "citecheck" — or "" when it is not one: its first line must be a report
+   * header and the report must name Lexis+ or Westlaw as its source.
+   */
+  function lawReportKind(text) {
+    const s = String(text || "");
+    const hit = LAW_REPORTS.find(([, rx]) => rx.test(s));
+    return hit && LAW_SOURCE_RE.test(s) ? hit[0] : "";
+  }
+
+  function isLawReport(text) {
+    return !!lawReportKind(text);
   }
 
   // Which conversation a claude.ai URL is — the same identity content.js and
@@ -2293,7 +2323,8 @@
     mirrorQuotes,
     caseShape,
     applyCase,
-    isPincitePaste,
+    lawReportKind,
+    isLawReport,
     buildMatcher,
     conversationKeyFromUrl,
     conversationFromUrl,
