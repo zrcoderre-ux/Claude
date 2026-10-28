@@ -2213,7 +2213,7 @@ test("the key marks its own parties by Source and Category", () => {
     ["address", "1 Main St", "9 Elm Rd", "", "", "spreadsheet", 1],
   ]);
   assert.deepStrictEqual(key.ownFakes, ["Ingrid Strangeways", "Brackwater, Inc."]);
-  assert.strictEqual(key.parsed, 5);
+  assert.strictEqual(key.parsed, P.PARSE_VERSION);
 });
 
 test("this case's own caption, cited, reverses; a published case beside it holds", () => {
@@ -2235,4 +2235,57 @@ test("this case's own caption, cited, reverses; a published case beside it holds
   assert.strictEqual(P.isCitationItalic("Strangeways v. Superior Court", c.own), true);
   // A key with no Source column marks nobody, and every cited name holds.
   assert.strictEqual(P.ownCaption("Strangeways v. Brackwater", P.compile(CITE_KEY).own), false);
+});
+
+// ---- PDF-Linker's never-fake words (owner, October 2026) -------------------
+
+test("a bare token is warned, cleaned and offered only where it is capitalised", () => {
+  const key = keyOf([
+    ["entity", "Provision Holdings, LLC", "Dawnfield Holdings, LLC", "", "replaced", "spreadsheet", 1],
+    ["entity-token", "Provision", "Dawnfield", "", "replaced", "spreadsheet", 2],
+  ]);
+  const reals = P.compileReals(key);
+  const fwd = P.compileForward(key);
+  const text = "Provision breached a provision of the lease.";
+  assert.deepStrictEqual(P.findReals(reals, "the provision at issue"), []);
+  assert.deepStrictEqual(P.findReals(reals, text).map((w) => w.real), ["Provision"]);
+  assert.strictEqual(P.translate(fwd, text).text, "Dawnfield breached a provision of the lease.");
+  assert.deepStrictEqual(P.draftSpans(reals, text).map((s) => s.replacement), ["Dawnfield"]);
+  assert.strictEqual(P.cleanPaste(fwd, reals, "a provision").count, 0);
+  const ahead = P.compileTypeahead(key);
+  assert.strictEqual(P.endingReal(ahead, "breached a provision"), null);
+  assert.strictEqual(P.endingReal(ahead, "said Provision").fake, "Dawnfield");
+  // The full name still swaps in any case.
+  assert.strictEqual(P.translate(fwd, "provision holdings, llc").text, "dawnfield holdings, llc");
+});
+
+test("a one-word real on the never-fake list is capitals-only whatever its category", () => {
+  const key = keyOf([["entity", "Provision", "Dawnfield", "", "replaced", "harvested", 2]]);
+  const fwd = P.compileForward(key);
+  assert.ok(P.isCapOnlyReal({ real: "Provision", cat: "entity" }));
+  assert.ok(P.isCapOnlyReal({ real: "Provision's", cat: "" }));
+  assert.ok(!P.isCapOnlyReal({ real: "Rasho", cat: "person" }));
+  assert.ok(!P.isCapOnlyReal({ real: "Cross River Bank", cat: "entity" }));
+  assert.strictEqual(P.translate(fwd, "the provision; PROVISION; Provision's").text,
+    "the provision; DAWNFIELD; Dawnfield's");
+  assert.deepStrictEqual(P.findReals(P.compileReals(key), "a provision"), []);
+  // A stored key from before the Category column was carried still follows the list.
+  const old = { warn: [{ real: "Provision", fake: "Dawnfield", pinned: false }] };
+  assert.strictEqual(P.translate(P.compileForward(old), "a provision").text, "a provision");
+  // A name off the list matches in any case, as before.
+  const name = { warn: [{ real: "Rasho", fake: "Strangeways", pinned: false }] };
+  assert.strictEqual(P.translate(P.compileForward(name), "rasho").text, "strangeways");
+});
+
+test("a key's stray shout is titled where its fake word is in prose case", () => {
+  const c = P.compile({ pairs: [{ real: "ACME Cobalt Company", fake: "Meadowgate Cobalt Company" }] });
+  assert.strictEqual(P.translate(c, "Meadowgate Cobalt Company sued.").text, "Acme Cobalt Company sued.");
+  assert.strictEqual(P.translate(c, "MEADOWGATE COBALT COMPANY").text, "ACME COBALT COMPANY");
+  // A real acronym's fake is in capitals too, and the acronym is kept.
+  const abc = P.compile({ pairs: [{ real: "ABC Supply Company", fake: "TRUENORTH Hartland Company" }] });
+  assert.strictEqual(P.translate(abc, "TRUENORTH Hartland Company").text, "ABC Supply Company");
+  assert.strictEqual(P.translate(abc, "Truenorth Hartland Company").text, "ABC Supply Company");
+  // A listed abbreviation keeps its capitals even off a prose-case fake.
+  const pnc = P.compile({ pairs: [{ real: "PNC Bank", fake: "Meadowgate Bank" }] });
+  assert.strictEqual(P.translate(pnc, "Meadowgate Bank").text, "PNC Bank");
 });

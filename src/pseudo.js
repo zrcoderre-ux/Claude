@@ -289,7 +289,10 @@
   //   5  the case's OWN parties are marked (Source and Category, PDF-Linker's
   //      own test), so a citation that is this case's caption or prior appeal
   //      reverses rather than being held as a published case (ownFakes).
-  const PARSE_VERSION = 5;
+  //   6  every warning row carries its Category, so a bare token (PDF-Linker's
+  //      person-token, entity-token or short-name) is matched only where it
+  //      is capitalised, as PDF-Linker matches it (see isCapOnlyReal).
+  const PARSE_VERSION = 6;
 
   /** Was this stored key built by an older reader than the one running now? */
   function keyNeedsReparse(key) {
@@ -466,6 +469,7 @@
           occ: isFinite(occ) && occ > 0 ? occ : 0,
           pinned: pinned,
           own: srcCol !== -1 && catCol !== -1 && OWN_SOURCES.has(fold(row[srcCol])) && OWN_CATEGORIES.has(fold(row[catCol])),
+          cat: catCol !== -1 ? fold(row[catCol]) : "",
         });
       }
     }
@@ -484,7 +488,7 @@
       const baseFake = e.fake.replace(POSS_TAIL_RE, "");
       if (!baseReal || !baseFake || haveReal.has(fold(baseReal))) continue;
       haveReal.add(fold(baseReal));
-      derived.push({ real: baseReal, fake: baseFake, alt: e.alt, occ: 0, pinned: e.pinned, own: e.own });
+      derived.push({ real: baseReal, fake: baseFake, alt: e.alt, occ: 0, pinned: e.pinned, own: e.own, cat: e.cat });
     }
     for (const d of derived) entries.push(d);
 
@@ -540,12 +544,13 @@
       const at = seenReal.get(k);
       if (at === undefined) {
         seenReal.set(k, warn.length);
-        warn.push({ real: e.real, fake: e.fake, pinned: !!e.pinned });
+        warn.push({ real: e.real, fake: e.fake, pinned: !!e.pinned, cat: e.cat || "" });
         continue;
       }
       if (warn[at].pinned && !e.pinned) {
         warn[at].fake = e.fake;
         warn[at].pinned = false;
+        warn[at].cat = e.cat || "";
       }
     }
 
@@ -1006,12 +1011,55 @@
     return out.replace(WORD_RE, (w) => (spelled.has(fold(w)) ? spelled.get(fold(w)) : w));
   }
 
+  /**
+   * The replacement with the KEY'S stray shouts taken out, before mirrorCase.
+   *
+   * PDF-Linker cases each word of a fake like the real word it stands for, so
+   * an acronym's fake is in capitals too: "ABC Supply Company" goes out as
+   * "TRUENORTH Hartland Company". A key pairing a word in prose case with a
+   * SHOUTED one — "Meadowgate Cobalt Company" for "ACME Cobalt Company" — is
+   * therefore a spreadsheet's typo, not a name's spelling, and applyCase,
+   * which keeps a mixed value as written, put "ACME" into every sentence
+   * "Meadowgate" stood in. So where the text is ordinary prose and the key's
+   * own spelling (`keyText`, the side that was searched for), the value and
+   * the matched text line up word for word, a value word in capitals whose
+   * counterparts in the key and the text are not is titled (titleWord, which
+   * keeps a listed abbreviation). Any other shape is returned untouched.
+   */
+  function keyCase(value, keyText, matched) {
+    const v = String(value == null ? "" : value);
+    if (!keyText || caseShape(matched) !== "title") return v;
+    // A value in one case throughout, or a caption's spelling (mostlyShouted),
+    // is applyCase's to title whole.
+    const core = v.replace(POSS_TAIL_RE, "");
+    if (core === core.toUpperCase() || core === core.toLowerCase() || mostlyShouted(core)) return v;
+    const chunks = v.split(/(\s+)/);
+    const ks = String(keyText).trim().split(/\s+/);
+    const ms = String(matched).trim().split(/\s+/);
+    const words = Math.ceil(chunks.length / 2);
+    if (words < 2 || words !== ks.length || words !== ms.length) return v;
+    return chunks
+      .map((chunk, i) => {
+        if (i % 2 || isShoutedChunk(ks[i / 2]) || isShoutedChunk(ms[i / 2])) return chunk;
+        return chunk.replace(WORD_RE, (w) => (w.length >= 2 && isShoutedChunk(w) ? titleWord(w, true) : w));
+      })
+      .join("");
+  }
+
+  // Two or more letters, every one a capital.
+  function isShoutedChunk(c) {
+    const letters = String(c || "").replace(POSS_TAIL_RE, "").replace(/[^\p{L}]/gu, "");
+    return letters.length >= 2 && letters === letters.toUpperCase() && letters !== letters.toLowerCase();
+  }
+
   /** Reversal matcher: translate() swaps every fake for its real value. */
   function compile(key) {
     const pairs = (key && key.pairs) || [];
     const map = new Map(pairs.map((p) => [fold(p.fake), p.real]));
+    // The fake as the key spells it, which keyCase reads.
+    const spell = new Map(pairs.map((p) => [fold(p.fake), p.fake]));
     const rx = buildMatcher(pairs.map((p) => p.fake));
-    return { rx: rx, map: map, own: ownWordsOf(key && key.ownFakes) };
+    return { rx: rx, map: map, spell: spell, own: ownWordsOf(key && key.ownFakes) };
   }
 
   /**
@@ -1040,13 +1088,15 @@
           return m;
         }
       }
-      let mapped = compiled.map.get(fold(m));
+      let lookup = fold(m);
+      let mapped = compiled.map.get(lookup);
       let suffix = "";
       const mp = m.match(POSS_MATCH_RE);
       if (mapped == null) {
         // A possessive of a bare value: swap the name, keep the 's as typed.
         if (mp) {
-          mapped = compiled.map.get(fold(m.slice(0, -mp[0].length)));
+          lookup = fold(m.slice(0, -mp[0].length));
+          mapped = compiled.map.get(lookup);
           if (mapped != null) suffix = mp[0];
         }
       } else if (mp && POSS_TAIL_RE.test(mapped)) {
@@ -1057,6 +1107,8 @@
         suffix = mp[0];
       }
       if (mapped == null) return m;
+      // A cap-only real (see isCapOnlyReal) leaves a lower-case word alone.
+      if (compiled.cap && compiled.cap.has(lookup) && lowerLed(m)) return m;
       count++;
       const at = offset + shift;
       // The possessive is left off the shape reading — "QUENBY'S" is shouted,
@@ -1066,7 +1118,9 @@
       const shape = caseShape(suffix ? m.slice(0, -suffix.length) : m);
       // Quote marks follow the text the same way case does: the whole match,
       // possessive included, says which marks the text writes.
-      const to = mirrorQuotes(m, mirrorCase(suffix ? m.slice(0, -suffix.length) : m, mapped)) + casedSuffix(shape, suffix);
+      const core = suffix ? m.slice(0, -suffix.length) : m;
+      const keyText = compiled.spell ? compiled.spell.get(lookup) : "";
+      const to = mirrorQuotes(m, mirrorCase(core, keyCase(mapped, keyText, core))) + casedSuffix(shape, suffix);
       marks.push([at, at + to.length, m]);
       shift += to.length - m.length;
       return to;
@@ -1306,13 +1360,63 @@
     return f.length < 2 || (COMMON_WORDS.has(f) && f.indexOf(" ") === -1);
   }
 
+  // PDF-Linker's rule for a word it does not fake on its own, kept by every
+  // program that fakes from its key (the owner's direction, October 2026). A
+  // ONE-word real is matched only where it is CAPITALISED — "Provision" yes,
+  // "provision" no — when it is a bare token (TOKEN_CATS, PDF-Linker's
+  // _pn_term_is_cap_only) or a word on PDF-Linker's never-fake list
+  // (src/neverfake.js: its dictionary, less surnames, and the hand lists its
+  // bare-token screen reads). A party's name is capitalised wherever it stands
+  // and the ordinary word is not, so the cost is a lower-cased name left
+  // standing, never "the provision" rewritten into a surname. Asked at COMPILE
+  // time, like isCommonReal, so a key stored before the list existed still
+  // follows it; only the Category half waits for the re-read (PARSE_VERSION 6).
+  const TOKEN_CATS = new Set(["person-token", "entity-token", "short-name"]);
+
+  function neverFakeList() {
+    if (root.CUMNeverFake) return root.CUMNeverFake;
+    if (typeof require === "function") {
+      try {
+        return require("./neverfake.js");
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  function isCapOnlyReal(row) {
+    const real = fold(row && row.real).replace(POSS_TAIL_RE, "");
+    if (!real || /\s/.test(real)) return false;
+    if (TOKEN_CATS.has(fold(row && row.cat))) return true;
+    const list = neverFakeList();
+    return !!list && list.has(real);
+  }
+
+  // A match a cap-only real does not take: one that opens in lower case.
+  function lowerLed(m) {
+    return /^\p{Ll}/u.test(String(m || ""));
+  }
+
+  // The folded reals of `rows` that are cap-only.
+  function capOnlySet(rows) {
+    const out = new Set();
+    for (const w of rows) if (isCapOnlyReal(w)) out.add(fold(w.real));
+    return out;
+  }
+
   /** Warning matcher over the REAL values — common English left out. */
   function compileReals(key) {
     const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
     const map = new Map();
     for (const w of warn) if (!map.has(fold(w.real))) map.set(fold(w.real), w);
     const rx = buildMatcher(warn.map((w) => w.real));
-    return { rx: rx, map: map };
+    return { rx: rx, map: map, cap: capOnlySet(warn) };
+  }
+
+  // Whether the warning row `w`, met as `m`, is one a cap-only real refuses.
+  function capRefuses(compiled, w, m) {
+    return !!(compiled && compiled.cap && w && compiled.cap.has(fold(w.real)) && lowerLed(m));
   }
 
   /**
@@ -1333,9 +1437,14 @@
   function compileForward(key) {
     const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
     const map = new Map();
-    for (const w of warn) if (!map.has(fold(w.real))) map.set(fold(w.real), w.fake);
+    const spell = new Map();
+    for (const w of warn) {
+      if (map.has(fold(w.real))) continue;
+      map.set(fold(w.real), w.fake);
+      spell.set(fold(w.real), w.real);
+    }
     const rx = buildMatcher(warn.map((w) => w.real));
-    return { rx: rx, map: map };
+    return { rx: rx, map: map, spell: spell, cap: capOnlySet(warn) };
   }
 
   /**
@@ -1355,6 +1464,7 @@
         const mp = m[0].match(POSS_MATCH_RE);
         if (mp) w = compiledReals.map.get(fold(m[0].slice(0, -mp[0].length)));
       }
+      if (capRefuses(compiledReals, w, m[0])) w = null;
       if (w && !seen.has(fold(w.real))) {
         seen.add(fold(w.real));
         out.push(w);
@@ -1399,16 +1509,16 @@
         fake = fake.replace(POSS_TAIL_RE, "");
         suffix = mp[0];
       }
+      if (capRefuses(compiledReals, w, m[0])) w = null;
       if (w && (!want || fold(w.real) === want)) {
-        const shape = caseShape(suffix ? m[0].slice(0, -suffix.length) : m[0]);
+        const core = suffix ? m[0].slice(0, -suffix.length) : m[0];
+        const shape = caseShape(core);
         out.push({
           start: m.index,
           end: m.index + m[0].length,
           matched: m[0],
           real: w.real,
-          replacement:
-            mirrorQuotes(m[0], mirrorCase(suffix ? m[0].slice(0, -suffix.length) : m[0], fake)) +
-            casedSuffix(shape, suffix),
+          replacement: mirrorQuotes(m[0], mirrorCase(core, keyCase(fake, w.real, core))) + casedSuffix(shape, suffix),
         });
       }
       if (m.index === compiledReals.rx.lastIndex) compiledReals.rx.lastIndex++;
@@ -1728,6 +1838,7 @@
       .map((w) => ({
         real: w.real,
         fake: w.fake,
+        cap: isCapOnlyReal(w),
         partial: isOpeningOfLonger(fold(w.real), folded),
         rx: new RegExp(
           "(?<![A-Za-z0-9_])" + valuePattern(w.real) + (POSS_TAIL_RE.test(w.real) ? "" : POSS_OPT) + "$",
@@ -1761,7 +1872,7 @@
     for (const e of ahead || []) {
       const tail = t.slice(-(e.real.length * 2 + 8));
       const m = e.rx.exec(tail);
-      if (m) {
+      if (m && !(e.cap && lowerLed(m[0]))) {
         // "Zachary's" typed against a bare "Zachary" row offers "John's" —
         // the possessive rides the swap rather than being lost by it.
         let fake = mirrorQuotes(m[0], e.fake);
@@ -2313,6 +2424,8 @@
     compileReals,
     compileForward,
     isCommonReal,
+    isCapOnlyReal,
+    keyCase,
     findReals,
     copyWarning,
     COPY_WARN_MAX,

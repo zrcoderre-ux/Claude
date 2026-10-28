@@ -75,6 +75,7 @@
         "src/incognito.js",
         "src/stamp.js",
         "src/xlsxread.js",
+        "src/neverfake.js",
         "src/pseudo.js",
         "src/pseudomark.js",
         "src/keyfile.js",

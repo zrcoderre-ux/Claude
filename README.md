@@ -2859,7 +2859,18 @@ swept on the next extension start.
    one-word short form) is left out of the warning — and out of the cleaner
    below — because those words are what normal writing is made of. Multi-word
    values keep warning even when their words are ordinary ("Cross River
-   Bank").
+   Bank"). **A one-word real that PDF-Linker would not fake on its own is
+   matched only where it is capitalised** — the warning, the typeahead, the
+   cleaner, the paste and the title cleaner all leave `provision` alone when
+   the key binds `Provision`, and still catch `Provision`. That holds for a
+   bare-token row (Category `person-token`, `entity-token` or `short-name`,
+   which PDF-Linker itself matches only in capitals) and for any one-word real
+   on PDF-Linker's never-fake list: its dictionary (English, less surnames) and
+   the hand lists its bare-token screen reads, copied here as `Never Fake
+   Words.txt` and built into `src/neverfake.js` by
+   `node scripts/never-fake-words.js` (`P.isCapOnlyReal`). Copy the list in
+   again whenever PDF-Linker regenerates it; My-Macros and the pdf-viewer
+   reader carry the same copy.
 3. **Cleans text for pasting.** Open the [key button](#the-key-button) and
    type or paste text with real names into the top box; the bottom box
    shows it pseudonymized live — the same map run forward (real → fake),
@@ -3650,6 +3661,16 @@ not as prose, and titles with its prefix as written (`MacDONALD` → `MacDonald`
 (`JOHN SMITH III` → `John Smith III`), a one-letter prefix and apostrophe
 capitalise the name after them (`O'BRIEN` → `O'Brien`), and accented letters are
 letters (`JOSÉ GARCÍA` → `José García`, where it once read `JosÉ GarcÍA`).
+
+**A shout the key pairs with a word in prose case is the key's typo.**
+PDF-Linker cases each word of a fake like the real word it stands for, so a real
+acronym's fake is in capitals too (`ABC Supply Company` goes out as `TRUENORTH
+Hartland Company`). A key reading `ACME Cobalt Company` for `Meadowgate Cobalt
+Company` is therefore a spreadsheet's spelling, and `Meadowgate Cobalt Company`
+in a sentence reads `Acme Cobalt Company`, not `ACME Cobalt Company`. Only where
+the key's own fake word, and the word in the text, are both out of capitals; a
+listed abbreviation (`PNC Bank` for `Meadowgate Bank`) still keeps them
+(`P.keyCase`).
 
 **A word the fake shares with the real name is spelled the way the fake spells
 it**, whatever the rules above would have made of it. The text has already said
