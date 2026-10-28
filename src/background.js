@@ -25,6 +25,8 @@ importScripts(
   "usagewarn.js",
   // The worker names conversations, and a chat's title is the one thing a run
   // SENDS that the pseudonymization never scrubbed — see chatTitleFor.
+  // neverfake.js first: pseudo.js reads PDF-Linker's never-fake words off it.
+  "neverfake.js",
   "pseudo.js",
   // The master key is kept up to date HERE, from the library's own storage
   // writes, rather than at each of the three places a key can be loaded. One
