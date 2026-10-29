@@ -1056,7 +1056,9 @@
     return chunks
       .map((chunk, i) => {
         if (i % 2 || isShoutedChunk(ks[i / 2]) || isShoutedChunk(ms[i / 2])) return chunk;
-        return chunk.replace(WORD_RE, (w) => (w.length >= 2 && isShoutedChunk(w) ? titleWord(w, true) : w));
+        // Under four letters it is a label or a code ("DOB", "SSN"), whose fake
+        // an older PDF-Linker drew from the pool in title case: kept.
+        return chunk.replace(WORD_RE, (w) => (w.length >= 4 && isShoutedChunk(w) ? titleWord(w, true) : w));
       })
       .join("");
   }
