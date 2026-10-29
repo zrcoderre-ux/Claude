@@ -365,6 +365,38 @@
     return box;
   }
 
+  // ---- swapping a name you leave ----------------------------------------------
+  //
+  // The text reader's rule on claude.ai: a real name typed into the composer is
+  // typed over with its fake once the caret moves off it (src/pseudo-view.js).
+  // It acts on the composer, so it is its own switch; on by the owner's request.
+
+  function drawAutoSwap() {
+    const MK = window.CUMPseudoMark;
+    const cur = V && V.autoSwap ? V.autoSwap() : null;
+    if (!MK || !cur || !cur.can) return null;
+    const box = el("div", "cum-key-marks");
+    const on = el("label", "cum-key-mark-on");
+    const tick = el("input");
+    tick.type = "checkbox";
+    tick.checked = cur.on;
+    tick.addEventListener("change", () => set({ [MK.AUTOSWAP_KEY]: tick.checked }));
+    on.append(tick, document.createTextNode(" Swap a name I type once I move off it"));
+    const row = el("div", "cum-key-mark-row");
+    row.append(on);
+    box.appendChild(row);
+    box.appendChild(
+      el(
+        "p",
+        "cum-key-line cum-key-dim",
+        cur.on
+          ? "A real name you type becomes its pseudonym when the caret leaves it, as in the text reader. Esc on the prompt keeps it; Ctrl+Z brings it back."
+          : "A real name you type stays until you press space or → on the prompt, or Accept on the banner."
+      )
+    );
+    return box;
+  }
+
   // ---- this chat -------------------------------------------------------------
 
   function rekey(keyId, done) {
@@ -920,6 +952,8 @@
     body.appendChild(drawStatus(st));
     const marks = drawMarks();
     if (marks) body.appendChild(marks);
+    const swaps = drawAutoSwap();
+    if (swaps) body.appendChild(swaps);
     body.appendChild(drawChat());
     body.appendChild(drawLibrary());
     const m = drawMaster();

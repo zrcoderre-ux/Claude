@@ -1900,6 +1900,76 @@
   }
 
   /**
+   * Where the key's FAKES stand in a draft — the composer's marks, the text
+   * reader's way: what is about to be sent in a pseudonym is lightly
+   * highlighted, and hovering one says which real name it stands for.
+   * `compiled` is the reversal (compile), so a fake is found exactly where the
+   * display would swap it back, possessive and all; a case name inside a
+   * citation is a published party and no fake (citationSpans), so it is left
+   * unmarked as the display leaves it untranslated.
+   *
+   * Returns [{ start, end, real }] in `text`'s own offsets, `real` written in
+   * the case the fake stands in.
+   */
+  function draftFakeSpans(compiled, text) {
+    const t = String(text == null ? "" : text);
+    if (!compiled || !compiled.rx || !t) return [];
+    const out = [];
+    let spans = null;
+    const rx = new RegExp(compiled.rx.source, compiled.rx.flags);
+    let m;
+    while ((m = rx.exec(t))) {
+      const end = m.index + m[0].length;
+      const read = translate(compiled, m[0]);
+      if (read.count > 0) {
+        if (!spans) spans = citationSpans(t, { own: compiled.own });
+        if (!spans.some((sp) => m.index < sp[1] && end > sp[0])) out.push({ start: m.index, end: end, real: read.text });
+      }
+      if (m.index === rx.lastIndex) rx.lastIndex++;
+    }
+    return out;
+  }
+
+  /**
+   * Whether a real name typed into the composer has been LEFT, and so is
+   * swapped for its fake — the text reader's rule, where a name typed and left
+   * is marked once the caret has moved off it, on claude.ai.
+   *
+   * `pending` is the name the caret prompt last offered: { start, matched,
+   * partial } in `text`'s offsets. `caret` is the caret's offset now, or null
+   * where the caret is not in the composer (focus elsewhere: nothing is typed
+   * into a box nobody is in). `ahead` is compileTypeahead's list.
+   *
+   *   "wait"  the caret is still on the name, or has typed on from a name
+   *           that opens a longer one ("Helen" → "Helen Ra…") toward it
+   *   "swap"  the caret has moved off a name that still stands as typed
+   *   "drop"  the name is not there as typed any more — retyped, run into a
+   *           longer word, moved by an edit before it — or stands inside a
+   *           citation; the banner and the send gate are the net for it
+   */
+  function leaveVerdict(pending, text, caret, ahead) {
+    const t = String(text == null ? "" : text);
+    if (!pending || !pending.matched) return "drop";
+    const start = pending.start;
+    const end = start + pending.matched.length;
+    if (!(start >= 0) || t.slice(start, end) !== pending.matched) return "drop";
+    if (/[A-Za-z0-9_]/.test(t.charAt(start - 1) || "") || /[A-Za-z0-9_]/.test(t.charAt(end) || "")) return "drop";
+    if (citationSpans(t).some((sp) => start < sp[1] && end > sp[0])) return "drop";
+    if (caret == null) return "wait";
+    if (caret >= start && caret <= end) return "wait";
+    if (pending.partial && caret > end) {
+      const typed = fold(t.slice(start, caret));
+      if ((ahead || []).some((e) => {
+        const f = fold(e.real);
+        // The longer name itself, typed out, is still the typing heading to
+        // it: the caret prompt takes it over from here.
+        return f.length >= typed.length && f.slice(0, typed.length) === typed;
+      })) return "wait";
+    }
+    return "swap";
+  }
+
+  /**
    * Whether the space bar, pressed with `hit` under the caret, swaps the
    * name — yes for a whole name, no for one that may be the opening of a
    * longer real in the key. The arrow swaps either; this decides only what
@@ -2447,6 +2517,8 @@
     compileTypeahead,
     endingReal,
     swapsOnSpace,
+    draftFakeSpans,
+    leaveVerdict,
     mirrorCase,
     mirrorQuotes,
     caseShape,

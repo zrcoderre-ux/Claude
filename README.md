@@ -2817,8 +2817,25 @@ swept on the next extension start.
    place — longest match first, so a full name swaps whole; casing mirrored,
    so `HELEN RASHO` becomes `INGRID STRANGEWAYS`; and it goes through the
    composer's own typing path, so **Ctrl+Z brings the real name back**.
-   Escape keeps the real name and stops asking at that spot; typing on
-   simply moves past it.
+   Escape keeps the real name and stops asking at that spot.
+
+   **A name you type and leave is swapped too**, as the PDF viewer's text
+   reader marks a name once the caret moves off it. Type a real name and
+   carry on (`Helen Rasho, and…`), click elsewhere in the draft, or move off
+   it with the arrow keys or Home and End, and the fake is typed over it in
+   place, through the same door as the space bar's swap. The caret stays
+   where you put it, and **Ctrl+Z brings the real name back** and keeps it.
+   A name you pressed Escape on is left as typed. So is a name inside a
+   citation (a published party), a Lexis or Westlaw report, or a word the
+   key matches only in capitals that you typed in lower case. A name that
+   opens a longer one (`Helen` beside `Helen Rasho`) waits while what you
+   type is heading for the longer name, and is swapped once it heads
+   anywhere else. Nothing is typed into a composer you are not in: focus
+   elsewhere and the name waits for you to come back. Pasted text was never
+   offered at the caret, so it is still the banner's. It is a switch of its
+   own in the [key button](#the-key-button)'s panel, **Swap a name I type
+   once I move off it**, on by the owner's request (October 2026), since it
+   types into the composer for you (`P.leaveVerdict` in `src/pseudo.js`).
 
    The space bar holds back on one kind of name: a real that **opens a longer
    real in the same key** — `Helen` where the key also binds `Helen Rasho`,
@@ -2844,8 +2861,9 @@ swept on the next extension start.
    value stands in the draft the **send does not go** — Enter and the send
    button both stop, and the banner says so: see [A real name in the draft stops
    the send](#a-real-name-in-the-draft-stops-the-send). Nothing else is
-   rewritten without a keypress the composer would have taken anyway: the
-   composer is yours. One declared exception: a draft that **begins** with a
+   rewritten without a keypress the composer would have taken anyway, apart
+   from the swap of a name you typed and left (above), which has its own
+   switch: the composer is yours. One declared exception: a draft that **begins** with a
    report the Workup Citation Cross-Opener extension copied out of Lexis+ or
    Westlaw is published law — always safe — and the warning stands down for
    that draft. Those are the four reports whose first line is `PINCITE CHECK —
@@ -3363,6 +3381,15 @@ slider beside it set the **colour and intensity** (the reader's defaults, a
 light cyan at 0.18). They are written the moment you choose them and every
 claude.ai tab follows. The messages and the chat titles are both marked — the
 same swaps the badge counts.
+
+**The composer is marked too**, the other way round. What sits in claude.ai's
+text box is what gets sent, so it cannot show the real name over its
+pseudonym as the reader does. Instead every **fake** standing in your draft
+wears the same mark: one the space bar or the swap-on-leaving typed in, or
+one you typed yourself. Hovering one says `Real name: Helen Rasho`. A
+published party's name inside a citation is no fake and is left unmarked, as
+the messages leave it untranslated (`P.draftFakeSpans`). The mark follows
+your typing and the same Mark pseudonyms switch.
 
 **Nothing in claude.ai's page is changed to draw them.** The marks are painted
 with Chrome's CSS Custom Highlight API over the swapped text rather than by

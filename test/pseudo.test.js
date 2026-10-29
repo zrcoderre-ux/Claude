@@ -2313,3 +2313,49 @@ test("a full-name-only row reverses but is never warned about or swapped in", ()
     "Dawnfield Holdings, LLC and Balfour"
   );
 });
+
+test("the draft's fakes are found where the display would swap them back", () => {
+  const key = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "replaced", "--term", "1"],
+    ["person-token", "Rasho", "Strangeways", "", "replaced", "--term", "1"],
+  ]);
+  const c = P.compile(key);
+  const text = "Ask Ingrid Strangeways about STRANGEWAYS's claim.";
+  assert.deepStrictEqual(P.draftFakeSpans(c, text), [
+    { start: 4, end: 22, real: "Helen Rasho" },
+    { start: 29, end: 42, real: "RASHO'S" },
+  ]);
+  // A published party sharing the word is no fake.
+  assert.deepStrictEqual(P.draftFakeSpans(c, "Strangeways v. Jones (2010) 50 Cal.4th 100"), []);
+  assert.deepStrictEqual(P.draftFakeSpans(c, ""), []);
+});
+
+test("a typed name is swapped once the caret leaves it, and only then", () => {
+  const key = keyOf([
+    ["person", "Helen Rasho", "Ingrid Strangeways", "", "replaced", "--term", "1"],
+    ["person-token", "Helen", "Ingrid", "", "replaced", "--term", "1"],
+  ]);
+  const ahead = P.compileTypeahead(key);
+  const pend = { start: 4, matched: "Helen Rasho", partial: false };
+  const text = "Ask Helen Rasho today";
+  assert.strictEqual(P.leaveVerdict(pend, text, 15, ahead), "wait"); // at its end
+  assert.strictEqual(P.leaveVerdict(pend, text, 8, ahead), "wait"); // inside it
+  assert.strictEqual(P.leaveVerdict(pend, text, 21, ahead), "swap"); // typed on past it
+  assert.strictEqual(P.leaveVerdict(pend, text, 0, ahead), "swap"); // clicked before it
+  assert.strictEqual(P.leaveVerdict(pend, text, null, ahead), "wait"); // focus elsewhere
+  // Retyped, run into a longer word, or shifted by an edit before it: dropped.
+  assert.strictEqual(P.leaveVerdict(pend, "Ask Helen Rashox", 16, ahead), "drop");
+  assert.strictEqual(P.leaveVerdict(pend, "So ask Helen Rasho", 18, ahead), "drop");
+  // A name that opens a longer one waits while the typing heads toward it…
+  const part = { start: 4, matched: "Helen", partial: true };
+  assert.strictEqual(P.leaveVerdict(part, "Ask Helen Ra", 12, ahead), "wait");
+  assert.strictEqual(P.leaveVerdict(part, "Ask Helen Rasho", 15, ahead), "wait");
+  // …and is swapped once it heads elsewhere.
+  assert.strictEqual(P.leaveVerdict(part, "Ask Helen went", 14, ahead), "swap");
+  // Inside a citation it is a published party, never swapped.
+  const cite = { start: 4, matched: "Helen Rasho", partial: false };
+  assert.strictEqual(
+    P.leaveVerdict(cite, "See Helen Rasho v. Jones (2010) 50 Cal.4th 100.", 47, ahead),
+    "drop"
+  );
+});

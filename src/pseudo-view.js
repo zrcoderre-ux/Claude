@@ -315,6 +315,10 @@
   let markStyle = null;
   let markTip = null;
   let hovered = null; // { node, span } under the pointer
+  // The composer's own marks: the fakes standing in the draft, { range, span }
+  // with span { start, end, real } (P.draftFakeSpans), repainted as you type.
+  let draftMarks = [];
+  let draftTimer = null;
   const canMark = !!(PM && typeof CSS !== "undefined" && CSS.highlights && typeof Highlight === "function");
   let shown = 0; // occurrences currently swapped, for the badge
   let sweepTimer = null;
@@ -606,7 +610,7 @@
         }
       }
       CSS.highlights.set("cum-pseudo", hl);
-      if (hovered && !liveSwap(hovered.node)) clearHover();
+      if (hovered && !hovered.draft && !liveSwap(hovered.node)) clearHover();
     } catch (e) {
       /* a page that cannot take a highlight shows the names unmarked */
     }
@@ -640,7 +644,7 @@
 
   function showHover(hit, x, y) {
     if (!hovered || hovered.node !== hit.node || hovered.span !== hit.span) {
-      hovered = { node: hit.node, span: hit.span };
+      hovered = { node: hit.node, span: hit.span, draft: !!hit.draft };
       const hl = new Highlight();
       hl.add(hit.range);
       CSS.highlights.set("cum-pseudo-hover", hl);
@@ -651,7 +655,7 @@
       markTip.setAttribute("role", "tooltip");
       document.body.appendChild(markTip);
     }
-    markTip.textContent = PM.tipText(hit.span[2]);
+    markTip.textContent = hit.draft ? PM.draftTipText(hit.span.real) : PM.tipText(hit.span[2]);
     markTip.hidden = false;
     // Under the name, kept on screen.
     const w = markTip.offsetWidth || 160;
@@ -664,14 +668,14 @@
     document.addEventListener(
       "mousemove",
       (ev) => {
-        if (!mark.on || !markNodes.size) return;
+        if (!mark.on || (!markNodes.size && !draftMarks.length)) return;
         const x = ev.clientX;
         const y = ev.clientY;
         if (pending) return;
         pending = requestAnimationFrame(() => {
           pending = null;
           try {
-            const hit = swapUnder(x, y);
+            const hit = swapUnder(x, y) || draftUnder(x, y);
             if (hit) showHover(hit, x, y);
             else if (hovered) clearHover();
           } catch (e) {
@@ -687,6 +691,7 @@
   function setMark(v) {
     mark = PM ? PM.normalizeMark(v) : mark;
     paintMarks();
+    draftSoon();
     render();
   }
 
@@ -694,9 +699,18 @@
   // one tab's panel repaints the rest through the storage listener.
   if (PM) {
     try {
-      chrome.storage.local.get(PM.MARK_KEY, (r) => setMark(r && r[PM.MARK_KEY]));
+      chrome.storage.local.get([PM.MARK_KEY, PM.AUTOSWAP_KEY], (r) => {
+        autoSwap = PM.normalizeAutoSwap(r && r[PM.AUTOSWAP_KEY]);
+        setMark(r && r[PM.MARK_KEY]);
+      });
       chrome.storage.onChanged.addListener((ch, area) => {
-        if (area === "local" && ch[PM.MARK_KEY]) setMark(ch[PM.MARK_KEY].newValue);
+        if (area !== "local") return;
+        if (ch[PM.AUTOSWAP_KEY]) {
+          autoSwap = PM.normalizeAutoSwap(ch[PM.AUTOSWAP_KEY].newValue);
+          if (!autoSwap) pending = null;
+          render();
+        }
+        if (ch[PM.MARK_KEY]) setMark(ch[PM.MARK_KEY].newValue);
       });
     } catch (e) {
       /* the defaults stand */
@@ -1128,6 +1142,10 @@
     /** The marks' settings ({ on, color, alpha }), and whether this browser can paint them. */
     mark: function () {
       return { on: mark ? mark.on : false, color: mark ? mark.color : "", alpha: mark ? mark.alpha : 0, can: canMark };
+    },
+    /** Whether a real name typed into the composer is swapped once the caret leaves it. */
+    autoSwap: function () {
+      return { on: autoSwap, can: !!PM };
     },
     /** Called on every render with the new state; answers an unsubscribe. */
     subscribe: function (fn) {
@@ -2383,11 +2401,15 @@
     tipTimer = null;
     if (!active || !active.ahead || !active.ahead.length) return hideTip();
     const ed = editorEl();
+    // A name typed and then left is swapped before the caret's new place is
+    // read (leaveSwap): what the prompt offers next is about where it is now.
+    if (leaveSwap(ed)) return;
     const ctx = ed && caretContext(ed);
     const hit = ctx && P.endingReal(active.ahead, ctx.textBefore);
     if (!hit) return hideTip();
     const sig = ctx.textBefore.length + "|" + P.fold(hit.real);
     if (tipDismissed === sig) return hideTip();
+    notePending(ed, hit);
     tipHit = { real: hit.real, fake: hit.fake, matched: hit.matched, sig: sig };
     if (!tipEl) {
       tipEl = document.createElement("div");
@@ -2447,7 +2469,9 @@
     // The same door composer.js types through — ProseMirror treats it as
     // ordinary input, so undo (Ctrl+Z) brings the real name back if wanted.
     document.execCommand("insertText", false, P.mirrorCase(hit.matched, hit.fake) + (tail || ""));
+    pending = null;
     hideTip();
+    draftSoon();
   }
 
   // The arrow swaps only what the prompt is showing: hijacking a navigation
@@ -2471,6 +2495,10 @@
   window.addEventListener(
     "keydown",
     (ev) => {
+      // Before any key moves the caret off a name, the name is noted, so a
+      // fast typist's "Helen went" is swapped as a slow one's is (the prompt
+      // itself waits for the typing to pause).
+      if (!(ev.ctrlKey || ev.metaKey)) noteAtCaret();
       if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
       if (ev.key === " " || ev.key === "Spacebar") {
         if (spaceAtCaret()) {
@@ -2487,6 +2515,7 @@
         }
       } else if (ev.key === "Escape") {
         tipDismissed = tipHit.sig;
+        pending = null; // kept as typed, at the user's word
         hideTip();
         ev.preventDefault();
         ev.stopImmediatePropagation();
@@ -2498,6 +2527,184 @@
   document.addEventListener("selectionchange", () => {
     if (active) tipSoon();
   });
+  // Typing repaints the composer's marks; a selection change alone moves none.
+  document.addEventListener(
+    "input",
+    (ev) => {
+      if (active && inEditor(ev.target)) draftSoon();
+    },
+    true
+  );
+
+  // ---- the composer's marks, and a name swapped once you leave it ------------
+  //
+  // The text reader's way, on claude.ai (the owner's request, October 2026).
+  // The reader shows a real name you type as its pseudonym span — marked, the
+  // fake underneath — and marks it on its own once the caret moves off it. The
+  // composer cannot show one thing and send another (what stands in it is
+  // what goes), so here the FAKES in the draft are marked, in the messages'
+  // colour, and hovering one says the real name it stands for; and a real
+  // name you type is typed over with its fake once the caret leaves it
+  // (P.leaveVerdict decides when), through the same door as the space bar's
+  // swap, so Ctrl+Z brings the real name back. Esc on the prompt keeps it as
+  // typed; a name inside a citation is never swapped; a name the caret never
+  // offered (a paste) is the banner's, as before. Its own switch in the key
+  // panel (PM.AUTOSWAP_KEY), on by the owner's request.
+
+  let autoSwap = PM ? PM.normalizeAutoSwap(undefined) : false;
+  // The name the prompt last offered: { start, matched, fake, partial } in
+  // editorText's offsets, until it is swapped, dropped or kept with Esc.
+  let pending = null;
+
+  // The caret as an offset into editorText's text, or null when there is no
+  // collapsed caret in a text node of the editor.
+  function caretOffset(ed, read) {
+    const sel = window.getSelection();
+    if (!ed || !sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    const r = sel.getRangeAt(0);
+    if (!ed.contains(r.startContainer) || r.startContainer.nodeType !== 3) return null;
+    for (const e of read.nodes) if (e.node === r.startContainer) return e.at + r.startOffset;
+    return null;
+  }
+
+  // When the user last undid or redid in the composer. A name Ctrl+Z brought
+  // back is one they wanted back, so for a moment after it nothing is noted
+  // to swap again; the banner and the prompt still say it is there.
+  let undoneAt = 0;
+  const UNDO_GRACE_MS = 1500;
+  window.addEventListener(
+    "keydown",
+    (ev) => {
+      const k = String(ev.key || "").toLowerCase();
+      if ((ev.ctrlKey || ev.metaKey) && (k === "z" || k === "y") && inEditor(ev.target)) {
+        undoneAt = Date.now();
+        pending = null;
+      }
+    },
+    true
+  );
+  document.addEventListener(
+    "beforeinput",
+    (ev) => {
+      if (/^history(Undo|Redo)$/.test(ev.inputType || "") && inEditor(ev.target)) {
+        undoneAt = Date.now();
+        pending = null;
+      }
+    },
+    true
+  );
+
+  // The name the caret is on right now, noted to swap once it is left —
+  // asked when a key goes down or the mouse is pressed, before the caret moves.
+  function noteAtCaret() {
+    if (!autoSwap || !active) return;
+    const at = hitAtCaret();
+    if (at && at.sig !== tipDismissed) notePending(at.ed, at.hit);
+  }
+  document.addEventListener("mousedown", () => noteAtCaret(), true);
+
+  function notePending(ed, hit) {
+    if (!autoSwap || !ed || Date.now() - undoneAt < UNDO_GRACE_MS) return;
+    const read = editorText(ed);
+    const at = caretOffset(ed, read);
+    if (at == null || read.text.slice(at - hit.matched.length, at) !== hit.matched) return;
+    pending = { start: at - hit.matched.length, matched: hit.matched, fake: hit.fake, partial: !!hit.partial };
+  }
+
+  // Swap the pending name if the caret has left it. True when it typed.
+  function leaveSwap(ed) {
+    if (!pending || !ed) return false;
+    if (!autoSwap) {
+      pending = null;
+      return false;
+    }
+    const read = editorText(ed);
+    const caret = caretOffset(ed, read);
+    // A Lexis or Westlaw report is published law, declared safe (P.isLawReport).
+    const verdict = P.isLawReport(read.text) ? "drop" : P.leaveVerdict(pending, read.text, caret, active.ahead);
+    if (verdict !== "swap") {
+      if (verdict === "drop") pending = null;
+      return false;
+    }
+    const p = pending;
+    pending = null;
+    const end = p.start + p.matched.length;
+    const from = pointAt(read.nodes, p.start);
+    const to = pointAt(read.nodes, end);
+    const sel = window.getSelection();
+    if (!from || !to || !sel) return false;
+    const range = document.createRange();
+    range.setStart(from.node, from.offset);
+    range.setEnd(to.node, to.offset);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    const fake = P.mirrorCase(p.matched, p.fake);
+    if (!document.execCommand("insertText", false, fake)) return false;
+    // The caret goes back where the user put it, moved by the swap only if it
+    // stood after the name.
+    const back = caret > end ? caret + fake.length - p.matched.length : caret;
+    const again = editorText(ed);
+    const pt = pointAt(again.nodes, back);
+    if (pt) {
+      const c = document.createRange();
+      c.setStart(pt.node, pt.offset);
+      c.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(c);
+    }
+    hideTip();
+    draftSoon();
+    checkComposer();
+    return true;
+  }
+
+  function draftSoon() {
+    if (draftTimer) return;
+    draftTimer = setTimeout(paintDraft, 120);
+  }
+
+  function paintDraft() {
+    draftTimer = null;
+    if (!canMark) return;
+    try {
+      const ed = active && mark && mark.on ? editorEl() : null;
+      if (!ed) {
+        draftMarks = [];
+        CSS.highlights.delete("cum-pseudo-draft");
+        return;
+      }
+      if (!markStyle || !markStyle.isConnected) paintMarks();
+      const read = editorText(ed);
+      const hl = new Highlight();
+      const marks = [];
+      for (const span of P.draftFakeSpans(active.compiled, read.text)) {
+        const from = pointAt(read.nodes, span.start);
+        const to = pointAt(read.nodes, span.end);
+        if (!from || !to) continue;
+        const range = document.createRange();
+        range.setStart(from.node, from.offset);
+        range.setEnd(to.node, to.offset);
+        hl.add(range);
+        marks.push({ range: range, span: span });
+      }
+      draftMarks = marks;
+      CSS.highlights.set("cum-pseudo-draft", hl);
+    } catch (e) {
+      /* a composer that cannot take a highlight shows its fakes unmarked */
+    }
+  }
+
+  // The composer mark under the pointer, shaped for showHover, or null.
+  function draftUnder(x, y) {
+    for (const m of draftMarks) {
+      if (!m.range.startContainer.isConnected) continue;
+      for (const b of m.range.getClientRects()) {
+        if (x >= b.left - 1 && x <= b.right + 1 && y >= b.top - 1 && y <= b.bottom + 1)
+          return { node: m.range.startContainer, span: m.span, range: m.range, box: b, draft: true };
+      }
+    }
+    return null;
+  }
 
   // ---- the key-upload guard ---------------------------------------------------
   //
@@ -2998,6 +3205,7 @@
     setInterval(() => {
       resolveActive(false); // SPA navigation
       checkComposer();
+      if (active) draftSoon();
       // Only while held, and rate-limited inside refreshRuns: a run write of
       // any kind wakes the listener above, so the one thing left to poll for is
       // a hold whose run stopped saying anything at all.
