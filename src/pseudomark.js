@@ -23,6 +23,19 @@
  *   that silently stopped showing would be the feature switched off without
  *   anyone choosing to.
  *
+ *   THE COMPOSER TOO. The fakes standing in the draft — a name the caret
+ *   prompt swapped, one typed as its fake — wear the same mark, and hovering
+ *   one says the real name it stands for: what is about to be sent, seen the
+ *   way the reader shows a pseudonym span. Its own highlight name
+ *   (`cum-pseudo-draft`) in the same colour, so a message mark and a draft
+ *   mark never repaint each other.
+ *
+ *   SWAPPING A NAME YOU LEAVE. A real name typed into the composer is swapped
+ *   for its fake once the caret moves off it (src/pseudo.js leaveVerdict),
+ *   the reader's rule. It acts on the composer, so it has a switch of its
+ *   own (`AUTOSWAP_KEY`), and it ships ON at the owner's request (October
+ *   2026); a stored `false` turns it off.
+ *
  *   WHICH SWAP IS UNDER THE POINTER. The page answers with a caret position —
  *   a text node and an offset between two characters — and the swap is the
  *   one whose span holds it. An offset on a span's far edge (the pointer over
@@ -36,6 +49,7 @@
   "use strict";
 
   const MARK_KEY = "cum_pseudo_mark";
+  const AUTOSWAP_KEY = "cum_pseudo_autoswap";
   const DEFAULT_MARK = { on: true, color: "#19dcfa", alpha: 0.18 };
   const ALPHA_MIN = 0.04;
   const ALPHA_MAX = 0.9;
@@ -69,6 +83,7 @@
     const c = markColors(v);
     return (
       "::highlight(cum-pseudo){background-color:" + c.bg + "}" +
+      "::highlight(cum-pseudo-draft){background-color:" + c.bg + "}" +
       "::highlight(cum-pseudo-hover){background-color:" + c.hover + "}"
     );
   }
@@ -89,8 +104,21 @@
     return "Pseudonym: " + String(fake == null ? "" : fake);
   }
 
+  /** What the hover says over a fake marked in the composer. */
+  function draftTipText(real) {
+    return "Real name: " + String(real == null ? "" : real);
+  }
+
+  /** The swap-on-leave switch as stored: on unless it says false. */
+  function normalizeAutoSwap(v) {
+    return v !== false;
+  }
+
   const api = {
     MARK_KEY,
+    AUTOSWAP_KEY,
+    draftTipText,
+    normalizeAutoSwap,
     DEFAULT_MARK,
     ALPHA_MIN,
     ALPHA_MAX,

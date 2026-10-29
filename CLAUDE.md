@@ -64,6 +64,11 @@ than inline in the wiring.
   first message into a conversation moves the permission mode from Manual to
   Auto (`CUMCowork.runApproval`). It still has its own switch, and it never
   touches a mode someone set or a scheduled send. Do not flip it back to off.
+  A second, also by the owner's request (October 2026): **Swap a name I type
+  once I move off it** ships ON — a real name typed into the composer is typed
+  over with its fake once the caret leaves it, the text reader's rule
+  (`P.leaveVerdict`, `PM.AUTOSWAP_KEY`). Its own switch in the key panel;
+  Ctrl+Z keeps a name, Esc on the prompt keeps it as typed.
 - **No warning about the key READER, anywhere (standing instruction from the
   repo owner, September 2026).** A key or a master-key case made under an
   older `PARSE_VERSION` is re-read silently where its workbook was kept and
