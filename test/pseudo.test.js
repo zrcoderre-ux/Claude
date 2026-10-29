@@ -2286,6 +2286,9 @@ test("a key's stray shout is titled where its fake word is in prose case", () =>
   assert.strictEqual(P.translate(abc, "TRUENORTH Hartland Company").text, "ABC Supply Company");
   assert.strictEqual(P.translate(abc, "Truenorth Hartland Company").text, "ABC Supply Company");
   // A listed abbreviation keeps its capitals even off a prose-case fake.
+  // A code under four letters keeps its capitals whatever its fake.
+  const lab = P.compile({ pairs: [{ real: "Odalys Pellingrove DOB", fake: "Murchison Dorrington Oxmoor" }] });
+  assert.strictEqual(P.translate(lab, "Murchison Dorrington Oxmoor").text, "Odalys Pellingrove DOB");
   const pnc = P.compile({ pairs: [{ real: "PNC Bank", fake: "Meadowgate Bank" }] });
   assert.strictEqual(P.translate(pnc, "Meadowgate Bank").text, "PNC Bank");
 });
