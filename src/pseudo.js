@@ -292,7 +292,9 @@
   //   6  every warning row carries its Category, so a bare token (PDF-Linker's
   //      person-token, entity-token or short-name) is matched only where it
   //      is capitalised, as PDF-Linker matches it (see isCapOnlyReal).
-  const PARSE_VERSION = 6;
+  //   7  a row PDF-Linker marks "full name only" reverses but is left out of
+  //      the warning and every real -> fake swap (FULL_NAME_ONLY_STATUS).
+  const PARSE_VERSION = 7;
 
   /** Was this stored key built by an older reader than the one running now? */
   function keyNeedsReparse(key) {
@@ -405,6 +407,14 @@
   }
 
   const ALT_STATUS = "alt spelling"; // forward-only: fake belongs to the canonical row
+  // Reverse-only: a one-word row PDF-Linker never fakes standing alone — a
+  // word of a party's name it pruned as the papers' own prose ("Provision" of
+  // "Provision Holdings, LLC"), refused as a bare name, a judge's bare surname.
+  // The row is there so a composed fake reverses word by word, so it stays in
+  // `pairs`; it is out of the warning and every real -> fake swap, because
+  // the word was never faked on its own (the owner's direction, October 2026:
+  // what PDF-Linker would not fake is not faked here either).
+  const FULL_NAME_ONLY_STATUS = "full name only";
   // The case's OWN parties — the rows the key was built from, out of the
   // E-Court template ("spreadsheet") or typed in as a term — rather than a
   // name harvested from the papers. PDF-Linker's own test (pseudo-key's
@@ -466,6 +476,7 @@
           real: real,
           fake: fake,
           alt: statusCol !== -1 && fold(row[statusCol]) === ALT_STATUS,
+          lone: statusCol !== -1 && fold(row[statusCol]) === FULL_NAME_ONLY_STATUS,
           occ: isFinite(occ) && occ > 0 ? occ : 0,
           pinned: pinned,
           own: srcCol !== -1 && catCol !== -1 && OWN_SOURCES.has(fold(row[srcCol])) && OWN_CATEGORIES.has(fold(row[catCol])),
@@ -488,7 +499,7 @@
       const baseFake = e.fake.replace(POSS_TAIL_RE, "");
       if (!baseReal || !baseFake || haveReal.has(fold(baseReal))) continue;
       haveReal.add(fold(baseReal));
-      derived.push({ real: baseReal, fake: baseFake, alt: e.alt, occ: 0, pinned: e.pinned, own: e.own, cat: e.cat });
+      derived.push({ real: baseReal, fake: baseFake, alt: e.alt, lone: e.lone, occ: 0, pinned: e.pinned, own: e.own, cat: e.cat });
     }
     for (const d of derived) entries.push(d);
 
@@ -525,7 +536,10 @@
       }
       const e = own[0];
       if (fold(e.fake) === fold(e.real)) continue; // never map a value onto itself
-      pairs.push({ fake: e.fake, real: e.real });
+      const pair = { fake: e.fake, real: e.real };
+      // Carried so the master key's warning can leave it out too.
+      if (e.lone) pair.lone = true;
+      pairs.push(pair);
     }
 
     // The warning list: every real value the key binds, alt spellings and
@@ -540,6 +554,7 @@
     const warn = [];
     const seenReal = new Map();
     for (const e of entries) {
+      if (e.lone) continue; // never faked alone (FULL_NAME_ONLY_STATUS)
       const k = fold(e.real);
       const at = seenReal.get(k);
       if (at === undefined) {
