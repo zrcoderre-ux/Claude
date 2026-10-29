@@ -156,10 +156,11 @@
       else if (p && p.isDistinctiveFake && p.isDistinctiveFake(fake)) rank = 2;
       else rank = -1;
       if (rank < 0) continue;
-      ranked.push({ rank: rank, real: real, fake: fake });
+      ranked.push({ rank: rank, real: real, fake: fake, lone: !!(pair && pair.lone) });
     }
     ranked.sort((a, b) => a.rank - b.rank || b.real.length - a.real.length);
-    return ranked.map((r) => ({ fake: r.fake, real: r.real }));
+    // A word PDF-Linker never fakes alone keeps its mark, for asKey's warning.
+    return ranked.map((r) => (r.lone ? { fake: r.fake, real: r.real, lone: true } : { fake: r.fake, real: r.real }));
   }
 
   /**
@@ -352,7 +353,9 @@
         retired++;
         continue;
       }
-      pairs.push({ fake: group[0].fake, real: group[0].real });
+      const pair = { fake: group[0].fake, real: group[0].real };
+      if (group.every((g) => g.lone)) pair.lone = true;
+      pairs.push(pair);
     }
     if (!pairs.length) return null;
     return {
@@ -363,7 +366,9 @@
       // The forward direction, for the composer warning and the cleaner: a real
       // name typed into a chat on any of these cases is still a leak, and the
       // master key knows the fake to use instead.
-      warn: pairs.map((p) => ({ real: p.real, fake: p.fake })),
+      // Less a word PDF-Linker never fakes standing alone (P.parseKey's "full
+      // name only"), which reverses but is not warned about or swapped in.
+      warn: pairs.filter((p) => !p.lone).map((p) => ({ real: p.real, fake: p.fake })),
       master: true,
       caseCount: list.length,
       retired: retired,

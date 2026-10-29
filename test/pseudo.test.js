@@ -2289,3 +2289,27 @@ test("a key's stray shout is titled where its fake word is in prose case", () =>
   const pnc = P.compile({ pairs: [{ real: "PNC Bank", fake: "Meadowgate Bank" }] });
   assert.strictEqual(P.translate(pnc, "Meadowgate Bank").text, "PNC Bank");
 });
+
+test("a full-name-only row reverses but is never warned about or swapped in", () => {
+  const key = P.parseKey(
+    [
+      sheet("Pseudonym Key", [
+        ["Category", "Real Value", "Replacement", "Status"],
+        ["entity", "Provision Holdings, LLC", "Dawnfield Holdings, LLC", "replaced"],
+        ["entity-token", "Provision", "Dawnfield", "full name only"],
+        ["person-token", "Pellew", "Balfour", "no match"],
+      ]),
+    ],
+    "pseudonym_key.xlsx"
+  );
+  // Reversal still restores a draft's bare "Dawnfield".
+  assert.strictEqual(P.translate(P.compile(key), "Dawnfield sued.").text, "Provision sued.");
+  // PDF-Linker never faked "Provision" alone, so nothing here does either.
+  assert.deepStrictEqual(P.findReals(P.compileReals(key), "Provision 4 applies."), []);
+  assert.strictEqual(P.translate(P.compileForward(key), "Provision 4 applies.").text, "Provision 4 applies.");
+  // The full name and a live bare surname still are.
+  assert.strictEqual(
+    P.translate(P.compileForward(key), "Provision Holdings, LLC and Pellew").text,
+    "Dawnfield Holdings, LLC and Balfour"
+  );
+});
