@@ -65,12 +65,12 @@ test("the hover names the pseudonym", () => {
   assert.strictEqual(M.tipText("Ingrid Strangeways"), "Pseudonym: Ingrid Strangeways");
 });
 
-test("the composer's marks share the colour, and say the real name", () => {
+test("the composer's marks share the colour, and say what each name is sent as", () => {
   assert.match(M.markCss(null), /::highlight\(cum-pseudo-draft\)\{background-color:rgba\(25, 220, 250, 0\.180\)\}/);
-  assert.strictEqual(M.draftTipText("Helen Rasho"), "Real name: Helen Rasho");
+  assert.strictEqual(M.draftTipText("Ingrid Strangeways"), "Sent as: Ingrid Strangeways");
 });
 
-test("swapping a name you leave is on unless switched off", () => {
+test("faking the draft at the send is on unless switched off", () => {
   assert.strictEqual(M.normalizeAutoSwap(undefined), true);
   assert.strictEqual(M.normalizeAutoSwap(true), true);
   assert.strictEqual(M.normalizeAutoSwap(false), false);

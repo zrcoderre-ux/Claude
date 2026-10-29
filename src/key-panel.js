@@ -365,11 +365,12 @@
     return box;
   }
 
-  // ---- swapping a name you leave ----------------------------------------------
+  // ---- real names in the draft, fakes in the send -----------------------------
   //
-  // The text reader's rule on claude.ai: a real name typed into the composer is
-  // typed over with its fake once the caret moves off it (src/pseudo-view.js).
-  // It acts on the composer, so it is its own switch; on by the owner's request.
+  // The text reader's way on claude.ai: the composer shows the real names you
+  // type, marked, and the fakes are typed over them as the draft is sent
+  // (src/pseudo-view.js). It acts on the composer, so it is its own switch; on
+  // by the owner's request.
 
   function drawAutoSwap() {
     const MK = window.CUMPseudoMark;
@@ -381,7 +382,7 @@
     tick.type = "checkbox";
     tick.checked = cur.on;
     tick.addEventListener("change", () => set({ [MK.AUTOSWAP_KEY]: tick.checked }));
-    on.append(tick, document.createTextNode(" Swap a name I type once I move off it"));
+    on.append(tick, document.createTextNode(" Show real names in my draft; send their pseudonyms"));
     const row = el("div", "cum-key-mark-row");
     row.append(on);
     box.appendChild(row);
@@ -390,7 +391,7 @@
         "p",
         "cum-key-line cum-key-dim",
         cur.on
-          ? "A real name you type becomes its pseudonym when the caret leaves it, as in the text reader. Esc on the prompt keeps it; Ctrl+Z brings it back."
+          ? "A real name you type stays as typed, highlighted, and goes to Claude as its pseudonym: the pseudonyms are typed in as you send. Hover one to see it. Esc on the prompt keeps a name as typed."
           : "A real name you type stays until you press space or → on the prompt, or Accept on the banner."
       )
     );
