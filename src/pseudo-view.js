@@ -315,10 +315,15 @@
   let markStyle = null;
   let markTip = null;
   let hovered = null; // { node, span } under the pointer
-  // The composer's own marks: the fakes standing in the draft, { range, span }
-  // with span { start, end, real } (P.draftFakeSpans), repainted as you type.
+  // The composer's own marks: the real names that go as their fakes, { range,
+  // span } with span P.sendSwaps', repainted as you type.
   let draftMarks = [];
   let draftTimer = null;
+  // Show the real names in the draft and send their fakes (PM.AUTOSWAP_KEY);
+  // and the names kept as typed with Esc on the caret prompt, by folded real
+  // value, for as long as the draft carries them.
+  let autoSwap = PM ? PM.normalizeAutoSwap(undefined) : false;
+  const kept = new Set();
   const canMark = !!(PM && typeof CSS !== "undefined" && CSS.highlights && typeof Highlight === "function");
   let shown = 0; // occurrences currently swapped, for the badge
   let sweepTimer = null;
@@ -655,7 +660,7 @@
       markTip.setAttribute("role", "tooltip");
       document.body.appendChild(markTip);
     }
-    markTip.textContent = hit.draft ? PM.draftTipText(hit.span.real) : PM.tipText(hit.span[2]);
+    markTip.textContent = hit.draft ? PM.draftTipText(hit.span.replacement) : PM.tipText(hit.span[2]);
     markTip.hidden = false;
     // Under the name, kept on screen.
     const w = markTip.offsetWidth || 160;
@@ -707,7 +712,9 @@
         if (area !== "local") return;
         if (ch[PM.AUTOSWAP_KEY]) {
           autoSwap = PM.normalizeAutoSwap(ch[PM.AUTOSWAP_KEY].newValue);
-          if (!autoSwap) pending = null;
+          hideTip();
+          draftSoon();
+          checkComposer();
           render();
         }
         if (ch[PM.MARK_KEY]) setMark(ch[PM.MARK_KEY].newValue);
@@ -1370,16 +1377,16 @@
   }
 
   /**
-   * Type the fake over every occurrence of `real` in the draft — all warned
-   * values when `real` is empty. One occurrence at a time, re-reading the
-   * editor after each, because the rewrite moves everything after it. The
-   * same door the typeahead uses (select, then insertText): ProseMirror takes
-   * it as ordinary typing, so Ctrl+Z brings the real name back.
+   * Type the fake over every span `spansOf(text)` finds in the draft. One
+   * occurrence at a time, re-reading the editor after each, because the
+   * rewrite moves everything after it. The same door the typeahead uses
+   * (select, then insertText): ProseMirror takes it as ordinary typing, so
+   * Ctrl+Z brings the real name back.
    *
    * Returns how many were rewritten. Bounded, so an editor that refuses the
    * edit cannot hold the page in a loop that never ends.
    */
-  function acceptInDraft(real) {
+  function typeOver(spansOf) {
     if (!active || !active.compiledReals.rx) return 0;
     const ed = editorEl();
     if (!ed) return 0;
@@ -1387,7 +1394,7 @@
     let done = 0;
     for (let guard = 0; guard < 200; guard++) {
       const read = editorText(ed);
-      const spans = P.draftSpans(active.compiledReals, read.text, real);
+      const spans = spansOf(read.text);
       if (!spans.length) break;
       const span = spans[0];
       const from = pointAt(read.nodes, span.start);
@@ -1407,6 +1414,25 @@
     }
     hideTip();
     return done;
+  }
+
+  /** The banner's Accept: the fake over every occurrence of `real` — all warned values when empty. */
+  function acceptInDraft(real) {
+    return typeOver((t) => P.draftSpans(active.compiledReals, t, real));
+  }
+
+  /**
+   * Accept with the draft showing real names: a name kept with Esc is let go,
+   * so it is marked again and goes as its fake at the send, and only what
+   * still would not (a party inside a citation) is typed over now.
+   */
+  function acceptName(real) {
+    if (!autoSwap) return acceptInDraft(real);
+    if (real) kept.delete(P.fold(real));
+    else kept.clear();
+    const read = draftReals();
+    for (const h of read ? read.hits : []) if (!real || P.fold(h.real) === P.fold(real)) acceptInDraft(h.real);
+    draftSoon();
   }
 
   function closeWarn(sig) {
@@ -1430,7 +1456,7 @@
     b.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      acceptInDraft(real);
+      acceptName(real);
       checkComposer();
     });
     return b;
@@ -1440,9 +1466,12 @@
   // by the send gate, so the two can never disagree about what is in the box.
   // null when there is nothing to read it against (no key attached).
   //
-  // The hits are the WHOLE draft's, the caret prompt's value included: the
-  // banner filters that one out because the prompt is already offering it, but
-  // a send carries it like any other name.
+  // `swaps` are the real names the send fakes (P.sendSwaps, with the switch
+  // on): they are marked, not warned about. The hits are what would still
+  // reach Claude as written once those are faked — a name kept with Esc, a
+  // party inside a citation, every name with the switch off — the caret
+  // prompt's value included: the banner filters that one out because the
+  // prompt is already offering it, but a send carries it like any other name.
   function draftReals() {
     if (!active || !active.compiledReals.rx) return null;
     const ed = editorEl();
@@ -1452,11 +1481,21 @@
     // published law, declared safe. The warning stands down for that draft
     // (P.isLawReport), and so does the gate.
     const report = !!text && P.isLawReport(text);
-    return {
-      text: text,
-      report: report,
-      hits: text && !report ? P.findReals(active.compiledReals, text) : [],
-    };
+    if (!text || report) return { text: text, report: report, swaps: [], hits: [] };
+    let swaps = [];
+    let left = text;
+    if (autoSwap) {
+      const read = editorText(ed);
+      // A kept name the draft no longer carries is forgotten: typed again, it
+      // is marked again.
+      if (kept.size) {
+        const here = new Set(P.findReals(active.compiledReals, read.text).map((h) => P.fold(h.real)));
+        for (const k of Array.from(kept)) if (!here.has(k)) kept.delete(k);
+      }
+      swaps = P.sendSwaps(active.compiledReals, read.text, kept);
+      left = P.swappedText(read.text, swaps);
+    }
+    return { text: text, report: report, swaps: swaps, hits: P.findReals(active.compiledReals, left) };
   }
 
   function checkComposer() {
@@ -1662,6 +1701,109 @@
     return null;
   }
 
+  // ---- the fakes typed in as the draft leaves ----------------------------------
+  //
+  // With the switch on (PM.AUTOSWAP_KEY) the draft shows the real names you
+  // type, marked, and the send carries their fakes. claude.ai sends what stands
+  // in the box, so the fakes are typed over the marked names at the send: a
+  // person's send of a draft with a marked name is held for the moment it
+  // takes to type them in, through the Accept door (select, insertText), and
+  // then made again through the composer's own control. The boundary stays
+  // structural — what leaves is what stands in the box — and the draft is read
+  // again before the send is pressed: one that still carries a marked name is
+  // not sent, and says so.
+  //
+  // It runs after the real-name gate and the PDF question, so a held draft and
+  // an unanswered PDF are still asked about first; the PDF question's yes comes
+  // through here too (fakeThenSend), since our own click passes every gate.
+
+  let faking = false;
+
+  function fakeAtSend(ev) {
+    if (!ev || ev.isTrusted === false) return false; // the extension's own sends
+    if (faking) return true; // the rest of the same click, or a second Enter
+    const read = draftReals();
+    if (!read || !read.swaps.length) return false;
+    // Claude mid-turn: claude.ai would not send this, so the draft is left as is.
+    const C = window.CUMComposer;
+    if (C && C.isGenerating && C.isGenerating()) return false;
+    faking = true;
+    hideTip();
+    const control = ev.type === "keydown" ? null : sendControlOf(ev.target);
+    fakeThenSend(control, true)
+      .catch(() => false)
+      .then(() => setTimeout(() => (faking = false), 400));
+    return true;
+  }
+
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function enabledSend(control) {
+    let btn = control && control.isConnected ? control : null;
+    try {
+      const CW = window.CUMCoworkSend;
+      const C = window.CUMComposer;
+      btn = btn || (CW && CW.findSend && CW.findSend()) || (C && C.findSend && C.findSend()) || null;
+    } catch (e) {
+      btn = null;
+    }
+    if (!btn || btn.disabled || btn.getAttribute("aria-disabled") === "true") return null;
+    return btn;
+  }
+
+  /**
+   * Type the fakes over the marked names, read the draft back, and press send.
+   * True when send was pressed. `enter` lets a draft with no control to press
+   * go by the Enter it was sent with.
+   */
+  async function fakeThenSend(control, enter) {
+    const ed = editorEl();
+    const before = draftReals();
+    if (autoSwap && before && before.swaps.length) {
+      typeOver((t) => P.sendSwaps(active.compiledReals, t, kept));
+      // A beat for the editor to take the typing into its own state, which is
+      // what claude.ai sends from, before the draft is judged and pressed.
+      await frame();
+      await frame();
+      await pause(120);
+      const after = draftReals();
+      if (after && after.swaps.length) {
+        const names = Array.from(new Set(after.swaps.map((sp) => sp.real)));
+        guardNotice(
+          "Nothing was sent. The pseudonyms could not be typed over " +
+            (names.length === 1 ? "“" + names[0] + "”" : names.length + " real names (" + names.join(", ") + ")") +
+            " in your draft, so it still carries the real " +
+            (names.length === 1 ? "name" : "names") +
+            ". Send again to retry.",
+          "Not sent — the pseudonyms did not go in"
+        );
+        draftSoon();
+        return false;
+      }
+      draftSoon();
+    }
+    const btn = enabledSend(control);
+    const C = window.CUMComposer;
+    if (btn && C && C.robustClick) {
+      C.robustClick(btn);
+      return true;
+    }
+    if (enter && ed) {
+      ed.focus();
+      ed.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true })
+      );
+      return true;
+    }
+    guardNotice(
+      (before && before.swaps.length ? "The pseudonyms are in your draft, but the" : "The") +
+        " send control could not be found to send it. Press Enter or the send button to send it.",
+      "Not sent yet"
+    );
+    return false;
+  }
+
   // ---- the last door for a PDF: the send ---------------------------------------
   //
   // The decision is CUMPdfFlag.sendAsks (pure, tested, and documented there).
@@ -1837,24 +1979,18 @@
       if (!ok) return;
       if (PC.rememberSend) PC.rememberSend(v.sig, v.names);
       // The yes sends it — through the composer's own control, as a click the
-      // gates know is not a person's. Where there is no control to press, the
-      // next Enter goes, because the yes is remembered.
+      // gates know is not a person's. Where there is no control to press, it
+      // says so, and the next Enter goes, because the yes is remembered. The
+      // marked real names go as their fakes on this send too: our own click
+      // passes every gate unjudged, so they are typed over first.
       setTimeout(() => {
-        try {
-          const CW = window.CUMCoworkSend;
-          const C = window.CUMComposer;
-          const btn = (CW && CW.findSend && CW.findSend()) || (C && C.findSend && C.findSend());
-          if (btn && C && C.robustClick) {
-            C.robustClick(btn);
-            // That send is the one the yes was for: forget it once it has gone,
-            // so the next message's PDF — even one of the same name — is asked
-            // about afresh. Our own click passes the gate unjudged, so it would
-            // never reach the forgetting a person's own send does.
-            pdfSent();
-          }
-        } catch (e) {
-          /* the next Enter sends */
-        }
+        fakeThenSend(null, false).then((sent) => {
+          // That send is the one the yes was for: forget it once it has gone,
+          // so the next message's PDF — even one of the same name — is asked
+          // about afresh. Our own click passes the gate unjudged, so it would
+          // never reach the forgetting a person's own send does.
+          if (sent) pdfSent();
+        });
       }, 450);
     });
     return true;
@@ -1868,7 +2004,7 @@
     (ev) => {
       if (ev.key !== "Enter" || ev.shiftKey || ev.isComposing) return;
       if (!inEditor(ev.target)) return;
-      if (sendGate(ev) || pdfGate(ev)) {
+      if (sendGate(ev) || pdfGate(ev) || fakeAtSend(ev)) {
         ev.preventDefault();
         ev.stopImmediatePropagation();
       }
@@ -1884,7 +2020,7 @@
       (ev) => {
         if (ev.button != null && ev.button !== 0) return;
         if (!sendControlOf(ev.target)) return;
-        if (sendGate(ev) || pdfGate(ev)) {
+        if (sendGate(ev) || pdfGate(ev) || fakeAtSend(ev)) {
           ev.preventDefault();
           ev.stopImmediatePropagation();
         }
@@ -1902,7 +2038,7 @@
       const form = ev.target;
       const ed = editorEl();
       if (!ed || !form || !form.contains || !form.contains(ed)) return;
-      if (sendGate(ev) || pdfGate(ev)) {
+      if (sendGate(ev) || pdfGate(ev) || fakeAtSend(ev)) {
         ev.preventDefault();
         ev.stopImmediatePropagation();
       }
@@ -2364,6 +2500,10 @@
   // happen. The banner below stays as the net for everything the caret is
   // NOT on — pasted text, a dismissed prompt — but never doubles the value
   // currently being offered.
+  //
+  // With the draft showing real names (autoSwap), nothing is typed here: the
+  // name stays as typed and marked, and goes as its fake at the send. The
+  // prompt only says so, and its Escape keeps the name as typed (`kept`).
 
   let tipEl = null;
   let tipHit = null; // { real, fake, matched, at } while showing
@@ -2401,15 +2541,17 @@
     tipTimer = null;
     if (!active || !active.ahead || !active.ahead.length) return hideTip();
     const ed = editorEl();
-    // A name typed and then left is swapped before the caret's new place is
-    // read (leaveSwap): what the prompt offers next is about where it is now.
-    if (leaveSwap(ed)) return;
     const ctx = ed && caretContext(ed);
     const hit = ctx && P.endingReal(active.ahead, ctx.textBefore);
     if (!hit) return hideTip();
     const sig = ctx.textBefore.length + "|" + P.fold(hit.real);
     if (tipDismissed === sig) return hideTip();
-    notePending(ed, hit);
+    if (autoSwap) {
+      // Only a name the send will fake: a kept one, or a party inside a
+      // citation, is the banner's.
+      const read = draftReals();
+      if (!read || !read.swaps.some((sp) => P.fold(sp.real) === P.fold(hit.real))) return hideTip();
+    }
     tipHit = { real: hit.real, fake: hit.fake, matched: hit.matched, sig: sig };
     if (!tipEl) {
       tipEl = document.createElement("div");
@@ -2421,7 +2563,10 @@
     swap.textContent = hit.matched + " → " + P.mirrorCase(hit.matched, hit.fake);
     const how = document.createElement("span");
     how.className = "cum-pseudo-tip-how";
-    how.textContent = P.swapsOnSpace(hit)
+    if (autoSwap) swap.textContent = hit.matched + " — sent as " + P.mirrorCase(hit.matched, hit.fake);
+    how.textContent = autoSwap
+      ? "  · Esc to keep it as typed"
+      : P.swapsOnSpace(hit)
       ? "  space or → swaps · Esc to keep"
       : "  press → to swap · space types on · Esc to keep";
     tipEl.append(swap, how);
@@ -2469,7 +2614,6 @@
     // The same door composer.js types through — ProseMirror treats it as
     // ordinary input, so undo (Ctrl+Z) brings the real name back if wanted.
     document.execCommand("insertText", false, P.mirrorCase(hit.matched, hit.fake) + (tail || ""));
-    pending = null;
     hideTip();
     draftSoon();
   }
@@ -2477,6 +2621,7 @@
   // The arrow swaps only what the prompt is showing: hijacking a navigation
   // key with nothing on screen to say why would be a caret that jumps.
   function swapAtCaret() {
+    if (autoSwap) return false; // the send fakes it
     const at = hitAtCaret();
     if (!at || !tipHit || P.fold(at.hit.real) !== P.fold(tipHit.real)) return false;
     typeOverCaret(at.ed, at.hit, "");
@@ -2486,6 +2631,7 @@
   // The space bar swaps a whole name whether or not its prompt has drawn
   // yet, and never one Escape dismissed at that spot, never a partial.
   function spaceAtCaret() {
+    if (autoSwap) return false; // the send fakes it
     const at = hitAtCaret();
     if (!at || at.sig === tipDismissed || !P.swapsOnSpace(at.hit)) return false;
     typeOverCaret(at.ed, at.hit, " ");
@@ -2495,10 +2641,6 @@
   window.addEventListener(
     "keydown",
     (ev) => {
-      // Before any key moves the caret off a name, the name is noted, so a
-      // fast typist's "Helen went" is swapped as a slow one's is (the prompt
-      // itself waits for the typing to pause).
-      if (!(ev.ctrlKey || ev.metaKey)) noteAtCaret();
       if (ev.altKey || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
       if (ev.key === " " || ev.key === "Spacebar") {
         if (spaceAtCaret()) {
@@ -2515,7 +2657,13 @@
         }
       } else if (ev.key === "Escape") {
         tipDismissed = tipHit.sig;
-        pending = null; // kept as typed, at the user's word
+        // Kept as typed, at the user's word: with the draft showing real names,
+        // every occurrence of it stays unmarked and the banner asks about it.
+        if (autoSwap) {
+          kept.add(P.fold(tipHit.real));
+          draftSoon();
+          setTimeout(checkComposer, 0);
+        }
         hideTip();
         ev.preventDefault();
         ev.stopImmediatePropagation();
@@ -2536,127 +2684,18 @@
     true
   );
 
-  // ---- the composer's marks, and a name swapped once you leave it ------------
+  // ---- the composer's marks: the real names the send fakes ------------------
   //
   // The text reader's way, on claude.ai (the owner's request, October 2026).
-  // The reader shows a real name you type as its pseudonym span — marked, the
-  // fake underneath — and marks it on its own once the caret moves off it. The
-  // composer cannot show one thing and send another (what stands in it is
-  // what goes), so here the FAKES in the draft are marked, in the messages'
-  // colour, and hovering one says the real name it stands for; and a real
-  // name you type is typed over with its fake once the caret leaves it
-  // (P.leaveVerdict decides when), through the same door as the space bar's
-  // swap, so Ctrl+Z brings the real name back. Esc on the prompt keeps it as
-  // typed; a name inside a citation is never swapped; a name the caret never
-  // offered (a paste) is the banner's, as before. Its own switch in the key
-  // panel (PM.AUTOSWAP_KEY), on by the owner's request.
-
-  let autoSwap = PM ? PM.normalizeAutoSwap(undefined) : false;
-  // The name the prompt last offered: { start, matched, fake, partial } in
-  // editorText's offsets, until it is swapped, dropped or kept with Esc.
-  let pending = null;
-
-  // The caret as an offset into editorText's text, or null when there is no
-  // collapsed caret in a text node of the editor.
-  function caretOffset(ed, read) {
-    const sel = window.getSelection();
-    if (!ed || !sel || !sel.rangeCount || !sel.isCollapsed) return null;
-    const r = sel.getRangeAt(0);
-    if (!ed.contains(r.startContainer) || r.startContainer.nodeType !== 3) return null;
-    for (const e of read.nodes) if (e.node === r.startContainer) return e.at + r.startOffset;
-    return null;
-  }
-
-  // When the user last undid or redid in the composer. A name Ctrl+Z brought
-  // back is one they wanted back, so for a moment after it nothing is noted
-  // to swap again; the banner and the prompt still say it is there.
-  let undoneAt = 0;
-  const UNDO_GRACE_MS = 1500;
-  window.addEventListener(
-    "keydown",
-    (ev) => {
-      const k = String(ev.key || "").toLowerCase();
-      if ((ev.ctrlKey || ev.metaKey) && (k === "z" || k === "y") && inEditor(ev.target)) {
-        undoneAt = Date.now();
-        pending = null;
-      }
-    },
-    true
-  );
-  document.addEventListener(
-    "beforeinput",
-    (ev) => {
-      if (/^history(Undo|Redo)$/.test(ev.inputType || "") && inEditor(ev.target)) {
-        undoneAt = Date.now();
-        pending = null;
-      }
-    },
-    true
-  );
-
-  // The name the caret is on right now, noted to swap once it is left —
-  // asked when a key goes down or the mouse is pressed, before the caret moves.
-  function noteAtCaret() {
-    if (!autoSwap || !active) return;
-    const at = hitAtCaret();
-    if (at && at.sig !== tipDismissed) notePending(at.ed, at.hit);
-  }
-  document.addEventListener("mousedown", () => noteAtCaret(), true);
-
-  function notePending(ed, hit) {
-    if (!autoSwap || !ed || Date.now() - undoneAt < UNDO_GRACE_MS) return;
-    const read = editorText(ed);
-    const at = caretOffset(ed, read);
-    if (at == null || read.text.slice(at - hit.matched.length, at) !== hit.matched) return;
-    pending = { start: at - hit.matched.length, matched: hit.matched, fake: hit.fake, partial: !!hit.partial };
-  }
-
-  // Swap the pending name if the caret has left it. True when it typed.
-  function leaveSwap(ed) {
-    if (!pending || !ed) return false;
-    if (!autoSwap) {
-      pending = null;
-      return false;
-    }
-    const read = editorText(ed);
-    const caret = caretOffset(ed, read);
-    // A Lexis or Westlaw report is published law, declared safe (P.isLawReport).
-    const verdict = P.isLawReport(read.text) ? "drop" : P.leaveVerdict(pending, read.text, caret, active.ahead);
-    if (verdict !== "swap") {
-      if (verdict === "drop") pending = null;
-      return false;
-    }
-    const p = pending;
-    pending = null;
-    const end = p.start + p.matched.length;
-    const from = pointAt(read.nodes, p.start);
-    const to = pointAt(read.nodes, end);
-    const sel = window.getSelection();
-    if (!from || !to || !sel) return false;
-    const range = document.createRange();
-    range.setStart(from.node, from.offset);
-    range.setEnd(to.node, to.offset);
-    sel.removeAllRanges();
-    sel.addRange(range);
-    const fake = P.mirrorCase(p.matched, p.fake);
-    if (!document.execCommand("insertText", false, fake)) return false;
-    // The caret goes back where the user put it, moved by the swap only if it
-    // stood after the name.
-    const back = caret > end ? caret + fake.length - p.matched.length : caret;
-    const again = editorText(ed);
-    const pt = pointAt(again.nodes, back);
-    if (pt) {
-      const c = document.createRange();
-      c.setStart(pt.node, pt.offset);
-      c.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(c);
-    }
-    hideTip();
-    draftSoon();
-    checkComposer();
-    return true;
-  }
+  // The reader shows a real name you type as itself, marked, with the fake
+  // underneath. The composer does the same: the real names you type stay as
+  // typed and wear the messages' mark, in their colour, and hovering one says
+  // the pseudonym it goes as. The fakes go in only at the send (fakeAtSend,
+  // above). A name kept with Esc, one inside a citation and a Lexis or Westlaw
+  // report are not marked (P.sendSwaps), and the banner and the gate are the
+  // net for them. Its own switch in the key panel (PM.AUTOSWAP_KEY), on by the
+  // owner's request; off, nothing is marked and the names wait for space, →
+  // or Accept, as before.
 
   function draftSoon() {
     if (draftTimer) return;
@@ -2677,7 +2716,8 @@
       const read = editorText(ed);
       const hl = new Highlight();
       const marks = [];
-      for (const span of P.draftFakeSpans(active.compiled, read.text)) {
+      const swaps = autoSwap && !P.isLawReport(ed.innerText || read.text) ? P.sendSwaps(active.compiledReals, read.text, kept) : [];
+      for (const span of swaps) {
         const from = pointAt(read.nodes, span.start);
         const to = pointAt(read.nodes, span.end);
         if (!from || !to) continue;
@@ -2690,7 +2730,7 @@
       draftMarks = marks;
       CSS.highlights.set("cum-pseudo-draft", hl);
     } catch (e) {
-      /* a composer that cannot take a highlight shows its fakes unmarked */
+      /* a composer that cannot take a highlight shows its names unmarked */
     }
   }
 
@@ -2825,14 +2865,14 @@
   }
 
   /** One-button notice in the guard's own dress, for a release that did not land. */
-  function guardNotice(text) {
+  function guardNotice(text, head) {
     const overlay = document.createElement("div");
     overlay.className = "cum-pseudo-guard";
     const box = document.createElement("div");
     box.className = "cum-pseudo-guard-box";
     const h = document.createElement("div");
     h.className = "cum-pseudo-guard-head";
-    h.textContent = "That upload did not go through";
+    h.textContent = head || "That upload did not go through";
     const p = document.createElement("p");
     p.textContent = text;
     const row = document.createElement("div");

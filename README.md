@@ -2819,23 +2819,25 @@ swept on the next extension start.
    composer's own typing path, so **Ctrl+Z brings the real name back**.
    Escape keeps the real name and stops asking at that spot.
 
-   **A name you type and leave is swapped too**, as the PDF viewer's text
-   reader marks a name once the caret moves off it. Type a real name and
-   carry on (`Helen Rasho, and…`), click elsewhere in the draft, or move off
-   it with the arrow keys or Home and End, and the fake is typed over it in
-   place, through the same door as the space bar's swap. The caret stays
-   where you put it, and **Ctrl+Z brings the real name back** and keeps it.
-   A name you pressed Escape on is left as typed. So is a name inside a
-   citation (a published party), a Lexis or Westlaw report, or a word the
-   key matches only in capitals that you typed in lower case. A name that
-   opens a longer one (`Helen` beside `Helen Rasho`) waits while what you
-   type is heading for the longer name, and is swapped once it heads
-   anywhere else. Nothing is typed into a composer you are not in: focus
-   elsewhere and the name waits for you to come back. Pasted text was never
-   offered at the caret, so it is still the banner's. It is a switch of its
-   own in the [key button](#the-key-button)'s panel, **Swap a name I type
-   once I move off it**, on by the owner's request (October 2026), since it
-   types into the composer for you (`P.leaveVerdict` in `src/pseudo.js`).
+   **With the draft showing real names (the default), nothing is typed
+   over as you write.** The real name you type stays in the composer as you
+   typed it, **highlighted** in the messages' mark colour to say it will be
+   faked, and the prompt reads `Helen Rasho — sent as Ingrid Strangeways ·
+   Esc to keep it as typed`. Space and → just type. The fakes go in **when
+   you send**: Enter or the send button is held for the moment it takes to
+   type the fake over every highlighted name (the same door as Accept), the
+   draft is read back, and the send is pressed again for you. What leaves is
+   still exactly what stands in the box, so the boundary stays structural;
+   if a fake did not go in, **nothing is sent** and a notice says which
+   names are still real. A name you pressed Escape on stays as typed and
+   unhighlighted, and the banner and the send gate go on asking about it. So
+   does a name inside a citation (a published party), and nothing in a Lexis
+   or Westlaw report is faked. It is a switch of its own in the [key
+   button](#the-key-button)'s panel, **Show real names in my draft; send
+   their pseudonyms**, on by the owner's request (October 2026), since it
+   types into the composer for you at the send (`P.sendSwaps` in
+   `src/pseudo.js`). Switched off, the composer works as described next: the
+   space bar and → type the fake in as you go, and Accept on the banner.
 
    The space bar holds back on one kind of name: a real that **opens a longer
    real in the same key** — `Helen` where the key also binds `Helen Rasho`,
@@ -2860,9 +2862,13 @@ swept on the next extension start.
    real name appears, and it is never remembered past the tab. And while a real
    value stands in the draft the **send does not go** — Enter and the send
    button both stop, and the banner says so: see [A real name in the draft stops
-   the send](#a-real-name-in-the-draft-stops-the-send). Nothing else is
+   the send](#a-real-name-in-the-draft-stops-the-send). With the draft
+   showing real names, the banner and the gate are about the names that would
+   still go as written (one kept with Escape, a party in a citation); the
+   highlighted ones go as their fakes, and the banner's Accept on a kept name
+   highlights it again. Nothing else is
    rewritten without a keypress the composer would have taken anyway, apart
-   from the swap of a name you typed and left (above), which has its own
+   from the fakes typed in at the send (above), which has its own
    switch: the composer is yours. One declared exception: a draft that **begins** with a
    report the Workup Citation Cross-Opener extension copied out of Lexis+ or
    Westlaw is published law — always safe — and the warning stands down for
@@ -2976,7 +2982,11 @@ What it deliberately does not do:
   this holds is a real name reaching Claude, which must never happen by
   default. The ✕ is the ceiling, and it is one click from the held send.
 - **It never rewrites the draft to let a send through.** The composer is yours,
-  which is why Accept is a button and not an autocorrect.
+  which is why Accept is a button and not an autocorrect. The fakes typed in at
+  the send, with the draft showing real names, are a different thing: they are
+  the names the composer has been highlighting as going over faked, and their
+  own switch. The gate judges only what would still go as written once they
+  are in.
 - **It never holds a send the extension itself made** — a scheduled send, a
   workflow step, the Folder button's own first message. Those prompts are
   machine-composed and travel their own path, and a gate that silently wedged a
@@ -3382,14 +3392,16 @@ light cyan at 0.18). They are written the moment you choose them and every
 claude.ai tab follows. The messages and the chat titles are both marked — the
 same swaps the badge counts.
 
-**The composer is marked too**, the other way round. What sits in claude.ai's
-text box is what gets sent, so it cannot show the real name over its
-pseudonym as the reader does. Instead every **fake** standing in your draft
-wears the same mark: one the space bar or the swap-on-leaving typed in, or
-one you typed yourself. Hovering one says `Real name: Helen Rasho`. A
-published party's name inside a citation is no fake and is left unmarked, as
-the messages leave it untranslated (`P.draftFakeSpans`). The mark follows
-your typing and the same Mark pseudonyms switch.
+**The composer is marked too**, the reader's way. The real name you type
+stays in the text box as you typed it and wears the same mark, which says it
+will be faked; hovering one says `Sent as: Ingrid Strangeways`. claude.ai
+sends what is in the box, so the fakes are typed over the marked names at the
+moment you send (see [Pseudonym translation](#pseudonym-translation)), never
+before. A name you kept with Escape, a published party inside a citation and
+a Lexis or Westlaw report are not faked and are left unmarked
+(`P.sendSwaps`). The mark follows your typing and the same Mark pseudonyms
+switch; the faking itself has its own, **Show real names in my draft; send
+their pseudonyms**, and with that off nothing in the composer is marked.
 
 **Nothing in claude.ai's page is changed to draw them.** The marks are painted
 with Chrome's CSS Custom Highlight API over the swapped text rather than by
