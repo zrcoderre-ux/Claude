@@ -1137,7 +1137,7 @@
       // possessive included, says which marks the text writes.
       const core = suffix ? m.slice(0, -suffix.length) : m;
       const keyText = compiled.spell ? compiled.spell.get(lookup) : "";
-      const to = mirrorQuotes(m, mirrorCase(core, keyCase(mapped, keyText, core))) + casedSuffix(shape, suffix);
+      const to = mirrorQuotes(m, mirrorCase(core, keyCase(mapped, keyText, core))) + casedSuffix(shape, suffix, keyText);
       marks.push([at, at + to.length, m]);
       shift += to.length - m.length;
       return to;
@@ -1343,9 +1343,15 @@
 
   // The 's follows the sentence around it, not the name: shouted with a
   // shout, quiet with a quiet line, and otherwise exactly as it was typed.
-  function casedSuffix(shape, suffix) {
+  //
+  // An acronym's capitals are its spelling, not a shout. Where the key itself
+  // spells the matched word in capitals (`keyText`, the side that was searched
+  // for: "TRUENORTH", "PNC"), "TRUENORTH's" in a sentence says nothing about
+  // the sentence, and reading it as one put "ABC'S" into prose. The 's is then
+  // kept as typed — a caption's "TRUENORTH'S" is still "ABC'S".
+  function casedSuffix(shape, suffix, keyText) {
     if (!suffix) return "";
-    if (shape === "upper") return suffix.toUpperCase();
+    if (shape === "upper") return isShoutedChunk(keyText) ? suffix : suffix.toUpperCase();
     if (shape === "lower") return suffix.toLowerCase();
     return suffix;
   }
@@ -1535,7 +1541,7 @@
           end: m.index + m[0].length,
           matched: m[0],
           real: w.real,
-          replacement: mirrorQuotes(m[0], mirrorCase(core, keyCase(fake, w.real, core))) + casedSuffix(shape, suffix),
+          replacement: mirrorQuotes(m[0], mirrorCase(core, keyCase(fake, w.real, core))) + casedSuffix(shape, suffix, w.real),
         });
       }
       if (m.index === compiledReals.rx.lastIndex) compiledReals.rx.lastIndex++;

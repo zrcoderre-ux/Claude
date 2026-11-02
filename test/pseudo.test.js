@@ -886,6 +886,23 @@ test("a possessive row is cased from the fake, not kept in the key's caps", () =
   );
 });
 
+test("an acronym's 's stays as typed: its capitals are its spelling, not a shout", () => {
+  // PDF-Linker writes an acronym's fake in capitals too, so "TRUENORTH's" in
+  // a sentence is prose, and came back "ABC'S".
+  const c = P.compile({ pairs: [{ real: "ABC", fake: "TRUENORTH" }] });
+  assert.equal(P.translate(c, "TRUENORTH's motion").text, "ABC's motion");
+  assert.equal(P.translate(c, "TRUENORTH\u2019s motion").text, "ABC\u2019s motion");
+  // A caption that shouts the 's keeps it shouted.
+  assert.equal(P.translate(c, "TRUENORTH'S MOTION").text, "ABC'S MOTION");
+  // And the other direction: the real typed with a lowercase 's.
+  const w = P.compileReals({ warn: [{ real: "ABC", fake: "TRUENORTH" }] });
+  assert.deepStrictEqual(P.draftSpans(w, "ABC's motion").map((x) => x.replacement), ["TRUENORTH's"]);
+  assert.deepStrictEqual(P.draftSpans(w, "ABC'S MOTION").map((x) => x.replacement), ["TRUENORTH'S"]);
+  // A name the key spells in prose case is still read as shouted.
+  const n = P.compile({ pairs: [{ real: "Zachary Coderre", fake: "John Doe" }] });
+  assert.equal(P.translate(n, "JOHN DOE's motion").text, "ZACHARY CODERRE'S motion");
+});
+
 test("the caption's shout survives a line wrap in the middle of a name", () => {
   const c = P.compile(CASE_KEY);
   assert.equal(P.translate(c, "JOHN\n  DOE").text, "ZACHARY CODERRE");
