@@ -1983,6 +1983,17 @@ test("pasteHold: the extension's own pastes, files, Lexis or Westlaw reports and
   assert.equal(P.pasteHold({ hits: [HIT], allowed: true }).hold, false);
 });
 
+test("pasteHold: with the draft showing real names the paste is held but never asked about", () => {
+  const v = P.pasteHold({ hits: [HIT], trusted: true, autoSwap: true });
+  assert.equal(v.hold, true); // still held: claude.ai could make it an attachment
+  assert.equal(v.ask, false); // typed into the draft, marked, faked at the send
+  assert.equal(P.pasteHold({ hits: [HIT], trusted: true }).ask, true);
+  // The same pastes go straight through either way.
+  assert.equal(P.pasteHold({ hits: [], autoSwap: true }).hold, false);
+  assert.equal(P.pasteHold({ hits: [HIT], report: true, autoSwap: true }).hold, false);
+  assert.equal(P.pasteHold({ hits: [HIT], files: true, autoSwap: true }).hold, false);
+});
+
 test("cleanPaste: the key run forward, offered only when nothing real is left", () => {
   const key = warnKey();
   const text = "Helen Rasho banked at Cross River Bank. RASHO's account.";

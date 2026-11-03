@@ -2331,6 +2331,43 @@
     }, 300);
   }
 
+  /**
+   * Put a held paste into the draft as typed text, through the door the
+   * typeahead and Accept use (insertText), which claude.ai's editor takes as
+   * ordinary typing — never as a paste it could turn into an attachment.
+   * Plain text: the formatted copy is not carried. True when the draft took
+   * it.
+   */
+  async function typePaste(text, range) {
+    const ed = editorEl();
+    if (!ed) return false;
+    try {
+      ed.focus();
+      const sel = window.getSelection();
+      if (range && sel && ed.contains(range.startContainer)) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    } catch (e) {
+      /* it goes wherever the caret is */
+    }
+    const before = editorText(ed).text;
+    let ok = false;
+    try {
+      ok = document.execCommand("insertText", false, text);
+    } catch (e) {
+      ok = false;
+    }
+    await pasteWait(30);
+    const now = editorEl();
+    const landed = !!now && editorText(now).text !== before;
+    if (landed) {
+      draftSoon();
+      setTimeout(checkComposer, 0);
+    }
+    return landed || (ok && !text);
+  }
+
   async function askPaste(snap, hits, text, carried, target, range) {
     const master = !!(snap.key && snap.key.master);
     const cleaned = master ? null : P.cleanPaste(snap.forward, snap.compiledReals, text);
@@ -2375,10 +2412,29 @@
         trusted: true,
         files: files,
         allowed: allowed,
+        autoSwap: autoSwap,
       });
       if (!v.hold) return;
       ev.preventDefault();
       ev.stopImmediatePropagation();
+      let range = null;
+      try {
+        const sel = window.getSelection();
+        range = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+      } catch (e) {
+        range = null;
+      }
+      hideTip();
+      // With the draft showing real names, no question: the paste goes into
+      // the draft as typed text, its names marked and faked at the send. Only
+      // if the editor would not take it is the question put after all, so a
+      // paste is never silently lost.
+      if (!v.ask) {
+        typePaste(text, range).then((ok) => {
+          if (!ok) askPaste(active, v.hits, text, [["text/plain", text]], ev.target, range);
+        });
+        return;
+      }
       // Everything the paste carried, read NOW: clipboardData is unreadable
       // once this handler returns, and Paste as is has to hand back exactly
       // what was pasted — the formatted copy as well as the plain one.
@@ -2392,14 +2448,6 @@
         }
       }
       if (!carried.some(([type]) => type === "text/plain")) carried.push(["text/plain", text]);
-      let range = null;
-      try {
-        const sel = window.getSelection();
-        range = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-      } catch (e) {
-        range = null;
-      }
-      hideTip();
       askPaste(active, v.hits, text, carried, ev.target, range);
     },
     true

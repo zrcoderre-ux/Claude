@@ -1917,19 +1917,30 @@
    *   files    the paste carries files — the upload guard's business, not this
    *   allowed  a one-shot pass for exactly this text: the operator already
    *            chose Paste as is and claude.ai did not take it back
+   *   autoSwap the draft shows real names and sends their fakes
+   *            (PM.AUTOSWAP_KEY)
    *
-   * Answers { hold, why, hits }.
+   * Answers { hold, ask, why, hits }. `ask` says whether to put the question
+   * (Paste with the fakes / Paste as is / Don't paste). With the draft
+   * showing real names it is never put: both of its answers came to the same
+   * message — the names marked in the draft and faked at the send, or the
+   * fakes pasted in their place — and the second showed the fakes, which the
+   * composer must never do for a name you typed or pasted. So the paste is
+   * still HELD, because claude.ai can turn a long paste into an attachment
+   * that nothing reads, and is put into the draft as typed text instead, where
+   * the marks show its real names and the send fakes them like any others.
    */
   function pasteHold(ev) {
     const e = ev || {};
     const hits = (e.hits || []).filter((h) => h && h.real);
-    const free = (why) => ({ hold: false, why: why, hits: hits });
+    const free = (why) => ({ hold: false, ask: false, why: why, hits: hits });
     if (e.trusted === false) return free("not the user's own paste");
     if (e.files) return free("a file paste");
     if (e.report) return free("a Lexis or Westlaw report");
     if (e.allowed) return free("already answered: paste as is");
     if (!hits.length) return free("no real values in the paste");
-    return { hold: true, why: "real values in the paste", hits: hits };
+    if (e.autoSwap) return { hold: true, ask: false, why: "real values in the paste, typed into the draft", hits: hits };
+    return { hold: true, ask: true, why: "real values in the paste", hits: hits };
   }
 
   /**
