@@ -3439,6 +3439,24 @@ has a ✕. A [peek](#pseudonym-translation) stands it down — no message text i
 swapped, so nothing swapped can be copied out of one — and so does a run's
 hold, for the messages it covers.
 
+**And the run forms refuse to paste it.** The paste that matters is the one
+into a **run's prompt**: a final run's step filled from the last tentative.
+The extension sends a run's prompts as written, so nothing at the composer
+ever reads them. So a copy that raised this banner is remembered, with the
+real names it carried (`cum_pseudo_lastcopy`, `P.lastCopyRecord`). A paste
+carrying any of those names is then **refused** in every text field on the
+options page, in the scheduled-send form on claude.ai and in the run margin's
+step editor. A notice names the names, and **Paste with the pseudonyms** puts
+the same text in with the fakes instead. The refusal goes by the
+**names**, not by the clipboard being the same text. So a paste from Word
+that carries them is refused too, and one that does not goes through. A later
+copy on claude.ai that carries no real names clears the record, and so does a
+copy made during a peek. The composer is not this guard's: it has its [own
+paste check](#a-long-paste-is-read-before-it-lands). Neither is the key
+panel's cleaner, where pasting real names is the point. The decision is
+`P.copiedPasteHold` in `src/pseudo.js` (`test/copiedpaste.test.js`), and the
+wiring is `src/paste-guard.js`.
+
 ### Swapped names are marked
 
 The same marking the PDF viewer's text reader uses: every real name the display

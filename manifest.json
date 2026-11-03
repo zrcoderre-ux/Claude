@@ -110,6 +110,7 @@
         "src/save-chat.js",
         "src/up-files.js",
         "src/pseudo-view.js",
+        "src/paste-guard.js",
         "src/key-panel.js",
         "src/fake-toggle.js",
         "src/copy-ruling.js",

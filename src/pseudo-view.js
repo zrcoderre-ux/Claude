@@ -2504,10 +2504,27 @@
     copyBox = null;
   }
 
+  // What the last copy carried, for the run and scheduled-send forms, which
+  // refuse a paste of those names (P.lastCopyRecord, src/paste-guard.js). A
+  // copy that carried none clears it.
+  function rememberCopy(hits) {
+    if (!P.LAST_COPY_KEY) return;
+    try {
+      chrome.storage.local.set({ [P.LAST_COPY_KEY]: P.lastCopyRecord(hits, Date.now()) }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch (e) {
+      /* the banner still says it; only the forms' refusal is missing */
+    }
+  }
+
   function onCopy() {
     // A peek is the user asking to see exactly what claude.ai renders. Nothing
     // is swapped, so nothing swapped can be on the clipboard.
-    if (paused) return closeCopyBox();
+    if (paused) {
+      rememberCopy([]);
+      return closeCopyBox();
+    }
     let text = "";
     try {
       text = String(window.getSelection() || "");
@@ -2530,6 +2547,7 @@
       // worse sentence than no name at all.
       caseName: owner && !owner.master && P.keyTitle ? P.keyTitle(owner) : "",
     });
+    rememberCopy(warn ? hits : []);
     if (!warn) return closeCopyBox();
     showCopyWarning(warn);
   }
