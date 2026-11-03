@@ -3062,8 +3062,23 @@ type a fake over.
 
 So **the paste itself is read**, in the paste event, before claude.ai decides
 what shape it takes. A paste into the composer carrying a real value from this
-chat's key is held, and a dialog names each real value with the fake the chat
-should say instead. Three ways out:
+chat's key is held.
+
+**With the draft showing real names (the default), nothing is asked.** The
+held paste goes into the draft as **typed text**, through the same door the
+typeahead and Accept use, so claude.ai takes it as typing and never turns it
+into an attachment. Its real names stand in the draft highlighted, like names
+you type, and the send types their fakes over them. That is what the old
+question's two answers came to anyway: **Paste as is** put the real names in
+the draft to be faked at the send, and **Paste with the fakes** put the fakes
+in, which showed the fakes in the composer. The composer must never do that
+for a name you wrote. The paste goes in as plain text, so its formatting is
+dropped, and a long paste stays in the draft rather than becoming an
+attachment. If the editor will not take the text, the question below is put
+after all, so a paste is never silently lost.
+
+**With that switch off**, a dialog names each real value with the fake the
+chat should say instead. Three ways out:
 
 - **Paste with the fakes** — every real value swapped for its fake, the same
   translation the key button's cleaner makes, and handed to claude.ai as the
