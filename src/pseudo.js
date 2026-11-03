@@ -2059,6 +2059,88 @@
     };
   }
 
+  // ---- the last copy, remembered for the run forms ---------------------------
+  //
+  // A copy that carried real names raises the banner above, on the page it
+  // was made on. The danger is a paste somewhere ELSE: the prompt of a run in
+  // the options page, where a tentative's real names pasted into the final
+  // run's step goes to Claude as written. A run's prompt is machine-sent, so
+  // nothing at the composer reads it. So the last copy is remembered, with
+  // the real names it carried, and the run and scheduled-send forms refuse a
+  // paste carrying any of them (src/paste-guard.js). A later copy that
+  // carried none clears it.
+  //
+  // Judged on the NAMES, not on the clipboard being the same text: a copy
+  // made in Word afterwards is not seen by this, and refusing every paste
+  // until the next claude.ai copy would be a form you cannot paste into for
+  // no reason anyone could see. A paste that carries those names is refused
+  // wherever it came from — it is still a real name going into a prompt.
+
+  const LAST_COPY_KEY = "cum_pseudo_lastcopy";
+
+  /** What a copy leaves behind: { at, names: [{ real, fake }] }, names deduped. */
+  function lastCopyRecord(hits, at) {
+    const seen = new Set();
+    const names = [];
+    for (const h of hits || []) {
+      const real = trim(h && h.real);
+      if (!real || seen.has(fold(real))) continue;
+      seen.add(fold(real));
+      names.push({ real: real, fake: trim(h && h.fake) });
+    }
+    return { at: typeof at === "number" ? at : 0, names: names };
+  }
+
+  function recordNames(record) {
+    return ((record && record.names) || []).filter((n) => n && trim(n.real));
+  }
+
+  /**
+   * Whether a paste of `text` into a run or scheduled-send form is refused:
+   * { hold, names } — `names` being the remembered real values the paste
+   * carries. Never held when the last copy carried none.
+   */
+  function copiedPasteHold(record, text) {
+    const names = recordNames(record);
+    const t = String(text == null ? "" : text);
+    if (!names.length || !t) return { hold: false, names: [] };
+    const found = findReals(compileReals({ warn: names }), t);
+    return { hold: found.length > 0, names: found };
+  }
+
+  /**
+   * The paste with the remembered names swapped for their pseudonyms, and
+   * whether that is a clean version: `ok` only when every one carried a fake
+   * and none is left standing.
+   */
+  function copiedPasteClean(record, text) {
+    const names = recordNames(record);
+    const t = String(text == null ? "" : text);
+    if (!names.length || names.some((n) => !trim(n.fake))) return { text: t, ok: false };
+    const key = { warn: names.map((n) => ({ real: n.real, fake: n.fake })) };
+    const out = translate(compileForward(key), t).text;
+    return { text: out, ok: out !== t && !findReals(compileReals(key), out).length };
+  }
+
+  /** The refusal's words: { head, body }. */
+  function copiedPasteNote(found) {
+    const list = (found || []).filter((h) => h && h.real);
+    const shown = list.slice(0, 4).map((h) => "“" + h.real + "”");
+    const more = list.length > 4 ? " and " + (list.length - 4) + " more" : "";
+    return {
+      head: "Not pasted — that carries real names",
+      body:
+        "Your last copy from a translated chat carried the real " +
+        (list.length === 1 ? "name " : "names ") +
+        shown.join(", ") +
+        more +
+        ", and this paste has " +
+        (list.length === 1 ? "it" : "them") +
+        " in it. A run's prompt goes to Claude exactly as written, so it is refused here. " +
+        "Copy it again with the fakes showing (the fakes toggle), or paste it with the pseudonyms.",
+    };
+  }
+
   /**
    * Typeahead entries for the as-you-type prompt: the warning's own rows
    * (common English out), longest real first so "Helen Rasho" is offered
@@ -2723,6 +2805,11 @@
     findReals,
     copyWarning,
     COPY_WARN_MAX,
+    LAST_COPY_KEY,
+    lastCopyRecord,
+    copiedPasteHold,
+    copiedPasteClean,
+    copiedPasteNote,
     compileTypeahead,
     endingReal,
     swapsOnSpace,
