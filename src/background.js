@@ -3027,9 +3027,14 @@ chrome.alarms.onAlarm.addListener((a) => {
 // gone and whose chats would otherwise go back to reading as fakes. Emptying
 // it is the popup's own control, and the only way it happens.
 let masterBusy = false;
+let masterForceOwed = false; // a forced refresh asked for while one was running
 async function refreshMasterKey(opts) {
   const M = self.CUMMasterKey;
-  if (!M || masterBusy) return;
+  if (!M) return;
+  if (masterBusy) {
+    if (opts && opts.force) masterForceOwed = true;
+    return;
+  }
   masterBusy = true;
   try {
     const res = await get([PSEUDO_KEYS_KEY, MASTER_KEY]);
@@ -3042,6 +3047,10 @@ async function refreshMasterKey(opts) {
     /* the next key load tries again; nothing here is load-bearing for a send */
   } finally {
     masterBusy = false;
+    if (masterForceOwed) {
+      masterForceOwed = false;
+      refreshMasterKey({ force: true });
+    }
   }
 }
 
@@ -3155,7 +3164,14 @@ async function sweepChatKeys() {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (changes[PSEUDO_KEYS_KEY]) refreshMasterKey();
+  if (changes[PSEUDO_KEYS_KEY]) {
+    // A name removed from a key by hand (or put back) changes no savedAt, so
+    // only a forced refresh carries it into the distilled cases.
+    const P = self.CUMPseudo;
+    const c = changes[PSEUDO_KEYS_KEY];
+    const force = !!(P && P.unfakedChanged && P.unfakedChanged(c.oldValue, c.newValue));
+    refreshMasterKey(force ? { force: true } : undefined);
+  }
   if (changes[CFG_KEY] || changes[DL_CFG_KEY]) {
     ensureKeepalive();
     acBurst();

@@ -681,11 +681,216 @@
   // entry: a key re-loaded from the popup a week later must not lose the case
   // folder that named it, and the same key picked from a different folder
   // takes the new one.
+  //
+  // The names taken out of the key by hand (unfakeKey, below) are the other
+  // thing the file cannot know. pseudonym_key.xlsx still carries the row, so a
+  // refresh, a re-read under a newer reader and a re-load from the case folder
+  // would each bring a name the operator removed straight back — and it would
+  // be faked again with nothing on screen to say why. Every loader comes
+  // through here, so the removals are taken out of the fresh rows here too.
   function keepKeyFacts(prev, next) {
     if (!next) return next;
+    let out = next;
     const folder = trim(next.folder) || (prev && trim(prev.folder)) || "";
-    if (!folder) return next;
-    return Object.assign({}, next, { folder: folder });
+    if (folder && folder !== next.folder) out = Object.assign({}, out, { folder: folder });
+    for (const u of unfakedOf(prev)) out = unfakeKey(out, u.real);
+    return out;
+  }
+
+  // ---- a name taken out of the key by hand ----------------------------------
+  //
+  // PDF-Linker sometimes fakes a phrase that is nobody's name — "Case
+  // Management Conference" bound to a pseudonym — and from then on every
+  // draft that says it is faked at the send. The text reader answers that with
+  // a keep; here it is the composer's right-click, "Remove from the key". The
+  // rows binding that real value come out of this library entry: no warning,
+  // no typeahead, no fake at the send, no cleaner swap and no reversal of its
+  // fake in the messages. They are kept on the entry under `unfaked`, so the
+  // key panel can put them back (refakeKey) and so a re-load of the same
+  // spreadsheet takes them out again (keepKeyFacts). The workbook itself is
+  // not touched: the download hands back the file that was loaded.
+  //
+  // A row matches when its real value IS the one removed, folded (case,
+  // spacing, quote marks), or is its possessive — "Case Management
+  // Conference's" goes with it, the way a possessive is the same party
+  // everywhere else in this module. Nothing longer that merely contains it.
+
+  function unfakedOf(key) {
+    const list = key && Array.isArray(key.unfaked) ? key.unfaked : [];
+    return list.filter((u) => u && trim(u.real));
+  }
+
+  function sameRealOrPossessive(removed, value) {
+    const f = fold(removed);
+    const v = String(value == null ? "" : value);
+    return !!f && (fold(v) === f || fold(v.replace(POSS_TAIL_RE, "")) === f);
+  }
+
+  /**
+   * `key` with every row binding `real` taken out and recorded under
+   * `unfaked`. The same key back where there is nothing to take out and
+   * nothing to record — and for the master key, which is distilled from many
+   * cases and is not a thing a name can be removed from.
+   */
+  function unfakeKey(key, real) {
+    const r = trim(real);
+    if (!key || key.master || !r) return key;
+    const hit = (v) => sameRealOrPossessive(r, v);
+    const warn = key.warn || [];
+    const pairs = key.pairs || [];
+    const own = key.ownFakes || [];
+    const gone = {
+      warn: warn.filter((w) => w && hit(w.real)),
+      pairs: pairs.filter((p) => p && hit(p.real)),
+    };
+    const goneFakes = new Set(gone.pairs.map((p) => fold(p.fake)));
+    gone.ownFakes = own.filter((f) => goneFakes.has(fold(f)));
+    const list = unfakedOf(key);
+    const at = list.findIndex((u) => fold(u.real) === fold(r));
+    // Nothing left to take out: the same key, already recorded or never bound.
+    if (!gone.warn.length && !gone.pairs.length) return key;
+    const prev = at !== -1 ? list[at] : null;
+    // What a re-application finds is added to what the first one took, so a
+    // refresh that re-read the same rows does not lose the ones to restore.
+    const merge = (a, b, k) => {
+      const out = (a || []).slice();
+      const seen = new Set(out.map(k));
+      for (const x of b) if (!seen.has(k(x))) out.push(x);
+      return out;
+    };
+    const rowK = (x) => fold(x.real) + ">" + fold(x.fake);
+    const entry = {
+      real: (prev && prev.real) || r,
+      warn: merge(prev && prev.warn, gone.warn, rowK),
+      pairs: merge(prev && prev.pairs, gone.pairs, rowK),
+      ownFakes: merge(prev && prev.ownFakes, gone.ownFakes, fold),
+    };
+    const out = Object.assign({}, key, {
+      warn: warn.filter((w) => !(w && hit(w.real))),
+      pairs: pairs.filter((p) => !(p && hit(p.real))),
+      unfaked: list.filter((u, i) => i !== at).concat([entry]),
+    });
+    if (key.ownFakes) out.ownFakes = own.filter((f) => !goneFakes.has(fold(f)));
+    // The case named after a phrase that is not a party would be a picker
+    // naming the case by its boilerplate.
+    if (key.hint && hit(key.hint)) {
+      entry.hint = key.hint;
+      out.hint = "";
+    } else if (prev && prev.hint) entry.hint = prev.hint;
+    return out;
+  }
+
+  /** `key` with `real` put back: the rows unfakeKey took, restored. */
+  function refakeKey(key, real) {
+    if (!key) return key;
+    const list = unfakedOf(key);
+    const at = list.findIndex((u) => fold(u.real) === fold(real));
+    if (at === -1) return key;
+    const u = list[at];
+    const rowK = (x) => fold(x && x.real) + ">" + fold(x && x.fake);
+    const add = (have, back, k) => {
+      const out = (have || []).slice();
+      const seen = new Set(out.map(k));
+      for (const x of back || []) if (x && !seen.has(k(x))) out.push(x);
+      return out;
+    };
+    const out = Object.assign({}, key, {
+      warn: add(key.warn, u.warn, rowK),
+      pairs: add(key.pairs, u.pairs, rowK),
+    });
+    if (key.ownFakes || (u.ownFakes && u.ownFakes.length)) out.ownFakes = add(key.ownFakes, u.ownFakes, fold);
+    if (u.hint && !trim(key.hint)) out.hint = u.hint;
+    const rest = list.filter((x, i) => i !== at);
+    if (rest.length) out.unfaked = rest;
+    else delete out.unfaked;
+    return out;
+  }
+
+  /** The real values removed from `key` by hand, as they were removed. */
+  function unfakedNames(key) {
+    return unfakedOf(key).map((u) => trim(u.real));
+  }
+
+  /**
+   * Whether any library entry's removals differ between two copies of the
+   * library — the worker's cue to re-distil the master key, whose cases are
+   * otherwise refreshed only when a key is LOADED (savedAt), which removing a
+   * name is not.
+   */
+  function unfakedChanged(before, after) {
+    const sig = (k) => unfakedOf(k).map((u) => fold(u.real)).sort().join("\u0000");
+    const a = before || {};
+    const b = after || {};
+    for (const id of Object.keys(b)) if (a[id] && sig(a[id]) !== sig(b[id])) return true;
+    return false;
+  }
+
+  // ---- one occurrence in the draft, sent as typed ---------------------------
+  //
+  // The composer's right-click "Send this one as typed": that occurrence of a
+  // real name goes to Claude as written — not faked at the send, not marked,
+  // not warned about and not held — and every other occurrence of the same
+  // name is treated as before. An occurrence is a span of the draft's text;
+  // the draft moves under it as you type, so each spot is carried across
+  // every edit (shiftSpots) and dropped the moment the edit touches it, or
+  // the text standing there is no longer the name that was kept.
+
+  /**
+   * `spots` ({ start, end, matched }) carried from `prev` to `next`: the one
+   * edit between them is found as the common head and tail, a spot wholly
+   * before it stays, one wholly after it moves by the edit's length, and one
+   * the edit overlaps is dropped. A spot whose text no longer reads as what
+   * was kept is dropped too.
+   */
+  function shiftSpots(prev, next, spots) {
+    const a0 = String(prev == null ? "" : prev);
+    const b0 = String(next == null ? "" : next);
+    const list = spots || [];
+    if (!list.length) return [];
+    let out = list;
+    if (a0 !== b0) {
+      const max = Math.min(a0.length, b0.length);
+      let head = 0;
+      while (head < max && a0.charCodeAt(head) === b0.charCodeAt(head)) head++;
+      let tail = 0;
+      while (tail < max - head && a0.charCodeAt(a0.length - 1 - tail) === b0.charCodeAt(b0.length - 1 - tail)) tail++;
+      const oldEnd = a0.length - tail;
+      const delta = b0.length - a0.length;
+      out = [];
+      for (const s of list) {
+        if (s.end <= head) out.push(s);
+        else if (s.start >= oldEnd) out.push(Object.assign({}, s, { start: s.start + delta, end: s.end + delta }));
+      }
+    }
+    return out.filter((s) => s.start >= 0 && s.end <= b0.length && fold(b0.slice(s.start, s.end)) === fold(s.matched));
+  }
+
+  /**
+   * `text` with every spot blanked to spaces (line breaks kept), the same
+   * length, so a matcher run over it finds every real name except the kept
+   * occurrences and its offsets still point into `text`.
+   */
+  function maskSpots(text, spots) {
+    const t = String(text == null ? "" : text);
+    if (!spots || !spots.length) return t;
+    const chars = t.split("");
+    for (const s of spots) {
+      for (let i = Math.max(0, s.start); i < Math.min(chars.length, s.end); i++) {
+        if (chars[i] !== "\n") chars[i] = " ";
+      }
+    }
+    return chars.join("");
+  }
+
+  /** The span (draftSpans) the offset `at` falls in, or null. */
+  function spanAtOffset(spans, at) {
+    for (const sp of spans || []) if (sp && at >= sp.start && at <= sp.end) return sp;
+    return null;
+  }
+
+  /** Whether `spots` holds the occurrence `span` — the same start and end. */
+  function isSpotKept(spots, span) {
+    return !!span && (spots || []).some((s) => s.start === span.start && s.end === span.end);
   }
 
   // ---- which keys a picker offers ------------------------------------------
@@ -755,8 +960,12 @@
   // chat attached to it would translate with the wrong case. Identity comes
   // from CONTENT instead.
 
+  // The pairs a name removed by hand took out count too (unfakeKey): the
+  // spreadsheet still binds them, and a re-load of it has to find its entry.
   function pairSet(key) {
-    return ((key && key.pairs) || []).map((p) => fold(p.real) + ">" + fold(p.fake));
+    const pairs = ((key && key.pairs) || []).slice();
+    for (const u of unfakedOf(key)) for (const p of u.pairs || []) if (p) pairs.push(p);
+    return pairs.map((p) => fold(p.real) + ">" + fold(p.fake));
   }
 
   /** A short content signature over the reversal pairs (FNV-1a, order-free). */
@@ -2477,6 +2686,14 @@
     keyInPlay,
     keyLabel,
     keepKeyFacts,
+    unfakeKey,
+    refakeKey,
+    unfakedNames,
+    unfakedChanged,
+    shiftSpots,
+    maskSpots,
+    spanAtOffset,
+    isSpotKept,
     RECENT_KEYS,
     recentKeys,
     hiddenKeyCount,

@@ -77,6 +77,11 @@ than inline in the wiring.
   otherwise left translating as it was — the panel, the popup and every other
   surface say nothing about which reader made a key. Bumping `PARSE_VERSION`
   is still right when a parse changes; surfacing it is not.
+- **A name removed from a key by hand lives on the library entry, not in the
+  workbook** (`unfaked`, `P.unfakeKey`, the composer's right-click). Every
+  loader must store a fresh parse through `P.keepKeyFacts`, which takes the
+  removed rows out again; a loader that writes `parseKey`'s answer straight
+  into the library silently brings the removed name back and it is faked again.
 - **claude.ai's DOM and API shapes are unversioned.** Match button labels exactly,
   guard every parse, and keep the heuristics in a tested pure module so a shape
   change is a small edit rather than an investigation.

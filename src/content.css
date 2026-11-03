@@ -1752,6 +1752,48 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
   .cum-pseudo-guard-row .cum-pseudo-guard-send { color: #ff9f9f; }
 }
 
+/* Right-click on a real name in the composer (src/pseudo-view.js): send this
+   one as typed, or remove the name from the key. */
+.cum-pseudo-menu {
+  position: fixed; z-index: 2147483646; width: 320px; max-width: calc(100vw - 8px);
+  box-sizing: border-box; padding: 4px; border-radius: 10px;
+  background: #fff; color: #1a1a18; border: 1px solid rgba(0, 0, 0, 0.14);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+}
+.cum-pseudo-menu-head {
+  padding: 6px 9px 5px; font-size: 12px; opacity: 0.7;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cum-pseudo-menu-item {
+  display: block; width: 100%; text-align: left; border: none; background: none;
+  color: inherit; font: inherit; padding: 6px 9px; border-radius: 7px; cursor: pointer;
+}
+.cum-pseudo-menu-item:hover:not([disabled]), .cum-pseudo-menu-item:focus-visible { background: rgba(0, 0, 0, 0.07); outline: none; }
+.cum-pseudo-menu-item[disabled] { opacity: 0.5; cursor: default; }
+.cum-pseudo-menu-label { display: block; font-weight: 600; }
+.cum-pseudo-menu-sub { display: block; font-size: 12px; opacity: 0.72; }
+.cum-pseudo-menu-foot { padding: 5px 9px 4px; font-size: 11px; opacity: 0.55; border-top: 1px solid rgba(0, 0, 0, 0.08); margin-top: 3px; }
+.cum-pseudo-unfake-note {
+  position: fixed; z-index: 2147483646; left: 50%; bottom: 24px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; max-width: min(560px, calc(100vw - 32px));
+  box-sizing: border-box; padding: 9px 12px; border-radius: 10px;
+  background: #1f1e1b; color: #f4f2ec; border: 1px solid #4a4840;
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.cum-pseudo-unfake-undo {
+  flex: none; font: inherit; font-weight: 700; color: inherit; cursor: pointer;
+  background: rgba(255, 255, 255, 0.14); border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 7px; padding: 3px 10px;
+}
+.cum-pseudo-unfake-x { flex: none; font: inherit; color: inherit; background: none; border: none; cursor: pointer; opacity: 0.7; }
+@media (prefers-color-scheme: dark) {
+  .cum-pseudo-menu { background: #2a2925; color: #f0efea; border-color: rgba(255, 255, 255, 0.16); }
+  .cum-pseudo-menu-item:hover:not([disabled]), .cum-pseudo-menu-item:focus-visible { background: rgba(255, 255, 255, 0.1); }
+  .cum-pseudo-menu-foot { border-top-color: rgba(255, 255, 255, 0.1); }
+}
+
 /* The as-you-type prompt at the caret: space or → swaps the real name. */
 .cum-pseudo-tip {
   position: fixed; z-index: 2147483003; max-width: 340px;
@@ -1867,6 +1909,9 @@ html.cum-ctx-reading [data-base-ui-popup-backdrop] {
    panel's own warning colour: it still translates, by rules that were wrong. */
 .cum-key-warn-text { color: #e8a08a; }
 .cum-key-peek { margin-top: 2px; }
+.cum-key-unfaked { margin: 6px 0 8px; }
+.cum-key-unfaked-row { align-items: center; }
+.cum-key-unfaked-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .cum-key-marks { margin: 0 0 10px; }
 .cum-key-mark-row { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
 .cum-key-mark-on { display: flex; align-items: center; gap: 4px; cursor: pointer; flex: 1 1 auto; }

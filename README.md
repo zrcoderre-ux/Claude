@@ -2869,7 +2869,10 @@ swept on the next extension start.
    highlights it again. Nothing else is
    rewritten without a keypress the composer would have taken anyway, apart
    from the fakes typed in at the send (above), which has its own
-   switch: the composer is yours. One declared exception: a draft that **begins** with a
+   switch: the composer is yours. A **right-click** on a name in the draft
+   sends just that occurrence as typed, or removes the name from the key
+   altogether. See [Right-click a name in the draft to unfake
+   it](#right-click-a-name-in-the-draft-to-unfake-it). One declared exception: a draft that **begins** with a
    report the Workup Citation Cross-Opener extension copied out of Lexis+ or
    Westlaw is published law — always safe — and the warning stands down for
    that draft. Those are the four reports whose first line is `PINCITE CHECK —
@@ -3006,6 +3009,48 @@ wedged shut by the extension's own failure would be worse than the warning this
 replaced. The decision is `P.sendHold` in `src/pseudo.js` (tested); the wiring
 in `src/pseudo-view.js` catches the two ways a person sends, in the capture
 phase, before claude.ai's own handlers see them.
+
+### Right-click a name in the draft to unfake it
+
+A key sometimes fakes something that is nobody's name: PDF-Linker bound
+`Case Management Conference` to a pseudonym, and from then on every draft
+that says it goes out faked. The text reader answers that with a keep. The
+composer answers it with a **right-click**. Right-click any real name the key
+knows, in the composer, marked or not, and a small menu of the extension's
+own opens in place of the browser's:
+
+- **Send this one as typed**: that occurrence, and only that one, goes to
+  Claude as you wrote it. It is not faked at the send, not warned about by
+  the banner and not held by the send gate. Every other occurrence of the same
+  name is treated as before. The kept one keeps a **dotted orange underline**
+  in place of the mark, so the keep stays visible, and hovering it says
+  `Sent as typed`. The keep follows the text as you type around it. An edit
+  *inside* the name, or deleting it, ends the keep, and the name is marked
+  again. It belongs to this draft only. Right-clicking a kept one offers
+  **Fake this one again**.
+- **Remove "…" from the key**: every row binding that real value comes out
+  of the attached key in the library, along with its possessive (`Case
+  Management Conference's`). Longer names that merely contain it are left
+  alone. From then on it is not faked at the send, not marked, not warned
+  about, not offered by the typeahead, not swapped by the cleaner, and its
+  fake is no longer read back in the messages. That holds in every tab and in
+  every chat on that key. A notice says what happened and has **Undo**, and
+  the [key button](#the-key-button)'s panel lists every name removed this way
+  under *This conversation*, each with **Restore**. The spreadsheet is not
+  touched: **Download key file** hands back the workbook as loaded, row and
+  all. Loading the same case's key again (a refresh, a re-read under a newer
+  reader, or the Folder button) **keeps the removal**, because every loader goes
+  through `P.keepKeyFacts`, which takes the removed rows out of the fresh
+  parse. The master key is re-distilled from the edited rows. A name cannot be
+  removed from the master key itself, since that key is distilled from many
+  cases, so the item is disabled there.
+
+**Shift + right-click** is the browser's own menu, and so is a right-click
+anywhere that is not on a real name. A Lexis or Westlaw report in the draft
+gets no menu, because nothing in it is faked. The decisions live in
+`src/pseudo.js`: `P.unfakeKey`, `P.refakeKey` and `P.keepKeyFacts` for the key, and
+`P.shiftSpots`, `P.maskSpots` and `P.spanAtOffset` for the occurrence
+(`test/unfake.test.js`). The menu is in `src/pseudo-view.js`.
 
 ### A long paste is read before it lands
 
@@ -3306,7 +3351,9 @@ The panel under it holds, in order:
   and what ends it ([While a run is working](#while-a-run-is-working-the-messages-show-the-fakes)).
 - **This conversation** — attach a key to it, or detach. Attaching in a chat
   that belongs to a **run** re-keys the whole case, exactly as the popup does:
-  the run, its group, and their chats all follow.
+  the run, its group, and their chats all follow. The names [removed from the
+  key](#right-click-a-name-in-the-draft-to-unfake-it) with the composer's
+  right-click are listed here, each with **Restore**.
 - **The key library** — load a key by picking the **case folder** it lives in
   (only the `pseudonym_key.xlsx` is read; parsed here, never uploaded — and the
   [upload guard](#pseudonym-translation) leaves this one picker alone, since it
