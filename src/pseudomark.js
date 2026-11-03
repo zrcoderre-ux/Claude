@@ -82,7 +82,11 @@
     return (
       "::highlight(cum-pseudo){background-color:" + c.bg + "}" +
       "::highlight(cum-pseudo-draft){background-color:" + c.bg + "}" +
-      "::highlight(cum-pseudo-hover){background-color:" + c.hover + "}"
+      "::highlight(cum-pseudo-hover){background-color:" + c.hover + "}" +
+      // An occurrence kept as typed by the composer's right-click: no fill, so
+      // it does not read as going faked, and a dotted underline so the keep
+      // stays visible — the text reader's mark for a kept value.
+      "::highlight(cum-pseudo-draft-kept){text-decoration:underline dotted " + KEPT_LINE + " 2px}"
     );
   }
 
@@ -102,6 +106,15 @@
     return "Pseudonym: " + String(fake == null ? "" : fake);
   }
 
+  // The kept occurrence's underline: the reader's orange, readable on both
+  // claude.ai themes.
+  const KEPT_LINE = "#d97706";
+
+  /** What the hover says over an occurrence kept as typed in the composer. */
+  function keptTipText() {
+    return "Sent as typed — kept here (right-click to fake it again)";
+  }
+
   /** What the hover says over a real name marked in the composer. */
   function draftTipText(fake) {
     return "Sent as: " + String(fake == null ? "" : fake);
@@ -116,6 +129,7 @@
     MARK_KEY,
     AUTOSWAP_KEY,
     draftTipText,
+    keptTipText,
     normalizeAutoSwap,
     DEFAULT_MARK,
     ALPHA_MIN,

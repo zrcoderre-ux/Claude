@@ -391,8 +391,8 @@
         "p",
         "cum-key-line cum-key-dim",
         cur.on
-          ? "A real name you type stays as typed, highlighted, and goes to Claude as its pseudonym: the pseudonyms are typed in as you send. Hover one to see it. Esc on the prompt keeps a name as typed."
-          : "A real name you type stays until you press space or → on the prompt, or Accept on the banner."
+          ? "A real name you type stays as typed, highlighted, and goes to Claude as its pseudonym: the pseudonyms are typed in as you send. Hover one to see it. Esc on the prompt keeps a name as typed. Right-click one to send just that one as typed, or to remove the name from the key."
+          : "A real name you type stays until you press space or → on the prompt, or Accept on the banner. Right-click one to send just that one as typed, or to remove the name from the key."
       )
     );
     return box;
@@ -471,6 +471,10 @@
       });
       if (why) box.appendChild(el("p", "cum-key-line cum-key-warn-text", why));
     }
+    const removed = drawUnfaked(
+      attached && keys[attached] ? attached : state.on && state.attached !== false && state.id && keys[state.id] ? state.id : null
+    );
+    if (removed) box.appendChild(removed);
     // The last few, newest first — and whatever is attached here, whatever its
     // age, or the select could not show its own current value.
     const offered = P.recentKeys ? P.recentKeys(keys, { keep: attached }) : ids;
@@ -525,6 +529,54 @@
         )
       );
     box.appendChild(row);
+    return box;
+  }
+
+  // ---- names removed from the key by hand -------------------------------------
+  //
+  // The composer's right-click "Remove from the key" (src/pseudo-view.js) takes
+  // a real value out of this key's rows (P.unfakeKey). Every one is listed
+  // here and can be put back, the way the text reader's Flagged panel lists
+  // its keeps, each withdrawable: a name quietly gone from a key is a name
+  // that goes to Claude as typed with nothing on screen to say why.
+
+  function drawUnfaked(id) {
+    const key = id ? keys[id] : null;
+    const names = key && P.unfakedNames ? P.unfakedNames(key) : [];
+    if (!names.length) return null;
+    const box = el("div", "cum-key-unfaked");
+    box.appendChild(
+      el(
+        "p",
+        "cum-key-line",
+        "Removed from this key here (" + names.length + ") — not faked, warned about or translated:"
+      )
+    );
+    for (const name of names) {
+      const row = el("div", "cum-key-row cum-key-unfaked-row");
+      row.appendChild(el("span", "cum-key-unfaked-name", name));
+      row.appendChild(
+        button("Restore", "", async () => {
+          const res = await get([KEYS_KEY]);
+          const lib = res.data[KEYS_KEY] || {};
+          if (!res.ok || !lib[id]) return say("Could not read the key library — nothing was changed.");
+          const next = P.refakeKey(lib[id], name);
+          if (next === lib[id]) return say("“" + name + "” was already back in the key.");
+          lib[id] = next;
+          await set({ [KEYS_KEY]: lib });
+          say("“" + name + "” is back in the key, and faked again.");
+          load();
+        })
+      );
+      box.appendChild(row);
+    }
+    box.appendChild(
+      el(
+        "p",
+        "cum-key-line cum-key-dim",
+        "pseudonym_key.xlsx still has these rows, and Download key file hands it back unchanged. Loading it again keeps them removed."
+      )
+    );
     return box;
   }
 

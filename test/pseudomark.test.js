@@ -70,6 +70,12 @@ test("the composer's marks share the colour, and say what each name is sent as",
   assert.strictEqual(M.draftTipText("Ingrid Strangeways"), "Sent as: Ingrid Strangeways");
 });
 
+test("an occurrence kept as typed is underlined, not filled, and its hover says so", () => {
+  assert.match(M.markCss(null), /::highlight\(cum-pseudo-draft-kept\)\{text-decoration:underline dotted [^}]+\}/);
+  assert.doesNotMatch(M.markCss(null), /cum-pseudo-draft-kept\)\{[^}]*background/);
+  assert.match(M.keptTipText(), /^Sent as typed/);
+});
+
 test("faking the draft at the send is on unless switched off", () => {
   assert.strictEqual(M.normalizeAutoSwap(undefined), true);
   assert.strictEqual(M.normalizeAutoSwap(true), true);

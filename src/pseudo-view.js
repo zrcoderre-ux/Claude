@@ -200,6 +200,8 @@
       paused = false;
       titleKeyId = null;
       restoreDocTitle();
+      // A kept occurrence belongs to the draft it was kept in.
+      spots = { text: "", list: [] };
     }
     lastConv = conv;
     // The ADDRESS decides whether there is a conversation here to have a key,
@@ -246,6 +248,9 @@
     swapped = new WeakMap();
     titleClaim = new WeakMap();
     shown = 0;
+    // The draft is read again under the new map: a name removed from the key
+    // stops being marked, and the banner and the gate stop asking about it.
+    draftSoon();
     paused = false; // a peek never outlives its chat
     // A different key means a different map, and a cleaner still holding the
     // last case's answer would be worse than an empty one. The panel clears
@@ -324,6 +329,11 @@
   // value, for as long as the draft carries them.
   let autoSwap = PM ? PM.normalizeAutoSwap(undefined) : false;
   const kept = new Set();
+  // The occurrences kept as typed with the composer's right-click, "Send this
+  // one as typed": spans of the draft's text, carried across every edit
+  // (P.shiftSpots) and dropped the moment an edit touches one. `text` is the
+  // draft they were last carried to.
+  let spots = { text: "", list: [] };
   const canMark = !!(PM && typeof CSS !== "undefined" && CSS.highlights && typeof Highlight === "function");
   let shown = 0; // occurrences currently swapped, for the badge
   let sweepTimer = null;
@@ -660,7 +670,11 @@
       markTip.setAttribute("role", "tooltip");
       document.body.appendChild(markTip);
     }
-    markTip.textContent = hit.draft ? PM.draftTipText(hit.span.replacement) : PM.tipText(hit.span[2]);
+    markTip.textContent = hit.kept
+      ? PM.keptTipText()
+      : hit.draft
+      ? PM.draftTipText(hit.span.replacement)
+      : PM.tipText(hit.span[2]);
     markTip.hidden = false;
     // Under the name, kept on screen.
     const w = markTip.offsetWidth || 160;
@@ -1376,6 +1390,41 @@
     return null;
   }
 
+  // The other way: a DOM point (a text node and an offset in it) as an offset
+  // into editorText's text, or -1 where the point is not in one of its nodes.
+  function offsetOf(nodes, node, offset) {
+    for (const e of nodes) if (e.node === node) return e.at + offset;
+    return -1;
+  }
+
+  // The kept-as-typed occurrences, carried to the draft as it reads now.
+  function liveSpots(text) {
+    if (spots.text !== text) {
+      spots.list = spots.list.length ? P.shiftSpots(spots.text, text, spots.list) : [];
+      spots.text = text;
+    }
+    return spots.list;
+  }
+
+  // The draft as every matcher reads it: the kept occurrences blanked out, the
+  // same length, so the marks, the send's fakes, the banner and the gate all
+  // pass over them and every offset still points into the draft.
+  function keptText(text) {
+    return P.maskSpots(text, liveSpots(text));
+  }
+
+  // Whether the caret stands at the end of a kept occurrence — the typeahead
+  // offers nothing there, and space and → swap nothing.
+  function caretOnKept(ed) {
+    if (!spots.list.length) return false;
+    const sel = window.getSelection();
+    if (!ed || !sel || !sel.rangeCount) return false;
+    const r = sel.getRangeAt(0);
+    const read = editorText(ed);
+    const at = offsetOf(read.nodes, r.startContainer, r.startOffset);
+    return at !== -1 && liveSpots(read.text).some((sp) => at >= sp.start && at <= sp.end);
+  }
+
   /**
    * Type the fake over every span `spansOf(text)` finds in the draft. One
    * occurrence at a time, re-reading the editor after each, because the
@@ -1418,7 +1467,7 @@
 
   /** The banner's Accept: the fake over every occurrence of `real` — all warned values when empty. */
   function acceptInDraft(real) {
-    return typeOver((t) => P.draftSpans(active.compiledReals, t, real));
+    return typeOver((t) => P.draftSpans(active.compiledReals, keptText(t), real));
   }
 
   /**
@@ -1483,17 +1532,20 @@
     const report = !!text && P.isLawReport(text);
     if (!text || report) return { text: text, report: report, swaps: [], hits: [] };
     let swaps = [];
-    let left = text;
+    const read = editorText(ed);
+    // An occurrence kept as typed with the right-click is not faked, not
+    // warned about and not held: it is blanked out of what is read here.
+    const base = keptText(read.text);
+    let left = base;
     if (autoSwap) {
-      const read = editorText(ed);
       // A kept name the draft no longer carries is forgotten: typed again, it
       // is marked again.
       if (kept.size) {
         const here = new Set(P.findReals(active.compiledReals, read.text).map((h) => P.fold(h.real)));
         for (const k of Array.from(kept)) if (!here.has(k)) kept.delete(k);
       }
-      swaps = P.sendSwaps(active.compiledReals, read.text, kept);
-      left = P.swappedText(read.text, swaps);
+      swaps = P.sendSwaps(active.compiledReals, base, kept);
+      left = P.swappedText(base, swaps);
     }
     return { text: text, report: report, swaps: swaps, hits: P.findReals(active.compiledReals, left) };
   }
@@ -1761,7 +1813,7 @@
     const ed = editorEl();
     const before = draftReals();
     if (autoSwap && before && before.swaps.length) {
-      typeOver((t) => P.sendSwaps(active.compiledReals, t, kept));
+      typeOver((t) => P.sendSwaps(active.compiledReals, keptText(t), kept));
       // A beat for the editor to take the typing into its own state, which is
       // what claude.ai sends from, before the draft is judged and pressed.
       await frame();
@@ -2546,6 +2598,7 @@
     if (!hit) return hideTip();
     const sig = ctx.textBefore.length + "|" + P.fold(hit.real);
     if (tipDismissed === sig) return hideTip();
+    if (caretOnKept(ed)) return hideTip();
     if (autoSwap) {
       // Only a name the send will fake: a kept one, or a party inside a
       // citation, is the banner's.
@@ -2624,6 +2677,7 @@
     if (autoSwap) return false; // the send fakes it
     const at = hitAtCaret();
     if (!at || !tipHit || P.fold(at.hit.real) !== P.fold(tipHit.real)) return false;
+    if (caretOnKept(at.ed)) return false;
     typeOverCaret(at.ed, at.hit, "");
     return true;
   }
@@ -2634,6 +2688,7 @@
     if (autoSwap) return false; // the send fakes it
     const at = hitAtCaret();
     if (!at || at.sig === tipDismissed || !P.swapsOnSpace(at.hit)) return false;
+    if (caretOnKept(at.ed)) return false;
     typeOverCaret(at.ed, at.hit, " ");
     return true;
   }
@@ -2679,7 +2734,15 @@
   document.addEventListener(
     "input",
     (ev) => {
-      if (active && inEditor(ev.target)) draftSoon();
+      if (!active || !inEditor(ev.target)) return;
+      // Carried on EVERY edit, not on the repaint's timer: two edits read as
+      // one would look like one edit spanning everything between them, and a
+      // kept occurrence standing in that stretch would be dropped.
+      if (spots.list.length) {
+        const ed = editorEl();
+        if (ed) liveSpots(editorText(ed).text);
+      }
+      draftSoon();
     },
     true
   );
@@ -2710,25 +2773,32 @@
       if (!ed) {
         draftMarks = [];
         CSS.highlights.delete("cum-pseudo-draft");
+        CSS.highlights.delete("cum-pseudo-draft-kept");
         return;
       }
       if (!markStyle || !markStyle.isConnected) paintMarks();
       const read = editorText(ed);
       const hl = new Highlight();
+      const keptHl = new Highlight();
       const marks = [];
-      const swaps = autoSwap && !P.isLawReport(ed.innerText || read.text) ? P.sendSwaps(active.compiledReals, read.text, kept) : [];
-      for (const span of swaps) {
+      const report = P.isLawReport(ed.innerText || read.text);
+      const swaps = autoSwap && !report ? P.sendSwaps(active.compiledReals, keptText(read.text), kept) : [];
+      const place = (span, into, keptHere) => {
         const from = pointAt(read.nodes, span.start);
         const to = pointAt(read.nodes, span.end);
-        if (!from || !to) continue;
+        if (!from || !to) return;
         const range = document.createRange();
         range.setStart(from.node, from.offset);
         range.setEnd(to.node, to.offset);
-        hl.add(range);
-        marks.push({ range: range, span: span });
-      }
+        into.add(range);
+        marks.push({ range: range, span: span, kept: keptHere });
+      };
+      for (const span of swaps) place(span, hl, false);
+      // A kept occurrence stays visible: underlined, not filled.
+      if (!report) for (const sp of liveSpots(read.text)) place(sp, keptHl, true);
       draftMarks = marks;
       CSS.highlights.set("cum-pseudo-draft", hl);
+      CSS.highlights.set("cum-pseudo-draft-kept", keptHl);
     } catch (e) {
       /* a composer that cannot take a highlight shows its names unmarked */
     }
@@ -2740,11 +2810,334 @@
       if (!m.range.startContainer.isConnected) continue;
       for (const b of m.range.getClientRects()) {
         if (x >= b.left - 1 && x <= b.right + 1 && y >= b.top - 1 && y <= b.bottom + 1)
-          return { node: m.range.startContainer, span: m.span, range: m.range, box: b, draft: true };
+          return { node: m.range.startContainer, span: m.span, range: m.range, box: b, draft: true, kept: m.kept };
       }
     }
     return null;
   }
+
+  // ---- right-click on a real name in the draft: unfake it --------------------
+  //
+  // The text reader's keep, in the composer (the owner's request, November
+  // 2026). PDF-Linker sometimes fakes a phrase that is nobody's name — "Case
+  // Management Conference" bound to a pseudonym — and from then on every draft
+  // that says it is faked at the send. A right-click on any real name the key
+  // knows, in the composer, opens a small menu of the extension's own:
+  //
+  //   Send this one as typed   that occurrence only goes as written: not faked
+  //                            at the send, not warned about, not held (spots,
+  //                            above). The others are treated as before.
+  //   Remove from the key      every row binding that real value comes out of
+  //                            the attached key in the library (P.unfakeKey):
+  //                            no fake at the send, no warning, no typeahead,
+  //                            no reversal of its fake in the messages, in
+  //                            every tab. Undone from the Key panel, or from
+  //                            the notice it raises. The spreadsheet itself is
+  //                            not touched, and a re-load of it keeps the
+  //                            removal (P.keepKeyFacts).
+  //
+  // Shift+right-click is the browser's own menu, and a right-click anywhere
+  // that is not on a real name never sees this one.
+
+  let menuEl = null;
+  let unfakeNote = null;
+  let unfakeNoteTimer = null;
+
+  function closeMenu() {
+    if (menuEl) menuEl.remove();
+    menuEl = null;
+  }
+
+  // The library entry a name can be removed from: the attached key, never the
+  // master key, which is distilled from many cases.
+  function removableKeyId() {
+    return active && active.key && !active.key.master && keys[active.id] ? active.id : null;
+  }
+
+  // The case's name, without the row count the pickers add.
+  function keyName(key) {
+    return P.keyTitle ? P.keyTitle(key) : (key && key.name) || "this key";
+  }
+
+  // The real name under the pointer in the composer — { span, kept, text } —
+  // or null. Checked against the name's own boxes, since caretRangeFromPoint
+  // snaps to the nearest character wherever the pointer is.
+  function draftNameUnder(ed, x, y) {
+    if (!active || !active.compiledReals.rx || !document.caretRangeFromPoint) return null;
+    const cr = document.caretRangeFromPoint(x, y);
+    if (!cr || cr.startContainer.nodeType !== 3 || !ed.contains(cr.startContainer)) return null;
+    const read = editorText(ed);
+    if (P.isLawReport(ed.innerText || read.text)) return null;
+    const at = offsetOf(read.nodes, cr.startContainer, cr.startOffset);
+    if (at === -1) return null;
+    const span = P.spanAtOffset(P.draftSpans(active.compiledReals, read.text), at);
+    if (!span) return null;
+    const from = pointAt(read.nodes, span.start);
+    const to = pointAt(read.nodes, span.end);
+    if (!from || !to) return null;
+    const r = document.createRange();
+    r.setStart(from.node, from.offset);
+    r.setEnd(to.node, to.offset);
+    const inside = Array.from(r.getClientRects()).some(
+      (b) => x >= b.left - 1 && x <= b.right + 1 && y >= b.top - 1 && y <= b.bottom + 1
+    );
+    if (!inside) return null;
+    return { span: span, kept: P.isSpotKept(liveSpots(read.text), span), text: read.text };
+  }
+
+  // The occurrence is still where the menu found it — the draft may have
+  // moved under an open menu.
+  function stillThere(ed, hit) {
+    const t = editorText(ed).text;
+    return t.slice(hit.span.start, hit.span.end) === hit.span.matched ? t : null;
+  }
+
+  function keepSpot(hit) {
+    const ed = editorEl();
+    const t = ed && stillThere(ed, hit);
+    if (!t) return;
+    const list = liveSpots(t).filter((sp) => !(sp.start === hit.span.start && sp.end === hit.span.end));
+    list.push({ start: hit.span.start, end: hit.span.end, matched: hit.span.matched });
+    spots = { text: t, list: list };
+    afterDraftChange();
+  }
+
+  function unkeepSpot(hit) {
+    const ed = editorEl();
+    const t = ed && editorText(ed).text;
+    if (t == null) return;
+    spots = {
+      text: t,
+      list: liveSpots(t).filter((sp) => !(sp.start === hit.span.start && sp.end === hit.span.end)),
+    };
+    // A name kept with Esc is let go too: "fake this one" means faked.
+    kept.delete(P.fold(hit.span.real));
+    afterDraftChange();
+  }
+
+  function afterDraftChange() {
+    hideTip();
+    clearHover();
+    draftSoon();
+    setTimeout(checkComposer, 0);
+  }
+
+  function writeKeys(lib) {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.set({ [KEYS_KEY]: lib }, () => {
+          resolve(!chrome.runtime.lastError);
+        });
+      } catch (e) {
+        resolve(false);
+      }
+    });
+  }
+
+  // Read the library fresh, change one entry, write it back: another tab or
+  // the panel may have written since this tab last read it.
+  async function changeKey(id, how) {
+    const res = await storageGet([KEYS_KEY]);
+    const lib = res[KEYS_KEY] || {};
+    if (!lib[id]) return false;
+    const next = how(lib[id]);
+    if (!next || next === lib[id]) return false;
+    lib[id] = next;
+    return writeKeys(lib);
+  }
+
+  async function removeFromKey(real) {
+    const id = removableKeyId();
+    if (!id) return;
+    const label = keyName(keys[id]);
+    const ok = await changeKey(id, (k) => P.unfakeKey(k, real));
+    kept.delete(P.fold(real));
+    showUnfakeNote(
+      ok
+        ? "“" + real + "” is out of " + label + ": it is no longer faked, warned about or translated in this case. The spreadsheet still has the row; the Key panel can put it back."
+        : "“" + real + "” could not be removed from " + label + " — nothing was changed.",
+      ok ? { id: id, real: real } : null
+    );
+  }
+
+  function showUnfakeNote(text, undo) {
+    if (unfakeNote) unfakeNote.remove();
+    clearTimeout(unfakeNoteTimer);
+    const box = document.createElement("div");
+    box.className = "cum-pseudo-unfake-note";
+    box.setAttribute("role", "status");
+    const p = document.createElement("span");
+    p.textContent = text;
+    box.appendChild(p);
+    if (undo) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "cum-pseudo-unfake-undo";
+      b.textContent = "Undo";
+      b.addEventListener("click", async () => {
+        const ok = await changeKey(undo.id, (k) => P.refakeKey(k, undo.real));
+        showUnfakeNote(
+          ok ? "“" + undo.real + "” is back in the key, and faked again." : "Could not put “" + undo.real + "” back — open the Key panel.",
+          null
+        );
+      });
+      box.appendChild(b);
+    }
+    const x = document.createElement("button");
+    x.type = "button";
+    x.className = "cum-pseudo-unfake-x";
+    x.textContent = "✕";
+    x.title = "Close";
+    x.addEventListener("click", () => box.remove());
+    box.appendChild(x);
+    document.documentElement.appendChild(box);
+    unfakeNote = box;
+    unfakeNoteTimer = setTimeout(() => box.remove(), 12000);
+  }
+
+  function menuItem(label, sub, onClick, disabled) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "cum-pseudo-menu-item";
+    b.setAttribute("role", "menuitem");
+    const l = document.createElement("span");
+    l.className = "cum-pseudo-menu-label";
+    l.textContent = label;
+    b.appendChild(l);
+    if (sub) {
+      const d = document.createElement("span");
+      d.className = "cum-pseudo-menu-sub";
+      d.textContent = sub;
+      b.appendChild(d);
+    }
+    b.disabled = !!disabled;
+    // The click must not take the caret out of the composer first.
+    b.addEventListener("mousedown", (e) => e.preventDefault());
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const back = document.activeElement === b;
+      closeMenu();
+      if (back) {
+        const ed = editorEl();
+        if (ed) ed.focus({ preventScroll: true });
+      }
+      onClick();
+    });
+    return b;
+  }
+
+  function showMenu(hit, x, y) {
+    closeMenu();
+    const real = hit.span.real;
+    const typed = hit.span.matched;
+    const fake = hit.span.replacement;
+    const m = document.createElement("div");
+    m.className = "cum-pseudo-menu";
+    m.setAttribute("role", "menu");
+    const head = document.createElement("div");
+    head.className = "cum-pseudo-menu-head";
+    head.textContent =
+      "“" + typed + "” — " + (hit.kept ? "kept as typed here" : (autoSwap ? "sent as " : "pseudonym: ") + fake);
+    m.appendChild(head);
+    if (hit.kept) {
+      m.appendChild(
+        menuItem(
+          autoSwap ? "Fake this one again" : "Ask about this one again",
+          autoSwap ? "It goes to Claude as " + fake + "." : "The banner and the send gate ask about it again.",
+          () => unkeepSpot(hit)
+        )
+      );
+    } else {
+      m.appendChild(
+        menuItem(
+          "Send this one as typed",
+          "Only here: this “" + typed + "” goes as written. " +
+            (autoSwap ? "The others still go as " + fake + "." : "The others are still asked about."),
+          () => keepSpot(hit)
+        )
+      );
+    }
+    const id = removableKeyId();
+    m.appendChild(
+      menuItem(
+        "Remove “" + real + "” from the key",
+        id
+          ? "Stops faking it anywhere in " + keyName(keys[id]) + ". Undo from the Key panel."
+          : "Only an attached case key can lose a name; the master key cannot.",
+        () => removeFromKey(real),
+        !id
+      )
+    );
+    const foot = document.createElement("div");
+    foot.className = "cum-pseudo-menu-foot";
+    foot.textContent = "Shift + right-click for the browser's menu";
+    m.appendChild(foot);
+    document.documentElement.appendChild(m);
+    menuEl = m;
+    const w = m.offsetWidth || 300;
+    const h = m.offsetHeight || 140;
+    m.style.left = Math.max(4, Math.min(window.innerWidth - w - 4, x)) + "px";
+    m.style.top = Math.max(4, Math.min(window.innerHeight - h - 4, y)) + "px";
+    // Focus stays in the composer, where the caret is; ↓ and ↑ reach the items.
+    hideTip();
+    clearHover();
+  }
+
+  window.addEventListener(
+    "contextmenu",
+    (ev) => {
+      closeMenu();
+      if (ev.shiftKey || !active) return;
+      const ed = editorEl();
+      if (!ed || !inEditor(ev.target)) return;
+      let hit = null;
+      try {
+        hit = draftNameUnder(ed, ev.clientX, ev.clientY);
+      } catch (e) {
+        hit = null; // the browser's menu, as if nothing were here
+      }
+      if (!hit) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      showMenu(hit, ev.clientX, ev.clientY);
+    },
+    true
+  );
+  window.addEventListener(
+    "mousedown",
+    (ev) => {
+      if (menuEl && !menuEl.contains(ev.target)) closeMenu();
+    },
+    true
+  );
+  window.addEventListener(
+    "keydown",
+    (ev) => {
+      if (!menuEl) return;
+      if (ev.key === "Escape") {
+        const back = menuEl.contains(document.activeElement);
+        closeMenu();
+        if (back) {
+          const ed = editorEl();
+          if (ed) ed.focus({ preventScroll: true });
+        }
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+      } else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        const items = Array.from(menuEl.querySelectorAll(".cum-pseudo-menu-item:not([disabled])"));
+        if (!items.length) return;
+        const i = items.indexOf(document.activeElement);
+        const n = ev.key === "ArrowDown" ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+        items[n].focus({ preventScroll: true });
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+      }
+    },
+    true
+  );
+  window.addEventListener("scroll", closeMenu, { passive: true, capture: true });
+  window.addEventListener("blur", closeMenu);
 
   // ---- the key-upload guard ---------------------------------------------------
   //
