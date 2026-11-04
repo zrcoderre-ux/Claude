@@ -409,7 +409,7 @@ test("two cases binding one fake to one name in two quote styles do not collide"
   assert.ok(k.pairs.some((p) => p.fake === "Doe"));
 });
 
-test("a word PDF-Linker never fakes alone reverses but is not in the master key's warning", () => {
+test("a word PDF-Linker never fakes alone reverses, and the master key fakes it only where capitalised", () => {
   const P = require("../src/pseudo.js");
   const k = key([["24STCV09876", "23STCV12345"], ["Doe", "Cabot"]], {
     folder: "23STCV12345 Cabot v. Reyes",
@@ -419,5 +419,6 @@ test("a word PDF-Linker never fakes alone reverses but is not in the master key'
   const m = M.remember({ cases: [] }, M.distil(k));
   const mk = M.asKey(m);
   assert.equal(P.translate(P.compile(mk), "Doe").text, "Cabot");
-  assert.equal(P.translate(P.compileForward(mk), "Cabot v. Reyes").text, "Cabot v. Reyes");
+  assert.equal(P.translate(P.compileForward(mk), "Cabot v. Reyes").text, "Doe v. Reyes");
+  assert.equal(P.translate(P.compileForward(mk), "a cabot tour").text, "a cabot tour");
 });

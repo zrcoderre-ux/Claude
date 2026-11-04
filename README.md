@@ -2897,13 +2897,17 @@ swept on the next extension start.
    Words.txt` and built into `src/neverfake.js` by
    `node scripts/never-fake-words.js` (`P.isCapOnlyReal`). Copy the list in
    again whenever PDF-Linker regenerates it; My-Macros and the pdf-viewer
-   reader carry the same copy. **A word PDF-Linker never fakes alone at all
-   is not swapped or warned about in any case**: a key row whose Status reads
-   `full name only` (a word of a party's name PDF-Linker pruned as the
-   papers' own prose, or refused as a bare name) is there only so a
-   composed fake reverses word by word, so it still turns a bare
-   `Dawnfield` back into `Provision`, and is left out of the warning, the
-   typeahead, the cleaner and the master key's warning.
+   reader carry the same copy. **A word PDF-Linker never fakes alone is
+   swapped and warned about only where capitalised**: a key row whose Status
+   reads `full name only` (a word of a party's name PDF-Linker pruned as the
+   papers' own prose, or refused as a bare name, like a surname that is
+   also an English word) reverses word by word, turning a bare `Dawnfield`
+   back into `Provision`. Because Claude writes a party by the bare fake
+   surname whatever the exports did, the real word then shows on screen, so
+   the warning, the typeahead, the cleaner, the send swap and the master
+   key's warning all fake it back where it is capitalised (`Provision`,
+   never `the provision`), whatever its Category. A key stored before this
+   gets the same treatment from its `pairs` without being reloaded.
 3. **Cleans text for pasting.** Open the [key button](#the-key-button) and
    type or paste text with real names into the top box; the bottom box
    shows it pseudonymized live — the same map run forward (real → fake),

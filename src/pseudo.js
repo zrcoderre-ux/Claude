@@ -294,7 +294,9 @@
   //      is capitalised, as PDF-Linker matches it (see isCapOnlyReal).
   //   7  a row PDF-Linker marks "full name only" reverses but is left out of
   //      the warning and every real -> fake swap (FULL_NAME_ONLY_STATUS).
-  const PARSE_VERSION = 7;
+  //   8  ...and is back in both, matched only where capitalised (the warn
+  //      row carries `lone`; see isCapOnlyReal).
+  const PARSE_VERSION = 8;
 
   /** Was this stored key built by an older reader than the one running now? */
   function keyNeedsReparse(key) {
@@ -411,9 +413,12 @@
   // word of a party's name it pruned as the papers' own prose ("Provision" of
   // "Provision Holdings, LLC"), refused as a bare name, a judge's bare surname.
   // The row is there so a composed fake reverses word by word, so it stays in
-  // `pairs`; it is out of the warning and every real -> fake swap, because
-  // the word was never faked on its own (the owner's direction, October 2026:
-  // what PDF-Linker would not fake is not faked here either).
+  // `pairs`. It is in the warning and every real -> fake swap too, matched
+  // only where capitalised (isCapOnlyReal): "Green" yes, "green" no. It was
+  // once left out of both, since PDF-Linker never faked the word alone — but
+  // Claude writes a party by the bare fake surname whatever the exports did,
+  // the reversal shows that as the real surname, and a real surname typed or
+  // pasted back then went out unfaked and unwarned (owner, November 2026).
   const FULL_NAME_ONLY_STATUS = "full name only";
   // The case's OWN parties — the rows the key was built from, out of the
   // E-Court template ("spreadsheet") or typed in as a term — rather than a
@@ -554,14 +559,18 @@
     const warn = [];
     const seenReal = new Map();
     for (const e of entries) {
-      if (e.lone) continue; // never faked alone (FULL_NAME_ONLY_STATUS)
       const k = fold(e.real);
       const at = seenReal.get(k);
       if (at === undefined) {
         seenReal.set(k, warn.length);
-        warn.push({ real: e.real, fake: e.fake, pinned: !!e.pinned, cat: e.cat || "" });
+        const w = { real: e.real, fake: e.fake, pinned: !!e.pinned, cat: e.cat || "" };
+        // Faked alone only where capitalised (FULL_NAME_ONLY_STATUS).
+        if (e.lone) w.lone = true;
+        warn.push(w);
         continue;
       }
+      // A real some row binds without the mark is not full-name-only.
+      if (warn[at].lone && !e.lone) delete warn[at].lone;
       if (warn[at].pinned && !e.pinned) {
         warn[at].fake = e.fake;
         warn[at].pinned = false;
@@ -1603,6 +1612,8 @@
   // standing, never "the provision" rewritten into a surname. Asked at COMPILE
   // time, like isCommonReal, so a key stored before the list existed still
   // follows it; only the Category half waits for the re-read (PARSE_VERSION 6).
+  // A row PDF-Linker marks "full name only" (the warn row's `lone`) is cap-only
+  // too, whatever its Category: it is a word of a name, never faked as prose.
   const TOKEN_CATS = new Set(["person-token", "entity-token", "short-name"]);
 
   function neverFakeList() {
@@ -1620,6 +1631,7 @@
   function isCapOnlyReal(row) {
     const real = fold(row && row.real).replace(POSS_TAIL_RE, "");
     if (!real || /\s/.test(real)) return false;
+    if (row && row.lone) return true;
     if (TOKEN_CATS.has(fold(row && row.cat))) return true;
     const list = neverFakeList();
     return !!list && list.has(real);
@@ -1637,9 +1649,26 @@
     return out;
   }
 
+  // The rows every real -> fake matcher reads: the key's `warn`, plus each
+  // full-name-only `pairs` row a key stored before PARSE_VERSION 8 left out
+  // of it, so that key fakes and warns about the word too (capitalised only)
+  // without waiting for a re-read. A removed name is out of `pairs` as well
+  // (unfakeKey), so nothing here brings one back.
+  function warnRowsOf(key) {
+    const warn = (key && key.warn) || [];
+    const have = new Set(warn.map((w) => fold(w && w.real)));
+    const out = warn.slice();
+    for (const p of (key && key.pairs) || []) {
+      if (!p || !p.lone || !p.real || !p.fake || have.has(fold(p.real))) continue;
+      have.add(fold(p.real));
+      out.push({ real: p.real, fake: p.fake, lone: true });
+    }
+    return out;
+  }
+
   /** Warning matcher over the REAL values — common English left out. */
   function compileReals(key) {
-    const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
+    const warn = warnRowsOf(key).filter((w) => !isCommonReal(w.real));
     const map = new Map();
     for (const w of warn) if (!map.has(fold(w.real))) map.set(fold(w.real), w);
     const rx = buildMatcher(warn.map((w) => w.real));
@@ -1667,7 +1696,7 @@
    * a title even though nothing will reverse it.
    */
   function compileForward(key) {
-    const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
+    const warn = warnRowsOf(key).filter((w) => !isCommonReal(w.real));
     const map = new Map();
     const spell = new Map();
     for (const w of warn) {
@@ -2155,7 +2184,7 @@
    * is offered whole (and swapped by space) the moment it is finished.
    */
   function compileTypeahead(key) {
-    const warn = ((key && key.warn) || []).filter((w) => !isCommonReal(w.real));
+    const warn = warnRowsOf(key).filter((w) => !isCommonReal(w.real));
     const folded = warn.map((w) => fold(w.real));
     return warn
       .slice()

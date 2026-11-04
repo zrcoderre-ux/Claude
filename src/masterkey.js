@@ -159,7 +159,8 @@
       ranked.push({ rank: rank, real: real, fake: fake, lone: !!(pair && pair.lone) });
     }
     ranked.sort((a, b) => a.rank - b.rank || b.real.length - a.real.length);
-    // A word PDF-Linker never fakes alone keeps its mark, for asKey's warning.
+    // A word PDF-Linker never fakes alone keeps its mark: asKey's warning
+    // matches it only where capitalised.
     return ranked.map((r) => (r.lone ? { fake: r.fake, real: r.real, lone: true } : { fake: r.fake, real: r.real }));
   }
 
@@ -366,9 +367,9 @@
       // The forward direction, for the composer warning and the cleaner: a real
       // name typed into a chat on any of these cases is still a leak, and the
       // master key knows the fake to use instead.
-      // Less a word PDF-Linker never fakes standing alone (P.parseKey's "full
-      // name only"), which reverses but is not warned about or swapped in.
-      warn: pairs.filter((p) => !p.lone).map((p) => ({ real: p.real, fake: p.fake })),
+      // A word PDF-Linker never fakes standing alone (P.parseKey's "full name
+      // only") keeps its mark, so it is matched only where capitalised.
+      warn: pairs.map((p) => (p.lone ? { real: p.real, fake: p.fake, lone: true } : { real: p.real, fake: p.fake })),
       master: true,
       caseCount: list.length,
       retired: retired,

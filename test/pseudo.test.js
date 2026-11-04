@@ -2321,28 +2321,56 @@ test("a key's stray shout is titled where its fake word is in prose case", () =>
   assert.strictEqual(P.translate(pnc, "Meadowgate Bank").text, "PNC Bank");
 });
 
-test("a full-name-only row reverses but is never warned about or swapped in", () => {
+test("a full-name-only row reverses, and is warned about and swapped in only where capitalised", () => {
   const key = P.parseKey(
     [
       sheet("Pseudonym Key", [
         ["Category", "Real Value", "Replacement", "Status"],
         ["entity", "Provision Holdings, LLC", "Dawnfield Holdings, LLC", "replaced"],
         ["entity-token", "Provision", "Dawnfield", "full name only"],
+        ["person", "Paul Green", "Ivo Thornbury", "replaced"],
+        ["person", "Green", "Thornbury", "full name only"],
         ["person-token", "Pellew", "Balfour", "no match"],
       ]),
     ],
     "pseudonym_key.xlsx"
   );
-  // Reversal still restores a draft's bare "Dawnfield".
-  assert.strictEqual(P.translate(P.compile(key), "Dawnfield sued.").text, "Provision sued.");
-  // PDF-Linker never faked "Provision" alone, so nothing here does either.
-  assert.deepStrictEqual(P.findReals(P.compileReals(key), "Provision 4 applies."), []);
-  assert.strictEqual(P.translate(P.compileForward(key), "Provision 4 applies.").text, "Provision 4 applies.");
-  // The full name and a live bare surname still are.
-  assert.strictEqual(
-    P.translate(P.compileForward(key), "Provision Holdings, LLC and Pellew").text,
-    "Dawnfield Holdings, LLC and Balfour"
+  // Reversal still restores a draft's bare "Dawnfield" and "Thornbury".
+  assert.strictEqual(P.translate(P.compile(key), "Dawnfield sued Thornbury.").text, "Provision sued Green.");
+  // Claude drafts with the bare fake surname, the reversal shows the real
+  // one, so a capitalised real surname typed back is warned about and faked,
+  // whatever its Category.
+  assert.deepStrictEqual(
+    P.findReals(P.compileReals(key), "Green argues.").map((r) => r.real),
+    ["Green"]
   );
+  assert.strictEqual(P.translate(P.compileForward(key), "Green argues.").text, "Thornbury argues.");
+  assert.strictEqual(P.translate(P.compileForward(key), "Provision 4 applies.").text, "Dawnfield 4 applies.");
+  // The ordinary lowercase word is left alone.
+  assert.deepStrictEqual(P.findReals(P.compileReals(key), "the green provision"), []);
+  assert.strictEqual(P.translate(P.compileForward(key), "the green provision").text, "the green provision");
+  // The full name and a live bare surname still are, the full name whole.
+  assert.strictEqual(
+    P.translate(P.compileForward(key), "Provision Holdings, LLC, Paul Green and Pellew").text,
+    "Dawnfield Holdings, LLC, Ivo Thornbury and Balfour"
+  );
+});
+
+test("a key stored before full-name-only rows were warned about fakes them without a re-read", () => {
+  // The shape PARSE_VERSION 7 stored: the row in `pairs`, marked, and not in `warn`.
+  const old = {
+    pairs: [
+      { fake: "Ivo Thornbury", real: "Paul Green" },
+      { fake: "Thornbury", real: "Green", lone: true },
+    ],
+    warn: [{ real: "Paul Green", fake: "Ivo Thornbury", pinned: false, cat: "person" }],
+  };
+  assert.strictEqual(P.translate(P.compileForward(old), "Green argues.").text, "Thornbury argues.");
+  assert.strictEqual(P.translate(P.compileForward(old), "the green lawn").text, "the green lawn");
+  assert.deepStrictEqual(P.findReals(P.compileReals(old), "Green argues.").map((r) => r.real), ["Green"]);
+  // A name removed by hand is out of `pairs` too, so it stays removed.
+  const gone = P.unfakeKey(old, "Green");
+  assert.strictEqual(P.translate(P.compileForward(gone), "Green argues.").text, "Green argues.");
 });
 
 test("the draft's real names are faked at the send, less a kept one and a cited party", () => {
