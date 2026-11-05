@@ -2599,6 +2599,15 @@ find them:
 - Where the ruling **can't be found**, it says `No ruling found` rather than
   copying something else.
 
+**A second Ruling button at the bottom of the chat.** When the newest reply
+is not the latest ruling (you kept talking after it), that newest reply gets a
+second **Ruling** button too, in its action bar or in a row under it. It copies
+the **most recent** ruling higher up, exactly as that ruling's own button
+would. There is only ever one; it moves down as new replies arrive, waits
+while a reply is still being written, and is not drawn when the newest reply
+is itself the ruling (its own button is already there). `T.latestRulingCopy`
+makes the call.
+
 The boundary rules live in `src/tentative.js` (no DOM/`chrome` deps) and are
 unit-tested in `test/tentative.test.js`; the button is `src/copy-ruling.js`.
 

@@ -572,3 +572,15 @@ test("rulingSpot: a placed button stays put, and goes when there's no ruling", (
   assert.equal(T.rulingSpot({ wanted: false, placed: false }), "keep");
   assert.equal(T.rulingSpot(null), "keep");
 });
+
+test("latestRulingCopy puts a second button on the newest reply when it is not the latest ruling", () => {
+
+  const r = (ruling, streaming) => ({ ruling: !!ruling, streaming: !!streaming });
+  assert.strictEqual(T.latestRulingCopy([]), null);
+  assert.strictEqual(T.latestRulingCopy([r(0), r(0)]), null); // no ruling anywhere
+  assert.strictEqual(T.latestRulingCopy([r(0), r(1)]), null); // the newest is the ruling
+  assert.deepStrictEqual(T.latestRulingCopy([r(1), r(0), r(0)]), { from: 0, to: 2 });
+  assert.deepStrictEqual(T.latestRulingCopy([r(1), r(1), r(0)]), { from: 1, to: 2 }); // the most recent one
+  assert.strictEqual(T.latestRulingCopy([r(1), r(0, 1)]), null); // newest still being written
+  assert.strictEqual(T.latestRulingCopy(null), null);
+});

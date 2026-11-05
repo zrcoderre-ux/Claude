@@ -566,14 +566,19 @@
     }
   }
 
-  function build(msgEl) {
+  function build(msgEl, latest) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = CLASS;
-    btn.title =
-      "Copy just the tentative ruling — NATURE OF PROCEEDINGS through the end " +
-      "of the CONCLUSION, without the horizontal rules or anything either side";
-    btn.setAttribute("aria-label", "Copy the tentative ruling only");
+    btn.className = CLASS + (latest ? " cum-ruling-latest" : "");
+    btn.title = latest
+      ? "Copy the most recent tentative ruling in this chat (from an earlier " +
+        "reply) — NATURE OF PROCEEDINGS through the end of the CONCLUSION"
+      : "Copy just the tentative ruling — NATURE OF PROCEEDINGS through the end " +
+        "of the CONCLUSION, without the horizontal rules or anything either side";
+    btn.setAttribute(
+      "aria-label",
+      latest ? "Copy the most recent tentative ruling in this chat" : "Copy the tentative ruling only"
+    );
     btn.innerHTML =
       '<span class="cum-ruling-ico">§</span><span class="cum-ruling-txt">Ruling</span>';
     btn.addEventListener("click", (e) => {
@@ -593,13 +598,17 @@
   const wantedSince = new WeakMap(); // reply → when it first wanted one
   function place() {
     const now = Date.now();
-    for (const msgEl of assistantMessages()) {
+    const msgs = Array.from(assistantMessages());
+    const rulings = [];
+    for (const msgEl of msgs) {
       // Asked first because it is the cheap question, and because on most
       // replies the answer is no: only where there is actually a ruling to
       // copy, and not while the answer is still being written — half a ruling
       // pasted into a minute order is worse than none, and the heading shows up
       // early in the stream.
-      const wanted = T.mentionsRuling(msgEl.textContent) && !streaming(msgEl);
+      const hasRuling = T.mentionsRuling(msgEl.textContent);
+      rulings.push(hasRuling);
+      const wanted = hasRuling && !streaming(msgEl);
       let mine = placed.get(msgEl) || null;
       // claude.ai rebuilds its action bar on hover, taking our button with it.
       if (mine && !mine.isConnected) {
@@ -635,6 +644,67 @@
       } catch (e) {
         /* a page that won't take it is a button we simply don't offer */
       }
+    }
+    placeExtra(msgs, rulings);
+  }
+
+  // ---- the second button: the latest ruling, from the bottom of the chat ----
+  // A ruling followed by more back-and-forth used to mean scrolling back up to
+  // its own button. The newest reply gets a second one that copies the most
+  // recent ruling above it (T.latestRulingCopy decides when), placed the same
+  // way as the first: in the newest reply's action bar, else in a row under it.
+  // Only ever one, and it moves with the newest reply.
+  let extra = null; // { host, source, btn }
+  let extraWantedSince = 0;
+  let extraHost = null;
+  function removeExtra() {
+    if (!extra) return;
+    try {
+      const row = extra.btn.closest(".cum-ruling-row");
+      (row || extra.btn).remove();
+    } catch (e) {
+      /* already gone */
+    }
+    extra = null;
+  }
+  function placeExtra(msgs, rulings) {
+    const pick = T.latestRulingCopy(
+      msgs.map((el, i) => ({ ruling: rulings[i], streaming: streaming(el) }))
+    );
+    const host = pick ? msgs[pick.to] : null;
+    const source = pick ? msgs[pick.from] : null;
+    if (extra && (extra.host !== host || extra.source !== source || !extra.btn.isConnected)) removeExtra();
+    if (!host) {
+      extraHost = null;
+      return;
+    }
+    if (extraHost !== host) {
+      extraHost = host;
+      extraWantedSince = Date.now();
+    }
+    if (extra) return;
+    const bar = RC.findCopyButton(host);
+    const spot = T.rulingSpot({
+      wanted: true,
+      placed: false,
+      bar: !!(bar && bar.parentElement),
+      waitedMs: Date.now() - extraWantedSince,
+    });
+    try {
+      if (spot === "bar") {
+        const btn = build(source, true);
+        bar.parentElement.insertBefore(btn, bar.nextSibling);
+        extra = { host, source, btn };
+      } else if (spot === "below" && host.parentElement) {
+        const row = document.createElement("div");
+        row.className = "cum-ruling-row";
+        const btn = build(source, true);
+        row.appendChild(btn);
+        host.parentElement.insertBefore(row, host.nextSibling);
+        extra = { host, source, btn };
+      }
+    } catch (e) {
+      /* a page that won't take it is a button we simply don't offer */
     }
   }
 

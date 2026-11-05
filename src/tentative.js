@@ -383,8 +383,32 @@
     return (s.waitedMs || 0) >= BELOW_AFTER_MS ? "below" : "wait";
   }
 
+  /**
+   * The second Ruling button: under the newest reply, copying the most recent
+   * ruling higher up, so a ruling followed by more back-and-forth can still be
+   * copied from the bottom of the chat (owner, November 2026).
+   *
+   *   replies   [{ ruling, streaming }] in page order — `ruling` as
+   *             mentionsRuling answers it
+   *
+   * → { from, to } — copy the ruling in reply `from`, button on reply `to` —
+   *   or null: no ruling yet, the newest reply IS the latest ruling (its own
+   *   button is right there), or the newest reply is still being written.
+   */
+  function latestRulingCopy(replies) {
+    const list = Array.isArray(replies) ? replies : [];
+    const to = list.length - 1;
+    if (to < 0 || !list[to] || list[to].streaming) return null;
+    for (let i = to; i >= 0; i--) {
+      const r = list[i];
+      if (r && r.ruling && !r.streaming) return i === to ? null : { from: i, to: to };
+    }
+    return null;
+  }
+
   const api = {
     rulingSpot,
+    latestRulingCopy,
     BELOW_AFTER_MS,
     bareLine,
     mentionsRuling,
