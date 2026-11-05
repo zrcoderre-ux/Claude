@@ -2633,9 +2633,15 @@ group if it is in one (`T.orderLinks`, `T.linkKey`; the worker re-checks with
 Only the ruling's own links count, from NATURE OF PROCEEDINGS through the
 CONCLUSION. The pdf viewer does not put its links in the reply: it paints them
 in its own layer over the page, and only for citations on screen. So the
-button scrolls the ruling through the view, half a screen at a time, gathering
-the strips lying over it, then puts the view back. Ordinary links inside the
-ruling count too. The label says how many opened, or `No links found`.
+button asks the pdf viewer for its whole inventory instead, over a page event
+(`cl-citations-request`, answered at once with `cl-citations`: every citation
+in the loaded text, with its kind and where it sits; see the pdf viewer's
+*Citation links on claude.ai* page). It keeps the citations lying over the
+ruling, with no scrolling. A pdf viewer without that hook gets the old way:
+the button scrolls the ruling through the view, half a screen at a time,
+gathering the strips lying over it, then puts the view back. Ordinary links
+inside the ruling count either way. The label says how many opened, or
+`No links found`.
 
 **A ruling the page has not shown.** Open an old chat and go straight to the
 bottom, and claude.ai may never load the ruling higher up. The extension asks
