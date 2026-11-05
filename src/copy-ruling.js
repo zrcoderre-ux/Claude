@@ -566,25 +566,26 @@
     }
   }
 
-  function build(msgEl, latest) {
+  function build(msgEl, forLatest) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = CLASS + (latest ? " cum-ruling-latest" : "");
-    btn.title = latest
+    btn.className = CLASS + (forLatest ? " cum-ruling-latest" : "");
+    btn.title = forLatest
       ? "Copy the most recent tentative ruling in this chat (from an earlier " +
         "reply) — NATURE OF PROCEEDINGS through the end of the CONCLUSION"
       : "Copy just the tentative ruling — NATURE OF PROCEEDINGS through the end " +
         "of the CONCLUSION, without the horizontal rules or anything either side";
     btn.setAttribute(
       "aria-label",
-      latest ? "Copy the most recent tentative ruling in this chat" : "Copy the tentative ruling only"
+      forLatest ? "Copy the most recent tentative ruling in this chat" : "Copy the tentative ruling only"
     );
     btn.innerHTML =
       '<span class="cum-ruling-ico">§</span><span class="cum-ruling-txt">Ruling</span>';
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      copyRuling(btn, msgEl);
+      if (forLatest) copyLatest(btn);
+      else copyRuling(btn, msgEl);
     });
     return btn;
   }
@@ -596,10 +597,18 @@
   // of its own under the reply. T.rulingSpot makes the call.
   const placed = new WeakMap(); // reply → our button
   const wantedSince = new WeakMap(); // reply → when it first wanted one
+  // Every button this script drew — taken down on a page that offers none.
+  function removeAll() {
+    for (const el of document.querySelectorAll(".cum-ruling-row,." + CLASS)) el.remove();
+  }
+
   function place() {
+    if (!T.rulingPage(location.pathname)) {
+      if (document.querySelector("." + CLASS)) removeAll();
+      return;
+    }
     const now = Date.now();
     const msgs = Array.from(assistantMessages());
-    const rulings = [];
     for (const msgEl of msgs) {
       // Asked first because it is the cheap question, and because on most
       // replies the answer is no: only where there is actually a ruling to
@@ -607,7 +616,6 @@
       // pasted into a minute order is worse than none, and the heading shows up
       // early in the stream.
       const hasRuling = T.mentionsRuling(msgEl.textContent);
-      rulings.push(hasRuling);
       const wanted = hasRuling && !streaming(msgEl);
       let mine = placed.get(msgEl) || null;
       // claude.ai rebuilds its action bar on hover, taking our button with it.
@@ -645,18 +653,77 @@
         /* a page that won't take it is a button we simply don't offer */
       }
     }
-    placeExtra(msgs, rulings);
+    placeExtra(msgs);
+    // A row under a reply claude.ai has since unloaded is left behind on its
+    // own: nothing to copy from, so it goes too.
+    try {
+      const live = new Set(msgs);
+      for (const row of document.querySelectorAll(".cum-ruling-row")) {
+        if (!live.has(row.previousElementSibling)) row.remove();
+      }
+    } catch (e) {
+      /* ignore */
+    }
   }
 
   // ---- the second button: the latest ruling, from the bottom of the chat ----
   // A ruling followed by more back-and-forth used to mean scrolling back up to
   // its own button. The newest reply gets a second one that copies the most
-  // recent ruling above it (T.latestRulingCopy decides when), placed the same
-  // way as the first: in the newest reply's action bar, else in a row under it.
-  // Only ever one, and it moves with the newest reply.
-  let extra = null; // { host, source, btn }
+  // recent ruling above it, placed the same way as the first: in the newest
+  // reply's action bar, else in a row under it. Only ever one.
+  //
+  // Only a reply with a ruling in it counts here (holdsRuling) — a reply that
+  // merely talks about NATURE OF PROCEEDINGS is not one, and a chat with no
+  // ruling gets no button.
+  //
+  // claude.ai unloads replies scrolled far out of view, so the ruling is
+  // remembered (T.latestRulingCopy keeps the state) and a copy of it is kept
+  // off the page: the button stays put until a new response comes in, and
+  // copies the remembered ruling when its reply is no longer loaded.
+  const SIG_SKIP = ".cum-ruling-btn,.cum-ruling-row";
+  function sigOf(el) {
+    let text = "";
+    try {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        const p = node.parentElement;
+        if (p && p.closest(SIG_SKIP)) continue;
+        text += node.nodeValue;
+      }
+    } catch (e) {
+      text = el.textContent || "";
+    }
+    text = text.replace(/\s+/g, " ").trim();
+    return text.length + "|" + text.slice(0, 160) + "|" + text.slice(-160);
+  }
+
+  // A reply that has a ruling in it, not one that talks about one: a block
+  // that opens with NATURE OF PROCEEDINGS, or the all-caps heading sharing its
+  // line with something else AND a block that opens with CONCLUSION (welded
+  // to its sentence or not). Stricter
+  // than the per-reply button's test on purpose — that one sits on the reply
+  // itself, where a false alarm is one stray button; this one goes at the
+  // bottom of every chat that merely mentions the words.
+  function holdsRuling(msgEl) {
+    if (!T.mentionsRuling(msgEl.textContent)) return false;
+    const start = findStartEl(msgEl);
+    if (!start) return false;
+    const t = (start.textContent || "").replace(/\s+/g, " ").trim();
+    if (T.rulingStart(t) === 2) return true;
+    for (const el of msgEl.querySelectorAll(HEAD_SEL)) {
+      const x = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (x && x.length <= MAX_HEAD && T.opensConclusion(x) && !unseenWithin(el, msgEl)) return true;
+    }
+    return false;
+  }
+
+  let latest = { conv: "", state: null, copy: null, copySig: "" };
+  let extra = null; // { hostEl, btn }
+  const everPlaced = new Set(); // host signatures the button has been on
+  let extraHostEl = null;
   let extraWantedSince = 0;
-  let extraHost = null;
+
   function removeExtra() {
     if (!extra) return;
     try {
@@ -667,42 +734,112 @@
     }
     extra = null;
   }
-  function placeExtra(msgs, rulings) {
-    const pick = T.latestRulingCopy(
-      msgs.map((el, i) => ({ ruling: rulings[i], streaming: streaming(el) }))
-    );
-    const host = pick ? msgs[pick.to] : null;
-    const source = pick ? msgs[pick.from] : null;
-    if (extra && (extra.host !== host || extra.source !== source || !extra.btn.isConnected)) removeExtra();
-    if (!host) {
-      extraHost = null;
-      return;
+
+  // The remembered ruling's reply as it is on the page now, or null.
+  function liveRuling() {
+    const sig = latest.state && latest.state.rulingSig;
+    if (!sig) return null;
+    for (const el of assistantMessages()) if (sigOf(el) === sig) return el;
+    return null;
+  }
+
+  // Copy the remembered ruling whose reply is no longer on the page: its kept
+  // copy is put on the page out of sight for the length of the copy.
+  function copyKept(btn) {
+    const kept = latest.copy;
+    if (!kept) return say(btn, "No ruling found", true);
+    const box = document.createElement("div");
+    box.setAttribute("aria-hidden", "true");
+    box.style.cssText = "position:fixed;left:-10000px;top:0;width:800px;opacity:0;pointer-events:none";
+    const el = kept.cloneNode(true);
+    box.appendChild(el);
+    document.body.appendChild(box);
+    try {
+      const page = copyFromPage(el);
+      if (page) return say(btn, page.reason ? "Copied (no CONCLUSION)" : "Ruling copied");
+      const cut = T.extractRuling(el.innerText || "");
+      if (!cut.ok) return say(btn, "No ruling found", true);
+      write(cut.text).then((ok) =>
+        ok ? say(btn, "Copied (" + (cut.reason ? "no CONCLUSION" : "as text") + ")") : say(btn, "Couldn't copy", true)
+      );
+    } catch (e) {
+      say(btn, "Couldn't copy", true);
+    } finally {
+      box.remove();
     }
-    if (extraHost !== host) {
-      extraHost = host;
+  }
+
+  function copyLatest(btn) {
+    const live = liveRuling();
+    if (live) return copyRuling(btn, live);
+    copyKept(btn);
+  }
+
+  function placeExtra(msgs) {
+    const conv = location.pathname;
+    if (latest.conv !== conv) {
+      removeExtra();
+      latest = { conv: conv, state: null, copy: null, copySig: "" };
+      everPlaced.clear();
+    }
+    const mounted = msgs.map((el) => {
+      const busy = streaming(el);
+      let ruling = false;
+      try {
+        ruling = !busy && holdsRuling(el);
+      } catch (e) {
+        ruling = false;
+      }
+      return { sig: sigOf(el), ruling: ruling, streaming: busy };
+    });
+    let atBottom = false;
+    try {
+      const lastEl = msgs[msgs.length - 1];
+      atBottom = !!lastEl && lastEl.getBoundingClientRect().bottom <= window.innerHeight;
+    } catch (e) {
+      atBottom = false;
+    }
+    const pick = T.latestRulingCopy(latest.state, mounted, { atBottom: atBottom });
+    latest.state = pick.state;
+    // Keep a copy of the ruling while it is on the page, for when it is not.
+    if (pick.from !== -1 && latest.copySig !== mounted[pick.from].sig) {
+      try {
+        latest.copy = msgs[pick.from].cloneNode(true);
+        latest.copySig = mounted[pick.from].sig;
+      } catch (e) {
+        /* the live reply is copied when it is back */
+      }
+    }
+    const host = pick.host !== -1 ? msgs[pick.host] : null;
+    if (extra && (extra.hostEl !== host || !extra.btn.isConnected)) removeExtra();
+    if (!host || extra) return;
+    if (extraHostEl !== host) {
+      extraHostEl = host;
       extraWantedSince = Date.now();
     }
-    if (extra) return;
+    const hostSig = mounted[pick.host].sig;
     const bar = RC.findCopyButton(host);
     const spot = T.rulingSpot({
       wanted: true,
       placed: false,
       bar: !!(bar && bar.parentElement),
-      waitedMs: Date.now() - extraWantedSince,
+      // Back on a reply it was already on (claude.ai re-drew it): no grace.
+      waitedMs: everPlaced.has(hostSig) ? T.BELOW_AFTER_MS : Date.now() - extraWantedSince,
     });
     try {
       if (spot === "bar") {
-        const btn = build(source, true);
+        const btn = build(null, true);
         bar.parentElement.insertBefore(btn, bar.nextSibling);
-        extra = { host, source, btn };
+        extra = { hostEl: host, btn: btn };
       } else if (spot === "below" && host.parentElement) {
         const row = document.createElement("div");
         row.className = "cum-ruling-row";
-        const btn = build(source, true);
+        const btn = build(null, true);
         row.appendChild(btn);
         host.parentElement.insertBefore(row, host.nextSibling);
-        extra = { host, source, btn };
+        extra = { hostEl: host, btn: btn };
       }
+      if (extra) everPlaced.add(hostSig);
     } catch (e) {
       /* a page that won't take it is a button we simply don't offer */
     }
