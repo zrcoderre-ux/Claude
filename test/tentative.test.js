@@ -621,3 +621,29 @@ test("rulingPage: never on Claude Code; opensConclusion: a block that opens with
   assert.strictEqual(T.opensConclusion("**Conclusion**"), true);
   assert.strictEqual(T.opensConclusion("from NATURE OF PROCEEDINGS through the CONCLUSION"), false);
 });
+
+test("linksToOpen: each openable address once, in order", () => {
+  const out = T.linksToOpen(
+    [
+      "https://example.com/a.pdf#page=3",
+      "chrome-extension://abcdef/viewer.html?file=x.pdf#page=4",
+      "https://example.com/a.pdf#page=3",
+      "https://example.com/a.pdf#page=5",
+      "javascript:alert(1)",
+      "mailto:a@b.c",
+      "#section",
+      "",
+      "file:///Users/me/case/opp.pdf",
+      "/chat/abc",
+    ],
+    "https://claude.ai/chat/xyz"
+  );
+  assert.deepStrictEqual(out, [
+    "https://example.com/a.pdf#page=3",
+    "chrome-extension://abcdef/viewer.html?file=x.pdf#page=4",
+    "https://example.com/a.pdf#page=5",
+    "file:///Users/me/case/opp.pdf",
+    "https://claude.ai/chat/abc",
+  ]);
+  assert.deepStrictEqual(T.linksToOpen(null), []);
+});

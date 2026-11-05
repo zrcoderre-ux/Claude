@@ -48,6 +48,8 @@
   if (!C || !RC || !T) return;
 
   const CLASS = "cum-ruling-btn";
+  const LINKS_CLASS = "cum-ruling-links";
+  const PAIR_CLASS = "cum-ruling-pair"; // Ruling and Links, placed as one
   const PLACE_MS = 1500;
   const HOVER_MS = 400; // floor between hover-driven placement passes
   const FEEDBACK_MS = 2200;
@@ -465,7 +467,8 @@
 
   // → { ok, reason } | null when the message's shape can't be read at all, which
   // is the caller's cue to fall back to the markdown route.
-  function copyFromPage(msgEl) {
+  // The ruling's blocks on the page — { startEl, blocks, plan } — or null.
+  function rulingCut(msgEl) {
     const startEl = findStartEl(msgEl);
     if (!startEl) return null;
     const root = proseRoot(msgEl, startEl);
@@ -478,7 +481,14 @@
     // don't, the markdown route is a better answer than a confident wrong cut.
     const chosen = blocks[plan.start];
     if (!chosen || !(chosen === startEl || chosen.contains(startEl))) return null;
-    const out = copyBlocks(blocks.slice(plan.start, plan.end + 1), plan.endLine);
+    return { startEl, blocks: blocks.slice(plan.start, plan.end + 1), plan };
+  }
+
+  function copyFromPage(msgEl) {
+    const cut = rulingCut(msgEl);
+    if (!cut) return null;
+    const plan = cut.plan;
+    const out = copyBlocks(cut.blocks, plan.endLine);
     if (!out.ok) return null;
     return { ok: true, reason: plan.reason };
   }
@@ -509,14 +519,14 @@
   }
 
   // ---- the button ----------------------------------------------------------
-  function say(btn, text, bad) {
+  function say(btn, text, bad, rest) {
     btn.classList.toggle("cum-ruling-bad", !!bad);
     btn.querySelector(".cum-ruling-txt").textContent = text;
     clearTimeout(btn._cumTimer);
     btn._cumTimer = setTimeout(() => {
       btn.classList.remove("cum-ruling-bad");
       const label = btn.querySelector(".cum-ruling-txt");
-      if (label) label.textContent = "Ruling";
+      if (label) label.textContent = rest || "Ruling";
     }, FEEDBACK_MS);
   }
 
@@ -587,7 +597,82 @@
       if (forLatest) copyLatest(btn);
       else copyRuling(btn, msgEl);
     });
-    return btn;
+    // Its partner, Links: every hyperlink in the same ruling (the pdf viewer
+    // links each record cite to its page), opened in tabs with one click.
+    const links = document.createElement("button");
+    links.type = "button";
+    links.className = CLASS + " " + LINKS_CLASS;
+    links.title = forLatest
+      ? "Open every link in the most recent tentative ruling in this chat, each in its own tab"
+      : "Open every link in this tentative ruling, each in its own tab";
+    links.setAttribute("aria-label", links.title);
+    links.innerHTML = '<span class="cum-ruling-ico">↗</span><span class="cum-ruling-txt">Links</span>';
+    links.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openLinks(links, forLatest ? null : msgEl);
+    });
+    const pair = document.createElement("span");
+    pair.className = PAIR_CLASS;
+    pair.append(btn, links);
+    return pair;
+  }
+
+  // ---- Links ----------------------------------------------------------------
+  // The hrefs of the anchors in the ruling's own blocks — NATURE OF
+  // PROCEEDINGS through the CONCLUSION — in page order. Where the cut cannot be
+  // read, the anchors from the heading to the end of the reply.
+  function rulingHrefs(msgEl) {
+    let anchors = [];
+    const cut = rulingCut(msgEl);
+    if (cut) {
+      for (const b of cut.blocks) {
+        if (b.matches && b.matches("a[href]")) anchors.push(b);
+        anchors = anchors.concat(Array.from(b.querySelectorAll("a[href]")));
+      }
+    } else {
+      const start = findStartEl(msgEl);
+      anchors = Array.from(msgEl.querySelectorAll("a[href]")).filter(
+        (a) => !start || start.contains(a) || !!(start.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING)
+      );
+    }
+    return anchors
+      .filter((a) => !a.closest("." + PAIR_CLASS) && !unseenWithin(a, msgEl))
+      .map((a) => a.getAttribute("href"));
+  }
+
+  function linksOf(msgEl) {
+    if (msgEl) return T.linksToOpen(rulingHrefs(msgEl), location.href);
+    const live = liveRuling();
+    if (live) return T.linksToOpen(rulingHrefs(live), location.href);
+    if (!latest.copy) return [];
+    return T.linksToOpen(rulingHrefs(latest.copy), location.href);
+  }
+
+  function openLinks(btn, msgEl) {
+    if (btn.disabled) return;
+    let urls = [];
+    try {
+      urls = linksOf(msgEl);
+    } catch (e) {
+      urls = [];
+    }
+    if (!urls.length) return say(btn, "No links found", true, "Links");
+    btn.disabled = true;
+    const done = (res) => {
+      btn.disabled = false;
+      const n = res && typeof res.opened === "number" ? res.opened : 0;
+      if (!res || !res.ok || !n) return say(btn, "Couldn't open", true, "Links");
+      say(btn, n < urls.length ? "Opened " + n + " of " + urls.length : "Opened " + n, false, "Links");
+    };
+    try {
+      chrome.runtime.sendMessage({ type: "cum-open-links", urls: urls }, (res) => {
+        void chrome.runtime.lastError;
+        done(res);
+      });
+    } catch (e) {
+      done(null); // the extension was reloaded under this page: reload the tab
+    }
   }
 
   // Beside the copy box, in claude.ai's own action bar, where there is one: this
@@ -599,7 +684,7 @@
   const wantedSince = new WeakMap(); // reply → when it first wanted one
   // Every button this script drew — taken down on a page that offers none.
   function removeAll() {
-    for (const el of document.querySelectorAll(".cum-ruling-row,." + CLASS)) el.remove();
+    for (const el of document.querySelectorAll(".cum-ruling-row,." + PAIR_CLASS + ",." + CLASS)) el.remove();
   }
 
   function place() {
@@ -680,7 +765,7 @@
   // remembered (T.latestRulingCopy keeps the state) and a copy of it is kept
   // off the page: the button stays put until a new response comes in, and
   // copies the remembered ruling when its reply is no longer loaded.
-  const SIG_SKIP = ".cum-ruling-btn,.cum-ruling-row";
+  const SIG_SKIP = ".cum-ruling-btn,.cum-ruling-row,.cum-ruling-pair";
   const V = window.CUMPseudoView || null;
   function sigOf(el) {
     let text = "";
@@ -807,10 +892,15 @@
     const pick = T.latestRulingCopy(latest.state, mounted, { atBottom: atBottom });
     latest.state = pick.state;
     // Keep a copy of the ruling while it is on the page, for when it is not.
-    if (pick.from !== -1 && latest.copySig !== mounted[pick.from].sig) {
+    // The pdf viewer links the cites AFTER the reply is drawn, and a link does
+    // not change the text, so the count of links is part of what is compared:
+    // a copy taken before the links went in is taken again once they have.
+    const keepSig =
+      pick.from !== -1 ? mounted[pick.from].sig + "|" + msgs[pick.from].querySelectorAll("a[href]").length : "";
+    if (pick.from !== -1 && latest.copySig !== keepSig) {
       try {
         latest.copy = V && V.originalClone ? V.originalClone(msgs[pick.from]) : msgs[pick.from].cloneNode(true);
-        latest.copySig = mounted[pick.from].sig;
+        latest.copySig = keepSig;
       } catch (e) {
         /* the live reply is copied when it is back */
       }

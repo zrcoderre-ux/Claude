@@ -2620,6 +2620,17 @@ translated at the moment of the copy (`CUMPseudoView.originalClone`,
 leave a stale set of names in it. Replies are recognised by claude.ai's own
 text (`nodeOriginal`), so flipping the toggle does not move or drop the button.
 
+**Links, beside both Ruling buttons.** One click opens every hyperlink in the
+ruling (the pdf viewer links each record cite to its page) in its own tab. The
+tabs open after the chat's tab, in the order the ruling cites them, without
+taking focus off the chat. Only the ruling's own links count, from NATURE OF
+PROCEEDINGS through the CONCLUSION, not Claude's note above or below it. Each
+address opens once, and only web pages, local files and extension pages are
+opened (`T.linksToOpen`, checked again in the background worker). The bottom
+button's kept copy is taken again once the viewer's links appear, so it opens
+them even after the ruling's reply has been unloaded. The label says how many
+opened, or `No links found`.
+
 **No Ruling buttons on Claude Code.** Neither button appears on
 `claude.ai/code/…` pages (`T.rulingPage`).
 

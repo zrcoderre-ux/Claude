@@ -457,7 +457,38 @@
     return END_LINE.test(bare) || END_GLUED.test(bare);
   }
 
+  /**
+   * The links the Links button opens, from the hrefs of the anchors in a
+   * ruling, in the order they appear (owner, November 2026: the pdf viewer
+   * links each record cite to its page). Each address once; only addresses a
+   * tab can be opened on — web pages, local files and extension pages (the
+   * viewer's own) — never a script, a mail link or a jump within this page.
+   * `base` resolves a relative href.
+   */
+  const LINK_SCHEMES = /^(?:https?|file|chrome-extension):$/i;
+  function linksToOpen(hrefs, base) {
+    const out = [];
+    const seen = new Set();
+    for (const h of Array.isArray(hrefs) ? hrefs : []) {
+      const raw = str(h).trim();
+      if (!raw || raw.charAt(0) === "#") continue;
+      let u;
+      try {
+        u = new URL(raw, base || undefined);
+      } catch (e) {
+        continue;
+      }
+      if (!LINK_SCHEMES.test(u.protocol)) continue;
+      const href = u.href;
+      if (seen.has(href)) continue;
+      seen.add(href);
+      out.push(href);
+    }
+    return out;
+  }
+
   const api = {
+    linksToOpen,
     rulingPage,
     opensConclusion,
     rulingSpot,
