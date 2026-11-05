@@ -2612,6 +2612,14 @@ claude.ai unloads the ruling's reply as you scroll away from it: the ruling is
 remembered, and a copy of it is kept so the button still copies it.
 `T.latestRulingCopy` keeps that state.
 
+**Both buttons copy the names the page is showing.** With translation on, the
+copy has the real names; with the fakes toggle on (or a run's hold), it has the
+fakes. That holds for the kept copy too. It is stored as claude.ai wrote it and
+translated at the moment of the copy (`CUMPseudoView.originalClone`,
+`showLike`), so flipping the toggle after the ruling scrolled away does not
+leave a stale set of names in it. Replies are recognised by claude.ai's own
+text (`nodeOriginal`), so flipping the toggle does not move or drop the button.
+
 **No Ruling buttons on Claude Code.** Neither button appears on
 `claude.ai/code/…` pages (`T.rulingPage`).
 

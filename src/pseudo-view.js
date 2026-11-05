@@ -1147,6 +1147,49 @@
     plainText: function (el) {
       return el ? originalText(el) : "";
     },
+    // ---- for a copy of a reply kept off the page (src/copy-ruling.js) -------
+    // claude.ai unloads replies scrolled out of view, so the bottom Ruling
+    // button keeps a copy of the ruling. It is kept as claude.ai WROTE it (the
+    // fakes), and shown the way the page is showing names at the moment of the
+    // copy — real names with translation on, the fakes with the fakes toggle
+    // on or a run's hold — so a kept copy never carries names the page is not
+    // showing.
+    /** What claude.ai wrote in one text node, whatever this tab shows there. */
+    nodeOriginal: function (node) {
+      const p = node ? swapped.get(node) : null;
+      return p && p.text === node.nodeValue ? p.orig : node ? node.nodeValue : "";
+    },
+    /** A clone of `el` with every swap put back: claude.ai's own text. */
+    originalClone: function (el) {
+      const copy = el.cloneNode(true);
+      const a = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const b = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT);
+      let n;
+      let m;
+      while ((n = a.nextNode()) && (m = b.nextNode())) {
+        const p = swapped.get(n);
+        if (p && p.count > 0 && p.text === n.nodeValue) m.nodeValue = p.orig;
+      }
+      return copy;
+    },
+    /** `el` (a detached or off-screen copy) translated as the messages are now. */
+    showLike: function (el) {
+      if (!el || !active || !active.compiled || !active.compiled.rx || translationOff()) return 0;
+      let total = 0;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        const text = node.nodeValue;
+        if (!text || text.length < 2) continue;
+        if (inCitationItalic(node, el, active.compiled)) continue;
+        const r = P.translate(active.compiled, text, { citations: true });
+        if (r.count > 0) {
+          node.nodeValue = r.text;
+          total += r.count;
+        }
+      }
+      return total;
+    },
     // ---- what the key button in the tray renders from ----------------------
     // This module owns the keys, the sweep and the peek; src/key-panel.js owns
     // the button and its panel. The seam is deliberately data and verbs, not
