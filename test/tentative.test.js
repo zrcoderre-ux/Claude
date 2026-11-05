@@ -573,14 +573,51 @@ test("rulingSpot: a placed button stays put, and goes when there's no ruling", (
   assert.equal(T.rulingSpot(null), "keep");
 });
 
-test("latestRulingCopy puts a second button on the newest reply when it is not the latest ruling", () => {
+test("latestRulingCopy: a second button on the newest reply, kept while the ruling scrolls away", () => {
+  const m = (sig, ruling, streaming) => ({ sig, ruling: !!ruling, streaming: !!streaming });
+  const L = T.latestRulingCopy;
+  // Nothing on the page, or no ruling anywhere in the chat: no button.
+  assert.strictEqual(L(null, []).host, -1);
+  let r = L(null, [m("a"), m("b")]);
+  assert.strictEqual(r.host, -1);
+  // The newest reply is the ruling: its own button is there.
+  assert.strictEqual(L(null, [m("a"), m("R", 1)]).host, -1);
+  // A ruling and then more talk: the button is on the newest, copying the ruling.
+  r = L(null, [m("R", 1), m("b"), m("c")]);
+  assert.deepStrictEqual([r.host, r.from], [2, 0]);
+  // The ruling scrolls out of the page; the button stays, copying the remembered one.
+  r = L(r.state, [m("b"), m("c")]);
+  assert.deepStrictEqual([r.host, r.from], [1, -1]);
+  r = L(r.state, [m("c")]);
+  assert.deepStrictEqual([r.host, r.from], [0, -1]);
+  // Scrolled up so far the newest reply is gone: no button there, nothing forgotten.
+  const up = L(r.state, [m("R", 1), m("b")]);
+  assert.strictEqual(up.host, -1);
+  // ...unless the last reply on the page ends on screen: then it is the newest.
+  const fresh = L(up.state, [m("R", 1), m("x")], { atBottom: true });
+  assert.deepStrictEqual([fresh.host, fresh.from], [1, 0]);
+  r = L(up.state, [m("b"), m("c")]);
+  assert.deepStrictEqual([r.host, r.from], [1, -1]);
+  // A new response: no button while it is written, then it moves to it.
+  r = L(r.state, [m("b"), m("c"), m("d", 0, 1)]);
+  assert.strictEqual(r.host, -1);
+  r = L(r.state, [m("b"), m("c"), m("d")]);
+  assert.deepStrictEqual([r.host, r.from], [2, -1]);
+  // A newer ruling replaces the remembered one, and as the newest it has its own button.
+  r = L(r.state, [m("c"), m("d"), m("R2", 1)]);
+  assert.strictEqual(r.host, -1);
+  r = L(r.state, [m("d"), m("R2", 1), m("e")]);
+  assert.deepStrictEqual([r.host, r.from], [2, 1]);
+  assert.strictEqual(r.state.rulingSig, "R2");
+});
 
-  const r = (ruling, streaming) => ({ ruling: !!ruling, streaming: !!streaming });
-  assert.strictEqual(T.latestRulingCopy([]), null);
-  assert.strictEqual(T.latestRulingCopy([r(0), r(0)]), null); // no ruling anywhere
-  assert.strictEqual(T.latestRulingCopy([r(0), r(1)]), null); // the newest is the ruling
-  assert.deepStrictEqual(T.latestRulingCopy([r(1), r(0), r(0)]), { from: 0, to: 2 });
-  assert.deepStrictEqual(T.latestRulingCopy([r(1), r(1), r(0)]), { from: 1, to: 2 }); // the most recent one
-  assert.strictEqual(T.latestRulingCopy([r(1), r(0, 1)]), null); // newest still being written
-  assert.strictEqual(T.latestRulingCopy(null), null);
+test("rulingPage: never on Claude Code; opensConclusion: a block that opens with it", () => {
+  assert.strictEqual(T.rulingPage("/code/session_01abc"), false);
+  assert.strictEqual(T.rulingPage("/code"), false);
+  assert.strictEqual(T.rulingPage("/chat/1234"), true);
+  assert.strictEqual(T.rulingPage("/cowork/abc"), true);
+  assert.strictEqual(T.rulingPage("/codex"), true);
+  assert.strictEqual(T.opensConclusion("CONCLUSION"), true);
+  assert.strictEqual(T.opensConclusion("**Conclusion**"), true);
+  assert.strictEqual(T.opensConclusion("from NATURE OF PROCEEDINGS through the CONCLUSION"), false);
 });

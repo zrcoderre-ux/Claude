@@ -2603,10 +2603,17 @@ find them:
 is not the latest ruling (you kept talking after it), that newest reply gets a
 second **Ruling** button too, in its action bar or in a row under it. It copies
 the **most recent** ruling higher up, exactly as that ruling's own button
-would. There is only ever one; it moves down as new replies arrive, waits
-while a reply is still being written, and is not drawn when the newest reply
-is itself the ruling (its own button is already there). `T.latestRulingCopy`
-makes the call.
+would. Only a reply that actually **holds** a ruling counts: a block that opens
+with NATURE OF PROCEEDINGS, or the all-caps heading sharing its line plus a
+block that opens with CONCLUSION. A reply that only talks about one does not,
+so a chat with no ruling gets no second button. There is only ever one second
+button. It stays on the newest reply until a new response comes in, even when
+claude.ai unloads the ruling's reply as you scroll away from it: the ruling is
+remembered, and a copy of it is kept so the button still copies it.
+`T.latestRulingCopy` keeps that state.
+
+**No Ruling buttons on Claude Code.** Neither button appears on
+`claude.ai/code/…` pages (`T.rulingPage`).
 
 The boundary rules live in `src/tentative.js` (no DOM/`chrome` deps) and are
 unit-tested in `test/tentative.test.js`; the button is `src/copy-ruling.js`.

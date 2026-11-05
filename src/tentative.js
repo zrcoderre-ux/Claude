@@ -388,25 +388,78 @@
    * ruling higher up, so a ruling followed by more back-and-forth can still be
    * copied from the bottom of the chat (owner, November 2026).
    *
-   *   replies   [{ ruling, streaming }] in page order — `ruling` as
-   *             mentionsRuling answers it
+   * claude.ai unloads replies that are scrolled far out of view, so what is on
+   * the page is a WINDOW onto the chat, not the chat. Asked of the window
+   * alone, the button vanished whenever the ruling scrolled out of it. So the
+   * answer carries state between passes, per conversation: the newest reply
+   * and the latest ruling, each by a signature of its text.
    *
-   * → { from, to } — copy the ruling in reply `from`, button on reply `to` —
-   *   or null: no ruling yet, the newest reply IS the latest ruling (its own
-   *   button is right there), or the newest reply is still being written.
+   *   state     { hostSig, rulingSig } from the last pass, or null
+   *   mounted   [{ sig, ruling, streaming }] — the replies on the page, in
+   *             order; `ruling` means an actual ruling heading was found in it
+   *   opts      { atBottom } — the end of the last reply on the page is on screen
+   *
+   * → { state, host, from }
+   *   host   index into `mounted` of the reply to carry the button, or -1 for
+   *          no button this pass
+   *   from   index into `mounted` of the ruling to copy, or -1 for the
+   *          remembered one that is no longer on the page
+   *
+   * The window is contiguous, so a reply after the remembered newest one IS
+   * newer (a new response): the button moves to it. A remembered newest reply
+   * that is not on the page is below the window (scrolled up): no button
+   * there, and nothing forgotten — unless the last reply on the page ends on
+   * screen, when that reply is taken as the newest. While a reply is being written there is no
+   * button, and the newest is chosen again once it is done. No button where
+   * there has never been a ruling, or where the newest reply is the ruling.
    */
-  function latestRulingCopy(replies) {
-    const list = Array.isArray(replies) ? replies : [];
-    const to = list.length - 1;
-    if (to < 0 || !list[to] || list[to].streaming) return null;
-    for (let i = to; i >= 0; i--) {
-      const r = list[i];
-      if (r && r.ruling && !r.streaming) return i === to ? null : { from: i, to: to };
+  function latestRulingCopy(state, mounted, opts) {
+    const st = { hostSig: (state && state.hostSig) || null, rulingSig: (state && state.rulingSig) || null };
+    const list = Array.isArray(mounted) ? mounted.filter(Boolean) : [];
+    const none = { state: st, host: -1, from: -1 };
+    if (!list.length) return none;
+    if (list.some((m) => m.streaming)) {
+      st.hostSig = null;
+      return none;
     }
-    return null;
+    const last = list.length - 1;
+    let host = st.hostSig ? list.findIndex((m) => m.sig === st.hostSig) : last;
+    // The remembered newest reply is not on the page. Scrolled up past it, as
+    // a rule — unless the end of the last reply on the page is on screen, in
+    // which case it IS the newest (a response finished unseen, say in a tab
+    // whose timers were slowed).
+    if (host === -1) {
+      if (!(opts && opts.atBottom)) return none;
+      host = last;
+    }
+    if (host < last) host = last; // a newer reply has come in
+    st.hostSig = list[host].sig;
+    let r = -1;
+    for (let i = host; i >= 0; i--) if (list[i].ruling) { r = i; break; }
+    if (r !== -1) st.rulingSig = list[r].sig;
+    if (!st.rulingSig) return { state: st, host: -1, from: -1 };
+    if (r === host || st.rulingSig === st.hostSig) return { state: st, host: -1, from: -1 };
+    return { state: st, host: host, from: r };
+  }
+
+  /**
+   * Whether a page offers Ruling buttons at all. Never on Claude Code
+   * (claude.ai/code/…): a coding chat that talks about a ruling has none to
+   * copy (owner, November 2026).
+   */
+  function rulingPage(pathname) {
+    return !/^\/code(?:\/|$)/i.test(str(pathname));
+  }
+
+  /** A block that OPENS with the conclusion heading — not one that mentions it. */
+  function opensConclusion(text) {
+    const bare = bareLine(firstLine(text));
+    return END_LINE.test(bare) || END_GLUED.test(bare);
   }
 
   const api = {
+    rulingPage,
+    opensConclusion,
     rulingSpot,
     latestRulingCopy,
     BELOW_AFTER_MS,
