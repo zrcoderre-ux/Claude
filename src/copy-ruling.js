@@ -681,6 +681,7 @@
   // off the page: the button stays put until a new response comes in, and
   // copies the remembered ruling when its reply is no longer loaded.
   const SIG_SKIP = ".cum-ruling-btn,.cum-ruling-row";
+  const V = window.CUMPseudoView || null;
   function sigOf(el) {
     let text = "";
     try {
@@ -689,7 +690,9 @@
       while ((node = walker.nextNode())) {
         const p = node.parentElement;
         if (p && p.closest(SIG_SKIP)) continue;
-        text += node.nodeValue;
+        // claude.ai's own text, not the translation: a reply must keep its
+        // signature when the fakes toggle flips.
+        text += V && V.nodeOriginal ? V.nodeOriginal(node) : node.nodeValue;
       }
     } catch (e) {
       text = el.textContent || "";
@@ -755,6 +758,8 @@
     box.appendChild(el);
     document.body.appendChild(box);
     try {
+      // Kept as claude.ai wrote it; shown as the page shows names right now.
+      if (V && V.showLike) V.showLike(el);
       const page = copyFromPage(el);
       if (page) return say(btn, page.reason ? "Copied (no CONCLUSION)" : "Ruling copied");
       const cut = T.extractRuling(el.innerText || "");
@@ -804,7 +809,7 @@
     // Keep a copy of the ruling while it is on the page, for when it is not.
     if (pick.from !== -1 && latest.copySig !== mounted[pick.from].sig) {
       try {
-        latest.copy = msgs[pick.from].cloneNode(true);
+        latest.copy = V && V.originalClone ? V.originalClone(msgs[pick.from]) : msgs[pick.from].cloneNode(true);
         latest.copySig = mounted[pick.from].sig;
       } catch (e) {
         /* the live reply is copied when it is back */
