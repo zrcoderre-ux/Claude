@@ -825,6 +825,72 @@
     }
   }
 
+  // ---- Links for a ruling that is not on the page ---------------------------
+  // The bottom Links button with the ruling scrolled far away and unloaded.
+  // Scrolling up to it is slow and can miss; the button already HAS the
+  // ruling's text — the kept copy, or claude.ai's own copy of the
+  // conversation — so the pdf viewer is handed that text instead
+  // ("cl-citations-in-text", answered at once with "cl-citations-in-text-
+  // result": every citation it finds, with its kind and where it sits in the
+  // text). No answer (a viewer without the hook) falls back to the trip up.
+
+  // The kept ruling's text: the kept copy put on the page out of sight, read,
+  // and cut to NATURE OF PROCEEDINGS through the CONCLUSION.
+  function keptRulingText() {
+    if (latest.copy) {
+      const box = document.createElement("div");
+      box.setAttribute("aria-hidden", "true");
+      box.style.cssText = "position:fixed;left:-10000px;top:0;width:800px;opacity:0;pointer-events:none";
+      const el = latest.copy.cloneNode(true);
+      box.appendChild(el);
+      document.body.appendChild(box);
+      try {
+        const cut = T.extractRuling(el.innerText || "");
+        if (cut.ok) return cut.text;
+      } catch (e) {
+        /* the payload's copy, below */
+      } finally {
+        box.remove();
+      }
+    }
+    if (latest.api && latest.api.text) {
+      const cut = T.extractRuling(latest.api.text);
+      if (cut.ok) return cut.text;
+    }
+    return "";
+  }
+
+  // → the URLs to open, in order, or null where the viewer did not answer.
+  function linksFromText(text) {
+    if (!text) return null;
+    let got = null;
+    const take = (ev) => {
+      if (typeof ev.detail === "string") got = ev.detail;
+    };
+    try {
+      document.addEventListener("cl-citations-in-text-result", take);
+      document.dispatchEvent(new CustomEvent("cl-citations-in-text", { detail: JSON.stringify({ text: text }) }));
+    } catch (e) {
+      got = null;
+    } finally {
+      document.removeEventListener("cl-citations-in-text-result", take);
+    }
+    if (got === null) return null;
+    let list;
+    try {
+      const data = JSON.parse(got);
+      list = data && Array.isArray(data.citations) ? data.citations : null;
+    } catch (e) {
+      list = null;
+    }
+    if (!list) return null;
+    // Reading order is the text's: an offset stands in for a position.
+    return T.orderLinks(
+      list.map((c) => ({ url: c && c.url, kind: c && c.kind, top: Number(c && c.start) || 0, left: 0 })),
+      location.href
+    );
+  }
+
   async function openLinks(btn, msgEl) {
     if (btn.disabled) return;
     btn.disabled = true;
@@ -833,9 +899,28 @@
     let restore = null;
     try {
       if (!target) {
-        const found = await rulingForLatest();
-        target = found.el;
-        restore = found.restore;
+        const live = liveRuling();
+        if (live) target = live;
+        else {
+          // Not on the page: from its text, when the viewer will read one.
+          let urls = null;
+          try {
+            urls = linksFromText(keptRulingText());
+          } catch (e) {
+            urls = null;
+          }
+          if (urls) {
+            if (!urls.length) {
+              btn.disabled = false;
+              return say(btn, "No links found", true, "Links");
+            }
+            btn.querySelector(".cum-ruling-txt").textContent = "Opening " + urls.length + "…";
+            return sendOpen(btn, urls);
+          }
+          const found = await rulingForLatest();
+          target = found.el;
+          restore = found.restore;
+        }
       }
       if (!target) {
         btn.disabled = false;
@@ -1046,7 +1131,7 @@
   // is one (T.holdsRulingText over claude.ai's own copy of each reply), and
   // the bottom buttons go up on its word. Pressed, they scroll up to it,
   // let claude.ai load it, act on it, and put the view back.
-  const SEEK_MS = 220;
+  const SEEK_MS = 350; // claude.ai can take a moment to load what scrolls in
   const MAX_SEEK = 80;
   const Cv = window.CUMConv || null;
   const Md = window.CUMMdExport || null;
@@ -1084,7 +1169,14 @@
         latest.api =
           i === -1
             ? null
-            : { i: i, n: replies.length, key: T.textKey(replies[i]), keys: replies.map(T.textKey), newest: T.textKey(replies[replies.length - 1]) };
+            : {
+                i: i,
+                n: replies.length,
+                key: T.textKey(replies[i]),
+                keys: replies.map(T.textKey),
+                newest: T.textKey(replies[replies.length - 1]),
+                text: replies[i],
+              };
       })
       .catch(() => {
         /* no word from the payload: the page alone decides, as before */
