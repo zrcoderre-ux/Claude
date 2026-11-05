@@ -625,10 +625,12 @@
   //
   // The pdf viewer does not put its links IN the reply. It paints them as
   // strips in a layer of its own over the page (#__cl_overlay), each carrying
-  // its kind (data-kind), and only for the citations on screen. So the ruling
-  // is scrolled through, half a screen at a time, and the strips lying over its
-  // blocks are gathered as they are painted; the scroll is put back after.
-  // Ordinary links inside the ruling's blocks count too.
+  // its kind (data-kind), and only for the citations on screen. So the
+  // viewer is asked for its whole inventory first (viewerInventory); a viewer
+  // without that hook is handled by scrolling the ruling through, half a screen
+  // at a time, gathering the strips lying over its blocks as they are painted,
+  // and putting the scroll back after. Ordinary links inside the ruling's
+  // blocks count either way.
   const OVERLAY_SEL = "a.cl-citation-link";
   const STEP_MS = 160; // long enough for the viewer to repaint after a scroll
   const MAX_STEPS = 80;
@@ -709,9 +711,73 @@
     }
   }
 
-  // Scroll the ruling through the view and gather as it goes. → the URLs to
-  // open, in order. The view is put back where it was.
+  // The pdf viewer's whole inventory, asked for over a DOM event (its
+  // content/claude-citations.js answers "cl-citations-request" at once with
+  // "cl-citations", a JSON string: every citation in the loaded text, drawn or
+  // not, with its kind and where it sits). → the citations, or null where no
+  // viewer answered (not installed, or a version without the hook).
+  function viewerInventory() {
+    let got = null;
+    const take = (ev) => {
+      if (typeof ev.detail === "string") got = ev.detail;
+    };
+    try {
+      document.addEventListener("cl-citations", take);
+      document.dispatchEvent(new CustomEvent("cl-citations-request"));
+    } catch (e) {
+      got = null;
+    } finally {
+      document.removeEventListener("cl-citations", take);
+    }
+    if (got === null) return null;
+    try {
+      const data = JSON.parse(got);
+      return data && Array.isArray(data.citations) ? data.citations : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // From the inventory: the citations lying over the ruling's blocks, and the
+  // ordinary links inside them. No scrolling — the inventory is the whole
+  // loaded ruling. → the URLs in order, or null to fall back to scrolling.
+  function linksFromInventory(msgEl) {
+    const inv = viewerInventory();
+    if (!inv) return null;
+    const blocks = rulingBlocksOf(msgEl);
+    const frame = blocks[0].getBoundingClientRect();
+    const boxes = blocks.map((b) => b.getBoundingClientRect());
+    const hits = [];
+    for (const c of inv) {
+      const r = c && Array.isArray(c.rects) ? c.rects[0] : null;
+      if (!r || typeof c.url !== "string") continue;
+      const x = (r.left + r.right) / 2;
+      const y = (r.top + r.bottom) / 2;
+      if (!boxes.some((b) => x >= b.left && x <= b.right && y >= b.top && y <= b.bottom)) continue;
+      hits.push({ url: c.url, kind: c.kind, top: r.top - frame.top, left: r.left - frame.left });
+    }
+    // The page's own links in the ruling (the inventory is the viewer's only).
+    for (const b of blocks) {
+      const own = b.matches && b.matches("a[href]") ? [b] : [];
+      for (const a of own.concat(Array.from(b.querySelectorAll("a[href]")))) {
+        if (a.closest("." + PAIR_CLASS) || unseenWithin(a, b)) continue;
+        const r = a.getBoundingClientRect();
+        hits.push({ url: a.getAttribute("href"), kind: a.getAttribute("data-kind"), top: r.top - frame.top, left: r.left - frame.left });
+      }
+    }
+    return T.orderLinks(hits, location.href);
+  }
+
+  // → the URLs to open, in order: from the viewer's inventory where it
+  // answers, else by scrolling the ruling through the view and gathering the
+  // painted strips as it goes. The view is put back where it was.
   async function harvestLinks(msgEl) {
+    try {
+      const quick = linksFromInventory(msgEl);
+      if (quick) return quick;
+    } catch (e) {
+      /* the scroll below */
+    }
     const hits = [];
     const sc = scrollerOf(msgEl);
     const restore = holdView(sc, msgEl);
