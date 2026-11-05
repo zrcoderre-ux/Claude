@@ -2643,6 +2643,14 @@ gathering the strips lying over it, then puts the view back. Ordinary links
 inside the ruling count either way. The label says how many opened, or
 `No links found`.
 
+The bottom Links button, with the ruling scrolled far away and unloaded, does
+not go looking for it. It already has the ruling's text (the kept copy, or
+claude.ai's own copy of the conversation), so it hands that text to the pdf
+viewer (`cl-citations-in-text`, answered with `cl-citations-in-text-result`:
+each citation's link, kind and place in the text) and opens what comes back,
+cases first. Only a pdf viewer without that hook gets the trip up to the
+ruling.
+
 **A ruling the page has not shown.** Open an old chat and go straight to the
 bottom, and claude.ai may never load the ruling higher up. The extension asks
 the conversation itself (the same cached fetch the contents list uses) whether
