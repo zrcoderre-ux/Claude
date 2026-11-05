@@ -809,35 +809,25 @@
     return T.orderLinks(hits, location.href);
   }
 
-  // ---- Links on the most recent ruling only ---------------------------------
-  // Every reply with a ruling keeps its Ruling button, but Links sits only on
-  // the chat's most recent ruling (owner, November 2026) — and on the bottom
-  // pair, which acts on that same ruling. The most recent is the one the
-  // bottom button remembers (latest.state.rulingSig); before it knows one, the
-  // last reply on the page carrying a Ruling button.
+  // ---- every Links button acts on ONE ruling --------------------------------
+  // Each ruling's own Links opens that ruling's links and no other; the bottom
+  // one opens the most recent ruling's, as the bottom Ruling button copies it
+  // (owner, November 2026). Every ruling keeps its Links. What runs here is
+  // only the labels: "Close links" while a button's tabs are open, back to
+  // "Links" once they are closed — checked every few seconds, since the reader
+  // can close them by hand.
   const LABEL_MS = 3000;
   let lastLabelPass = 0;
-  function showLinksOnLatest(msgs) {
-    const sig = latest.state && latest.state.rulingSig;
-    let lastWithPair = null;
-    for (const el of msgs) if (placed.get(el)) lastWithPair = el;
-    const refresh = Date.now() - lastLabelPass >= LABEL_MS;
-    if (refresh) lastLabelPass = Date.now();
+  function refreshLinksLabels(msgs) {
+    if (Date.now() - lastLabelPass < LABEL_MS) return;
+    lastLabelPass = Date.now();
     for (const el of msgs) {
       const pair = placed.get(el);
       const links = pair && pair.querySelector ? pair.querySelector("." + LINKS_CLASS) : null;
-      if (!links) continue;
-      let show = false;
-      try {
-        show = sig ? sigOf(el) === sig : el === lastWithPair;
-      } catch (e) {
-        show = el === lastWithPair;
-      }
-      links.style.display = show ? "" : "none";
-      if (show && refresh && !links.disabled) refreshLinksLabel(links, el);
+      if (links && !links.disabled) refreshLinksLabel(links, el);
     }
     const bottom = extra && extra.btn && extra.btn.querySelector ? extra.btn.querySelector("." + LINKS_CLASS) : null;
-    if (bottom && refresh && !bottom.disabled) refreshLinksLabel(bottom, null);
+    if (bottom && !bottom.disabled) refreshLinksLabel(bottom, null);
   }
 
   // ---- open, and press again to close -----------------------------------
@@ -1097,7 +1087,7 @@
       }
     }
     placeExtra(msgs);
-    showLinksOnLatest(msgs);
+    refreshLinksLabels(msgs);
     // A row under a reply claude.ai has since unloaded is left behind on its
     // own: nothing to copy from, so it goes too.
     try {

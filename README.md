@@ -2639,9 +2639,9 @@ still open. Close them by hand and the button goes back to **Links** within a
 few seconds. The worker keeps each set by the chat and the ruling, in session
 storage, so it survives the worker restarting and is gone with the browser.
 
-**Links only on the most recent ruling.** Every reply with a ruling keeps its
-Ruling button, but Links appears only on the chat's most recent ruling, and on
-the bottom pair, which acts on that same ruling.
+**Each Links button acts on one ruling.** A ruling's own Links opens that
+ruling's links and no other ruling's. The bottom Links opens the most recent
+ruling's, as the bottom Ruling button copies it.
 
 Only the ruling's own links count, from NATURE OF PROCEEDINGS through the
 CONCLUSION. The pdf viewer does not put its links in the reply: it paints them
