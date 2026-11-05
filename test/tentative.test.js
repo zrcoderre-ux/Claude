@@ -622,13 +622,14 @@ test("rulingPage: never on Claude Code; opensConclusion: a block that opens with
   assert.strictEqual(T.opensConclusion("from NATURE OF PROCEEDINGS through the CONCLUSION"), false);
 });
 
-test("linksToOpen: each openable address once, in order", () => {
+test("linksToOpen: each openable destination once, in order", () => {
   const out = T.linksToOpen(
     [
       "https://example.com/a.pdf#page=3",
       "chrome-extension://abcdef/viewer.html?file=x.pdf#page=4",
-      "https://example.com/a.pdf#page=3",
-      "https://example.com/a.pdf#page=5",
+      "https://example.com/a.pdf#page=5", // same page, another anchor: one destination
+      "https://app.test/#/matter/1",
+      "https://app.test/#/matter/2", // a route, not an anchor: two
       "javascript:alert(1)",
       "mailto:a@b.c",
       "#section",
@@ -641,9 +642,57 @@ test("linksToOpen: each openable address once, in order", () => {
   assert.deepStrictEqual(out, [
     "https://example.com/a.pdf#page=3",
     "chrome-extension://abcdef/viewer.html?file=x.pdf#page=4",
-    "https://example.com/a.pdf#page=5",
+    "https://app.test/#/matter/1",
+    "https://app.test/#/matter/2",
     "file:///Users/me/case/opp.pdf",
     "https://claude.ai/chat/abc",
   ]);
   assert.deepStrictEqual(T.linksToOpen(null), []);
+});
+
+test("orderLinks: reading order, cases first then the rest, like Shift+Space", () => {
+  const h = (url, kind, top, left) => ({ url, kind, top, left });
+  const out = T.orderLinks([
+    h("https://lexis.test/code?s=437c", "code", 10, 300),
+    h("https://lexis.test/case?c=Aguilar", "case", 10, 20),
+    h("https://lexis.test/case?c=Smith", "shortform", 200, 50),
+    h("https://lexis.test/code?s=1005", undefined, 120, 10),
+    h("https://lexis.test/case?c=Jones", "supra", 12, 150), // same line as Aguilar (within 4px)
+    h("https://lexis.test/case?c=Aguilar#pin", "case", 300, 0), // same case again
+    h("mailto:x@y.z", "case", 0, 0),
+  ]);
+  assert.deepStrictEqual(out, [
+    "https://lexis.test/case?c=Aguilar",
+    "https://lexis.test/case?c=Jones",
+    "https://lexis.test/case?c=Smith",
+    "https://lexis.test/code?s=437c",
+    "https://lexis.test/code?s=1005",
+  ]);
+  assert.deepStrictEqual(T.orderLinks(null), []);
+});
+
+test("holdsRulingText: a ruling in the payload's markdown, not a mention", () => {
+  assert.strictEqual(T.holdsRulingText("Here.\n\n---\n\n**NATURE OF PROCEEDINGS**\n\nMotion.\n\n## CONCLUSION\n\nGranted."), true);
+  assert.strictEqual(T.holdsRulingText("## Nature of Proceedings\n\nMotion."), true);
+  assert.strictEqual(T.holdsRulingText("Here is the ruling. NATURE OF PROCEEDINGS: Motion.\n\nCONCLUSION\n\nGranted."), true);
+  assert.strictEqual(T.holdsRulingText("It copies from NATURE OF PROCEEDINGS through the end of the CONCLUSION."), false);
+  assert.strictEqual(T.holdsRulingText(""), false);
+});
+
+test("latestRulingCopy: a ruling the payload reports but the page never showed", () => {
+  const m = (sig, ruling) => ({ sig, ruling: !!ruling, streaming: false });
+  const r = T.latestRulingCopy(null, [m("b"), m("c")], { unseenRuling: true });
+  assert.deepStrictEqual([r.host, r.from, r.seek], [1, -1, true]);
+  assert.strictEqual(T.latestRulingCopy(null, [m("b"), m("c")]).host, -1);
+  // Once it has been on the page it is the ordinary remembered ruling.
+  const seen = T.latestRulingCopy(r.state, [m("R", 1), m("b"), m("c")], { unseenRuling: true });
+  assert.deepStrictEqual([seen.host, seen.from, !!seen.seek], [2, 0, false]);
+});
+
+test("textKey: the payload's markdown and the page's text agree", () => {
+  const md = "Here is the **tentative**, with [a link](https://x.test/y).\n\n---\n\n## NATURE OF PROCEEDINGS";
+  const page = "Here is the tentative, with a link.NATURE OF PROCEEDINGS";
+  assert.strictEqual(T.textKey(md), T.textKey(page));
+  assert.notStrictEqual(T.textKey("Another reply"), T.textKey(page));
+  assert.strictEqual(T.textKey(null), "");
 });

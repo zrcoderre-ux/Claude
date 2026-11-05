@@ -619,46 +619,130 @@
   }
 
   // ---- Links ----------------------------------------------------------------
-  // The hrefs of the anchors in the ruling's own blocks — NATURE OF
-  // PROCEEDINGS through the CONCLUSION — in page order. Where the cut cannot be
-  // read, the anchors from the heading to the end of the reply.
-  function rulingHrefs(msgEl) {
-    let anchors = [];
-    const cut = rulingCut(msgEl);
-    if (cut) {
-      for (const b of cut.blocks) {
-        if (b.matches && b.matches("a[href]")) anchors.push(b);
-        anchors = anchors.concat(Array.from(b.querySelectorAll("a[href]")));
+  // Every link in the ruling, opened the way the pdf viewer's Shift+Space
+  // opens a selection's (T.orderLinks): cases first, then the code sections
+  // and everything else, so the cases land as one run of tabs on the left.
+  //
+  // The pdf viewer does not put its links IN the reply. It paints them as
+  // strips in a layer of its own over the page (#__cl_overlay), each carrying
+  // its kind (data-kind), and only for the citations on screen. So the ruling
+  // is scrolled through, half a screen at a time, and the strips lying over its
+  // blocks are gathered as they are painted; the scroll is put back after.
+  // Ordinary links inside the ruling's blocks count too.
+  const OVERLAY_SEL = "a.cl-citation-link";
+  const STEP_MS = 160; // long enough for the viewer to repaint after a scroll
+  const MAX_STEPS = 80;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function scrollerOf(el) {
+    for (let p = el && el.parentElement; p; p = p.parentElement) {
+      try {
+        if (/(auto|scroll)/.test(getComputedStyle(p).overflowY) && p.scrollHeight > p.clientHeight + 20) return p;
+      } catch (e) {
+        /* keep looking */
       }
-    } else {
-      const start = findStartEl(msgEl);
-      anchors = Array.from(msgEl.querySelectorAll("a[href]")).filter(
-        (a) => !start || start.contains(a) || !!(start.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING)
-      );
     }
-    return anchors
-      .filter((a) => !a.closest("." + PAIR_CLASS) && !unseenWithin(a, msgEl))
-      .map((a) => a.getAttribute("href"));
+    return document.scrollingElement || document.documentElement;
   }
 
-  function linksOf(msgEl) {
-    if (msgEl) return T.linksToOpen(rulingHrefs(msgEl), location.href);
-    const live = liveRuling();
-    if (live) return T.linksToOpen(rulingHrefs(live), location.href);
-    if (!latest.copy) return [];
-    return T.linksToOpen(rulingHrefs(latest.copy), location.href);
+  // Remember where the view is, by what is in it rather than by number: a
+  // ruling loading or unloading above the view changes every number below it
+  // (and Chrome's scroll anchoring moves the view to suit). → restore(), which
+  // puts the bottom back at the bottom, or the same reply at the same height,
+  // and looks again once claude.ai has finished loading and unloading.
+  function holdView(sc, anchorEl) {
+    const atBottom = sc.scrollHeight - sc.clientHeight - sc.scrollTop < 60;
+    const top = anchorEl ? anchorEl.getBoundingClientRect().top : 0;
+    const back = sc.scrollTop;
+    const put = () => {
+      try {
+        if (atBottom) sc.scrollTop = sc.scrollHeight;
+        else if (anchorEl && anchorEl.isConnected) sc.scrollTop += anchorEl.getBoundingClientRect().top - top;
+        else sc.scrollTop = back;
+      } catch (e) {
+        /* ignore */
+      }
+    };
+    return () => {
+      put();
+      setTimeout(put, 250);
+      setTimeout(put, 800);
+    };
   }
 
-  function openLinks(btn, msgEl) {
-    if (btn.disabled) return;
-    let urls = [];
+  function viewOf(sc) {
+    const whole = { top: 0, bottom: window.innerHeight };
+    if (sc === document.scrollingElement || sc === document.documentElement) return whole;
+    const r = sc.getBoundingClientRect();
+    return { top: Math.max(0, r.top), bottom: Math.min(window.innerHeight, r.bottom) };
+  }
+
+  function rulingBlocksOf(msgEl) {
+    const cut = rulingCut(msgEl);
+    return cut ? cut.blocks : [msgEl];
+  }
+
+  // One look: the links over or in the ruling's blocks right now, measured
+  // from the top of its first block so looks at different scrolls compare.
+  function gather(blocks, into) {
+    const frame = blocks[0].getBoundingClientRect();
+    const boxes = blocks.map((b) => b.getBoundingClientRect());
+    const over = (r) => {
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      return boxes.some((b) => x >= b.left && x <= b.right && y >= b.top && y <= b.bottom);
+    };
+    const add = (a, url) => {
+      const r = a.getBoundingClientRect();
+      into.push({ url: url, kind: a.getAttribute("data-kind"), top: r.top - frame.top, left: r.left - frame.left });
+    };
+    for (const a of document.querySelectorAll(OVERLAY_SEL)) {
+      const r = a.getBoundingClientRect();
+      if (r.width >= 1 && r.height >= 1 && over(r)) add(a, a.href);
+    }
+    for (const b of blocks) {
+      const own = b.matches && b.matches("a[href]") ? [b] : [];
+      for (const a of own.concat(Array.from(b.querySelectorAll("a[href]")))) {
+        if (a.closest("." + PAIR_CLASS) || unseenWithin(a, b)) continue;
+        add(a, a.getAttribute("href"));
+      }
+    }
+  }
+
+  // Scroll the ruling through the view and gather as it goes. → the URLs to
+  // open, in order. The view is put back where it was.
+  async function harvestLinks(msgEl) {
+    const hits = [];
+    const sc = scrollerOf(msgEl);
+    const restore = holdView(sc, msgEl);
     try {
-      urls = linksOf(msgEl);
-    } catch (e) {
-      urls = [];
+      const blocks = rulingBlocksOf(msgEl);
+      gather(blocks, hits);
+      let v = viewOf(sc);
+      const first = blocks[0].getBoundingClientRect();
+      if (first.top < v.top || first.top > v.bottom - 40) {
+        sc.scrollTop += first.top - v.top - 40;
+        await wait(STEP_MS);
+      }
+      for (let i = 0; i < MAX_STEPS && msgEl.isConnected; i++) {
+        gather(blocks, hits);
+        v = viewOf(sc);
+        const height = v.bottom - v.top;
+        // Done once the ruling's end has been in the upper part of the view —
+        // the viewer paints nothing under the composer at the bottom.
+        if (blocks[blocks.length - 1].getBoundingClientRect().bottom <= v.bottom - height * 0.35) break;
+        const before = sc.scrollTop;
+        sc.scrollTop = before + Math.max(120, height * 0.5);
+        if (sc.scrollTop === before) break;
+        await wait(STEP_MS);
+      }
+    } finally {
+      restore();
     }
-    if (!urls.length) return say(btn, "No links found", true, "Links");
-    btn.disabled = true;
+    return T.orderLinks(hits, location.href);
+  }
+
+  function sendOpen(btn, urls) {
     const done = (res) => {
       btn.disabled = false;
       const n = res && typeof res.opened === "number" ? res.opened : 0;
@@ -672,6 +756,37 @@
       });
     } catch (e) {
       done(null); // the extension was reloaded under this page: reload the tab
+    }
+  }
+
+  async function openLinks(btn, msgEl) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.querySelector(".cum-ruling-txt").textContent = "Finding links…";
+    let target = msgEl;
+    let restore = null;
+    try {
+      if (!target) {
+        const found = await rulingForLatest();
+        target = found.el;
+        restore = found.restore;
+      }
+      if (!target) {
+        btn.disabled = false;
+        return say(btn, "No ruling found", true, "Links");
+      }
+      const urls = await harvestLinks(target);
+      if (restore) restore();
+      if (!urls.length) {
+        btn.disabled = false;
+        return say(btn, "No links found", true, "Links");
+      }
+      btn.querySelector(".cum-ruling-txt").textContent = "Opening " + urls.length + "…";
+      sendOpen(btn, urls);
+    } catch (e) {
+      if (restore) restore();
+      btn.disabled = false;
+      say(btn, "Couldn't open", true, "Links");
     }
   }
 
@@ -806,7 +921,7 @@
     return false;
   }
 
-  let latest = { conv: "", state: null, copy: null, copySig: "" };
+  let latest = { conv: "", state: null, copy: null, copySig: "", api: null, apiAsked: "" };
   let extra = null; // { hostEl, btn }
   const everPlaced = new Set(); // host signatures the button has been on
   let extraHostEl = null;
@@ -859,17 +974,176 @@
     }
   }
 
-  function copyLatest(btn) {
+  // ---- a ruling the page has not shown this visit -------------------------
+  // Open an old chat and go straight to the bottom, and the ruling higher up
+  // may never be loaded at all. The conversation payload says whether there
+  // is one (T.holdsRulingText over claude.ai's own copy of each reply), and
+  // the bottom buttons go up on its word. Pressed, they scroll up to it,
+  // let claude.ai load it, act on it, and put the view back.
+  const SEEK_MS = 220;
+  const MAX_SEEK = 80;
+  const Cv = window.CUMConv || null;
+  const Md = window.CUMMdExport || null;
+  const Wf = window.CUMWorkflow || null;
+
+  function plainOf(el) {
+    try {
+      return V && V.plainText ? V.plainText(el) : el.textContent || "";
+    } catch (e) {
+      return el.textContent || "";
+    }
+  }
+
+  function checkApi(hostSig) {
+    if (!Cv || !Md || !Wf || !Wf.conversationId) return;
+    const uuid = Wf.conversationId(location.pathname);
+    if (!uuid) return;
+    const ask = uuid + "|" + (hostSig || "");
+    if (latest.apiAsked === ask) return; // once per newest reply
+    latest.apiAsked = ask;
+    const conv = latest.conv;
+    Cv.get(uuid)
+      .then((data) => {
+        if (!data || latest.conv !== conv) return;
+        const replies = Md.messagesOf(data)
+          .filter((m) => String((m && (m.sender || m.role)) || "").toLowerCase() === "assistant")
+          .map((m) => Md.parts(m).text || "");
+        let i = -1;
+        for (let k = replies.length - 1; k >= 0; k--) {
+          if (T.holdsRulingText(replies[k])) {
+            i = k;
+            break;
+          }
+        }
+        latest.api =
+          i === -1
+            ? null
+            : { i: i, n: replies.length, key: T.textKey(replies[i]), keys: replies.map(T.textKey), newest: T.textKey(replies[replies.length - 1]) };
+      })
+      .catch(() => {
+        /* no word from the payload: the page alone decides, as before */
+      });
+  }
+
+  // Scroll until the latest ruling is on the page. → the reply, or null.
+  async function seekRuling(sc) {
+    const api = latest.api;
+    let jumped = false;
+    let dir = -1; // up first: the latest ruling is above the newest reply
+    let turned = false;
+    for (let t = 0; t < MAX_SEEK; t++) {
+      const msgs = Array.from(assistantMessages());
+      const keys = msgs.map((el) => T.textKey(plainOf(el)));
+      let nearest = null;
+      for (let k = msgs.length - 1; k >= 0; k--) {
+        if (!holdsRuling(msgs[k])) continue;
+        nearest = nearest || msgs[k];
+        // The payload names the one wanted; without it, the first found going
+        // up from the bottom is the latest.
+        if (!api || !api.key || sameKey(keys[k], api.key)) return msgs[k];
+      }
+      const height = sc.clientHeight || window.innerHeight;
+      const span = Math.max(0, sc.scrollHeight - sc.clientHeight);
+      let delta = dir * height * 0.8;
+      if (api && api.n) {
+        let j = -1;
+        for (let k = 0; k < keys.length && j === -1; k++) j = api.keys.findIndex((x) => sameKey(x, keys[k]));
+        if (j !== -1) {
+          const est = (span * (api.i - j)) / api.n;
+          delta = api.i < j ? Math.min(-height * 0.6, est) : Math.max(height * 0.6, est);
+        } else if (!jumped) {
+          jumped = true;
+          sc.scrollTop = (span * api.i) / api.n;
+          await wait(SEEK_MS);
+          continue;
+        }
+      }
+      const before = sc.scrollTop;
+      sc.scrollTop = before + delta;
+      if (sc.scrollTop === before) {
+        // At the end of the chat with a ruling on the page and none matching
+        // the payload exactly: the one on the page is the one there is.
+        if (nearest) return nearest;
+        // An estimate that overshot leaves it past the ruling: go back the
+        // other way, once, a screen at a time.
+        if (turned) return null;
+        turned = true;
+        dir = -dir;
+        jumped = true;
+        continue;
+      }
+      await wait(SEEK_MS);
+    }
+    return null;
+  }
+
+  // Two sightings of one reply: their openings agree. The full key can part
+  // late on (a table, a markdown construct the page draws differently).
+  function sameKey(a, b) {
+    return !!a && !!b && (a === b || a.slice(0, 40) === b.slice(0, 40));
+  }
+
+  // The latest ruling's reply for the bottom buttons: on the page, or scrolled
+  // to. → { el, restore } — restore() puts the view back where it was.
+  async function rulingForLatest() {
+    const live = liveRuling();
+    if (live) return { el: live, restore: null };
+    const anchor = (extra && extra.hostEl) || assistantMessages()[0];
+    if (!anchor) return { el: null, restore: null };
+    const sc = scrollerOf(anchor);
+    const restore = holdView(sc, anchor);
+    let el = null;
+    try {
+      el = await seekRuling(sc);
+    } catch (e) {
+      el = null;
+    }
+    if (!el) {
+      restore();
+      return { el: null, restore: null };
+    }
+    // Remember it now, so the next press needs no trip up.
+    try {
+      latest.state = Object.assign({}, latest.state, { rulingSig: sigOf(el) });
+      latest.copy = V && V.originalClone ? V.originalClone(el) : el.cloneNode(true);
+      latest.copySig = sigOf(el);
+    } catch (e) {
+      /* found is enough for this press */
+    }
+    return { el: el, restore: restore };
+  }
+
+  async function copyLatest(btn) {
     const live = liveRuling();
     if (live) return copyRuling(btn, live);
-    copyKept(btn);
+    if (latest.copy) return copyKept(btn);
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.querySelector(".cum-ruling-txt").textContent = "Finding ruling…";
+    const found = await rulingForLatest();
+    btn.disabled = false;
+    if (!found.el) return say(btn, "No ruling found", true);
+    // A copy needs the click that asked for it, and the trip up may have
+    // outlasted it: then the ruling is remembered and the next click copies.
+    const fresh = !navigator.userActivation || navigator.userActivation.isActive;
+    if (fresh) {
+      try {
+        const page = copyFromPage(found.el);
+        if (found.restore) found.restore();
+        if (page) return say(btn, page.reason ? "Copied (no CONCLUSION)" : "Ruling copied");
+      } catch (e) {
+        /* fall through */
+      }
+    }
+    if (found.restore) found.restore();
+    say(btn, "Found — click again to copy");
   }
 
   function placeExtra(msgs) {
     const conv = location.pathname;
     if (latest.conv !== conv) {
       removeExtra();
-      latest = { conv: conv, state: null, copy: null, copySig: "" };
+      latest = { conv: conv, state: null, copy: null, copySig: "", api: null, apiAsked: "" };
       everPlaced.clear();
     }
     const mounted = msgs.map((el) => {
@@ -889,14 +1163,20 @@
     } catch (e) {
       atBottom = false;
     }
-    const pick = T.latestRulingCopy(latest.state, mounted, { atBottom: atBottom });
+    // Nothing on the page this visit: ask the payload whether there is a
+    // ruling above the newest reply.
+    const seen = !!(latest.state && latest.state.rulingSig) || mounted.some((m) => m.ruling);
+    const last = msgs[msgs.length - 1];
+    if (!seen && last && !mounted[mounted.length - 1].streaming) checkApi(mounted[mounted.length - 1].sig);
+    let unseenRuling = false;
+    if (!seen && latest.api && last) {
+      // Not when the newest reply IS that ruling: its own buttons are there.
+      unseenRuling = T.textKey(plainOf(last)) !== latest.api.key;
+    }
+    const pick = T.latestRulingCopy(latest.state, mounted, { atBottom: atBottom, unseenRuling: unseenRuling });
     latest.state = pick.state;
     // Keep a copy of the ruling while it is on the page, for when it is not.
-    // The pdf viewer links the cites AFTER the reply is drawn, and a link does
-    // not change the text, so the count of links is part of what is compared:
-    // a copy taken before the links went in is taken again once they have.
-    const keepSig =
-      pick.from !== -1 ? mounted[pick.from].sig + "|" + msgs[pick.from].querySelectorAll("a[href]").length : "";
+    const keepSig = pick.from !== -1 ? mounted[pick.from].sig : "";
     if (pick.from !== -1 && latest.copySig !== keepSig) {
       try {
         latest.copy = V && V.originalClone ? V.originalClone(msgs[pick.from]) : msgs[pick.from].cloneNode(true);

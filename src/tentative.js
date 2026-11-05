@@ -398,12 +398,16 @@
    *   mounted   [{ sig, ruling, streaming }] — the replies on the page, in
    *             order; `ruling` means an actual ruling heading was found in it
    *   opts      { atBottom } — the end of the last reply on the page is on screen
+   *             { unseenRuling } — the conversation payload has a ruling above
+   *             the newest reply, though none has been on the page this visit
    *
    * → { state, host, from }
    *   host   index into `mounted` of the reply to carry the button, or -1 for
    *          no button this pass
    *   from   index into `mounted` of the ruling to copy, or -1 for the
    *          remembered one that is no longer on the page
+   *   seek   true when no ruling has been on the page yet: the button has to
+   *          scroll up to the one the payload reports before it can act
    *
    * The window is contiguous, so a reply after the remembered newest one IS
    * newer (a new response): the button moves to it. A remembered newest reply
@@ -437,7 +441,11 @@
     let r = -1;
     for (let i = host; i >= 0; i--) if (list[i].ruling) { r = i; break; }
     if (r !== -1) st.rulingSig = list[r].sig;
-    if (!st.rulingSig) return { state: st, host: -1, from: -1 };
+    if (!st.rulingSig) {
+      // None on the page yet, but the conversation payload says there is one
+      // above the newest reply: the button goes up, and finds it when pressed.
+      return opts && opts.unseenRuling ? { state: st, host: host, from: -1, seek: true } : { state: st, host: -1, from: -1 };
+    }
     if (r === host || st.rulingSig === st.hostSig) return { state: st, host: -1, from: -1 };
     return { state: st, host: host, from: r };
   }
@@ -458,37 +466,139 @@
   }
 
   /**
-   * The links the Links button opens, from the hrefs of the anchors in a
-   * ruling, in the order they appear (owner, November 2026: the pdf viewer
-   * links each record cite to its page). Each address once; only addresses a
-   * tab can be opened on — web pages, local files and extension pages (the
-   * viewer's own) — never a script, a mail link or a jump within this page.
-   * `base` resolves a relative href.
+   * Whether a reply's TEXT (the conversation payload's markdown, not the page)
+   * holds a ruling: a line that opens with NATURE OF PROCEEDINGS, or the
+   * all-caps heading sharing a line plus a line that opens with CONCLUSION.
+   * The same bar the page test sets (holdsRuling in src/copy-ruling.js), so
+   * the chat that asks the API and the chat that reads the page agree.
    */
+  function holdsRulingText(text) {
+    const lines = str(text).split("\n");
+    let caps = false;
+    let concl = false;
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const bare = bareLine(line);
+      if (START_LINE.test(bare)) return true;
+      if (START_CAPS.test(line)) caps = true;
+      if (END_LINE.test(bare) || END_GLUED.test(bare)) concl = true;
+    }
+    return caps && concl;
+  }
+
+  /**
+   * A key that says two sightings of a reply are the same reply — the
+   * payload's markdown and the page's rendered text. Letters and digits only,
+   * lower-cased, from the opening: markdown marks, layout whitespace and
+   * blocks run together by textContent all fall away. Pass the page's text as
+   * claude.ai wrote it (the fakes), as the payload has it.
+   */
+  const TEXT_KEY_CHARS = 80;
+  function textKey(text) {
+    return str(text)
+      .replace(/\]\([^)]*\)/g, "]") // a markdown link's address is not on the page
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "")
+      .slice(0, TEXT_KEY_CHARS);
+  }
+
+  // ---- the Links button ------------------------------------------------------
+  //
+  // Opens every link in a ruling the way the pdf viewer's Shift+Space opens a
+  // selection's links (owner, November 2026; pdf-viewer's
+  // viewer/shift-space-open.js and its worker's sameLinkKey): reading order,
+  // then like with like — the CASES first (a full cite, a supra or a short
+  // form: the viewer's data-kind case / supra / shortform), then everything
+  // else (code sections, rules, the page's own links). The tabs land left to
+  // right in that order, so the cases are one run on the left and the rest
+  // follow on the right. One tab per destination: two links that differ only
+  // in an anchor are the same page, unless the fragment is a route ("#/…",
+  // "#!…"). Only addresses a tab can be opened on — web pages, local files and
+  // extension pages — never a script, a mail link or a jump within this page.
+
   const LINK_SCHEMES = /^(?:https?|file|chrome-extension):$/i;
+  const CASE_KINDS = ["case", "supra", "shortform"];
+  const LINK_LINE_PX = 4; // links within this of one another share a line
+
+  function openable(raw, base) {
+    const h = str(raw).trim();
+    if (!h || h.charAt(0) === "#") return null;
+    let u;
+    try {
+      u = new URL(h, base || undefined);
+    } catch (e) {
+      return null;
+    }
+    return LINK_SCHEMES.test(u.protocol) ? u : null;
+  }
+
+  /** What makes two links one destination (pdf-viewer's sameLinkKey). */
+  function linkKey(url) {
+    let u;
+    try {
+      u = new URL(str(url));
+    } catch (e) {
+      return str(url);
+    }
+    const hash = u.hash;
+    if (hash && (hash.indexOf("#/") === 0 || hash.indexOf("#!") === 0)) return u.href;
+    return u.origin + u.pathname + u.search;
+  }
+
+  function isCaseKind(kind) {
+    return CASE_KINDS.indexOf(str(kind).toLowerCase()) !== -1;
+  }
+
+  /**
+   * The order to open a ruling's links in. `hits` are [{ url, kind, top,
+   * left }] — top/left measured in the ruling's own frame, so links gathered
+   * at different scroll positions compare. → the URLs, cases first.
+   */
+  function orderLinks(hits, base) {
+    const list = [];
+    for (const h of Array.isArray(hits) ? hits : []) {
+      if (!h) continue;
+      const u = openable(h.url, base);
+      if (!u) continue;
+      list.push({ url: u.href, isCase: isCaseKind(h.kind), top: Number(h.top) || 0, left: Number(h.left) || 0 });
+    }
+    list.sort((p, q) => {
+      const dt = p.top - q.top;
+      return Math.abs(dt) > LINK_LINE_PX ? dt : p.left - q.left;
+    });
+    const ordered = list.filter((h) => h.isCase).concat(list.filter((h) => !h.isCase));
+    const out = [];
+    const seen = new Set();
+    for (const h of ordered) {
+      const k = linkKey(h.url);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(h.url);
+    }
+    return out;
+  }
+
+  /** The background worker's re-check: openable, each destination once, in the order given. */
   function linksToOpen(hrefs, base) {
     const out = [];
     const seen = new Set();
     for (const h of Array.isArray(hrefs) ? hrefs : []) {
-      const raw = str(h).trim();
-      if (!raw || raw.charAt(0) === "#") continue;
-      let u;
-      try {
-        u = new URL(raw, base || undefined);
-      } catch (e) {
-        continue;
-      }
-      if (!LINK_SCHEMES.test(u.protocol)) continue;
-      const href = u.href;
-      if (seen.has(href)) continue;
-      seen.add(href);
-      out.push(href);
+      const u = openable(h, base);
+      if (!u) continue;
+      const k = linkKey(u.href);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(u.href);
     }
     return out;
   }
 
   const api = {
     linksToOpen,
+    orderLinks,
+    linkKey,
+    holdsRulingText,
+    textKey,
     rulingPage,
     opensConclusion,
     rulingSpot,
