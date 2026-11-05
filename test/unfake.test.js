@@ -178,3 +178,17 @@ test("spanAtOffset and isSpotKept find the occurrence under the pointer", () => 
   assert.ok(!P.isSpotKept([spotAt(SECOND)], spans[0]));
   assert.ok(!P.isSpotKept([], spans[0]));
 });
+
+test("realForFake answers the key's real value behind a fake Claude wrote, possessive off", () => {
+  const key = keyOf(ROWS);
+  const c = P.compile(key);
+  assert.strictEqual(P.realForFake(c, "Ingrid Strangeways"), "Helen Rasho");
+  assert.strictEqual(P.realForFake(c, "INGRID STRANGEWAYS"), "Helen Rasho");
+  assert.strictEqual(P.realForFake(c, "Ingrid Strangeways’s"), "Helen Rasho");
+  assert.strictEqual(P.realForFake(c, "Quillfeather Assembly's"), "Case Management Conference");
+  assert.strictEqual(P.realForFake(c, "Nobody"), "");
+  assert.strictEqual(P.realForFake(null, "Ingrid Strangeways"), "");
+  // What it answers is what removing takes out: the message stops translating.
+  const out = P.unfakeKey(key, P.realForFake(c, "Quillfeather Assembly's"));
+  assert.strictEqual(P.translate(P.compile(out), "the Quillfeather Assembly's order").text, "the Quillfeather Assembly's order");
+});

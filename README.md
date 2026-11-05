@@ -3049,6 +3049,14 @@ own opens in place of the browser's:
   removed from the master key itself, since that key is distilled from many
   cases, so the item is disabled there.
 
+The same right-click works on a **translated name in the chat's messages**.
+There the menu offers only **Remove from the key**, since a message has no send
+to keep one occurrence out of. The real value it removes is the key's own
+spelling behind the fake Claude wrote (`P.realForFake`), possessive left off,
+so it takes the same rows as removing it from the draft. Once it is out, the
+messages show what Claude wrote (the fake) again, and you can type the real
+value and send it as itself.
+
 **Shift + right-click** is the browser's own menu, and so is a right-click
 anywhere that is not on a real name. A Lexis or Westlaw report in the draft
 gets no menu, because nothing in it is faked. The decisions live in
