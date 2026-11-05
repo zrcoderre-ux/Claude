@@ -2208,20 +2208,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === "cum-open-links" && Array.isArray(msg.urls)) {
     (async () => {
       const T = self.CUMTentative;
-      const urls = T && T.linksToOpen ? T.linksToOpen(msg.urls) : [];
+      // The order is the page's (cases first, then the rest — T.orderLinks),
+      // kept here: each tab goes after the last, so the cases are one run on
+      // the left. The pdf viewer's ceiling for a deliberate request.
+      const urls = (T && T.linksToOpen ? T.linksToOpen(msg.urls) : []).slice(0, 120);
       const from = sender && sender.tab;
       let index = from && typeof from.index === "number" ? from.index + 1 : undefined;
       let opened = 0;
+      const ids = [];
       for (const url of urls) {
         try {
           const opts = { url, active: false };
           if (from && typeof from.windowId === "number") opts.windowId = from.windowId;
           if (index !== undefined) opts.index = index++;
           if (from && typeof from.id === "number") opts.openerTabId = from.id;
-          await chrome.tabs.create(opts);
+          const tab = await chrome.tabs.create(opts);
           opened++;
+          if (tab && tab.id != null) ids.push(tab.id);
         } catch (e) {
           /* one link that will not open does not stop the rest */
+        }
+      }
+      // A middle-clicked tab stays in its opener's tab group; so do these.
+      if (from && from.groupId > -1 && chrome.tabs.group && ids.length) {
+        try {
+          await chrome.tabs.group({ groupId: from.groupId, tabIds: ids });
+        } catch (e) {
+          /* the group closed meanwhile; the tabs are open all the same */
         }
       }
       return { ok: true, opened, asked: urls.length };

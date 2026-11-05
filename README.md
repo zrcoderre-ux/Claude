@@ -2620,16 +2620,33 @@ translated at the moment of the copy (`CUMPseudoView.originalClone`,
 leave a stale set of names in it. Replies are recognised by claude.ai's own
 text (`nodeOriginal`), so flipping the toggle does not move or drop the button.
 
-**Links, beside both Ruling buttons.** One click opens every hyperlink in the
-ruling (the pdf viewer links each record cite to its page) in its own tab. The
-tabs open after the chat's tab, in the order the ruling cites them, without
-taking focus off the chat. Only the ruling's own links count, from NATURE OF
-PROCEEDINGS through the CONCLUSION, not Claude's note above or below it. Each
-address opens once, and only web pages, local files and extension pages are
-opened (`T.linksToOpen`, checked again in the background worker). The bottom
-button's kept copy is taken again once the viewer's links appear, so it opens
-them even after the ruling's reply has been unloaded. The label says how many
-opened, or `No links found`.
+**Links, beside both Ruling buttons.** One click opens every link in the
+ruling, the way the pdf viewer's **Shift+Space** opens a selection's links.
+They are taken in reading order, then the **cases** go first (a full cite, a
+supra or a short form) and the code sections and other links after, so the
+cases land as one run of tabs on the left and the rest to their right. Each
+destination opens once: two links that differ only in a pin anchor are the
+same case. Tabs open behind the chat, right after its tab, and join its tab
+group if it is in one (`T.orderLinks`, `T.linkKey`; the worker re-checks with
+`T.linksToOpen`, at most 120).
+
+Only the ruling's own links count, from NATURE OF PROCEEDINGS through the
+CONCLUSION. The pdf viewer does not put its links in the reply: it paints them
+in its own layer over the page, and only for citations on screen. So the
+button scrolls the ruling through the view, half a screen at a time, gathering
+the strips lying over it, then puts the view back. Ordinary links inside the
+ruling count too. The label says how many opened, or `No links found`.
+
+**A ruling the page has not shown.** Open an old chat and go straight to the
+bottom, and claude.ai may never load the ruling higher up. The extension asks
+the conversation itself (the same cached fetch the contents list uses) whether
+a reply above the newest one holds a ruling (`T.holdsRulingText`), and if so
+the bottom buttons appear anyway. Pressed, they scroll up to that ruling
+(matched to the payload by `T.textKey`), let claude.ai load it, copy it or
+open its links, and put the view back: at the bottom if you were there,
+otherwise with the same reply where it was. A copy needs the click that asked
+for it, so if the trip up took too long the label says `Found — click again to
+copy`, and the next click copies at once.
 
 **No Ruling buttons on Claude Code.** Neither button appears on
 `claude.ai/code/…` pages (`T.rulingPage`).
