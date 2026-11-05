@@ -834,6 +834,22 @@
     return false;
   }
 
+  /**
+   * The key's real value behind a fake as Claude wrote it in a message — what
+   * a right-click on a translated name in the chat removes from the key. The
+   * displayed text is cased and quoted from the message, so the key's own
+   * spelling is answered instead, with any possessive left off ("Quillfeather
+   * Assembly's" answers "Case Management Conference", which takes the
+   * possessive row with it). "" where the key does not bind that fake.
+   */
+  function realForFake(compiled, fake) {
+    if (!compiled || !compiled.map) return "";
+    const m = String(fake == null ? "" : fake);
+    let mapped = compiled.map.get(fold(m));
+    if (mapped == null && POSS_MATCH_RE.test(m)) mapped = compiled.map.get(fold(m.replace(POSS_MATCH_RE, "")));
+    return mapped == null ? "" : trim(String(mapped).replace(POSS_TAIL_RE, ""));
+  }
+
   // ---- one occurrence in the draft, sent as typed ---------------------------
   //
   // The composer's right-click "Send this one as typed": that occurrence of a
@@ -2812,6 +2828,7 @@
     refakeKey,
     unfakedNames,
     unfakedChanged,
+    realForFake,
     shiftSpots,
     maskSpots,
     spanAtOffset,

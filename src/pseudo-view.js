@@ -2902,6 +2902,11 @@
   //                            not touched, and a re-load of it keeps the
   //                            removal (P.keepKeyFacts).
   //
+  // The same right-click on a translated name in the MESSAGES (owner, November
+  // 2026) offers the removal alone — there is no send to keep one occurrence
+  // out of. Once it is out of the key, the messages show what Claude wrote
+  // (the fake) again, and the real value can be typed and sent as itself.
+  //
   // Shift+right-click is the browser's own menu, and a right-click anywhere
   // that is not on a real name never sees this one.
 
@@ -2949,6 +2954,21 @@
     );
     if (!inside) return null;
     return { span: span, kept: P.isSpotKept(liveSpots(read.text), span), text: read.text };
+  }
+
+  // The translated name under the pointer in a message — { real, shown, fake }
+  // — or null. Only a message body's swaps count: those are the attached key's
+  // work, where a title may have been translated by another chat's key.
+  function messageNameUnder(x, y) {
+    if (!active || !PM || translationOff() || !markNodes.size) return null;
+    const hit = swapUnder(x, y);
+    if (!hit) return null;
+    const host = hit.node.parentElement;
+    if (!host || !host.closest(MSG_SEL)) return null;
+    const shown = hit.node.nodeValue.slice(hit.span[0], hit.span[1]);
+    const fake = hit.span[2];
+    const real = P.realForFake ? P.realForFake(active.compiled, fake) : "";
+    return { real: real || shown, shown: shown, fake: fake };
   }
 
   // The occurrence is still where the menu found it — the draft may have
@@ -3093,6 +3113,46 @@
     return b;
   }
 
+  // The menu on screen at the pointer, kept inside the window.
+  function placeMenu(m, x, y) {
+    const foot = document.createElement("div");
+    foot.className = "cum-pseudo-menu-foot";
+    foot.textContent = "Shift + right-click for the browser's menu";
+    m.appendChild(foot);
+    document.documentElement.appendChild(m);
+    menuEl = m;
+    const w = m.offsetWidth || 300;
+    const h = m.offsetHeight || 140;
+    m.style.left = Math.max(4, Math.min(window.innerWidth - w - 4, x)) + "px";
+    m.style.top = Math.max(4, Math.min(window.innerHeight - h - 4, y)) + "px";
+    hideTip();
+    clearHover();
+  }
+
+  function showMessageMenu(hit, x, y) {
+    closeMenu();
+    const m = document.createElement("div");
+    m.className = "cum-pseudo-menu";
+    m.setAttribute("role", "menu");
+    const head = document.createElement("div");
+    head.className = "cum-pseudo-menu-head";
+    head.textContent = "“" + hit.shown + "” — Claude wrote “" + hit.fake + "”";
+    m.appendChild(head);
+    const id = removableKeyId();
+    m.appendChild(
+      menuItem(
+        "Remove “" + hit.real + "” from the key",
+        id
+          ? "The chat shows “" + hit.fake + "” here again, and “" + hit.real + "” is no longer faked anywhere in " +
+              keyName(keys[id]) + ". Undo from the Key panel."
+          : "Only an attached case key can lose a name; the master key cannot.",
+        () => removeFromKey(hit.real),
+        !id
+      )
+    );
+    placeMenu(m, x, y);
+  }
+
   function showMenu(hit, x, y) {
     closeMenu();
     const real = hit.span.real;
@@ -3135,19 +3195,8 @@
         !id
       )
     );
-    const foot = document.createElement("div");
-    foot.className = "cum-pseudo-menu-foot";
-    foot.textContent = "Shift + right-click for the browser's menu";
-    m.appendChild(foot);
-    document.documentElement.appendChild(m);
-    menuEl = m;
-    const w = m.offsetWidth || 300;
-    const h = m.offsetHeight || 140;
-    m.style.left = Math.max(4, Math.min(window.innerWidth - w - 4, x)) + "px";
-    m.style.top = Math.max(4, Math.min(window.innerHeight - h - 4, y)) + "px";
     // Focus stays in the composer, where the caret is; ↓ and ↑ reach the items.
-    hideTip();
-    clearHover();
+    placeMenu(m, x, y);
   }
 
   window.addEventListener(
@@ -3156,7 +3205,19 @@
       closeMenu();
       if (ev.shiftKey || !active) return;
       const ed = editorEl();
-      if (!ed || !inEditor(ev.target)) return;
+      if (!ed || !inEditor(ev.target)) {
+        let said = null;
+        try {
+          said = messageNameUnder(ev.clientX, ev.clientY);
+        } catch (e) {
+          said = null;
+        }
+        if (!said) return;
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        showMessageMenu(said, ev.clientX, ev.clientY);
+        return;
+      }
       let hit = null;
       try {
         hit = draftNameUnder(ed, ev.clientX, ev.clientY);
