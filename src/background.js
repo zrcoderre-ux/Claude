@@ -36,7 +36,9 @@ importScripts(
   // changes: the workbooks are kept beside it, and reparseKeys needs both to
   // heal a key loaded under an older reader. See reparseKeys.
   "xlsxread.js",
-  "keyfile.js"
+  "keyfile.js",
+  // The Links button beside Ruling: which of a ruling's hrefs may open a tab.
+  "tentative.js"
 );
 
 const CFG_KEY = "cum_autocontinue";
@@ -2197,6 +2199,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     refreshProjects()
       .then(sendResponse)
       .catch((e) => sendResponse({ error: String(e) }));
+    return true;
+  }
+  // The Links button beside Ruling: every link in a tentative, opened in tabs
+  // after the chat's own, in the order the ruling cites them, without taking
+  // focus off the chat. Filtered again here — the page is not trusted to say
+  // what a tab may be opened on.
+  if (msg && msg.type === "cum-open-links" && Array.isArray(msg.urls)) {
+    (async () => {
+      const T = self.CUMTentative;
+      const urls = T && T.linksToOpen ? T.linksToOpen(msg.urls) : [];
+      const from = sender && sender.tab;
+      let index = from && typeof from.index === "number" ? from.index + 1 : undefined;
+      let opened = 0;
+      for (const url of urls) {
+        try {
+          const opts = { url, active: false };
+          if (from && typeof from.windowId === "number") opts.windowId = from.windowId;
+          if (index !== undefined) opts.index = index++;
+          if (from && typeof from.id === "number") opts.openerTabId = from.id;
+          await chrome.tabs.create(opts);
+          opened++;
+        } catch (e) {
+          /* one link that will not open does not stop the rest */
+        }
+      }
+      return { ok: true, opened, asked: urls.length };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
   if (msg && msg.type === "cum-open-options") {
