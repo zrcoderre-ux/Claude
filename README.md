@@ -2626,9 +2626,22 @@ They are taken in reading order, then the **cases** go first (a full cite, a
 supra or a short form) and the code sections and other links after, so the
 cases land as one run of tabs on the left and the rest to their right. Each
 destination opens once: two links that differ only in a pin anchor are the
-same case. Tabs open behind the chat, right after its tab, and join its tab
-group if it is in one (`T.orderLinks`, `T.linkKey`; the worker re-checks with
-`T.linksToOpen`, at most 120).
+same case. Tabs open behind the chat, right after its tab, as **one tab group
+named for the chat** ("Smith v. Jones MSJ Links", `T.linksGroupTitle`), so two
+chats' groups are told apart and a group can be collapsed or closed as one
+(`T.orderLinks`, `T.linkKey`; the worker re-checks with `T.linksToOpen`, at
+most 120).
+
+**Press again to close.** While the tabs a press opened are still open, the
+button reads **Close links**, and pressing it (or the other Links button for
+the same ruling) closes them. Only those tabs are closed, and only the ones
+still open. Close them by hand and the button goes back to **Links** within a
+few seconds. The worker keeps each set by the chat and the ruling, in session
+storage, so it survives the worker restarting and is gone with the browser.
+
+**Links only on the most recent ruling.** Every reply with a ruling keeps its
+Ruling button, but Links appears only on the chat's most recent ruling, and on
+the bottom pair, which acts on that same ruling.
 
 Only the ruling's own links count, from NATURE OF PROCEEDINGS through the
 CONCLUSION. The pdf viewer does not put its links in the reply: it paints them

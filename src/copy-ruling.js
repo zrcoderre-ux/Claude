@@ -524,9 +524,10 @@
     btn.querySelector(".cum-ruling-txt").textContent = text;
     clearTimeout(btn._cumTimer);
     btn._cumTimer = setTimeout(() => {
+      btn._cumTimer = null;
       btn.classList.remove("cum-ruling-bad");
       const label = btn.querySelector(".cum-ruling-txt");
-      if (label) label.textContent = rest || "Ruling";
+      if (label) label.textContent = btn._rest || rest || "Ruling";
     }, FEEDBACK_MS);
   }
 
@@ -808,15 +809,94 @@
     return T.orderLinks(hits, location.href);
   }
 
-  function sendOpen(btn, urls) {
+  // ---- Links on the most recent ruling only ---------------------------------
+  // Every reply with a ruling keeps its Ruling button, but Links sits only on
+  // the chat's most recent ruling (owner, November 2026) — and on the bottom
+  // pair, which acts on that same ruling. The most recent is the one the
+  // bottom button remembers (latest.state.rulingSig); before it knows one, the
+  // last reply on the page carrying a Ruling button.
+  const LABEL_MS = 3000;
+  let lastLabelPass = 0;
+  function showLinksOnLatest(msgs) {
+    const sig = latest.state && latest.state.rulingSig;
+    let lastWithPair = null;
+    for (const el of msgs) if (placed.get(el)) lastWithPair = el;
+    const refresh = Date.now() - lastLabelPass >= LABEL_MS;
+    if (refresh) lastLabelPass = Date.now();
+    for (const el of msgs) {
+      const pair = placed.get(el);
+      const links = pair && pair.querySelector ? pair.querySelector("." + LINKS_CLASS) : null;
+      if (!links) continue;
+      let show = false;
+      try {
+        show = sig ? sigOf(el) === sig : el === lastWithPair;
+      } catch (e) {
+        show = el === lastWithPair;
+      }
+      links.style.display = show ? "" : "none";
+      if (show && refresh && !links.disabled) refreshLinksLabel(links, el);
+    }
+    const bottom = extra && extra.btn && extra.btn.querySelector ? extra.btn.querySelector("." + LINKS_CLASS) : null;
+    if (bottom && refresh && !bottom.disabled) refreshLinksLabel(bottom, null);
+  }
+
+  // ---- open, and press again to close -----------------------------------
+  // The tabs a press opened are remembered by the worker under a key naming
+  // the chat and the ruling, so the next press of either Links button for the
+  // same ruling closes them (only those still open). The ruling is named by
+  // T.textKey of claude.ai's own text — the page's, the kept copy's and the
+  // payload's all agree on it.
+  function rulingIdOf(msgEl) {
+    if (msgEl) return T.textKey(plainOf(msgEl));
+    const live = liveRuling();
+    if (live) return T.textKey(plainOf(live));
+    if (latest.copy) return T.textKey(latest.copy.textContent || "");
+    return latest.api ? latest.api.key : "";
+  }
+  function setKeyOf(msgEl) {
+    const id = rulingIdOf(msgEl);
+    return id ? location.pathname + "|" + id : "";
+  }
+
+  function ask(message) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(message, (res) => {
+          void chrome.runtime.lastError;
+          resolve(res || null);
+        });
+      } catch (e) {
+        resolve(null); // the extension was reloaded under this page
+      }
+    });
+  }
+
+  // The label at rest: "Close links" while this ruling's tabs are open.
+  function restLabel(btn, open) {
+    btn._rest = open ? "Close links" : "Links";
+    btn.classList.toggle("cum-ruling-open", !!open);
+    if (!btn._cumTimer && !btn.disabled) btn.querySelector(".cum-ruling-txt").textContent = btn._rest;
+  }
+
+  async function refreshLinksLabel(btn, msgEl) {
+    const key = setKeyOf(msgEl);
+    if (!key) return restLabel(btn, false);
+    const res = await ask({ type: "cum-links-state", key: key });
+    restLabel(btn, !!(res && res.open));
+  }
+
+  function sendOpen(btn, urls, key) {
     const done = (res) => {
       btn.disabled = false;
       const n = res && typeof res.opened === "number" ? res.opened : 0;
-      if (!res || !res.ok || !n) return say(btn, "Couldn't open", true, "Links");
-      say(btn, n < urls.length ? "Opened " + n + " of " + urls.length : "Opened " + n, false, "Links");
+      if (!res || !res.ok || !n) return say(btn, "Couldn't open", true, btn._rest || "Links");
+      restLabel(btn, true);
+      say(btn, n < urls.length ? "Opened " + n + " of " + urls.length : "Opened " + n, false, "Close links");
     };
     try {
-      chrome.runtime.sendMessage({ type: "cum-open-links", urls: urls }, (res) => {
+      // The group is named for the chat as the tab shows it.
+      const group = T.linksGroupTitle(document.title);
+      chrome.runtime.sendMessage({ type: "cum-open-links", urls: urls, key: key || "", group: group }, (res) => {
         void chrome.runtime.lastError;
         done(res);
       });
@@ -894,6 +974,18 @@
   async function openLinks(btn, msgEl) {
     if (btn.disabled) return;
     btn.disabled = true;
+    // Already open: this press closes them.
+    const key = setKeyOf(msgEl);
+    if (key) {
+      const state = await ask({ type: "cum-links-state", key: key });
+      if (state && state.open) {
+        const res = await ask({ type: "cum-close-links", key: key });
+        btn.disabled = false;
+        restLabel(btn, false);
+        const n = res && typeof res.closed === "number" ? res.closed : 0;
+        return say(btn, n ? "Closed " + n : "Couldn't close", !n, "Links");
+      }
+    }
     btn.querySelector(".cum-ruling-txt").textContent = "Finding links…";
     let target = msgEl;
     let restore = null;
@@ -912,10 +1004,10 @@
           if (urls) {
             if (!urls.length) {
               btn.disabled = false;
-              return say(btn, "No links found", true, "Links");
+              return say(btn, "No links found", true, btn._rest || "Links");
             }
             btn.querySelector(".cum-ruling-txt").textContent = "Opening " + urls.length + "…";
-            return sendOpen(btn, urls);
+            return sendOpen(btn, urls, key);
           }
           const found = await rulingForLatest();
           target = found.el;
@@ -924,20 +1016,20 @@
       }
       if (!target) {
         btn.disabled = false;
-        return say(btn, "No ruling found", true, "Links");
+        return say(btn, "No ruling found", true, btn._rest || "Links");
       }
       const urls = await harvestLinks(target);
       if (restore) restore();
       if (!urls.length) {
         btn.disabled = false;
-        return say(btn, "No links found", true, "Links");
+        return say(btn, "No links found", true, btn._rest || "Links");
       }
       btn.querySelector(".cum-ruling-txt").textContent = "Opening " + urls.length + "…";
-      sendOpen(btn, urls);
+      sendOpen(btn, urls, key);
     } catch (e) {
       if (restore) restore();
       btn.disabled = false;
-      say(btn, "Couldn't open", true, "Links");
+      say(btn, "Couldn't open", true, btn._rest || "Links");
     }
   }
 
@@ -1005,6 +1097,7 @@
       }
     }
     placeExtra(msgs);
+    showLinksOnLatest(msgs);
     // A row under a reply claude.ai has since unloaded is left behind on its
     // own: nothing to copy from, so it goes too.
     try {
