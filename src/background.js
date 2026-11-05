@@ -2194,6 +2194,40 @@ async function refreshProjects() {
   return { projects };
 }
 
+// ---- the Links button's open sets ---------------------------------------------
+// key (the chat and its ruling) -> the tab ids that press opened. Session
+// storage: it outlives the worker's restarts and is gone with the browser, as
+// the tabs are.
+const LINKS_OPEN_KEY = "cum_links_open";
+
+function linksSessionArea() {
+  return chrome.storage.session || chrome.storage.local;
+}
+
+async function linksSetSave(key, ids) {
+  const area = linksSessionArea();
+  const got = await area.get(LINKS_OPEN_KEY);
+  const map = (got && got[LINKS_OPEN_KEY]) || {};
+  if (ids && ids.length) map[key] = ids;
+  else delete map[key];
+  await area.set({ [LINKS_OPEN_KEY]: map });
+}
+
+async function linksSetAlive(key) {
+  const area = linksSessionArea();
+  const got = await area.get(LINKS_OPEN_KEY);
+  const ids = ((got && got[LINKS_OPEN_KEY]) || {})[key] || [];
+  const alive = [];
+  for (const id of ids) {
+    try {
+      if (await chrome.tabs.get(id)) alive.push(id);
+    } catch (e) {
+      /* closed */
+    }
+  }
+  return alive;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === "cum-refresh-projects") {
     refreshProjects()
@@ -2205,6 +2239,42 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // after the chat's own, in the order the ruling cites them, without taking
   // focus off the chat. Filtered again here — the page is not trusted to say
   // what a tab may be opened on.
+  // The Links button is a toggle: open, then press again to close what it
+  // opened. Only the tabs it opened, and only those still open — one the
+  // reader closed on their own is already gone.
+  if (msg && msg.type === "cum-links-state" && msg.key) {
+    linksSetAlive(String(msg.key))
+      .then((alive) => sendResponse({ ok: true, open: alive.length }))
+      .catch(() => sendResponse({ ok: false, open: 0 }));
+    return true;
+  }
+  if (msg && msg.type === "cum-close-links" && msg.key) {
+    (async () => {
+      const key = String(msg.key);
+      const alive = await linksSetAlive(key);
+      let closed = 0;
+      if (alive.length) {
+        try {
+          await chrome.tabs.remove(alive);
+          closed = alive.length;
+        } catch (e) {
+          for (const id of alive) {
+            try {
+              await chrome.tabs.remove(id);
+              closed++;
+            } catch (e2) {
+              /* gone already */
+            }
+          }
+        }
+      }
+      await linksSetSave(key, []);
+      return { ok: true, closed };
+    })()
+      .then(sendResponse)
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
   if (msg && msg.type === "cum-open-links" && Array.isArray(msg.urls)) {
     (async () => {
       const T = self.CUMTentative;
@@ -2229,14 +2299,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           /* one link that will not open does not stop the rest */
         }
       }
-      // A middle-clicked tab stays in its opener's tab group; so do these.
-      if (from && from.groupId > -1 && chrome.tabs.group && ids.length) {
+      // One tab group of their own, named for the chat (the owner's choice,
+      // November 2026; the pdf viewer's "Open all" does the same with
+      // "Cases"): a ruling's links arrive as one labelled block that can be
+      // collapsed or closed together, rather than as loose tabs or as new
+      // members of whatever group the chat sits in. The order inside is kept
+      // — cases on the left. A browser that will not group them has still
+      // opened every one.
+      if (chrome.tabs.group && ids.length) {
         try {
-          await chrome.tabs.group({ groupId: from.groupId, tabIds: ids });
+          const createProperties = from && typeof from.windowId === "number" ? { windowId: from.windowId } : {};
+          const groupId = await chrome.tabs.group({ tabIds: ids, createProperties });
+          if (chrome.tabGroups && chrome.tabGroups.update) {
+            // Named for the chat ("<chat> Links", T.linksGroupTitle), so two
+            // chats' groups are told apart.
+            const title = typeof msg.group === "string" && msg.group.trim() ? msg.group.trim().slice(0, 60) : "Ruling links";
+            await chrome.tabGroups.update(groupId, { title, color: "blue", collapsed: false });
+          }
         } catch (e) {
-          /* the group closed meanwhile; the tabs are open all the same */
+          /* ungrouped, but open */
         }
       }
+      // Remembered by the set's key (the chat and the ruling), so the same
+      // button pressed again closes them — see cum-close-links.
+      if (msg.key && ids.length) await linksSetSave(String(msg.key), ids);
       return { ok: true, opened, asked: urls.length };
     })()
       .then(sendResponse)

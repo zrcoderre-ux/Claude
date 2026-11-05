@@ -696,3 +696,13 @@ test("textKey: the payload's markdown and the page's text agree", () => {
   assert.notStrictEqual(T.textKey("Another reply"), T.textKey(page));
   assert.strictEqual(T.textKey(null), "");
 });
+
+test("linksGroupTitle: the chat's name and Links", () => {
+  assert.strictEqual(T.linksGroupTitle("Smith v. Jones MSJ - Claude"), "Smith v. Jones MSJ Links");
+  assert.strictEqual(T.linksGroupTitle("Demurrer tentative"), "Demurrer tentative Links");
+  assert.strictEqual(T.linksGroupTitle("Claude"), "Ruling links");
+  assert.strictEqual(T.linksGroupTitle(""), "Ruling links");
+  assert.strictEqual(T.linksGroupTitle(null), "Ruling links");
+  const long = T.linksGroupTitle("Motion for summary judgment on the second amended complaint of the plaintiffs - Claude");
+  assert.ok(long.length <= 47 && /… Links$/.test(long), long);
+});

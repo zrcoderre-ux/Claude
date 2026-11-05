@@ -593,7 +593,30 @@
     return out;
   }
 
+  /**
+   * The name of the tab group a ruling's links open in: the chat's name and
+   * "Links" (owner, November 2026), so two chats' groups are told apart. The
+   * name is the tab's title less claude.ai's " - Claude" tail, cut on a word
+   * where it is long. "Ruling links" where there is no name to use.
+   */
+  const GROUP_NAME_MAX = 40;
+  function linksGroupTitle(tabTitle) {
+    let t = str(tabTitle)
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\s*[-–—|]\s*Claude\s*$/i, "")
+      .trim();
+    if (!t || /^claude$/i.test(t) || /^new chat$/i.test(t)) return "Ruling links";
+    if (t.length > GROUP_NAME_MAX) {
+      const cut = t.slice(0, GROUP_NAME_MAX);
+      const sp = cut.lastIndexOf(" ");
+      t = (sp > GROUP_NAME_MAX * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s.,;:—-]+$/, "") + "…";
+    }
+    return t + " Links";
+  }
+
   const api = {
+    linksGroupTitle,
     linksToOpen,
     orderLinks,
     linkKey,
