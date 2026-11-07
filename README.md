@@ -3562,7 +3562,13 @@ saying where to attach the key.
 
 With the key, the paste is read against it. A paste carrying any of its real
 values is refused, naming them, and **Paste with the pseudonyms** puts the same
-text in with the fakes. A run reads against its own key only. A template reads
+text in with the fakes. Each flagged value is listed with **Not a real name —
+remove from key**, for a value the key flags in error. It is taken out of the key
+the way the composer's right-click takes one out (`P.unfakeKey`, kept on the
+library entry, so reloading the workbook does not bring it back), the paste is
+judged again, and it goes in once nothing else holds it. **Undo** puts the value
+back in the key; what was pasted stays. A key emptied this way is still a key.
+A run reads against its own key only. A template reads
 against every key in the library, because a real name from any case does not
 belong in a template. The master key is left out of both. The guard covers every
 box in the workflow editor, text pasted onto the editor to become a document,

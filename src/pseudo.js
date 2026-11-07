@@ -2179,14 +2179,43 @@
   // The master key is left out: it is distilled from the library's cases,
   // which a template reads directly, and a run never carries it.
 
-  /** The keys a workflow paste is read against: [key] for a run, all for a template. */
-  function workflowPasteKeys(scope, library) {
+  // The library entries a workflow paste is read against, with their ids:
+  // the run's key for a run, every key for a template.
+  function workflowPasteEntries(scope, library) {
     const lib = library && typeof library === "object" ? library : {};
     const s = scope || {};
-    const ok = (k) => k && typeof k === "object" && !k.master && warnRowsOf(k).length > 0;
-    if (s.mode === "template") return Object.keys(lib).map((id) => lib[id]).filter(ok);
-    const k = s.keyId ? lib[s.keyId] : null;
-    return ok(k) ? [k] : [];
+    // A key emptied by hand (every row removed as flagged in error) is still
+    // the case's key: it has been read, and found to fake nothing.
+    const ok = (k) =>
+      k && typeof k === "object" && !k.master && (warnRowsOf(k).length > 0 || unfakedOf(k).length > 0);
+    const ids = s.mode === "template" ? Object.keys(lib) : s.keyId ? [s.keyId] : [];
+    return ids.filter((id) => ok(lib[id])).map((id) => ({ id: id, key: lib[id] }));
+  }
+
+  /** The keys a workflow paste is read against: [key] for a run, all for a template. */
+  function workflowPasteKeys(scope, library) {
+    return workflowPasteEntries(scope, library).map((e) => e.key);
+  }
+
+  /**
+   * The library with `real` removed BY HAND from each of `keyIds` (unfakeKey:
+   * recorded under the entry's `unfaked`, so a reload of the workbook keeps it
+   * out). { library, changed } — `changed` the ids actually changed; the same
+   * library object back when none was.
+   */
+  function unfakeInLibrary(library, keyIds, real) {
+    const lib = library && typeof library === "object" ? library : {};
+    const changed = [];
+    let out = lib;
+    for (const id of keyIds || []) {
+      const k = lib[id];
+      const next = k ? unfakeKey(k, real) : k;
+      if (!next || next === k) continue;
+      if (out === lib) out = Object.assign({}, lib);
+      out[id] = next;
+      changed.push(id);
+    }
+    return { library: out, changed: changed };
   }
 
   /**
@@ -2202,21 +2231,29 @@
     const text = String((paste && paste.text) || "");
     const files = (paste && paste.files) || 0;
     if (!text && !files) return { hold: false };
-    const keys = workflowPasteKeys(scope, library);
-    if (!keys.length) return { hold: true, why: "nokey" };
+    const entries = workflowPasteEntries(scope, library);
+    if (!entries.length) return { hold: true, why: "nokey" };
     if (!text) return { hold: false };
-    const seen = new Set();
+    const keys = entries.map((e) => e.key);
+    const byReal = new Map();
     const names = [];
     let out = text;
-    for (const k of keys) {
-      const hits = findReals(compileReals(k), text);
+    for (const e of entries) {
+      const hits = findReals(compileReals(e.key), text);
       if (!hits.length) continue;
       for (const h of hits) {
-        if (seen.has(fold(h.real))) continue;
-        seen.add(fold(h.real));
-        names.push(h);
+        // Each name says which keys flagged it, so it can be taken out of
+        // them when it was flagged in error.
+        const f = fold(h.real);
+        if (byReal.has(f)) {
+          byReal.get(f).keyIds.push(e.id);
+          continue;
+        }
+        const row = { real: h.real, fake: h.fake, keyIds: [e.id] };
+        byReal.set(f, row);
+        names.push(row);
       }
-      out = translate(compileForward(k), out).text;
+      out = translate(compileForward(e.key), out).text;
     }
     if (!names.length) return { hold: false };
     const left = keys.some((k) => findReals(compileReals(k), out).length > 0);
@@ -2942,6 +2979,7 @@
     copiedPasteClean,
     copiedPasteNote,
     workflowPasteKeys,
+    unfakeInLibrary,
     workflowPasteHold,
     workflowPasteNote,
     compileTypeahead,

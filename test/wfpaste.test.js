@@ -71,3 +71,36 @@ test("workflowPasteNote says what is missing or what it found", () => {
   assert.match(r.body, /this run's key/);
   assert.match(r.body, /pseudonyms/);
 });
+
+test("each flagged name says which keys flagged it", () => {
+  const both = { b: { warn: [{ real: "Helen Rasho", fake: "Pell Mortlake" }] }, smith: SMITH };
+  const v = P.workflowPasteHold({ mode: "template" }, both, { text: "Helen Rasho" });
+  assert.deepStrictEqual(v.names[0].keyIds.sort(), ["b", "smith"]);
+  const r = P.workflowPasteHold({ mode: "run", keyId: "smith" }, LIB, { text: "Cross River Bank" });
+  assert.deepStrictEqual(r.names[0].keyIds, ["smith"]);
+});
+
+test("unfakeInLibrary takes a wrongly flagged value out by hand, and the paste then passes", () => {
+  const scope = { mode: "run", keyId: "smith" };
+  const text = "Cross River Bank filed the motion.";
+  const v = P.workflowPasteHold(scope, LIB, { text: text });
+  const res = P.unfakeInLibrary(LIB, v.names[0].keyIds, v.names[0].real);
+  assert.deepStrictEqual(res.changed, ["smith"]);
+  assert.notStrictEqual(res.library, LIB);
+  assert.strictEqual(LIB.smith.warn.length, 2, "the library passed in is not changed");
+  // Recorded as removed by hand, so a reload of the workbook keeps it out.
+  assert.deepStrictEqual(res.library.smith.unfaked.map((u) => u.real), ["Cross River Bank"]);
+  assert.strictEqual(P.workflowPasteHold(scope, res.library, { text: text }).hold, false);
+  // The rest of the key still guards.
+  assert.strictEqual(P.workflowPasteHold(scope, res.library, { text: "Helen Rasho" }).why, "reals");
+  // Nothing to take out, or the master key: the same library back.
+  assert.strictEqual(P.unfakeInLibrary(LIB, ["smith"], "Nobody").library, LIB);
+  assert.deepStrictEqual(P.unfakeInLibrary(LIB, ["master"], "Tobias Wren").changed, []);
+  assert.deepStrictEqual(P.unfakeInLibrary(LIB, ["gone"], "Helen Rasho").changed, []);
+});
+
+test("a key emptied by hand is still a key", () => {
+  let lib = { one: { warn: [{ real: "Helen Rasho", fake: "Ingrid Strangeways" }], pairs: [{ real: "Helen Rasho", fake: "Ingrid Strangeways" }] } };
+  lib = P.unfakeInLibrary(lib, ["one"], "Helen Rasho").library;
+  assert.strictEqual(P.workflowPasteHold({ mode: "run", keyId: "one" }, lib, { text: "Helen Rasho" }).hold, false);
+});
