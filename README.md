@@ -3548,6 +3548,27 @@ panel's cleaner, where pasting real names is the point. The decision is
 `P.copiedPasteHold` in `src/pseudo.js` (`test/copiedpaste.test.js`), and the
 wiring is `src/paste-guard.js`.
 
+### Nothing is pasted into a workflow without a key
+
+A workflow's prompts, its matter's name and the documents pasted onto it go to
+Claude as written, so **a paste into a workflow needs a pseudonym key first**.
+For a **run**, that is the run's own key, picked under **Pseudonym key** in the
+editor (or carried by the run, in the run margin's step editor). For a
+**template**, which belongs to no case, any key loaded in the popup will do.
+Until there is one, every paste is refused, text and files alike, with a notice
+saying where to attach the key.
+
+With the key, the paste is read against it. A paste carrying any of its real
+values is refused, naming them, and **Paste with the pseudonyms** puts the same
+text in with the fakes. A run reads against its own key only. A template reads
+against every key in the library, because a real name from any case does not
+belong in a template. The master key is left out of both. The guard covers every
+box in the workflow editor, text pasted onto the editor to become a document,
+and the run margin's prompt and matter-name boxes. The last-copy check above
+still runs after it. A paste made before the library has been read waits for
+the read instead of slipping through. The decision is `P.workflowPasteHold` in
+`src/pseudo.js` (`test/wfpaste.test.js`), and the wiring is `src/paste-guard.js`.
+
 ### Swapped names are marked
 
 The same marking the PDF viewer's text reader uses: every real name the display

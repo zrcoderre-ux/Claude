@@ -1564,7 +1564,23 @@
       // The key and the date are the matter's, exactly as the papers are.
       if (ui.pseudoRow) ui.pseudoRow.hidden = !editingRun;
       if (ui.dateRow) ui.dateRow.hidden = !editingRun;
+      markPasteKey();
     }
+
+    // Which key a paste into this editor is read against (src/paste-guard.js):
+    // the run's picked key, or for a template every key in the library.
+    // Nothing is pasted into a workflow without one.
+    function markPasteKey() {
+      el.dataset.cumPasteMode = editingRun ? "run" : "template";
+      el.dataset.cumPasteKey = (editingRun && ui.pseudo && ui.pseudo.value) || "";
+    }
+    if (ui.pseudo) ui.pseudo.addEventListener("change", markPasteKey);
+    // The guard's "Paste with the pseudonyms", for a paste onto the editor
+    // that the editor would have made a document of.
+    el.addEventListener("cum-wf-paste-doc", (e) => {
+      if (el.hidden || !wf || (ui.docsRow && ui.docsRow.hidden)) return;
+      pasteAsDocument(e.detail && e.detail.text);
+    });
 
     // The popup's stored key library — read fresh each open, so a key loaded a
     // moment ago is already offered.
@@ -1611,6 +1627,7 @@
           ui.pseudo.value = (wf && wf.pseudoKeyId) || "";
           if (ui.pseudo.value !== ((wf && wf.pseudoKeyId) || ""))
             ui.pseudo.value = ""; // the stored key is gone; don't pretend
+          markPasteKey();
         });
       } catch (e) {
         /* the picker just stays at None */

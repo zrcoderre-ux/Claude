@@ -21,8 +21,21 @@
  * run margin's step editor. Never the composer, which has its own paste check,
  * and never the key panel's cleaner, where pasting real names is the point.
  *
- * Fail-open: no record, no pseudonym module, a storage read that never
- * answered — nothing is refused.
+ * A WORKFLOW asks more (P.workflowPasteHold, tested): nothing is pasted into
+ * one until there is a pseudonym key to read the paste against — the run's
+ * own key, or for a template, which is no case's, any key in the library —
+ * and then a paste carrying that key's real values is refused, with the same
+ * "Paste with the pseudonyms". That covers every box in the workflow editor
+ * (`.cumwf`, which says which key it is under in `data-cum-paste-key` and
+ * `data-cum-paste-mode`), text pasted onto it to become a document, files
+ * pasted onto it, and the run margin's prompt and matter-name boxes
+ * (`data-cum-paste-key` on the margin). The last-copy check above still runs
+ * after it.
+ *
+ * Fail-open for the last copy: no record, no pseudonym module, a storage read
+ * that never answered — nothing is refused. Not for the workflow's key: a
+ * paste before the library has been read waits for it, and a library that
+ * cannot be read is no key, so the paste is refused and says so.
  */
 (function () {
   "use strict";
@@ -47,9 +60,27 @@
     .cum-paste-refused button.cum-paste-refused-clean { background:#fff; color:#7a1f1f; font-weight:700; border-color:#fff; }
   `;
 
+  const WF_FIELDS = ".cum-rm-editprompt, .cum-rm-editname";
+  // The popup's key library (src/popup.js, KEYS_KEY).
+  const KEYS_STORE = "cum_pseudo_keys";
+
   let record = null;
+  let library; // undefined until the first read answers
   let box = null;
   let boxTimer = null;
+
+  function readLibrary(done) {
+    try {
+      chrome.storage.local.get(KEYS_STORE, (res) => {
+        void chrome.runtime.lastError;
+        library = (res && res[KEYS_STORE]) || {};
+        if (done) done();
+      });
+    } catch (e) {
+      library = {};
+      if (done) done();
+    }
+  }
 
   try {
     chrome.storage.local.get(P.LAST_COPY_KEY, (res) => {
@@ -57,11 +88,14 @@
       record = (res && res[P.LAST_COPY_KEY]) || null;
     });
     chrome.storage.onChanged.addListener((ch, area) => {
-      if (area === "local" && ch[P.LAST_COPY_KEY]) record = ch[P.LAST_COPY_KEY].newValue || null;
+      if (area !== "local") return;
+      if (ch[P.LAST_COPY_KEY]) record = ch[P.LAST_COPY_KEY].newValue || null;
+      if (ch[KEYS_STORE]) library = ch[KEYS_STORE].newValue || {};
     });
   } catch (e) {
     /* nothing remembered, nothing refused */
   }
+  if (P.workflowPasteHold) readLibrary();
 
   function editable(el) {
     if (!el || el.nodeType !== 1) return null;
@@ -75,6 +109,36 @@
     if (!field) return false;
     if (ON_OPTIONS) return true;
     return !!field.closest(FORM_SEL);
+  }
+
+  /**
+   * Which workflow a paste lands in, and under which key — or null when it is
+   * not a workflow's. `doc` is set for a paste onto the run editor that isn't
+   * into a box, which the editor turns into a document.
+   */
+  function workflowScope(target, field) {
+    const el = target && target.nodeType === 1 ? target : target && target.parentElement;
+    if (!el || !P.workflowPasteHold) return null;
+    const form = el.closest(".cumwf");
+    if (form && !form.hidden) {
+      const mode = form.dataset.cumPasteMode === "template" ? "template" : "run";
+      const scope = { mode: mode, keyId: form.dataset.cumPasteKey || "", form: form, doc: false };
+      if (field) return scope;
+      // A select, a number box: nothing a paste goes into.
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return null;
+      // Onto the editor itself: a document, but only while the papers show.
+      if (mode !== "run") return null;
+      const docs = form.querySelector(".cumwf-docs-row");
+      if (docs && docs.hidden) return null;
+      scope.doc = true;
+      return scope;
+    }
+    const f = field && field.closest(WF_FIELDS);
+    if (f) {
+      const host = f.closest("[data-cum-paste-key]");
+      return { mode: "run", keyId: (host && host.dataset.cumPasteKey) || "", form: null, doc: false };
+    }
+    return null;
   }
 
   function close() {
@@ -99,7 +163,16 @@
     }
   }
 
-  function refuse(field, found, cleaned) {
+  // Where a paste the guard let through goes: into the box, or for a paste
+  // onto the run editor, to the editor as a document.
+  function land(scope, field, text) {
+    if (field) return insert(field, text);
+    if (scope && scope.form)
+      scope.form.dispatchEvent(new CustomEvent("cum-wf-paste-doc", { detail: { text: text } }));
+  }
+
+  // words: { head, body }; clean: { label, text } or null.
+  function refuse(words, onClean) {
     close();
     if (!document.getElementById(STYLE_ID)) {
       const st = document.createElement("style");
@@ -107,7 +180,6 @@
       st.textContent = STYLES;
       (document.head || document.documentElement).appendChild(st);
     }
-    const words = P.copiedPasteNote(found);
     box = document.createElement("div");
     box.className = "cum-paste-refused";
     box.setAttribute("role", "alert");
@@ -123,7 +195,7 @@
     ok.textContent = "Don't paste";
     ok.addEventListener("click", close);
     row.appendChild(ok);
-    if (cleaned && cleaned.ok) {
+    if (onClean) {
       const clean = document.createElement("button");
       clean.type = "button";
       clean.className = "cum-paste-refused-clean";
@@ -132,7 +204,7 @@
       clean.addEventListener("mousedown", (e) => e.preventDefault());
       clean.addEventListener("click", () => {
         close();
-        insert(field, cleaned.text);
+        onClean();
       });
       row.appendChild(clean);
     }
@@ -141,19 +213,77 @@
     boxTimer = setTimeout(close, 20000);
   }
 
+  // The last copy's names, for a box the run forms guard. True when refused.
+  function lastCopyRefuses(field, text) {
+    if (!record || !guarded(field)) return false;
+    const v = P.copiedPasteHold(record, text);
+    if (!v.hold) return false;
+    const cleaned = P.copiedPasteClean(record, text);
+    refuse(P.copiedPasteNote(v.names), cleaned && cleaned.ok ? () => insert(field, cleaned.text) : null);
+    return true;
+  }
+
+  // The workflow's own key. Answers "refused", "pass", or "landed" (the
+  // guard put the paste in itself, after waiting for the library).
+  function judgeWorkflow(scope, field, text, files) {
+    const v = P.workflowPasteHold(scope, library, { text: text, files: files });
+    if (!v.hold) return "pass";
+    const words = P.workflowPasteNote(v, scope);
+    const onClean =
+      v.why === "reals" && v.clean && v.clean.ok && !lastCopyHolds(v.clean.text)
+        ? () => land(scope, field, v.clean.text)
+        : null;
+    refuse(words, onClean);
+    return "refused";
+  }
+
+  function lastCopyHolds(text) {
+    return !!(record && P.copiedPasteHold(record, text).hold);
+  }
+
   window.addEventListener(
     "paste",
     (ev) => {
-      if (!ev.isTrusted || !record) return;
+      if (!ev.isTrusted) return;
       const field = editable(ev.target);
-      if (!guarded(field)) return;
       const dt = ev.clipboardData;
-      const text = dt ? dt.getData("text/plain") || "" : "";
-      const v = P.copiedPasteHold(record, text);
-      if (!v.hold) return;
-      ev.preventDefault();
-      ev.stopImmediatePropagation();
-      refuse(field, v.names, P.copiedPasteClean(record, text));
+      let text = "";
+      try {
+        text = (dt && typeof dt.getData === "function" && dt.getData("text/plain")) || "";
+      } catch (e) {
+        text = "";
+      }
+      const files = dt && dt.files ? dt.files.length || 0 : 0;
+      const scope = workflowScope(ev.target, field);
+      if (scope) {
+        if (library === undefined) {
+          // The library hasn't answered yet: hold the paste until it has,
+          // then judge it as if it had just arrived. Files can't be handed
+          // back, so they are refused for now.
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          if (files && !text) {
+            refuse({ head: "Not pasted — the keys are still loading", body: "Paste the files again in a moment." }, null);
+            return;
+          }
+          readLibrary(() => {
+            if (judgeWorkflow(scope, field, text, 0) !== "pass") return;
+            if (field && lastCopyRefuses(field, text)) return;
+            land(scope, field, text);
+          });
+          return;
+        }
+        if (judgeWorkflow(scope, field, text, files) === "refused") {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          return;
+        }
+      }
+      if (!field || !text) return;
+      if (lastCopyRefuses(field, text)) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+      }
     },
     true
   );

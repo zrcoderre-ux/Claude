@@ -2167,6 +2167,91 @@
     return { text: out, ok: out !== t && !findReals(compileReals(key), out).length };
   }
 
+  // ---- a paste into a workflow needs a key -----------------------------------
+  //
+  // A workflow's prompts, its matter's name and its pasted-in documents go to
+  // Claude as written — no composer reads them on the way. So nothing is
+  // pasted into a workflow until there is a key to read the paste against:
+  // a RUN's own key (the matter's), and for a TEMPLATE, which is no case's,
+  // every key in the library. With the key, a paste carrying any of its real
+  // values is refused, with an offer to paste the same text in its fakes.
+  //
+  // The master key is left out: it is distilled from the library's cases,
+  // which a template reads directly, and a run never carries it.
+
+  /** The keys a workflow paste is read against: [key] for a run, all for a template. */
+  function workflowPasteKeys(scope, library) {
+    const lib = library && typeof library === "object" ? library : {};
+    const s = scope || {};
+    const ok = (k) => k && typeof k === "object" && !k.master && warnRowsOf(k).length > 0;
+    if (s.mode === "template") return Object.keys(lib).map((id) => lib[id]).filter(ok);
+    const k = s.keyId ? lib[s.keyId] : null;
+    return ok(k) ? [k] : [];
+  }
+
+  /**
+   * Whether a paste into a workflow is refused, and why:
+   *   { hold: false }
+   *   { hold: true, why: "nokey" }            no key to read it against
+   *   { hold: true, why: "reals", names, clean: { text, ok } }
+   * `paste` is { text, files } — a count of files is enough. A paste with
+   * nothing in it is never held. Files are held only for want of a key: a
+   * file's contents are judged where it uploads (the upload guard).
+   */
+  function workflowPasteHold(scope, library, paste) {
+    const text = String((paste && paste.text) || "");
+    const files = (paste && paste.files) || 0;
+    if (!text && !files) return { hold: false };
+    const keys = workflowPasteKeys(scope, library);
+    if (!keys.length) return { hold: true, why: "nokey" };
+    if (!text) return { hold: false };
+    const seen = new Set();
+    const names = [];
+    let out = text;
+    for (const k of keys) {
+      const hits = findReals(compileReals(k), text);
+      if (!hits.length) continue;
+      for (const h of hits) {
+        if (seen.has(fold(h.real))) continue;
+        seen.add(fold(h.real));
+        names.push(h);
+      }
+      out = translate(compileForward(k), out).text;
+    }
+    if (!names.length) return { hold: false };
+    const left = keys.some((k) => findReals(compileReals(k), out).length > 0);
+    return { hold: true, why: "reals", names: names, clean: { text: out, ok: out !== text && !left } };
+  }
+
+  /** The workflow refusal's words: { head, body }. */
+  function workflowPasteNote(verdict, scope) {
+    const v = verdict || {};
+    const template = scope && scope.mode === "template";
+    if (v.why === "nokey")
+      return {
+        head: "Not pasted — attach a key first",
+        body: template
+          ? "Nothing is pasted into a workflow until a pseudonym key is loaded to read it against. " +
+            "Load a case's pseudonym_key.xlsx in the extension's popup, then paste again."
+          : "Nothing is pasted into a run until it has a pseudonym key to read the paste against. " +
+            "Pick the matter's key under Pseudonym key (or load its pseudonym_key.xlsx in the popup), then paste again.",
+      };
+    const list = (v.names || []).filter((h) => h && h.real);
+    const shown = list.slice(0, 4).map((h) => "“" + h.real + "”");
+    const more = list.length > 4 ? " and " + (list.length - 4) + " more" : "";
+    return {
+      head: "Not pasted — that carries real names",
+      body:
+        "This paste has the real " +
+        (list.length === 1 ? "name " : "names ") +
+        shown.join(", ") +
+        more +
+        (template ? " from a loaded key" : " from this run's key") +
+        ". A workflow goes to Claude exactly as written, so it is refused here" +
+        (v.clean && v.clean.ok ? ". Paste it with the pseudonyms instead." : "."),
+    };
+  }
+
   /** The refusal's words: { head, body }. */
   function copiedPasteNote(found) {
     const list = (found || []).filter((h) => h && h.real);
@@ -2856,6 +2941,9 @@
     copiedPasteHold,
     copiedPasteClean,
     copiedPasteNote,
+    workflowPasteKeys,
+    workflowPasteHold,
+    workflowPasteNote,
     compileTypeahead,
     endingReal,
     swapsOnSpace,
