@@ -1549,6 +1549,8 @@
     // the template owns its name and what it does, the run owns the matter's
     // name and the matter's papers, and neither should be offered the other's.
     let editingRun = false;
+    // The key a run's related runs share, when it carries none of its own.
+    let groupKeyId = "";
 
     function applyMode() {
       // The template's own name, and the one line saying what it does. Both are
@@ -1572,7 +1574,11 @@
     // Nothing is pasted into a workflow without one.
     function markPasteKey() {
       el.dataset.cumPasteMode = editingRun ? "run" : "template";
-      el.dataset.cumPasteKey = (editingRun && ui.pseudo && ui.pseudo.value) || "";
+      // A run left at None still answers to the key its related runs share —
+      // one case, one key (W.runPseudoKey, worked out by the caller).
+      el.dataset.cumPasteKey = editingRun
+        ? (ui.pseudo && ui.pseudo.value) || (!(wf && wf.pseudoKeyId) && groupKeyId) || ""
+        : "";
     }
     if (ui.pseudo) ui.pseudo.addEventListener("change", markPasteKey);
     // The guard's "Paste with the pseudonyms", for a paste onto the editor
@@ -1637,6 +1643,7 @@
     function open(workflow) {
       wf = workflow;
       editingRun = false;
+      if (!runSink) groupKeyId = "";
       originalDocIds = (wf.docs || []).map((d) => d.id);
       pendingFiles.clear();
       loadPseudoKeys();
@@ -1882,8 +1889,9 @@
       // Edit a RUN in progress: its own steps, chats and documents, none of
       // which belong to the template it came from. `onSave` receives the edited
       // shape; the file bytes are already stored by then.
-      editRun(run, onSave) {
+      editRun(run, onSave, more) {
         runSink = onSave;
+        groupKeyId = (more && more.groupKeyId) || "";
         const plan = run.plan || {};
         open(
           W.newWorkflow(

@@ -3553,7 +3553,9 @@ wiring is `src/paste-guard.js`.
 A workflow's prompts, its matter's name and the documents pasted onto it go to
 Claude as written, so **a paste into a workflow needs a pseudonym key first**.
 For a **run**, that is the run's own key, picked under **Pseudonym key** in the
-editor (or carried by the run, in the run margin's step editor). For a
+editor on the Options page or on claude.ai — or, left at None there, the key its
+related runs share, since a group is one case (in the run margin's step editor,
+the key the run itself carries). For a
 **template**, which belongs to no case, any key loaded in the popup will do.
 Until there is one, every paste is refused, text and files alike, with a notice
 saying where to attach the key.

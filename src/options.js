@@ -1355,6 +1355,9 @@
   function openRunEditor(runId) {
     const run = (lastRuns || []).find((r) => r.id === runId);
     if (!run) return;
+    // The case's key, for a run that shares it through its group rather than
+    // carrying it: the editor's paste guard reads against it.
+    const groupKeyId = WF.runPseudoKey ? WF.runPseudoKey(run, lastRuns || [], runGroups || []) : null;
     wfForm.editRun(run, (edited, trigger) => {
       // The question first, while the operator is still here to answer it: a
       // run about to go out with nothing to upload. Asked BEFORE the save is
@@ -1434,7 +1437,7 @@
           renderRuns();
         });
       send(false);
-    });
+    }, { groupKeyId: groupKeyId || "" });
   }
 
   function renderRuns() {
