@@ -442,6 +442,9 @@
 
   function render(run, wf) {
     build();
+    // The key a paste into the run's prompt or name is read against
+    // (src/paste-guard.js) — none, and nothing is pasted there.
+    el.dataset.cumPasteKey = run.pseudoKeyId || "";
     const label = W.runLabel(run);
     const paused = run.status === "paused";
     const active = W.isRunActive(run);
