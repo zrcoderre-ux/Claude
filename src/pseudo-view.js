@@ -189,6 +189,20 @@
     return null;
   }
 
+  // Whether this conversation is one a workflow RUN opened — key or no key.
+  // A run's chats take no paste until the run has a key (P.runChatPasteHold).
+  function inRunChatSync(conv) {
+    if (!conv) return false;
+    for (const run of runsCache.runs || []) {
+      const chats = (run && run.chats) || {};
+      for (const cid of Object.keys(chats)) {
+        const url = chats[cid] && chats[cid].url;
+        if (url && P.conversationKeyFromUrl(url) === conv) return true;
+      }
+    }
+    return false;
+  }
+
   async function resolveActive(force) {
     const conv = convKey();
     // With a key active, only a navigation matters; without one, keep looking —
@@ -211,6 +225,9 @@
     // composer. convKey() stays as it is: the TITLES still want an identity for
     // any page, and only this lookup wants a conversation.
     const real = P.conversationFromUrl ? P.conversationFromUrl(location.href) : conv;
+    // Keep the runs fresh whatever key this chat has: a run's chat takes no
+    // paste without the run's key (inRunChatSync), chat-level key or not.
+    if (real) refreshRuns(false);
     let id = real ? chatMap[real] : null;
     let via = "chat";
     if (!id && real) {
@@ -2436,10 +2453,121 @@
     pasteMissNotice(note, choice === "clean" ? cleaned.text : "");
   }
 
+  // ---- a run's chats: the workflow's paste rule ------------------------------
+  //
+  // A chat a workflow run opened is the workflow's, so its composer follows the
+  // editor's rule (src/paste-guard.js): nothing is pasted until the run has a
+  // key, and a paste carrying the key's real values is HELD and listed, each
+  // with "Not a real name — remove from key" for a value flagged in error.
+  // The way through is "Paste — faked at the send": the real names go into the
+  // draft as typed text, marked, and their fakes are typed over them at the
+  // send — the composer never shows the fake for a name you typed. Decision:
+  // P.runChatPasteHold (tested). Runs before the composer's own check below.
+  let runPasteAllow = null; // { text, until } — the one paste let through
+
+  function runChatPaste(ev) {
+    if (!P.runChatPasteHold || !window.CUMPasteNotice) return false;
+    if (!inEditor(ev.target)) return false;
+    const conv = P.conversationFromUrl ? P.conversationFromUrl(location.href) : convKey();
+    const keyConv = conv ? P.conversationKeyFromUrl(location.href) : null;
+    if (!keyConv || !inRunChatSync(keyConv)) return false;
+    const dt = ev.clipboardData;
+    if (!dt) return false;
+    let text = "";
+    try {
+      text = dt.getData("text/plain") || "";
+    } catch (e) {
+      text = "";
+    }
+    const files = !!(dt.files && dt.files.length);
+    const allowed = !!(runPasteAllow && runPasteAllow.text === text && Date.now() < runPasteAllow.until);
+    if (allowed) runPasteAllow = null;
+    const compiled = active && active.compiledReals;
+    const v = P.runChatPasteHold({
+      runChat: true,
+      hasKey: !!active,
+      text: text,
+      files: files,
+      report: !!text && P.isLawReport(text),
+      allowed: allowed,
+      hits: compiled && compiled.rx && text && !files ? P.findReals(compiled, text) : [],
+    });
+    if (!v.hold) return allowed;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    let range = null;
+    try {
+      const sel = window.getSelection();
+      range = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    } catch (e) {
+      range = null;
+    }
+    hideTip();
+    showRunPasteHold(v, text, range, ev.target);
+    return true;
+  }
+
+  // Into the draft as typed text — the names marked and faked at the send.
+  function runPasteLand(text, range, target) {
+    typePaste(text, range).then((ok) => {
+      if (ok) return;
+      // The editor would not take it: let the very same paste through once,
+      // to the composer's own check, rather than lose it.
+      runPasteAllow = { text: text, until: Date.now() + PASTE_ALLOW_MS };
+      window.CUMPasteNotice.note("The editor did not take the paste. Paste again to put it in.", null);
+    });
+  }
+
+  function showRunPasteHold(v, text, range, target, lead) {
+    const N = window.CUMPasteNotice;
+    const words = P.runChatPasteNote(v);
+    if (lead) words.body = lead + words.body;
+    if (v.why === "nokey") return N.refuse(words, null, null);
+    const id = removableKeyId();
+    const rows = id
+      ? v.names.map((h) => ({
+          real: h.real,
+          fake: h.fake,
+          onRemove: () => runPasteRemove(id, h.real, v, text, range, target),
+        }))
+      : null;
+    N.refuse(words, () => runPasteLand(text, range, target), rows, "Paste — faked at the send");
+  }
+
+  async function runPasteRemove(id, real, v, text, range, target) {
+    const N = window.CUMPasteNotice;
+    const label = keyName(keys[id]);
+    const ok = await changeKey(id, (k) => P.unfakeKey(k, real));
+    kept.delete(P.fold(real));
+    if (!ok) {
+      N.note("“" + real + "” could not be removed from " + label + " — nothing was changed.", null);
+      return;
+    }
+    const undo = async () => {
+      const back = await changeKey(id, (k) => P.refakeKey(k, real));
+      N.note(
+        back
+          ? "“" + real + "” is back in " + label + ". What was pasted stays — check it."
+          : "“" + real + "” could not be put back — the Key panel can do it.",
+        null
+      );
+    };
+    // What is left of the hold, read off the removed key rather than waiting
+    // for the page to re-read the library.
+    const res = await storageGet([KEYS_KEY]);
+    const now = (res[KEYS_KEY] || {})[id];
+    const left = now ? P.findReals(P.compileReals(now), text) : [];
+    const said = "“" + real + "” is out of " + label + ": no longer faked, warned about or translated. ";
+    if (left.length) return showRunPasteHold({ hold: true, why: "reals", names: left }, text, range, target, said);
+    runPasteLand(text, range, target);
+    N.note(said + "Pasted.", undo);
+  }
+
   window.addEventListener(
     "paste",
     (ev) => {
       if (!ev.isTrusted) return; // the extension's own pastes, this check's hand-back included
+      if (runChatPaste(ev) && ev.defaultPrevented) return;
       if (!active || !active.compiledReals || !active.compiledReals.rx) return;
       if (!inEditor(ev.target)) return;
       const dt = ev.clipboardData;
