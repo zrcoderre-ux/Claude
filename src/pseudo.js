@@ -2260,6 +2260,53 @@
     return { hold: true, why: "reals", names: names, clean: { text: out, ok: out !== text && !left } };
   }
 
+  /**
+   * The same rule in the chats a RUN opened: the run's prompts and the
+   * composer there are the workflow's too. { hold: false } outside a run's
+   * chat, for an empty paste, for a paste let through once ("allowed"), and for
+   * a Lexis or Westlaw report (nothing in it is faked). Otherwise:
+   *   { hold: true, why: "nokey" }    the run has no key to read the paste against
+   *   { hold: true, why: "reals" }    the paste carries the key's real values
+   * Files are held only for want of a key, as in the editor.
+   */
+  function runChatPasteHold(o) {
+    const x = o || {};
+    if (!x.runChat || x.allowed) return { hold: false };
+    const hasText = !!String(x.text || "");
+    if (!hasText && !x.files) return { hold: false };
+    if (!x.hasKey) return { hold: true, why: "nokey" };
+    if (x.files || x.report) return { hold: false };
+    const hits = (x.hits || []).filter((h) => h && trim(h.real));
+    return hits.length ? { hold: true, why: "reals", names: hits } : { hold: false };
+  }
+
+  /** The run-chat refusal's words: { head, body }. */
+  function runChatPasteNote(verdict) {
+    const v = verdict || {};
+    if (v.why === "nokey")
+      return {
+        head: "Not pasted — this run has no key",
+        body:
+          "This chat belongs to a workflow run, and nothing is pasted into a run's chats until the run has a " +
+          "pseudonym key to read the paste against. Pick the matter's key under Pseudonym key in the run's editor " +
+          "(Options, Runs), then paste again.",
+      };
+    const list = (v.names || []).filter((h) => h && h.real);
+    const shown = list.slice(0, 4).map((h) => "“" + h.real + "”");
+    const more = list.length > 4 ? " and " + (list.length - 4) + " more" : "";
+    return {
+      head: "Held — that carries real names",
+      body:
+        "This paste into a run's chat has the real " +
+        (list.length === 1 ? "name " : "names ") +
+        shown.join(", ") +
+        more +
+        " from the run's key. Paste it to have " +
+        (list.length === 1 ? "it" : "them") +
+        " faked at the send, or take a value flagged in error out of the key.",
+    };
+  }
+
   /** The workflow refusal's words: { head, body }. */
   function workflowPasteNote(verdict, scope) {
     const v = verdict || {};
@@ -2982,6 +3029,8 @@
     unfakeInLibrary,
     workflowPasteHold,
     workflowPasteNote,
+    runChatPasteHold,
+    runChatPasteNote,
     compileTypeahead,
     endingReal,
     swapsOnSpace,

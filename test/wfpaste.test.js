@@ -104,3 +104,22 @@ test("a key emptied by hand is still a key", () => {
   lib = P.unfakeInLibrary(lib, ["one"], "Helen Rasho").library;
   assert.strictEqual(P.workflowPasteHold({ mode: "run", keyId: "one" }, lib, { text: "Helen Rasho" }).hold, false);
 });
+
+test("a run's chat takes no paste without the run's key, and holds its real values", () => {
+  const H = [{ real: "Helen Rasho", fake: "Ingrid Strangeways" }];
+  // Not a run's chat: this rule says nothing (the composer's own check runs).
+  assert.strictEqual(P.runChatPasteHold({ runChat: false, hasKey: false, text: "x" }).hold, false);
+  assert.deepStrictEqual(P.runChatPasteHold({ runChat: true, hasKey: false, text: "x" }), { hold: true, why: "nokey" });
+  assert.strictEqual(P.runChatPasteHold({ runChat: true, hasKey: false, files: true }).why, "nokey");
+  assert.strictEqual(P.runChatPasteHold({ runChat: true, hasKey: false, text: "" }).hold, false);
+  const r = P.runChatPasteHold({ runChat: true, hasKey: true, text: "Helen Rasho", hits: H });
+  assert.strictEqual(r.why, "reals");
+  assert.strictEqual(r.names[0].real, "Helen Rasho");
+  // With the key: clean text, files, a law report, a paste let through once.
+  assert.strictEqual(P.runChatPasteHold({ runChat: true, hasKey: true, text: "plain", hits: [] }).hold, false);
+  assert.strictEqual(P.runChatPasteHold({ runChat: true, hasKey: true, files: true }).hold, false);
+  assert.strictEqual(P.runChatPasteHold({ runChat: true, hasKey: true, text: "x", hits: H, report: true }).hold, false);
+  assert.strictEqual(P.runChatPasteHold({ runChat: true, hasKey: false, text: "x", allowed: true }).hold, false);
+  assert.match(P.runChatPasteNote({ why: "nokey" }).body, /Pseudonym key/);
+  assert.match(P.runChatPasteNote({ why: "reals", names: H }).body, /faked at the send/);
+});

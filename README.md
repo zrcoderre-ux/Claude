@@ -3577,6 +3577,21 @@ still runs after it. A paste made before the library has been read waits for
 the read instead of slipping through. The decision is `P.workflowPasteHold` in
 `src/pseudo.js` (`test/wfpaste.test.js`), and the wiring is `src/paste-guard.js`.
 
+**The run's chats follow the same rule.** A claude.ai chat that a run opened
+belongs to the workflow, so its composer refuses every paste, text or files,
+until the run has a key (its own or its group's). With the key, a paste carrying
+the key's real values is **held** and listed, each value with the same **Not a
+real name — remove from key**. Removing the last flagged value lets the paste in.
+The way through with the names still flagged is **Paste — faked at the send**:
+the real names go into the draft as typed text, marked, and their fakes are typed
+over them at the send, as [a long paste](#a-long-paste-is-read-before-it-lands)
+already does. A chat never offers "Paste with the pseudonyms", because the
+composer must never show the fake for a name you typed. A Lexis or Westlaw
+report is not held, and a file paste with the key goes to the upload guard. The
+decision is `P.runChatPasteHold`; the wiring is in `src/pseudo-view.js`, which
+runs it ahead of the composer's own paste check and borrows the editor's notice
+from `src/paste-guard.js`.
+
 ### Swapped names are marked
 
 The same marking the PDF viewer's text reader uses: every real name the display

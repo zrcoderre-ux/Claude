@@ -184,14 +184,9 @@
   // words: { head, body }; onClean: the pseudonym paste, or null; rows: the
   // flagged names, each { real, fake, onRemove }, listed with a button that
   // takes a wrongly flagged one out of its key.
-  function refuse(words, onClean, rows) {
+  function refuse(words, onClean, rows, cleanLabel) {
     close();
-    if (!document.getElementById(STYLE_ID)) {
-      const st = document.createElement("style");
-      st.id = STYLE_ID;
-      st.textContent = STYLES;
-      (document.head || document.documentElement).appendChild(st);
-    }
+    ensureStyles();
     box = document.createElement("div");
     box.className = "cum-paste-refused";
     box.setAttribute("role", "alert");
@@ -211,7 +206,7 @@
       const clean = document.createElement("button");
       clean.type = "button";
       clean.className = "cum-paste-refused-clean";
-      clean.textContent = "Paste with the pseudonyms";
+      clean.textContent = cleanLabel || "Paste with the pseudonyms";
       // The field keeps its caret: the click must not take the focus first.
       clean.addEventListener("mousedown", (e) => e.preventDefault());
       clean.addEventListener("click", () => {
@@ -250,9 +245,18 @@
     boxTimer = setTimeout(close, rows && rows.length ? 60000 : 20000);
   }
 
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const st = document.createElement("style");
+    st.id = STYLE_ID;
+    st.textContent = STYLES;
+    (document.head || document.documentElement).appendChild(st);
+  }
+
   // A short note after a removal, with Undo.
   function note(text, onUndo) {
     close();
+    ensureStyles();
     box = document.createElement("div");
     box.className = "cum-paste-refused cum-paste-note";
     box.setAttribute("role", "status");
@@ -387,6 +391,10 @@
   function lastCopyHolds(text) {
     return !!(record && P.copiedPasteHold(record, text).hold);
   }
+
+  // The same notice for the composer's run-chat check (src/pseudo-view.js),
+  // so a refused paste reads the same in a run's chat as in its editor.
+  window.CUMPasteNotice = { refuse: refuse, note: note, close: close };
 
   window.addEventListener(
     "paste",
