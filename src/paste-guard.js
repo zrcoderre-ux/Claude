@@ -30,7 +30,11 @@
  * `data-cum-paste-mode`), text pasted onto it to become a document, files
  * pasted onto it, and the run margin's prompt and matter-name boxes
  * (`data-cum-paste-key` on the margin). The last-copy check above still runs
- * after it.
+ * after it. Each flagged name in that refusal can be taken out of its key
+ * right there ("Not a real name — remove from key", P.unfakeInLibrary — the
+ * same by-hand removal as the composer's right-click, kept on the library
+ * entry), and the paste is judged again and goes in when nothing else holds
+ * it. Undo puts the name back.
  *
  * Fail-open for the last copy: no record, no pseudonym module, a storage read
  * that never answered — nothing is refused. Not for the workflow's key: a
@@ -57,6 +61,12 @@
     .cum-paste-refused-row { display:flex; gap:8px; justify-content:flex-end; }
     .cum-paste-refused button { font:inherit; color:inherit; cursor:pointer; border-radius:8px; padding:4px 12px;
       background:rgba(255,255,255,0.14); border:1px solid rgba(255,255,255,0.3); }
+    .cum-paste-refused-names { list-style:none; margin:0 0 8px; padding:0; max-height:40vh; overflow:auto; }
+    .cum-paste-refused-names li { display:flex; gap:8px; align-items:center; justify-content:space-between; padding:3px 0;
+      border-top:1px solid rgba(255,255,255,0.15); }
+    .cum-paste-refused-names li span { min-width:0; overflow-wrap:anywhere; }
+    .cum-paste-refused-names button { flex:none; font-size:12px; padding:2px 8px; }
+    .cum-paste-refused.cum-paste-note { background:#1f4d2e; }
     .cum-paste-refused button.cum-paste-refused-clean { background:#fff; color:#7a1f1f; font-weight:700; border-color:#fff; }
   `;
 
@@ -171,8 +181,10 @@
       scope.form.dispatchEvent(new CustomEvent("cum-wf-paste-doc", { detail: { text: text } }));
   }
 
-  // words: { head, body }; clean: { label, text } or null.
-  function refuse(words, onClean) {
+  // words: { head, body }; onClean: the pseudonym paste, or null; rows: the
+  // flagged names, each { real, fake, onRemove }, listed with a button that
+  // takes a wrongly flagged one out of its key.
+  function refuse(words, onClean, rows) {
     close();
     if (!document.getElementById(STYLE_ID)) {
       const st = document.createElement("style");
@@ -208,9 +220,135 @@
       });
       row.appendChild(clean);
     }
-    box.append(h, p, row);
+    box.append(h, p);
+    if (rows && rows.length) {
+      const ul = document.createElement("ul");
+      ul.className = "cum-paste-refused-names";
+      for (const r of rows) {
+        const li = document.createElement("li");
+        const t = document.createElement("span");
+        t.textContent = "“" + r.real + "”" + (r.fake ? " → " + r.fake : "");
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = "Not a real name — remove from key";
+        b.title =
+          "Flagged in error? Take “" + r.real + "” out of the key: it is no longer faked, warned about or " +
+          "translated in this case. The spreadsheet keeps its row; the Key panel can put it back.";
+        b.addEventListener("mousedown", (e) => e.preventDefault());
+        b.addEventListener("click", () => {
+          b.disabled = true;
+          r.onRemove();
+        });
+        li.append(t, b);
+        ul.appendChild(li);
+      }
+      box.appendChild(ul);
+    }
+    box.appendChild(row);
     document.documentElement.appendChild(box);
-    boxTimer = setTimeout(close, 20000);
+    // A list to work through is not taken away mid-read.
+    boxTimer = setTimeout(close, rows && rows.length ? 60000 : 20000);
+  }
+
+  // A short note after a removal, with Undo.
+  function note(text, onUndo) {
+    close();
+    box = document.createElement("div");
+    box.className = "cum-paste-refused cum-paste-note";
+    box.setAttribute("role", "status");
+    const p = document.createElement("p");
+    p.textContent = text;
+    const row = document.createElement("div");
+    row.className = "cum-paste-refused-row";
+    if (onUndo) {
+      const u = document.createElement("button");
+      u.type = "button";
+      u.textContent = "Undo";
+      u.addEventListener("mousedown", (e) => e.preventDefault());
+      u.addEventListener("click", () => {
+        close();
+        onUndo();
+      });
+      row.appendChild(u);
+    }
+    const ok = document.createElement("button");
+    ok.type = "button";
+    ok.textContent = "OK";
+    ok.addEventListener("click", close);
+    row.appendChild(ok);
+    box.append(p, row);
+    document.documentElement.appendChild(box);
+    boxTimer = setTimeout(close, 15000);
+  }
+
+  // Read the library fresh, change it, write it back — another tab or the key
+  // panel may have written since this page last read it. Answers the ids
+  // changed (empty when nothing was, or the write failed).
+  function changeLibrary(how, done) {
+    try {
+      chrome.storage.local.get(KEYS_STORE, (res) => {
+        void chrome.runtime.lastError;
+        const lib = (res && res[KEYS_STORE]) || {};
+        const r = how(lib);
+        if (!r.changed.length) return done([]);
+        chrome.storage.local.set({ [KEYS_STORE]: r.library }, () => {
+          if (chrome.runtime.lastError) return done([]);
+          library = r.library;
+          done(r.changed);
+        });
+      });
+    } catch (e) {
+      done([]);
+    }
+  }
+
+  function keyNames(ids) {
+    const lib = library || {};
+    const label = (id) => (P.keyLabel && lib[id] ? P.keyLabel(lib[id]) : "the key");
+    return ids.length === 1 ? label(ids[0]) : ids.length + " keys";
+  }
+
+  // Take a wrongly flagged value out of the keys that flagged it, then judge
+  // the same paste again: in it goes when nothing else holds it.
+  function removeAndRetry(scope, field, text, name) {
+    changeLibrary(
+      (lib) => P.unfakeInLibrary(lib, name.keyIds, name.real),
+      (changed) => {
+        if (!changed.length) {
+          note("“" + name.real + "” could not be removed from " + keyNames(name.keyIds) + " — nothing was changed.", null);
+          return;
+        }
+        const undo = () =>
+          changeLibrary(
+            (lib) => {
+              const out = Object.assign({}, lib);
+              const back = [];
+              for (const id of changed) {
+                if (!out[id] || !P.refakeKey) continue;
+                const k = P.refakeKey(out[id], name.real);
+                if (k !== out[id]) {
+                  out[id] = k;
+                  back.push(id);
+                }
+              }
+              return { library: out, changed: back };
+            },
+            (back) =>
+              note(
+                back.length
+                  ? "“" + name.real + "” is back in " + keyNames(back) + ". What was pasted stays — check it."
+                  : "“" + name.real + "” could not be put back — the Key panel can do it.",
+                null
+              )
+          );
+        const said = "“" + name.real + "” is out of " + keyNames(changed) + ": no longer faked, warned about or translated. ";
+        const v = P.workflowPasteHold(scope, library, { text: text });
+        if (v.hold) return judgeWorkflow(scope, field, text, 0, said);
+        if (field && lastCopyRefuses(field, text)) return;
+        land(scope, field, text);
+        note(said + "Pasted.", undo);
+      }
+    );
   }
 
   // The last copy's names, for a box the run forms guard. True when refused.
@@ -225,15 +363,24 @@
 
   // The workflow's own key. Answers "refused", "pass", or "landed" (the
   // guard put the paste in itself, after waiting for the library).
-  function judgeWorkflow(scope, field, text, files) {
+  function judgeWorkflow(scope, field, text, files, lead) {
     const v = P.workflowPasteHold(scope, library, { text: text, files: files });
     if (!v.hold) return "pass";
     const words = P.workflowPasteNote(v, scope);
+    if (lead) words.body = lead + words.body;
     const onClean =
       v.why === "reals" && v.clean && v.clean.ok && !lastCopyHolds(v.clean.text)
         ? () => land(scope, field, v.clean.text)
         : null;
-    refuse(words, onClean);
+    const rows =
+      v.why === "reals"
+        ? (v.names || []).map((n) => ({
+            real: n.real,
+            fake: n.fake,
+            onRemove: () => removeAndRetry(scope, field, text, n),
+          }))
+        : null;
+    refuse(words, onClean, rows);
     return "refused";
   }
 
