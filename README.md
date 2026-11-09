@@ -678,6 +678,9 @@ Three things about it shape how this works, and none of them is obvious:
   it is never taken back from something you have since clicked into. With the
   switch off, the send says exactly that in its note rather than failing
   silently: *borrowing focus was not done: off — the popup's switch is not on*.
+  **One loan at a time.** With several runs going, a second page that asks
+  while another holds the screen waits its turn (up to 35 seconds) instead of
+  taking it, and a page saying it is done gives back only its own loan.
 
 The approval field defaults to **leave as-is**, the same contract the model
 picker has: a job that never mentions it never touches the control. And a mode asked for on a page with no approval
@@ -1973,6 +1976,16 @@ so being told to start and starting are the same thing. A step whose message has
 already gone out is **re-attached to, never re-sent**, so nothing is ever posted
 twice. A run that can't finish fails loudly (a notification, and the error on the
 row) rather than going quiet.
+
+**Several runs at once.** Each run keeps its own records, and each remembers
+the tabs it opened for its chats. A step that has to be opened again closes the
+tab it opened last time if that tab never got as far as posting (still on the
+project page or */new*), instead of leaving it behind. A later step finds its
+conversation by that tab even after the tab was moved into a window of its own
+to be seen. A step that fails in its page with no worker left to hear it is
+written on the run by the page and notified, and a step the watchdog has to take
+back more than three times stops the run with an error rather than trying for
+ever. Resume gives it three more.
 
 ### A run's window
 
