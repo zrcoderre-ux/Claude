@@ -2316,6 +2316,94 @@
     return stalled.concat(dueRuns(runs, now));
   }
 
+  // The runs among those that are stalled MID-STEP: a message going out or a
+  // reply awaited, and nobody beating. Unlike a run idle between steps, picking
+  // one of these up is a do-over of something that already went wrong once —
+  // the worker or the page driving it died — so the watchdog counts them.
+  function stalledMidStep(runs, now, staleMs, beats) {
+    const beat = (id) => (beats && typeof beats[id] === "number" ? beats[id] : 0);
+    return (runs || []).filter(
+      (r) =>
+        r &&
+        r.status === "running" &&
+        !!r.phase &&
+        r.phase !== "idle" &&
+        isStale(r, now, staleMs, beat(r.id))
+    );
+  }
+
+  // How many times the watchdog takes back one step before it stops asking.
+  // Every take-back of a step whose message hadn't gone out opens its chat
+  // afresh, and a cause that repeats (a page that fails with no worker left to
+  // hear it) would otherwise repeat every few minutes for ever, a tab at a time.
+  const MAX_STALLS = 3;
+
+  // Count one take-back of the step the run is on. The count belongs to the
+  // step: a run that has moved on starts from nothing, and so does one you
+  // resumed (reviseRun clears it). Answers { run, stop, count, message }.
+  function noteStall(run, now, max) {
+    const limit = typeof max === "number" && max > 0 ? max : MAX_STALLS;
+    const had = run && run.stalls;
+    const count =
+      had && had.step === run.stepIndex && typeof had.count === "number" ? had.count + 1 : 1;
+    const next = Object.assign({}, run, { stalls: { step: run.stepIndex, count: count, at: now } });
+    if (count <= limit) return { run: next, stop: false, count: count, message: null };
+    const message =
+      "step " + (run.stepIndex + 1) + " went quiet " + count +
+      " times with nothing driving it (its tab stopped reporting before it finished) — " +
+      "stopped rather than open it again; read the chat, then Resume to try once more";
+    return { run: markError(next, message, now), stop: true, count: count, message: message };
+  }
+
+  // A page's own record of a step that failed in it. The worker normally writes
+  // the error, but the worker is allowed to die while a page works, and a
+  // failure reported to a dead worker is reported to nobody — the run sat at
+  // "sending" until the watchdog opened the chat again. Only a run still on
+  // THIS step and still running is touched: "step already moved on" is a
+  // failure of the message, not of the run.
+  function pageFailure(run, info, now) {
+    const i = info || {};
+    if (!run || run.status !== "running") return null;
+    if (typeof i.stepIndex === "number" && i.stepIndex !== run.stepIndex) return null;
+    return Object.assign({}, markError(run, i.error || "the step failed in its tab", now), {
+      failedInPage: now,
+    });
+  }
+
+  // Did this write just turn the run into one a page failed? The worker hears
+  // it through storage, which wakes it, so the failure is said out loud even
+  // when nothing was waiting on the step's answer.
+  function pageFailedNow(oldRun, newRun) {
+    if (!newRun || newRun.status !== "error" || !newRun.failedInPage) return false;
+    return !(oldRun && oldRun.status === "error" && oldRun.failedInPage === newRun.failedInPage);
+  }
+
+  // The tab a run opened for a chat that had no conversation yet, kept under
+  // its own key per run ({ chatId: tabId }). If the step has to be opened again,
+  // the earlier tab is either still sitting on the address it was opened at —
+  // nothing was posted from it, so it is closed rather than left behind — or it
+  // has moved on (into a conversation, or to anything else), and then it is
+  // left alone: it may hold work, and it may not even be ours any more, since
+  // Chrome reuses tab ids across a restart.
+  const TABS_PREFIX = "cum_wf_tabs_";
+  function tabsKey(id) {
+    return TABS_PREFIX + id;
+  }
+  function samePage(a, b) {
+    try {
+      const x = new URL(str(a));
+      const y = new URL(str(b));
+      const path = (u) => u.pathname.replace(/\/+$/, "") || "/";
+      return x.origin === y.origin && path(x) === path(y);
+    } catch (e) {
+      return false;
+    }
+  }
+  function orphanTabAction(tabUrl, targetUrl) {
+    if (!str(tabUrl) || !str(targetUrl)) return "leave";
+    return samePage(tabUrl, targetUrl) ? "close" : "leave";
+  }
+
   // `beatAt` is the run's own heartbeat key — the page saying "still mine".
   // Either signal being recent means someone is on it.
   function isStale(run, now, staleMs, beatAt) {
@@ -3209,6 +3297,10 @@
       lastProgressAt: now,
       heldSince: null,
       holdReason: null,
+      // A step you resumed gets its take-backs afresh, and a page's failure
+      // record goes with the error it explained.
+      stalls: null,
+      failedInPage: null,
     });
   }
 
@@ -3903,6 +3995,14 @@
     nextUsageResume,
     pickupRuns,
     isStale,
+    stalledMidStep,
+    MAX_STALLS,
+    noteStall,
+    pageFailure,
+    pageFailedNow,
+    TABS_PREFIX,
+    tabsKey,
+    orphanTabAction,
     nextRunTrigger,
     markStarted,
     markSending,

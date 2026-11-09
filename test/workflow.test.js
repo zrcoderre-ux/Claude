@@ -3964,3 +3964,100 @@ test("a run's tab group is named and colored for the case", () => {
   assert.equal(c1, W.tabGroupColor("k#1"));
   assert.ok(["blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"].includes(c1));
 });
+
+// ---- concurrent runs: stalls, page failures, orphaned tabs ----------------
+
+function stalledRun(over) {
+  return Object.assign(
+    { id: "r1", status: "running", phase: "sending", stepIndex: 2, lastProgressAt: NOW },
+    over || {}
+  );
+}
+
+test("stalledMidStep: only a step in flight that has gone quiet", () => {
+  const later = NOW + W.STALE_MS + 1;
+  const runs = [
+    stalledRun(),
+    stalledRun({ id: "idle", phase: "idle" }),
+    stalledRun({ id: "beating" }),
+    stalledRun({ id: "waiting", phase: "awaiting-reply" }),
+    stalledRun({ id: "paused", status: "paused" }),
+  ];
+  const ids = W.stalledMidStep(runs, later, W.STALE_MS, { beating: later - 1000 }).map((r) => r.id);
+  assert.deepEqual(ids, ["r1", "waiting"]);
+  assert.deepEqual(W.stalledMidStep(runs, NOW + 1000, W.STALE_MS, {}), []);
+});
+
+test("noteStall: counts per step and stops past the ceiling, loudly", () => {
+  let run = stalledRun();
+  for (let i = 1; i <= W.MAX_STALLS; i++) {
+    const n = W.noteStall(run, NOW + i);
+    assert.equal(n.stop, false);
+    assert.equal(n.count, i);
+    run = n.run;
+  }
+  const last = W.noteStall(run, NOW + 99);
+  assert.equal(last.stop, true);
+  assert.equal(last.run.status, "error");
+  assert.match(last.run.error, /step 3 went quiet 4 times/);
+  assert.match(last.message, /Resume/);
+});
+
+test("noteStall: a run that moved to another step starts counting afresh", () => {
+  const run = stalledRun({ stepIndex: 3, stalls: { step: 2, count: 3 } });
+  const n = W.noteStall(run, NOW);
+  assert.equal(n.count, 1);
+  assert.equal(n.stop, false);
+});
+
+test("reviseRun clears the stall count and a page's failure record", () => {
+  const run = Object.assign(stalledRun({ status: "error", totalSteps: 5 }), {
+    stalls: { step: 2, count: 3 },
+    failedInPage: NOW,
+  });
+  const r = W.reviseRun(run, { stepIndex: 2 }, NOW + 1);
+  assert.equal(r.stalls, null);
+  assert.equal(r.failedInPage, null);
+});
+
+test("pageFailure: writes the error only on a running run still at that step", () => {
+  const run = stalledRun();
+  const f = W.pageFailure(run, { stepIndex: 2, error: "project not opened" }, NOW + 5);
+  assert.equal(f.status, "error");
+  assert.equal(f.error, "project not opened");
+  assert.equal(f.failedInPage, NOW + 5);
+  assert.equal(W.pageFailure(run, { stepIndex: 1, error: "x" }, NOW), null);
+  assert.equal(W.pageFailure(stalledRun({ status: "paused" }), { stepIndex: 2 }, NOW), null);
+  assert.equal(W.pageFailure(null, { stepIndex: 2 }, NOW), null);
+});
+
+test("pageFailedNow: true once, on the write that made it", () => {
+  const before = stalledRun();
+  const after = W.pageFailure(before, { stepIndex: 2, error: "x" }, NOW + 5);
+  assert.equal(W.pageFailedNow(before, after), true);
+  assert.equal(W.pageFailedNow(undefined, after), true);
+  // The worker writing the same error over it afterwards is not a new failure.
+  const rewritten = W.markError(after, "x", NOW + 6);
+  assert.equal(W.pageFailedNow(after, rewritten), false);
+  // A worker-written error is the worker's to report.
+  assert.equal(W.pageFailedNow(before, W.markError(before, "x", NOW)), false);
+});
+
+test("orphanTabAction: close only a tab still on the address it was opened at", () => {
+  const proj = "https://claude.ai/cowork/project/0b0c6a2e-1111-4222-8333-444455556666";
+  assert.equal(W.orphanTabAction(proj, proj), "close");
+  assert.equal(W.orphanTabAction(proj + "/?x=1#y", proj), "close");
+  assert.equal(W.orphanTabAction("https://claude.ai/new", "https://claude.ai/new"), "close");
+  // It posted, or went somewhere else, or isn't ours: leave it.
+  assert.equal(
+    W.orphanTabAction("https://claude.ai/cowork/session/cse_abc", proj),
+    "leave"
+  );
+  assert.equal(W.orphanTabAction("https://example.com/cowork/project/0b0c", proj), "leave");
+  assert.equal(W.orphanTabAction("", proj), "leave");
+  assert.equal(W.orphanTabAction(proj, ""), "leave");
+});
+
+test("tabsKey stays out of the run prefix, so writing it does not reschedule", () => {
+  assert.equal(W.tabsKey("abc").indexOf(W.RUN_PREFIX), -1);
+});

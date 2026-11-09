@@ -1338,13 +1338,48 @@ function chatProjectPage(chat) {
   return J.projectPageAt(chatTargetUrl(chat));
 }
 
-async function stepTab(run, savedUrl, chat) {
+// The tabs a run opened for chats that had no conversation yet — see
+// W.orphanTabAction. A key per run, so writing it can never race the run's own
+// record (the page writes that while the worker is opening the next tab).
+async function readOpenedTabs(runId) {
+  const k = W.tabsKey(runId);
+  return (await get(k))[k] || {};
+}
+async function noteOpenedTab(runId, chatId, tabId) {
+  const k = W.tabsKey(runId);
+  const had = await readOpenedTabs(runId);
+  await set({ [k]: Object.assign({}, had, { [chatId]: tabId }) });
+}
+// Opening a chat afresh for a step that was opened before and never got as far
+// as posting: the earlier tab is still sitting on the project page (or /new),
+// and it goes, rather than piling up one more every time the step is retried.
+async function closeOrphanTab(runId, chatId, url) {
+  const id = (await readOpenedTabs(runId))[chatId];
+  if (typeof id !== "number") return;
+  let t = null;
+  try {
+    t = await chrome.tabs.get(id);
+  } catch (e) {
+    return; // already closed
+  }
+  if (!t || W.orphanTabAction(t.pendingUrl || t.url, url) !== "close") return;
+  try {
+    await chrome.tabs.remove(id);
+  } catch (e) {
+    /* closed under us */
+  }
+}
+
+async function stepTab(run, savedUrl, chat, chatId) {
   const url = savedUrl || chatTargetUrl(chat);
+  const fresh = !savedUrl && !!chatId && !!run && !!run.id;
+  if (fresh) await closeOrphanTab(run.id, chatId, url);
   // Reuse only where the address is a conversation this run already has. A
   // fresh composer is /new, and matching THAT against a shared window's tabs
   // would hand the step whatever new chat you happened to have open.
   const { tab, windowId, created } = await runTab(run, url, !!savedUrl);
   if (!tab) return { tab: null, windowId: null };
+  if (fresh && created) await noteOpenedTab(run.id, chatId, tab.id);
   if (created) {
     await waitTabComplete(tab.id, 30000);
     await sleep(2500); // the SPA needs a moment to render the composer
@@ -1490,7 +1525,7 @@ async function driveWave(runId, run, src, plan, step) {
   for (const m of members) {
     const chat = W.getChat(src, m.chatId) || {};
     const saved = (run.chats && run.chats[m.chatId]) || {};
-    const { tab, windowId } = await stepTab(run, saved.url, chat);
+    const { tab, windowId } = await stepTab(run, saved.url, chat, m.chatId);
     if (windowId != null && windowId !== run.windowId)
       run = await saveRun(W.withWindow(run, windowId));
     if (!tab) {
@@ -1886,7 +1921,7 @@ async function driveRun(runId, opts) {
 
       const chat = W.getChat(src, step.chatId) || {};
       const saved = (run.chats && run.chats[step.chatId]) || {};
-      const { tab, windowId } = await stepTab(run, saved.url, chat);
+      const { tab, windowId } = await stepTab(run, saved.url, chat, step.chatId);
       if (windowId != null && windowId !== run.windowId)
         run = await saveRun(W.withWindow(run, windowId));
       if (!tab) {
@@ -2126,12 +2161,30 @@ async function startRuns(kind /* "time" | "reset" | "hold" | "pickup" */) {
       : kind === "pickup"
       ? W.pickupRuns(runs, now, W.STALE_MS, await readBeats(runs.map((r) => r.id)))
       : W.dueRuns(runs, now);
+  // A step taken back from a driver that died is counted, and past
+  // W.MAX_STALLS the run stops and says so instead of opening the chat again.
+  const stopped = new Set();
+  if (kind === "pickup") {
+    const beats = await readBeats(runs.map((r) => r.id));
+    for (const r of W.stalledMidStep(runs, now, W.STALE_MS, beats)) {
+      if (drivingRuns.has(r.id)) continue; // still in hand here; nothing to take back
+      const fresh = await readRun(r.id);
+      if (!fresh || fresh.status !== "running" || fresh.phase !== r.phase) continue;
+      const counted = W.noteStall(fresh, Date.now());
+      await saveRun(counted.run);
+      if (counted.stop) {
+        stopped.add(r.id);
+        notify("Workflow stopped", W.runLabel(fresh).title + " — " + counted.message);
+      }
+    }
+  }
+  const go = due.filter((r) => !stopped.has(r.id));
   // Concurrently. Runs are independent — their own window, their own
   // conversations, their own storage keys — and a run is hours long, so driving
   // them one after another would mean a second matter queued for the same
   // trigger didn't start until the first had finished. (Pressing Start twice
   // always ran them side by side; this makes the scheduled path agree.)
-  await Promise.all(due.map((r) => driveRun(r.id)));
+  await Promise.all(go.map((r) => driveRun(r.id)));
   if (due.length) await reschedule();
 }
 
@@ -3312,6 +3365,20 @@ chrome.storage.onChanged.addListener((changes, area) => {
     (k) => k === W.RUN_IDS_KEY || (k.indexOf(W.RUN_PREFIX) === 0 && k.indexOf(W.BEAT_PREFIX) !== 0)
   );
   if (changes[JOBS_KEY] || changes[STATE_KEY] || runChanged) reschedule();
+  // A step that failed in its page with no worker waiting on it. The worker
+  // driving a step says so itself when the answer reaches it; this is for the
+  // answer that had nobody to reach.
+  for (const k of Object.keys(changes)) {
+    if (k.indexOf(W.RUN_PREFIX) !== 0) continue;
+    const c = changes[k];
+    if (!W.pageFailedNow(c.oldValue, c.newValue)) continue;
+    if (drivingRuns.has(c.newValue.id)) continue;
+    notify(
+      "Workflow stopped",
+      W.runLabel(c.newValue).title + " failed at step " + (c.newValue.stepIndex + 1) + ": " +
+        (c.newValue.error || "unknown")
+    );
+  }
   // The meter is the authority on whether usage is back, so every reading is a
   // chance to lift a usage pause — sooner and more reliably than the alarm,
   // which can only ever fire at the time the meter last predicted.
