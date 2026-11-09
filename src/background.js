@@ -1370,16 +1370,45 @@ async function closeOrphanTab(runId, chatId, url) {
   }
 }
 
+// The tab this run opened for a chat, if it still holds that chat's
+// conversation — wherever it is now. A Cowork page asking to be seen is moved
+// into a window of its own (cum-show-tab), and the run's window no longer has
+// it; looking only there opened the conversation a second time. Known by the
+// id the run itself recorded, and only believed while its address is still
+// the conversation, so a tab you opened stays yours and a reused id is ignored.
+async function knownChatTab(runId, chatId, savedUrl) {
+  const id = (await readOpenedTabs(runId))[chatId];
+  if (typeof id !== "number") return null;
+  try {
+    const t = await chrome.tabs.get(id);
+    return t && t.url && J.sameConversationUrl(t.url, savedUrl) ? t : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function stepTab(run, savedUrl, chat, chatId) {
   const url = savedUrl || chatTargetUrl(chat);
-  const fresh = !savedUrl && !!chatId && !!run && !!run.id;
+  const ours = !!chatId && !!run && !!run.id;
+  const fresh = !savedUrl && ours;
   if (fresh) await closeOrphanTab(run.id, chatId, url);
+  if (savedUrl && ours) {
+    const known = await knownChatTab(run.id, chatId, savedUrl);
+    if (known) {
+      // (A discarded one is reloaded by sendStep, as anywhere else.)
+      // The run's own window stays its home; only this tab lives elsewhere.
+      const home = typeof run.windowId === "number" ? run.windowId : known.windowId;
+      return { tab: known, windowId: home };
+    }
+  }
   // Reuse only where the address is a conversation this run already has. A
   // fresh composer is /new, and matching THAT against a shared window's tabs
   // would hand the step whatever new chat you happened to have open.
   const { tab, windowId, created } = await runTab(run, url, !!savedUrl);
   if (!tab) return { tab: null, windowId: null };
-  if (fresh && created) await noteOpenedTab(run.id, chatId, tab.id);
+  // Every tab a chat's step runs in is remembered — a fresh one so a retry
+  // can close it, any one so a later step can find it after it has moved.
+  if (ours) await noteOpenedTab(run.id, chatId, tab.id);
   if (created) {
     await waitTabComplete(tab.id, 30000);
     await sleep(2500); // the SPA needs a moment to render the composer
@@ -1432,7 +1461,7 @@ async function harvestChat(run, source, chatId, chatName) {
         "this run has no conversation recorded for " + chatName +
         " — paste its chat link in, or carry on without re-reading it",
     };
-  const { tab, windowId } = await stepTab(run, url, W.getChat(source, chatId) || {});
+  const { tab, windowId } = await stepTab(run, url, W.getChat(source, chatId) || {}, chatId);
   if (!tab) return { ok: false, error: "could not open " + chatName };
   if (windowId != null && windowId !== run.windowId) await saveRun(W.withWindow(run, windowId));
   let res = await sendStep(tab.id, { type: "cum-wf-harvest", runId: run.id });
@@ -2818,34 +2847,62 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           error:
             'off — the popup\'s "Borrow focus to load a Cowork project list" switch is not on',
         };
+      // Another page's loan is out: wait for it to come back (CW.loanTurn)
+      // rather than hand it back from under a list still loading.
+      const waitFrom = Date.now();
+      let turn = CW.loanTurn(focusLoan, tab.id, Date.now());
+      while (turn === "wait" && Date.now() - waitFrom < CW.LOAN_WAIT_MS) {
+        await sleep(250);
+        turn = CW.loanTurn(focusLoan, tab.id, Date.now());
+      }
+      if (turn === "wait")
+        return {
+          ok: false,
+          error:
+            "another run had the screen for its own project list for " +
+            Math.round((Date.now() - waitFrom) / 1000) + "s and never gave it back",
+        };
+      const waited = Date.now() - waitFrom > 1000 ? Math.round((Date.now() - waitFrom) / 1000) : 0;
+      // An expired loan whose timer was lost goes back before a new one starts.
+      if (turn === "grant" && focusLoan) await returnFocus(null, "its time was up");
+      const held = turn === "renew" ? focusLoan : null;
       let before = null;
       try {
         before = await chrome.windows.getLastFocused();
       } catch (e) {
         /* nothing to give back to, then */
       }
-      if (CW.tabRemedy(tab, before) === "own-window")
+      if (!held && CW.tabRemedy(tab, before) === "own-window")
         return {
           ok: false,
           error: "it is behind the tab you're working in, and switching your tab is not ours to do",
         };
-      if (focusLoan) await returnFocus(null, "a new loan replaced it");
+      if (held && held.timer) clearTimeout(held.timer);
       const ms = Math.max(1000, Math.min(30000, Math.floor(msg.ms) || 20000));
       try {
         await chrome.tabs.update(tab.id, { active: true });
         await chrome.windows.update(tab.windowId, { focused: true });
       } catch (e) {
+        if (held) focusLoan = null;
         return { ok: false, error: String((e && e.message) || e) };
       }
-      const loan = {
-        from: before && before.id != null ? before.id : null,
-        fromFocused: !!(before && before.focused),
-        windowId: tab.windowId,
-      };
-      focusLoan = Object.assign({ timer: setTimeout(() => returnFocus(null, "its ceiling passed"), ms) }, loan);
+      // Renewed, the screen still came from where it first came from.
+      const loan = held
+        ? { from: held.from, fromFocused: held.fromFocused, windowId: tab.windowId, tabId: tab.id }
+        : {
+            from: before && before.id != null ? before.id : null,
+            fromFocused: !!(before && before.focused),
+            windowId: tab.windowId,
+            tabId: tab.id,
+          };
+      focusLoan = Object.assign(
+        { timer: setTimeout(() => returnFocus(null, "its ceiling passed"), ms), until: Date.now() + ms },
+        loan
+      );
       return {
         ok: true,
         why:
+          (waited ? "waited " + waited + "s for another run's turn, then " : "") +
           "brought in front for up to " + Math.round(ms / 1000) + "s" +
           (loan.fromFocused ? ", then given back" : " (Chrome was not in front before, so there is nothing to give back to)"),
         loan: loan,
@@ -2856,6 +2913,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.type === "cum-return-focus") {
+    // Only the page's own loan: a late "done" must not end the next page's turn.
+    const from = sender && sender.tab ? sender.tab.id : null;
+    if (!CW.loanReturnFits(focusLoan, from)) {
+      sendResponse({ ok: true, why: "its turn had already ended; another run has the screen now" });
+      return true;
+    }
     returnFocus(msg.loan || null, "the page finished")
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String(e) }));

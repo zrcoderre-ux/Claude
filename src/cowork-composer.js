@@ -580,7 +580,12 @@
     // it is given back the moment this phase ends (ctx.loan) — or by the
     // worker's own ceiling if this page never gets to say so.
     if (!loaded && K.menuNeedsFocus(document.visibilityState, menuText())) {
-      const loan = await askWorker("cum-borrow-focus", { ms: 25000 });
+      const loan = await askWorker(
+        "cum-borrow-focus",
+        { ms: 25000 },
+        // Long enough to wait out another run's loan (K.LOAN_WAIT_MS) and then be lent.
+        ((K.LOAN_WAIT_MS || 35000) + 10000)
+      );
       if (loan.ok) {
         ctx.loan = loan.loan || {};
         tabNote += (tabNote ? "; " : "") + "focus was borrowed (" + (loan.why || "lent") + ")";

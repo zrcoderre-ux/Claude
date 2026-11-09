@@ -1014,3 +1014,24 @@ test("a send that could not set the mode says what it ran under instead", () => 
     "permission mode NOT set to Auto — sent under whatever mode the page was already in"
   );
 });
+
+// ---- focus loans: one at a time ------------------------------------------
+
+test("loanTurn: grant when free or expired, renew for the holder, wait otherwise", () => {
+  const now = 1_000_000;
+  assert.equal(K.loanTurn(null, 5, now), "grant");
+  const loan = { tabId: 5, until: now + 10000 };
+  assert.equal(K.loanTurn(loan, 5, now), "renew");
+  assert.equal(K.loanTurn(loan, 6, now), "wait");
+  assert.equal(K.loanTurn(loan, 6, now + 10000), "grant");
+  // A loan from before loans named their tab is nobody's to renew.
+  assert.equal(K.loanTurn({ until: now + 10000 }, 6, now), "wait");
+  assert.ok(K.LOAN_WAIT_MS > 30000, "a waiter outlasts the longest loan");
+});
+
+test("loanReturnFits: a page gives back only its own loan", () => {
+  assert.equal(K.loanReturnFits(null, 5), true);
+  assert.equal(K.loanReturnFits({ tabId: 5 }, 5), true);
+  assert.equal(K.loanReturnFits({ tabId: 5 }, 6), false);
+  assert.equal(K.loanReturnFits({}, 6), true);
+});

@@ -702,6 +702,28 @@
     return String(visibility || "") === "visible" && menuStillLoading(menuText);
   }
 
+  // One focus loan at a time, and a second page waits its turn rather than
+  // taking it. Two runs loading project lists at once used to trade the screen
+  // back and forth — the second loan handed the first one's back, which took
+  // focus from the page whose list was halfway in. Answers "grant" (nobody has
+  // it, or the holder's time is up), "renew" (the holder asking again: its
+  // time restarts, and where the screen came from is kept, since "from" is now
+  // the borrowed window) or "wait".
+  const LOAN_WAIT_MS = 35000; // past the longest loan (30s), so a turn always comes
+  function loanTurn(loan, tabId, now) {
+    if (!loan) return "grant";
+    if (typeof loan.until === "number" && loan.until <= now) return "grant";
+    if (loan.tabId != null && loan.tabId === tabId) return "renew";
+    return "wait";
+  }
+  // A page saying it is done gives back only its OWN loan. Its message can
+  // arrive after its ceiling passed and another page's turn began, and giving
+  // that one back would take the screen from a list still loading.
+  function loanReturnFits(loan, tabId) {
+    if (!loan) return true; // nothing held here — the page's echo is all there is
+    return loan.tabId == null || loan.tabId === tabId;
+  }
+
   /**
    * How the worker gets a page's tab looked at, given the tab and the window
    * last focused (chrome.windows.getLastFocused, which also says whether Chrome
@@ -1037,6 +1059,9 @@
     isCoworkUrl,
     projectIdFromUrl,
     projectPageOutcome,
+    LOAN_WAIT_MS,
+    loanTurn,
+    loanReturnFits,
     wantedProjectName,
     projectRowMatches,
     projectTriggerName,
