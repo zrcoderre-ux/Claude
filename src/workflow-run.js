@@ -1696,7 +1696,22 @@
     }
     if (msg.type === "cum-wf-step") {
       runStep(msg)
-        .then((res) => sendResponse(res))
+        .then(async (res) => {
+          // A failure is written on the run here as well as answered: the
+          // worker that asked may have died while this page worked, and then
+          // the answer reaches nobody (W.pageFailure). Not for a wave member —
+          // its siblings are still working, and the worker settles a wave.
+          if (res && !res.ok && !res.paused && !res.canceled && !msg.waveKey) {
+            try {
+              await updateRun(msg.runId, (r) =>
+                W.pageFailure(r, { stepIndex: msg.stepIndex, error: res.error }, Date.now())
+              );
+            } catch (e) {
+              /* the answer below still carries it */
+            }
+          }
+          sendResponse(res);
+        })
         .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
       return true; // async response
     }

@@ -1822,7 +1822,7 @@
             const ids = (store[WF.RUN_IDS_KEY] || []).filter((x) => x !== id);
             chrome.storage.local.set({ [WF.RUN_IDS_KEY]: ids }, () => {
               chrome.storage.local.remove(
-                [WF.runKey(id), WF.beatKey(id)].concat(dead.map((fid) => J.fileKey(fid))),
+                [WF.runKey(id), WF.beatKey(id), WF.tabsKey(id)].concat(dead.map((fid) => J.fileKey(fid))),
                 renderRuns
               );
             });
