@@ -2882,9 +2882,9 @@ swept on the next extension start.
    the case the key happens to store: `John Doe` → `Zachary Coderre`,
    `JOHN DOE` → `ZACHARY CODERRE`, `john doe` → `zachary coderre`. See [Case
    comes across with the name](#case-comes-across-with-the-name). A case name
-   in a **citation** is left as Claude wrote it — see [Case names in
-   citations stay as Claude wrote
-   them](#case-names-in-citations-stay-as-claude-wrote-them). The **key button** beside Save names
+   in a **citation** reads back like everything else — see [Case names in
+   citations read back like everything
+   else](#case-names-in-citations-read-back-like-everything-else). The **key button** beside Save names
    the key and counts the swaps, so what you see is never silently different
    from what Claude sees — see [The key button](#the-key-button).
    **Display-only, and the boundary is structural**: the swap edits what this
@@ -3610,8 +3610,8 @@ from `src/paste-guard.js`.
 The same marking the PDF viewer's text reader uses: every real name the display
 swapped in is **lightly highlighted**, and **hovering** one shows the pseudonym
 underneath — `Pseudonym: Ingrid Strangeways` — which is what Claude saw in its
-place. A name held in a [citation](#case-names-in-citations-stay-as-claude-wrote-them)
-is no swap and carries no mark, so what is marked is exactly what was changed.
+place. A name in a [citation](#case-names-in-citations-read-back-like-everything-else)
+is swapped and marked like any other, so what is marked is exactly what was changed.
 
 The controls are in the [key button](#the-key-button)'s panel, under the status:
 **Mark pseudonyms** turns the highlight and the hover off, and the swatch and
@@ -3638,49 +3638,34 @@ breaks a streaming reply. It also means a copy — ⌘C or [Copy
 ruling](#copying-just-the-ruling) — carries the text and never the mark. The
 settings and the hit-test live in `src/pseudomark.js`.
 
-### Case names in citations stay as Claude wrote them
+### Case names in citations read back like everything else
 
-Claude only ever sees the fakes, so a case it **cites** is a published case,
-named correctly. A published party can share a word with one of this case's
-fakes — `Smith v. Jones (2010) 50 Cal.4th 100`, in a case where `Smith` is the
-fake for your plaintiff — and reversing it there rewrites a correct citation
-into a wrong one, in the real names. Copied into Word, nothing would flag it:
-a check for fakes left in the document finds none.
+Every fake on the page is shown as its real value, marked, wherever it stands —
+a case name in a citation included (the owner, November 2026: "Every real value
+should be shown highlighted where the fake value actually is").
 
-So in the **messages**, a case name in a citation is left exactly as written.
-It is recognised two ways:
+The messages used to leave a case name in a citation exactly as Claude wrote it
+(a short italic run, or a name before a citation's tail), on the theory that a
+case Claude cites is a published case whose party merely shares a word with a
+fake. But PDF-Linker fakes **inside** case names: both parties of a trial-court
+case (`Doe v. Roe (Super. Ct. Orange County, 2019)`), this case's own prior
+appeal and its short cite, your party in a related federal cite, a writ's real
+party in interest. Claude reads those in the fakes and writes them back in the
+fakes, italicised like any case name, and each stood on the page as a stand-in
+with nothing over it. No test of a citation's shape can tell those from a
+published party; the key says what was faked, and what was faked is shown.
 
-- **Italics.** The Style Manual italicises every case name, full or short
-  (`In *Smith*, the court…`), so a short italic run in a message — case-name
-  length, not a whole emphasised sentence — is not translated.
-- **The citation's tail**, for a name that lost its italics: a year
-  parenthetical and a reporter (`(2010) 50 Cal.4th 100`, `(9th Cir. 2010)
-  600 F.3d 100`, `(Jan. 5, 2026, B123456) ___ Cal.App.5th ___`), `, supra`,
-  `, 50 Cal.4th at p. 105`, or a volume and reporter after a comma where the
-  name has a `v.` or an `In re` in it. The name is read backwards from the tail
-  and stops at the sentence it stands in — `Plaintiff Doe relies on Smith v.
-  Jones (2010)…` holds `Smith v. Jones` and still translates `Doe`. A writ's
-  real party in interest (`Smith v. Superior Court (Jones) (2010)…`) is part
-  of the name, and a parenthetical directly after the cite's page (`(Smith)`,
-  `(conc. opn. of Liu, J.)`) is held with it.
+**What is given up.** A published party whose name really is one of this case's
+fakes — `Stockton v. Superior Court`, where `Stockton` is your plaintiff's fake
+— now reads as your plaintiff, marked like every other swap; the hover names the
+pseudonym under it. PDF-Linker keeps the authorities a folder cites out of its
+fake pools, so this takes an authority Claude cited from memory. Word's
+DeAnonymize macro reverses the same word the same way.
 
-**This case's own caption, cited, still reverses.** PDF-Linker scrubs a cited
-`X v. Y` whose two sides are both mostly this case's **own** parties — the
-caption recited with a year, or the case's own prior appeal — so Claude reads
-that one in the fakes, and holding it would leave it there. The key marks its
-own parties the way PDF-Linker does (a `person` or `entity` row whose Source is
-`spreadsheet` or `--term`), and a cited name whose sides are both mostly those
-parties' fakes is translated like any other text; the same goes for an italic
-run. The test is the scrubber's own (half or more of each side's words, from
-three letters, with `Inc.`, `the`, `Plaintiff` and the like not counted), so
-the way back restores exactly what the way out replaced. A key with no
-`Source` column marks nobody, and every cited name holds.
-
-**The miss runs the safe way.** Where the extension can't tell, a fake that
-should have reversed is left as a fake — which is the thing a check for
-leftover fakes is built to catch. A caption with no citation after it
-(`Doe v. Acme` in a heading or a title) is the case at bar and translates as
-before. Chat titles, the cleaner and the composer warning are unchanged.
+**The way out is unchanged.** A real name you type in the composer inside a
+citation's case name is a published party and is still not faked at the send;
+the banner and the send gate ask about it as before. Chat titles, the cleaner
+and the composer warning are unchanged.
 
 ### Lists reached the other way
 

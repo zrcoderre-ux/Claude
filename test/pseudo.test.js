@@ -2133,9 +2133,11 @@ test("foldQuotes and mirrorQuotes", () => {
 
 // ---- case names in citations ------------------------------------------------
 //
-// Claude sees only the fakes, so a case it cites is a published case named
-// correctly. A published party that shares a word with a fake must not be
-// rewritten into this case's real party.
+// The display holds nothing (owner, November 2026): every fake reads back as
+// its real value wherever it stands, a case name in a citation included.
+// PDF-Linker fakes inside case names — a trial-court case's parties, this
+// case's own prior appeal, a writ's real party in interest — and a hold on
+// anything shaped like a citation left those standing as stand-ins.
 
 const CITE_KEY = {
   pairs: [
@@ -2146,69 +2148,43 @@ const CITE_KEY = {
 };
 
 function cite(text) {
-  return P.translate(P.compile(CITE_KEY), text, { citations: true });
+  return P.translate(P.compile(CITE_KEY), text);
 }
 
-test("a full citation's case name is left as Claude wrote it", () => {
-  const s = "Plaintiff Doe relies on Smith v. Jones (2010) 50 Cal.4th 100, 105.";
-  const r = cite(s);
-  assert.strictEqual(r.text, "Plaintiff Walton relies on Smith v. Jones (2010) 50 Cal.4th 100, 105.");
-  assert.strictEqual(r.count, 1);
-  assert.strictEqual(r.kept, 2);
-});
-
-test("the common citation shapes all hold their names", () => {
-  const held = [
-    "In re Marriage of Smith (2005) 30 Cal.4th 100",
-    "People v. Jones (2019) 40 Cal.App.5th 200",
-    "Smith v. Superior Court (9th Cir. 2010) 600 F.3d 100",
-    "Jones v. Acme Co., Inc. (1990) 500 U.S. 100",
-    "Smith v. Jones (Jan. 5, 2026, B123456) ___ Cal.App.5th ___",
-    "Smith v. Jones (2024) 2024 WL 123456",
-    "(Smith, supra, 50 Cal.4th at p. 105)",
-    "(Jones, 40 Cal.App.5th at pp. 210-211)",
-    "Smith v. Jones, 50 F.3d 100 (9th Cir. 1995)",
-    "(See Smith v. Jones (2010) 50 Cal.4th 100; Jones v. Roe (2011) 51 Cal.4th 1.)",
-  ];
-  for (const s of held) {
-    const r = cite(s);
-    assert.strictEqual(r.text, s, s);
-    assert.strictEqual(r.count, 0, s);
-  }
-});
-
-test("a parenthetical straight after the cite is the citation's", () => {
-  const s = "Smith v. Jones (2010) 50 Cal.4th 100, 105 (Smith). Doe (Doe) disagrees.";
-  assert.strictEqual(cite(s).text, "Smith v. Jones (2010) 50 Cal.4th 100, 105 (Smith). Walton (Walton) disagrees.");
-  assert.strictEqual(cite("Jones v. Roe (2011) 51 Cal.4th 1 (conc. opn. of Smith, J.)").count, 0);
-});
-
-test("the sentence around a citation still translates", () => {
-  assert.strictEqual(
-    cite("Doe argues that Smith v. Jones (2010) 50 Cal.4th 100 controls. Doe is wrong.").text,
-    "Walton argues that Smith v. Jones (2010) 50 Cal.4th 100 controls. Walton is wrong."
-  );
-  // A sentence ending in a short surname is not an abbreviation inside the
-  // next case's name.
-  assert.strictEqual(
-    cite("The motion against Doe. Smith v. Jones (2010) 50 Cal.4th 100.").text,
-    "The motion against Walton. Smith v. Jones (2010) 50 Cal.4th 100."
-  );
-  assert.strictEqual(cite("Doe; Smith, supra, at p. 5").text, "Walton; Smith, supra, at p. 5");
-});
-
-test("a caption with no citation tail is the case at bar and translates", () => {
-  assert.strictEqual(cite("Doe v. Jones — motion for summary judgment").text, "Walton v. Rasho — motion for summary judgment");
-  // A bare volume and reporter after a comma is too loose on its own.
-  assert.strictEqual(cite("Doe, 5 Ex. 3").text, "Walton, 5 Ex. 3");
-});
-
-test("without the option nothing is held — titles and the cleaner translate whole", () => {
-  const r = P.translate(P.compile(CITE_KEY), "Smith v. Jones (2010) 50 Cal.4th 100");
-  assert.strictEqual(r.text, "Coderre v. Rasho (2010) 50 Cal.4th 100");
+test("a fake in a citation's case name reads back, like the sentence around it", () => {
+  const r = cite("Plaintiff Doe relies on Smith v. Jones (2010) 50 Cal.4th 100, 105.");
+  assert.strictEqual(r.text, "Plaintiff Walton relies on Coderre v. Rasho (2010) 50 Cal.4th 100, 105.");
+  assert.strictEqual(r.count, 3);
   assert.strictEqual(r.kept, 0);
 });
 
+test("every citation shape reads back: trial court, own appeal, short cite, writ", () => {
+  const shapes = [
+    ["See Smith v. Jones (Super. Ct. Orange County, 2019).", "See Coderre v. Rasho (Super. Ct. Orange County, 2019)."],
+    ["Smith v. Jones (Super. Ct. L.A. County, 2015, No. STZV512345)", "Coderre v. Rasho (Super. Ct. L.A. County, 2015, No. STZV512345)"],
+    ["In re Marriage of Smith (2005) 30 Cal.4th 100", "In re Marriage of Coderre (2005) 30 Cal.4th 100"],
+    ["Smith v. Jones (2023) 90 Cal.App.5th 100", "Coderre v. Rasho (2023) 90 Cal.App.5th 100"],
+    ["(Smith, supra, 90 Cal.App.5th at p. 105)", "(Coderre, supra, 90 Cal.App.5th at p. 105)"],
+    ["(Jones, 40 Cal.App.5th at pp. 210-211)", "(Rasho, 40 Cal.App.5th at pp. 210-211)"],
+    ["Smith v. Superior Court (Jones) (2024) 99 Cal.App.5th 200", "Coderre v. Superior Court (Rasho) (2024) 99 Cal.App.5th 200"],
+    ["Ruiz v. Jones (C.D. Cal. 2019) 2019 WL 1234567", "Ruiz v. Rasho (C.D. Cal. 2019) 2019 WL 1234567"],
+  ];
+  for (const [from, to] of shapes) assert.strictEqual(cite(from).text, to, from);
+});
+
+test("a citation no fake stands in is untouched", () => {
+  const s = "(Greenspan v. LADT LLC (2010) 191 Cal.App.4th 486, 511.)";
+  assert.strictEqual(cite(s).text, s);
+  assert.strictEqual(cite(s).count, 0);
+});
+
+test("the swaps in a case name are marked like any other", () => {
+  const r = cite("Smith v. Jones (2010) 50 Cal.4th 100");
+  assert.deepStrictEqual(r.spans.map((sp) => sp[2]), ["Smith", "Jones"]);
+});
+
+// The way OUT still reads citations: a real name typed inside a case name is
+// a published party and is not faked at the send (sendSwaps).
 test("citationSpans covers only the case name", () => {
   const s = "Under Smith v. Jones (2010) 50 Cal.4th 100, it fails.";
   const spans = P.citationSpans(s);
@@ -2216,23 +2192,12 @@ test("citationSpans covers only the case name", () => {
   assert.strictEqual(s.slice(spans[0][0], spans[0][1]), "Under Smith v. Jones");
 });
 
-test("a short italic run reads as a case name, a long one as emphasis", () => {
-  assert.strictEqual(P.isCitationItalic("Smith v. Jones"), true);
-  assert.strictEqual(P.isCitationItalic("Smith"), true);
-  assert.strictEqual(P.isCitationItalic("   "), false);
-  assert.strictEqual(P.isCitationItalic("x".repeat(P.CITATION_ITALIC_MAX + 1)), false);
-});
-
 test("a writ's real party in interest is part of the name it follows", () => {
   const s = "Smith v. Superior Court (Jones) (2010) 50 Cal.4th 100";
-  assert.strictEqual(cite(s).text, s);
   const spans = P.citationSpans(s);
   assert.strictEqual(s.slice(spans[0][0], spans[0][1]), "Smith v. Superior Court (Jones)");
 });
 
-// PDF-Linker scrubs a cited "X v. Y" whose sides are both this case's own
-// parties (its caption, or its own prior appeal), so Claude reads it in the
-// fakes and the way back restores it.
 test("the key marks its own parties by Source and Category", () => {
   const key = keyOf([
     ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "spreadsheet", 4],
@@ -2244,24 +2209,21 @@ test("the key marks its own parties by Source and Category", () => {
   assert.strictEqual(key.parsed, P.PARSE_VERSION);
 });
 
-test("this case's own caption, cited, reverses; a published case beside it holds", () => {
+test("this case's own caption and a writ naming its party both read back", () => {
   const key = keyOf([
     ["person", "Helen Rasho", "Ingrid Strangeways", "", "", "spreadsheet", 4],
     ["entity", "Quillmark, Inc.", "Brackwater, Inc.", "", "", "spreadsheet", 2],
     ["person", "Rasho", "Strangeways", "", "", "spreadsheet", 3],
   ]);
-  const c = P.compile(key);
   const s =
     "In Strangeways v. Brackwater, Inc. (2023) 90 Cal.App.5th 100, the court remanded; " +
     "see Strangeways v. Superior Court (2019) 7 Cal.5th 1.";
   assert.strictEqual(
-    P.translate(c, s, { citations: true }).text,
+    P.translate(P.compile(key), s).text,
     "In Rasho v. Quillmark, Inc. (2023) 90 Cal.App.5th 100, the court remanded; " +
-      "see Strangeways v. Superior Court (2019) 7 Cal.5th 1."
+      "see Rasho v. Superior Court (2019) 7 Cal.5th 1."
   );
-  assert.strictEqual(P.isCitationItalic("Strangeways v. Brackwater, Inc.", c.own), false);
-  assert.strictEqual(P.isCitationItalic("Strangeways v. Superior Court", c.own), true);
-  // A key with no Source column marks nobody, and every cited name holds.
+  // The send's own-caption test is still the scrubber's.
   assert.strictEqual(P.ownCaption("Strangeways v. Brackwater", P.compile(CITE_KEY).own), false);
 });
 
