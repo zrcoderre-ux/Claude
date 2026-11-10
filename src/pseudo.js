@@ -22,10 +22,10 @@
  *                 bare surname token never rewrites part of a longer full
  *                 name; whole words only; case-insensitive, with the real
  *                 value written in the case the fake was (see mirrorCase).
- *   - citationSpans / isCitationItalic:  the case names in a message's
- *                 citations, which the display leaves as Claude wrote them —
- *                 a published case that shares a word with a fake is not
- *                 this case's party.
+ *   - citationSpans:  the case names in a draft's citations, which the SEND
+ *                 leaves as typed — a published party is never faked. The
+ *                 display holds nothing: every fake reads back as its real
+ *                 value, a case name included.
  *   - compileReals / findReals:  which REAL values stand in a draft message —
  *                 the "you're about to type a real name" warning.
  *   - isKeyFileName / sheetsLookLikeKey:  is this file the key itself — the
@@ -1320,25 +1320,18 @@
    * [start, end, fake] per swap, in the RETURNED text, which is where the
    * marks are painted (src/pseudomark.js).
    *
-   * `opts.citations` leaves every fake standing inside a case name of a
-   * citation exactly as written (see citationSpans) and counts it in `kept`.
-   * Messages ask for it; titles and the cleaner do not.
+   * EVERY fake is swapped wherever it stands, a case name in a citation
+   * included — messages, titles and the cleaner alike. Messages used to hold
+   * a fake inside a citation's case name (`opts.citations`, `kept`); see
+   * "case names in citations" below for why that went.
    */
-  function translate(compiled, text, opts) {
+  function translate(compiled, text) {
     if (!compiled || !compiled.rx || !text) return { text: text, count: 0, kept: 0, spans: [] };
     let count = 0;
-    let kept = 0;
+    const kept = 0; // nothing is held any more; the field stays for its readers
     const marks = [];
     let shift = 0; // how far the output has run ahead of the input so far
-    let spans = null; // read on the first match, so text with no fake costs nothing
     const out = text.replace(compiled.rx, (m, offset) => {
-      if (opts && opts.citations) {
-        if (!spans) spans = citationSpans(text, { own: compiled.own });
-        if (spans.some((s) => offset < s[1] && offset + m.length > s[0])) {
-          kept++;
-          return m;
-        }
-      }
       let lookup = fold(m);
       let mapped = compiled.map.get(lookup);
       let suffix = "";
@@ -1381,35 +1374,26 @@
 
   // ---- case names in citations ----------------------------------------------
   //
-  // Claude only ever sees the fakes, so a case name it CITES is a published
-  // case's name, written correctly — and a published party can share a word
-  // with one of this case's fakes. Reversing it there rewrites a correct
-  // citation into a wrong one, in the real names, and nothing downstream can
-  // tell: a check for fakes left in a minute order finds none. So the message
-  // display leaves a case name in a citation as written. The miss runs the
-  // safe way: a party's fake wrongly held here is a fake left in the text,
-  // which is exactly what that downstream check catches.
+  // THE WAY BACK holds nothing (the owner, November 2026: "Every real value
+  // should be shown highlighted where the fake value actually is"). The
+  // message display used to leave a fake standing inside a case name — an
+  // italic run of case-name length, or a name before a citation's tail — on
+  // the theory that a case Claude cites is a published case, whose party can
+  // share a word with a fake. But PDF-Linker fakes inside case names: both
+  // parties of a trial-court case, this case's own prior appeal and its short
+  // cite, a party beside a docket, a writ's real party in interest. Claude
+  // reads those in the fakes and writes them back in the fakes, italicised
+  // like any case name, and each stood on the page as a stand-in with nothing
+  // over it. A shape test here cannot tell the two apart; the key can only
+  // say what was faked, and what was faked is shown. What is given up: a
+  // published party that IS one of the key's fakes reads as the real party,
+  // marked like every other swap. PDF-Linker keeps the authorities its folder
+  // cites out of its fake pools, and Word's DeAnonymize has always reversed
+  // the same word the same way.
   //
-  // Two signals, and the wiring asks the first:
-  //   ITALICS. The Style Manual italicises every case name, full or short
-  //     ("In Smith, the court…"), so a short italic run in a message is a case
-  //     name. A long one is emphasis and is translated (CITATION_ITALIC_MAX).
-  //   A CITATION'S TAIL, for a name that lost its italics — a year
-  //     parenthetical and a reporter, ", supra", or a volume and reporter
-  //     after a comma. The name is read backwards from the tail.
-  //
-  // A caption with no tail ("Doe v. Acme" in a title or a heading) is the case
-  // at bar, and translates as before.
-
-  const CITATION_ITALIC_SEL = "em,i,cite";
-  const CITATION_ITALIC_MAX = 160;
-
-  // A short run of italics — the length of a case name, not of emphasised
-  // prose — and not this case's own caption (`own`, compile's).
-  function isCitationItalic(text, own) {
-    const t = String(text == null ? "" : text).trim();
-    return t.length > 0 && t.length <= CITATION_ITALIC_MAX && !ownCaption(t, own || null);
-  }
+  // THE WAY OUT still reads citations (citationSpans, below): a real name
+  // typed in the composer inside a case name of a citation is a published
+  // party and is not faked at the send (sendSwaps).
 
   // "Cal.4th", "Cal.App.5th", "F.3d", "F. Supp. 2d", "U.S.", "S.Ct.", "WL".
   const REPORTER = "(?:[A-Z][A-Za-z]*\\.|[A-Z]{2,}\\b)(?:\\s?(?:[A-Z][A-Za-z]*\\.|\\d+(?:st|nd|rd|th|d)\\b))*";
@@ -3008,10 +2992,7 @@
     compile,
     translate,
     citationSpans,
-    isCitationItalic,
     ownCaption,
-    CITATION_ITALIC_SEL,
-    CITATION_ITALIC_MAX,
     compileReals,
     compileForward,
     isCommonReal,

@@ -397,15 +397,14 @@
     );
   }
 
-  // `messages` — this is a message's body, where a case name in a citation is
-  // left as Claude wrote it (P.citationSpans): an italic run of case-name
-  // length, or a fake inside a citation's name in plain text. Titles pass
-  // nothing and translate whole.
-  function inCitationItalic(node, el, compiled) {
-    const it = node.parentElement && node.parentElement.closest(P.CITATION_ITALIC_SEL);
-    return !!it && el.contains(it) && P.isCitationItalic(it.textContent, compiled.own);
-  }
-
+  // EVERY fake is shown as its real value, in a message as in a title — a
+  // case name in a citation included (the owner, November 2026: "Every real
+  // value should be shown highlighted where the fake value actually is"). A
+  // message used to hold a fake inside an italic run or before a citation's
+  // tail, as a published party's own name; PDF-Linker fakes inside case names
+  // too (a trial-court case's parties, this case's own prior appeal, a writ's
+  // real party in interest), and those stood on the page as stand-ins.
+  // `messages` is kept in the signature for the callers; nothing reads it.
   function swapIn(el, compiled, messages) {
     if (!el || !compiled || !compiled.rx) return 0;
     let total = 0;
@@ -420,10 +419,7 @@
         continue;
       }
       if (skippable(node.parentElement)) continue;
-      const r =
-        messages && inCitationItalic(node, el, compiled)
-          ? { text: text, count: 0 }
-          : P.translate(compiled, text, { citations: !!messages });
+      const r = P.translate(compiled, text);
       if (r.count > 0) {
         node.nodeValue = r.text;
         swapped.set(node, { text: r.text, orig: text, count: r.count, spans: r.spans });
@@ -1198,8 +1194,7 @@
       while ((node = walker.nextNode())) {
         const text = node.nodeValue;
         if (!text || text.length < 2) continue;
-        if (inCitationItalic(node, el, active.compiled)) continue;
-        const r = P.translate(active.compiled, text, { citations: true });
+        const r = P.translate(active.compiled, text);
         if (r.count > 0) {
           node.nodeValue = r.text;
           total += r.count;

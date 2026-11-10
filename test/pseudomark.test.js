@@ -55,9 +55,9 @@ test("translate says where each swap landed, in the text it returns", () => {
     r.spans.map((s) => [r.text.slice(s[0], s[1]), s[2]]),
     [["HELEN RASHO", "INGRID STRANGEWAYS"], ["Rasho\u2019s", "Strangeways\u2019s"]]
   );
-  // A name held in a citation is no swap and gets no mark.
-  const h = P.translate(c, "Smith relies on Smith v. Jones (2010) 50 Cal.4th 100.", { citations: true });
-  assert.deepStrictEqual(h.spans, [[0, 7, "Smith"]]);
+  // A name in a citation is a swap like any other and gets its mark.
+  const h = P.translate(c, "Smith relies on Smith v. Jones (2010) 50 Cal.4th 100.");
+  assert.deepStrictEqual(h.spans, [[0, 7, "Smith"], [18, 25, "Smith"]]);
   assert.deepStrictEqual(P.translate(c, "").spans, []);
 });
 
