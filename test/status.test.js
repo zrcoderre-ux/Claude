@@ -465,3 +465,87 @@ test("describeModels reads as a list", () => {
   );
   assert.equal(S.describeModels([]), "");
 });
+
+// ---- Go anyway lasts through the outage it was pressed in, no longer --------
+
+function withIncidents(list, compStatus) {
+  const s = compStatus ? comp("Claude.ai", compStatus) : summary();
+  s.incidents = list.map((x) =>
+    Object.assign(
+      { status: "investigating", impact: "major", components: [{ name: "Claude.ai" }], incident_updates: [] },
+      x
+    )
+  );
+  return s;
+}
+
+test("Go anyway covers the outage it was pressed during, step after step", () => {
+  const now = S.parseSummary(withIncidents([{ id: "i1", name: "Elevated errors" }], "major_outage"), NOW);
+  const pass = S.outagePass(now, NOW);
+  assert.deepEqual(pass.ids, ["i1"]);
+  assert.deepEqual(pass.components, ["Claude.ai"]);
+  const gate = S.holdDecision(now, { pass, heldSince: NOW - 60000, now: NOW });
+  assert.equal(gate.hold, false);
+  assert.equal(gate.passed, true);
+  // The same incident, worse and later, is still the one it was given for.
+  const later = S.parseSummary(
+    withIncidents([{ id: "i1", name: "Elevated errors", impact: "critical", status: "identified" }], "major_outage"),
+    NOW + 3600000
+  );
+  assert.equal(S.holdDecision(later, { pass, now: NOW + 3600000 }).hold, false);
+  assert.equal(S.passSpent(pass, later), false);
+});
+
+test("a new incident during the pass holds the run again", () => {
+  const first = S.parseSummary(withIncidents([{ id: "i1", name: "Elevated errors" }], "major_outage"), NOW);
+  const pass = S.outagePass(first, NOW);
+  const both = S.parseSummary(
+    withIncidents([{ id: "i1", name: "Elevated errors" }, { id: "i2", name: "Login failures" }], "major_outage"),
+    NOW
+  );
+  assert.equal(S.passCovers(pass, both), false);
+  assert.equal(S.holdDecision(both, { pass, now: NOW }).hold, true);
+});
+
+test("a newly broken component during the pass holds the run again", () => {
+  const first = S.parseSummary(comp("Claude.ai", "major_outage"), NOW);
+  const pass = S.outagePass(first, NOW);
+  assert.equal(S.passCovers(pass, first), true);
+  const s = comp("Claude.ai", "major_outage");
+  s.components = s.components.map((c) => (c.name === "Claude Code" ? Object.assign({}, c, { status: "major_outage" }) : c));
+  assert.equal(S.passCovers(pass, S.parseSummary(s, NOW)), false);
+});
+
+test("a minor incident at the press that turns major later is still covered", () => {
+  const first = S.parseSummary(
+    withIncidents([{ id: "i1", impact: "major" }, { id: "i9", impact: "minor" }], "major_outage"),
+    NOW
+  );
+  const pass = S.outagePass(first, NOW);
+  const later = S.parseSummary(
+    withIncidents([{ id: "i1", impact: "major" }, { id: "i9", impact: "major" }], "major_outage"),
+    NOW
+  );
+  assert.equal(S.passCovers(pass, later), true);
+});
+
+test("a clear page spends the pass; an unreadable one does not", () => {
+  const pass = S.outagePass(
+    S.parseSummary(withIncidents([{ id: "i1" }], "major_outage"), NOW),
+    NOW
+  );
+  const clear = S.parseSummary(summary(), NOW);
+  assert.equal(S.passSpent(pass, clear), true);
+  assert.equal(S.passCovers(pass, clear), false);
+  assert.equal(S.passSpent(pass, S.unknown("offline", NOW)), false);
+  assert.equal(S.passSpent(null, clear), false);
+  // A later outage reusing nothing from the first one holds.
+  const next = S.parseSummary(withIncidents([{ id: "i7" }], "major_outage"), NOW);
+  assert.equal(S.holdDecision(next, { pass, now: NOW }).hold, true);
+});
+
+test("no pass changes nothing", () => {
+  const snap = S.parseSummary(withIncidents([{ id: "i1" }], "major_outage"), NOW);
+  assert.equal(S.passCovers(null, snap), false);
+  assert.equal(S.holdDecision(snap, { now: NOW }).hold, true);
+});
