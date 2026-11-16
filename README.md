@@ -913,7 +913,7 @@ can be **copied** (a copy is yours — the pre-built one is not special) or
   that never touches the broken part can lose an afternoon waiting for nothing.
   Ticked, this one presses on regardless. Its runs inherit the answer and can
   differ from it, and a run already **Waiting** has a **Go anyway** button that
-  lets it through the outage in front of it — not every outage after. You
+  lets every run through the outage in front of it — not every outage after. You
   rarely need either: an outage that names models
   already spares a run on a different one — see
   [Outage detection](#outage-detection).
@@ -4446,9 +4446,12 @@ failure:
   default), inherited by its runs and editable on a run of its own. Ticked, that
   run never waits one out.
 - **Go anyway** appears on a run that is already **Waiting**: the answer to "this
-  outage doesn't touch what I'm doing". It carries on immediately and doesn't ask
-  again for **the rest of that outage** — every later step goes while the same
-  incident is open, even if it gets worse. It is not the switch above: it
+  outage doesn't touch what I'm doing". The answer is about the outage, not the
+  run, so it covers **every** run: the one you pressed it on and any other
+  waiting run carry on immediately, and a separate run started later goes too.
+  None of them asks again for **the rest of that outage** — every later step
+  goes while the same incident is open, even if it gets worse. Scheduled sends
+  are not covered; they still wait. It is not the switch above: it
   remembers what was wrong when you pressed it (the open incidents and
   maintenances, and the broken components), and the run waits again if
   anything **new** joins them, or once the status page reads clear and a later

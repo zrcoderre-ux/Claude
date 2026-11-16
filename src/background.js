@@ -50,6 +50,10 @@ const WF_SEEDED_KEY = "cum_wf_seeded";
 const WF_USAGE_KEY = "cum_wf_usage"; // workflow-attributed usage, by date
 const STATE_KEY = "cum_state";
 const STATUS_KEY = "cum_status"; // last status.claude.com snapshot
+// The one "Go anyway" pass: good for every run, for the outage it was pressed
+// through (see S.outagePass). Shared, not per run — the answer is about the
+// outage, so a second run waiting on it is answered too.
+const OUTAGE_PASS_KEY = "cum_outage_pass";
 const STATUS_CFG_KEY = "cum_status_cfg"; // { warn, holdSends } — both default on
 const WARN_KEY = "cum_warn"; // usage-pace warnings already fired (see usagewarn.js)
 const WARN_CFG_KEY = "cum_warn_cfg"; // { enabled, dailyShare } — enabled defaults on
@@ -248,6 +252,8 @@ async function refreshStatus() {
       }
     }
     await set({ [STATUS_KEY]: snap });
+    // The outage a Go anyway was given for has ended: the next one asks again.
+    await dropSpentPass(snap);
 
     const wasBlocking = !!(prev && prev.ok && prev.blocking);
     const nowBlocking = !!(snap.ok && snap.blocking);
@@ -264,6 +270,14 @@ async function refreshStatus() {
   } finally {
     statusBusy = null;
   }
+}
+
+async function readOutagePass() {
+  return (await get(OUTAGE_PASS_KEY))[OUTAGE_PASS_KEY] || null;
+}
+async function dropSpentPass(snap) {
+  const pass = await readOutagePass();
+  if (S.passSpent(pass, snap)) await set({ [OUTAGE_PASS_KEY]: null });
 }
 
 // A reading fresh enough to gate a send on, fetched now if need be.
@@ -407,7 +421,9 @@ async function outageGate(job, opts) {
   if (!cfg.holdSends || (opts && opts.force)) return { hold: false };
   const o = opts || {};
   const snap = await statusForGate();
-  const pass = (job && job.outagePass) || null;
+  // Only workflow runs carry the shared Go anyway pass (opts.usePass); a
+  // scheduled send has no Go anyway button and still waits.
+  const pass = o.usePass ? await readOutagePass() : null;
   const decision = S.holdDecision(snap, {
     enabled: true,
     heldSince: typeof job.heldSince === "number" ? job.heldSince : null,
@@ -423,7 +439,8 @@ async function outageGate(job, opts) {
   });
   // The outage it was given for is over: the caller drops it, so the next one
   // holds the run as if Go anyway had never been pressed.
-  return Object.assign({}, decision, { passSpent: S.passSpent(pass, snap) });
+  if (S.passSpent(pass, snap)) await set({ [OUTAGE_PASS_KEY]: null });
+  return decision;
 }
 
 async function executeJob(job, opts) {
@@ -1856,15 +1873,13 @@ async function driveRun(runId, opts) {
         Object.assign({}, opts, {
           // Told in advance not to wait one out.
           force: (opts && opts.force) || W.ignoresOutage(run),
+          // Go anyway, pressed on this run or any other, during this outage.
+          usePass: true,
           // The step's model, or the chat's. Naming none leaves outageGate to
           // fall back to your default.
           model: W.stepModel(run, wf, null),
         })
       );
-      if (gate.passSpent) {
-        run = Object.assign({}, run, { outagePass: null });
-        await saveRun(run);
-      }
       if (gate.hold) {
         const firstHold = run.status !== "waiting";
         await saveRun(W.markHeld(run, gate.reason, Date.now()));
@@ -2556,31 +2571,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // Push on through an outage. Not a resume — the run may be perfectly happy —
   // it is the answer to "this outage doesn't touch what I'm doing". It lasts
-  // through THIS outage (owner's instruction, November 2026): every step until
-  // the status page clears goes without asking again, but a new incident — or
-  // the next outage after this one ends — holds the run as usual. The
-  // workflow's "Keep going during a claude.ai outage" switch is the
-  // whole-run answer; this is not it.
+  // through THIS outage and covers EVERY run (owner's instruction, November
+  // 2026): any run, this one or a separate one started later, goes without
+  // asking again while the status page shows nothing new, but a new incident —
+  // or the next outage after this one ends — holds runs as usual. The
+  // workflow's "Keep going during a claude.ai outage" switch is the whole-run
+  // answer; this is not it.
   if (msg && msg.type === "cum-wf-ignore-outage" && msg.runId) {
     (async () => {
       const run = await readRun(msg.runId);
       if (!run) return { ok: false, error: "run not found" };
-      const going = Object.assign({}, run, {
-        outagePass: S.outagePass(await statusForGate(), Date.now()),
-        note: "carrying on through this outage — you said it doesn't affect this; a new one will hold it again",
-      });
-      // A run parked BY the outage goes back to running; one that was merely
-      // told in advance keeps whatever it was doing.
-      await saveRun(
-        going.status === "waiting"
-          ? Object.assign({}, W.reviseRun(going, { stepIndex: going.stepIndex, phase: going.phase }, Date.now()), {
-              note: going.note,
-            })
-          : going
-      );
+      await set({ [OUTAGE_PASS_KEY]: S.outagePass(await statusForGate(), Date.now()) });
+      // Every run parked by the outage goes back to running, not only the one
+      // the button was pressed on — the answer was about the outage.
+      const note =
+        "carrying on through this outage — you said it doesn't affect your runs; a new one will hold them again";
+      const waiting = W.heldRuns(await readRuns());
+      for (const r of waiting) {
+        await saveRun(
+          Object.assign({}, W.reviseRun(r, { stepIndex: r.stepIndex, phase: r.phase }, Date.now()), { note })
+        );
+      }
       await reschedule();
-      if (run.status === "waiting") driveRun(run.id);
-      return { ok: true };
+      for (const r of waiting) driveRun(r.id);
+      return { ok: true, released: waiting.length };
     })()
       .then(sendResponse)
       .catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
