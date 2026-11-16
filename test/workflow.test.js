@@ -3015,7 +3015,7 @@ test("waiting out an outage is opt-out, and the answer travels to the run", () =
   assert.equal(W.ignoresOutage(null), false);
 });
 
-test("Go anyway is remembered on the run, and only on that run", () => {
+test("the run's own Keep going switch is remembered on the run, and only on that run", () => {
   const wf = W.newWorkflow({ name: "x", chats: [{ id: "a" }] }, "w1", NOW);
   const run = W.newRun(wf, "r1", NOW);
   const going = W.applyRunEdit(run, { ignoreOutage: true }, NOW);

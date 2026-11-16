@@ -478,6 +478,9 @@
     const none = { hold: false, reason: null, waitedMs: null, expired: false };
     if (o.enabled === false || o.force) return none;
     if (!snapshot || !snapshot.ok || !snapshot.blocking) return none;
+    // "Go anyway" was pressed during this outage: it holds for as long as the
+    // outage is the one it was pressed through, and no longer.
+    if (passCovers(o.pass, snapshot)) return Object.assign({}, none, { passed: true });
     // An outage confined to models you aren't using is somebody else's outage.
     // `models` is null wherever that can't be established, so this only ever
     // releases a hold on a positive statement about what is broken.
@@ -493,6 +496,56 @@
       return { hold: true, reason, waitedMs: waited, expired: false };
     }
     return { hold: true, reason, waitedMs: 0, expired: false };
+  }
+
+  // ---- Go anyway: a pass through ONE outage --------------------------------
+  //
+  // "Go anyway" answers "this outage doesn't touch what I'm doing" — about the
+  // outage in front of you, not about whatever goes wrong next. So the pass
+  // remembers what was wrong when it was given (every open incident and
+  // maintenance by id, and every affected component by name) and covers a
+  // later reading only while everything blocking in it was already there. A
+  // new incident, a new maintenance or a newly broken component holds the run
+  // again; a clear page spends the pass outright.
+
+  /** The pass a "Go anyway" pressed now would give. */
+  function outagePass(snapshot, now) {
+    const s = snapshot || {};
+    const ids = [];
+    for (const x of (s.incidents || []).concat(s.maintenances || [])) {
+      if (x && x.id) ids.push(String(x.id));
+    }
+    const components = (s.affected || [])
+      .map((c) => String((c && c.name) || "").trim())
+      .filter(Boolean);
+    return { ids, components, at: typeof now === "number" ? now : Date.now() };
+  }
+
+  /** Is everything blocking in this reading something the pass was given for? */
+  function passCovers(pass, snapshot) {
+    if (!pass || typeof pass !== "object") return false;
+    // An unreadable page holds nothing anyway; a clear one has spent the pass.
+    if (!snapshot || !snapshot.ok) return true;
+    if (!snapshot.blocking) return false;
+    const ids = Object.create(null);
+    for (const id of pass.ids || []) ids[String(id)] = true;
+    const comps = Object.create(null);
+    for (const n of pass.components || []) comps[String(n)] = true;
+    const items = (snapshot.incidents || [])
+      .filter((i) => i && rank(i.level) >= BLOCKING_RANK)
+      .concat((snapshot.maintenances || []).filter(Boolean));
+    // An item with no id can't be told from the one the pass was given for.
+    if (items.some((x) => x.id && !ids[String(x.id)])) return false;
+    const broken = (snapshot.affected || []).filter(
+      (c) => c && rank(c.level) >= BLOCKING_RANK
+    );
+    if (broken.some((c) => c.name && !comps[String(c.name)])) return false;
+    return true;
+  }
+
+  /** Has the outage the pass was given for ended? Only a readable, clear page says so. */
+  function passSpent(pass, snapshot) {
+    return !!(pass && snapshot && snapshot.ok && !snapshot.blocking);
   }
 
   // "Opus 4.5", "Sonnet and Haiku 4.5" — for saying why a run wasn't held.
@@ -541,6 +594,9 @@
     shortLabel,
     detailLines,
     holdDecision,
+    outagePass,
+    passCovers,
+    passSpent,
     fmtWaited,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

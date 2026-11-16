@@ -406,9 +406,13 @@ async function outageGate(job, opts) {
   const cfg = await statusCfg();
   if (!cfg.holdSends || (opts && opts.force)) return { hold: false };
   const o = opts || {};
-  return S.holdDecision(await statusForGate(), {
+  const snap = await statusForGate();
+  const pass = (job && job.outagePass) || null;
+  const decision = S.holdDecision(snap, {
     enabled: true,
     heldSince: typeof job.heldSince === "number" ? job.heldSince : null,
+    // A run's "Go anyway": good for the outage it was pressed through only.
+    pass,
     // The model this particular piece of work would answer on. An outage the
     // status page attributes to other models isn't one that stops it. Work
     // that names none is on whatever your account is set to, which is the
@@ -417,6 +421,9 @@ async function outageGate(job, opts) {
     model: S.modelKey(o.model || cfg.defaultModel),
     now: Date.now(),
   });
+  // The outage it was given for is over: the caller drops it, so the next one
+  // holds the run as if Go anyway had never been pressed.
+  return Object.assign({}, decision, { passSpent: S.passSpent(pass, snap) });
 }
 
 async function executeJob(job, opts) {
@@ -1854,6 +1861,10 @@ async function driveRun(runId, opts) {
           model: W.stepModel(run, wf, null),
         })
       );
+      if (gate.passSpent) {
+        run = Object.assign({}, run, { outagePass: null });
+        await saveRun(run);
+      }
       if (gate.hold) {
         const firstHold = run.status !== "waiting";
         await saveRun(W.markHeld(run, gate.reason, Date.now()));
@@ -2544,16 +2555,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   // Push on through an outage. Not a resume — the run may be perfectly happy —
-  // it is the answer to "this outage doesn't touch what I'm doing". Sticky for
-  // the rest of the run, since being asked again every twenty seconds would be
-  // its own kind of hold.
+  // it is the answer to "this outage doesn't touch what I'm doing". It lasts
+  // through THIS outage (owner's instruction, November 2026): every step until
+  // the status page clears goes without asking again, but a new incident — or
+  // the next outage after this one ends — holds the run as usual. The
+  // workflow's "Keep going during a claude.ai outage" switch is the
+  // whole-run answer; this is not it.
   if (msg && msg.type === "cum-wf-ignore-outage" && msg.runId) {
     (async () => {
       const run = await readRun(msg.runId);
       if (!run) return { ok: false, error: "run not found" };
       const going = Object.assign({}, run, {
-        ignoreOutage: true,
-        note: "carrying on through the outage — you said it doesn't affect this",
+        outagePass: S.outagePass(await statusForGate(), Date.now()),
+        note: "carrying on through this outage — you said it doesn't affect this; a new one will hold it again",
       });
       // A run parked BY the outage goes back to running; one that was merely
       // told in advance keeps whatever it was doing.

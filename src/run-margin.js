@@ -460,7 +460,7 @@
         ? `<button class="cum-rm-btn" data-act="hold" title="Don't pick it back up when usage returns">Stay paused</button>`
         : "") +
       (run.status === "waiting" && !run.ignoreOutage
-        ? `<button class="cum-rm-btn cum-rm-go" data-act="anyway">Go anyway</button>`
+        ? `<button class="cum-rm-btn cum-rm-go" data-act="anyway" title="This outage doesn't affect what this run is doing — carry on now and for the rest of this outage; a new one holds it again">Go anyway</button>`
         : "") +
       (run.status !== "running"
         ? `<button class="cum-rm-btn" data-act="edit" title="Change the matter's name, its steps and prompts — right here">Edit run</button>`
