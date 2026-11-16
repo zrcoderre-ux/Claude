@@ -1503,7 +1503,7 @@
             : "") +
           // Waiting out an outage that doesn't touch what this run is doing.
           (run.status === "waiting" && !run.ignoreOutage
-            ? `<button class="job-run wf-run-anyway" data-id="${run.id}" title="This outage doesn't affect what this run is doing — carry on now and for the rest of this outage; a new one holds it again">Go anyway</button>`
+            ? `<button class="job-run wf-run-anyway" data-id="${run.id}" title="This outage doesn't affect your runs — carry this one and every other run on now, and for the rest of this outage; a new one holds them again">Go anyway</button>`
             : "") +
           // Every status but running — a finished run included (the owner's
           // rule): edited, it is one Fix & continue or Re-run from being work
