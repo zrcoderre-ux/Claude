@@ -34,7 +34,10 @@
  * right there ("Not a real name — remove from key", P.unfakeInLibrary — the
  * same by-hand removal as the composer's right-click, kept on the library
  * entry), and the paste is judged again and goes in when nothing else holds
- * it. Undo puts the name back.
+ * it. Undo puts the name back. Or a name can be let through as pasted
+ * ("Keep as pasted", P.keyLettingThrough) — an unrelated appellate case that
+ * shares a real name: for this paste only it is not refused and not faked,
+ * and it stays in the key. The rest of the paste is judged as before.
  *
  * Fail-open for the last copy: no record, no pseudonym module, a storage read
  * that never answered — nothing is refused. Not for the workflow's key: a
@@ -66,6 +69,7 @@
       border-top:1px solid rgba(255,255,255,0.15); }
     .cum-paste-refused-names li span { min-width:0; overflow-wrap:anywhere; }
     .cum-paste-refused-names button { flex:none; font-size:12px; padding:2px 8px; }
+    .cum-paste-refused-btns { flex:none; display:flex; gap:6px; }
     .cum-paste-refused.cum-paste-note { background:#1f4d2e; }
     .cum-paste-refused button.cum-paste-refused-clean { background:#fff; color:#7a1f1f; font-weight:700; border-color:#fff; }
   `;
@@ -182,8 +186,9 @@
   }
 
   // words: { head, body }; onClean: the pseudonym paste, or null; rows: the
-  // flagged names, each { real, fake, onRemove }, listed with a button that
-  // takes a wrongly flagged one out of its key.
+  // flagged names, each { real, fake, onRemove, onAllow }, listed with a
+  // button that takes a wrongly flagged one out of its key and, with onAllow,
+  // one that lets it through as pasted, this paste only.
   function refuse(words, onClean, rows, cleanLabel) {
     close();
     ensureStyles();
@@ -234,7 +239,24 @@
           b.disabled = true;
           r.onRemove();
         });
-        li.append(t, b);
+        const btns = document.createElement("div");
+        btns.className = "cum-paste-refused-btns";
+        if (r.onAllow) {
+          const a = document.createElement("button");
+          a.type = "button";
+          a.textContent = "Keep as pasted";
+          a.title =
+            "Not this case's “" + r.real + "” (an unrelated case that shares the name)? Let it through as " +
+            "pasted, this paste only: it is not faked, and it stays in the key.";
+          a.addEventListener("mousedown", (e) => e.preventDefault());
+          a.addEventListener("click", () => {
+            a.disabled = true;
+            r.onAllow();
+          });
+          btns.appendChild(a);
+        }
+        if (r.onRemove) btns.appendChild(b);
+        li.append(t, btns);
         ul.appendChild(li);
       }
       box.appendChild(ul);
@@ -314,7 +336,7 @@
 
   // Take a wrongly flagged value out of the keys that flagged it, then judge
   // the same paste again: in it goes when nothing else holds it.
-  function removeAndRetry(scope, field, text, name) {
+  function removeAndRetry(scope, field, text, name, allow) {
     changeLibrary(
       (lib) => P.unfakeInLibrary(lib, name.keyIds, name.real),
       (changed) => {
@@ -346,9 +368,9 @@
               )
           );
         const said = "“" + name.real + "” is out of " + keyNames(changed) + ": no longer faked, warned about or translated. ";
-        const v = P.workflowPasteHold(scope, library, { text: text });
-        if (v.hold) return judgeWorkflow(scope, field, text, 0, said);
-        if (field && lastCopyRefuses(field, text)) return;
+        const v = P.workflowPasteHold(scope, library, { text: text, allow: allow });
+        if (v.hold) return judgeWorkflow(scope, field, text, 0, said, allow);
+        if (field && lastCopyRefuses(field, text, allow)) return;
         land(scope, field, text);
         note(said + "Pasted.", undo);
       }
@@ -356,24 +378,26 @@
   }
 
   // The last copy's names, for a box the run forms guard. True when refused.
-  function lastCopyRefuses(field, text) {
+  // `allow`: the values let through as pasted, not refused again here.
+  function lastCopyRefuses(field, text, allow) {
     if (!record || !guarded(field)) return false;
-    const v = P.copiedPasteHold(record, text);
+    const v = P.copiedPasteHold(record, text, allow);
     if (!v.hold) return false;
-    const cleaned = P.copiedPasteClean(record, text);
+    const cleaned = P.copiedPasteClean(record, text, allow);
     refuse(P.copiedPasteNote(v.names), cleaned && cleaned.ok ? () => insert(field, cleaned.text) : null);
     return true;
   }
 
   // The workflow's own key. Answers "refused", "pass", or "landed" (the
   // guard put the paste in itself, after waiting for the library).
-  function judgeWorkflow(scope, field, text, files, lead) {
-    const v = P.workflowPasteHold(scope, library, { text: text, files: files });
+  function judgeWorkflow(scope, field, text, files, lead, allow) {
+    const let_ = allow || [];
+    const v = P.workflowPasteHold(scope, library, { text: text, files: files, allow: let_ });
     if (!v.hold) return "pass";
     const words = P.workflowPasteNote(v, scope);
     if (lead) words.body = lead + words.body;
     const onClean =
-      v.why === "reals" && v.clean && v.clean.ok && !lastCopyHolds(v.clean.text)
+      v.why === "reals" && v.clean && v.clean.ok && !lastCopyHolds(v.clean.text, let_)
         ? () => land(scope, field, v.clean.text)
         : null;
     const rows =
@@ -381,15 +405,28 @@
         ? (v.names || []).map((n) => ({
             real: n.real,
             fake: n.fake,
-            onRemove: () => removeAndRetry(scope, field, text, n),
+            onRemove: () => removeAndRetry(scope, field, text, n, let_),
+            onAllow: () => allowAndRetry(scope, field, text, n, let_),
           }))
         : null;
     refuse(words, onClean, rows);
     return "refused";
   }
 
-  function lastCopyHolds(text) {
-    return !!(record && P.copiedPasteHold(record, text).hold);
+  // Let one flagged value through as pasted — this paste only, the key
+  // untouched — and judge the same paste again: in it goes when nothing else
+  // holds it, otherwise the hold is shown again for the rest.
+  function allowAndRetry(scope, field, text, name, allow) {
+    const let_ = allow.concat([name.real]);
+    const said = "“" + name.real + "” goes in as pasted — not faked, and still in the key. ";
+    if (judgeWorkflow(scope, field, text, 0, said, let_) !== "pass") return;
+    if (field && lastCopyRefuses(field, text, let_)) return;
+    land(scope, field, text);
+    note(said + "Pasted.", null);
+  }
+
+  function lastCopyHolds(text, allow) {
+    return !!(record && P.copiedPasteHold(record, text, allow).hold);
   }
 
   // The same notice for the composer's run-chat check (src/pseudo-view.js),

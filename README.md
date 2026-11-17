@@ -3582,6 +3582,12 @@ the way the composer's right-click takes one out (`P.unfakeKey`, kept on the
 library entry, so reloading the workbook does not bring it back), the paste is
 judged again, and it goes in once nothing else holds it. **Undo** puts the value
 back in the key; what was pasted stays. A key emptied this way is still a key.
+Beside it, **Keep as pasted** is for a value that is right in the key but wrong
+in this paste — an unrelated appellate case that shares a party's real name. It
+lets that value through as pasted for this paste only: it is not refused, the
+pseudonym version leaves it as written, and the key is not touched
+(`P.keyLettingThrough`, in memory). The rest of the paste is judged as before,
+and the last-copy check does not refuse that value again.
 A run reads against its own key only. A template reads
 against every key in the library, because a real name from any case does not
 belong in a template. The master key is left out of both. The guard covers every
@@ -3595,7 +3601,12 @@ the read instead of slipping through. The decision is `P.workflowPasteHold` in
 belongs to the workflow, so its composer refuses every paste, text or files,
 until the run has a key (its own or its group's). With the key, a paste carrying
 the key's real values is **held** and listed, each value with the same **Not a
-real name — remove from key**. Removing the last flagged value lets the paste in.
+real name — remove from key** and **Keep as pasted**. Removing or keeping the
+last flagged value lets the paste in. A value kept as pasted stays in the key; its
+occurrences in the pasted stretch go into the draft kept as typed, the same as the
+right-click's **Send this one as typed** (`P.pastedSpots`), so they are neither
+faked at the send nor held by the gate. The same name typed elsewhere in the draft
+is still faked.
 The way through with the names still flagged is **Paste — faked at the send**:
 the real names go into the draft as typed text, marked, and their fakes are typed
 over them at the send, as [a long paste](#a-long-paste-is-read-before-it-lands)

@@ -2120,8 +2120,50 @@
     return { at: typeof at === "number" ? at : 0, names: names };
   }
 
-  function recordNames(record) {
-    return ((record && record.names) || []).filter((n) => n && trim(n.real));
+  function recordNames(record, allow) {
+    const let_ = allowFolds(allow);
+    return ((record && record.names) || []).filter((n) => n && trim(n.real) && !let_.has(fold(n.real)));
+  }
+
+  // ---- a flagged value let through as pasted ---------------------------------
+  //
+  // An unrelated appellate case can share a real name with the matter. In a
+  // run's paste hold, "Keep as pasted" lets that one value through for THIS
+  // paste only: it is not faked and not refused, and it stays in the key —
+  // unlike "Not a real name — remove from key", nothing is stored. The other
+  // flagged values are still held or faked.
+
+  function allowFolds(allow) {
+    return new Set(Array.from(allow || [], (r) => fold(r)).filter(Boolean));
+  }
+
+  /** `key` as this paste reads it: the let-through values out, in memory only. */
+  function keyLettingThrough(key, allow) {
+    let k = key;
+    for (const r of allow || []) k = unfakeKey(k, r);
+    return k;
+  }
+
+  /**
+   * The kept-as-typed spots (the right-click's "Send this one as typed") for
+   * the let-through values a paste brought into the draft: the occurrences of
+   * `allow` inside the stretch that changed between `before` and `after`.
+   * [{ start, end, matched }].
+   */
+  function pastedSpots(before, after, compiledReals, allow) {
+    const a = String(before == null ? "" : before);
+    const b = String(after == null ? "" : after);
+    const let_ = allowFolds(allow);
+    if (!let_.size || a === b) return [];
+    const max = Math.min(a.length, b.length);
+    let head = 0;
+    while (head < max && a.charCodeAt(head) === b.charCodeAt(head)) head++;
+    let tail = 0;
+    while (tail < max - head && a.charCodeAt(a.length - 1 - tail) === b.charCodeAt(b.length - 1 - tail)) tail++;
+    const end = b.length - tail;
+    return draftSpans(compiledReals, b)
+      .filter((sp) => let_.has(fold(sp.real)) && sp.start >= head && sp.end <= end)
+      .map((sp) => ({ start: sp.start, end: sp.end, matched: sp.matched }));
   }
 
   /**
@@ -2129,8 +2171,8 @@
    * { hold, names } — `names` being the remembered real values the paste
    * carries. Never held when the last copy carried none.
    */
-  function copiedPasteHold(record, text) {
-    const names = recordNames(record);
+  function copiedPasteHold(record, text, allow) {
+    const names = recordNames(record, allow);
     const t = String(text == null ? "" : text);
     if (!names.length || !t) return { hold: false, names: [] };
     const found = findReals(compileReals({ warn: names }), t);
@@ -2142,8 +2184,8 @@
    * whether that is a clean version: `ok` only when every one carried a fake
    * and none is left standing.
    */
-  function copiedPasteClean(record, text) {
-    const names = recordNames(record);
+  function copiedPasteClean(record, text, allow) {
+    const names = recordNames(record, allow);
     const t = String(text == null ? "" : text);
     if (!names.length || names.some((n) => !trim(n.fake))) return { text: t, ok: false };
     const key = { warn: names.map((n) => ({ real: n.real, fake: n.fake })) };
@@ -2207,8 +2249,9 @@
    *   { hold: false }
    *   { hold: true, why: "nokey" }            no key to read it against
    *   { hold: true, why: "reals", names, clean: { text, ok } }
-   * `paste` is { text, files } — a count of files is enough. A paste with
-   * nothing in it is never held. Files are held only for want of a key: a
+   * `paste` is { text, files, allow } — a count of files is enough; `allow`
+   * the values let through as pasted (keyLettingThrough): neither flagged nor
+   * faked in the clean version. A paste with nothing in it is never held. Files are held only for want of a key: a
    * file's contents are judged where it uploads (the upload guard).
    */
   function workflowPasteHold(scope, library, paste) {
@@ -2218,6 +2261,8 @@
     const entries = workflowPasteEntries(scope, library);
     if (!entries.length) return { hold: true, why: "nokey" };
     if (!text) return { hold: false };
+    const allow = (paste && paste.allow) || [];
+    if (allow.length) entries.forEach((e) => (e.key = keyLettingThrough(e.key, allow)));
     const keys = entries.map((e) => e.key);
     const byReal = new Map();
     const names = [];
@@ -3005,6 +3050,8 @@
     lastCopyRecord,
     copiedPasteHold,
     copiedPasteClean,
+    keyLettingThrough,
+    pastedSpots,
     copiedPasteNote,
     workflowPasteKeys,
     unfakeInLibrary,

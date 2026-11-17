@@ -2456,7 +2456,12 @@
   // with "Not a real name — remove from key" for a value flagged in error.
   // The way through is "Paste — faked at the send": the real names go into the
   // draft as typed text, marked, and their fakes are typed over them at the
-  // send — the composer never shows the fake for a name you typed. Decision:
+  // send — the composer never shows the fake for a name you typed. A value
+  // that is not this case's (an unrelated appellate case sharing the name)
+  // can be let through with "Keep as pasted": this paste only, the key left
+  // alone, its occurrences in the pasted stretch kept as typed — the
+  // right-click's "Send this one as typed" spots (P.pastedSpots) — so they are
+  // neither faked at the send nor held by the gate. Decision:
   // P.runChatPasteHold (tested). Runs before the composer's own check below.
   let runPasteAllow = null; // { text, until } — the one paste let through
 
@@ -2502,10 +2507,25 @@
     return true;
   }
 
-  // Into the draft as typed text — the names marked and faked at the send.
-  function runPasteLand(text, range, target) {
+  // Into the draft as typed text — the names marked and faked at the send,
+  // save the ones let through as pasted (`allow`), kept as typed.
+  function runPasteLand(text, range, target, allow) {
+    const ed0 = editorEl();
+    const before = ed0 ? editorText(ed0).text : "";
     typePaste(text, range).then((ok) => {
-      if (ok) return;
+      if (ok) {
+        if (allow && allow.length && active && active.compiledReals) {
+          const ed = editorEl();
+          const after = ed ? editorText(ed).text : "";
+          const add = P.pastedSpots(before, after, active.compiledReals, allow);
+          if (add.length) {
+            const list = liveSpots(after).filter((sp) => !add.some((a) => a.start === sp.start && a.end === sp.end));
+            spots = { text: after, list: list.concat(add) };
+            afterDraftChange();
+          }
+        }
+        return;
+      }
       // The editor would not take it: let the very same paste through once,
       // to the composer's own check, rather than lose it.
       runPasteAllow = { text: text, until: Date.now() + PASTE_ALLOW_MS };
@@ -2513,23 +2533,40 @@
     });
   }
 
-  function showRunPasteHold(v, text, range, target, lead) {
+  function showRunPasteHold(v, text, range, target, lead, allow) {
     const N = window.CUMPasteNotice;
+    const let_ = allow || [];
     const words = P.runChatPasteNote(v);
     if (lead) words.body = lead + words.body;
     if (v.why === "nokey") return N.refuse(words, null, null);
     const id = removableKeyId();
-    const rows = id
-      ? v.names.map((h) => ({
-          real: h.real,
-          fake: h.fake,
-          onRemove: () => runPasteRemove(id, h.real, v, text, range, target),
-        }))
-      : null;
-    N.refuse(words, () => runPasteLand(text, range, target), rows, "Paste — faked at the send");
+    const rows = v.names.map((h) => ({
+      real: h.real,
+      fake: h.fake,
+      onRemove: id ? () => runPasteRemove(id, h.real, v, text, range, target, let_) : null,
+      onAllow: () => runPasteAllowName(h.real, text, range, target, let_),
+    }));
+    N.refuse(words, () => runPasteLand(text, range, target, let_), rows, "Paste — faked at the send");
   }
 
-  async function runPasteRemove(id, real, v, text, range, target) {
+  // The flagged values the paste still carries once `allow` is let through.
+  function runPasteLeft(compiled, text, allow) {
+    const let_ = new Set((allow || []).map((r) => P.fold(r)));
+    return P.findReals(compiled, text).filter((h) => !let_.has(P.fold(h.real)));
+  }
+
+  // "Keep as pasted": this paste only, the key untouched.
+  function runPasteAllowName(real, text, range, target, allow) {
+    const N = window.CUMPasteNotice;
+    const let_ = allow.concat([real]);
+    const said = "“" + real + "” goes in as pasted — not faked at the send, and still in the key. ";
+    const left = active && active.compiledReals ? runPasteLeft(active.compiledReals, text, let_) : [];
+    if (left.length) return showRunPasteHold({ hold: true, why: "reals", names: left }, text, range, target, said, let_);
+    runPasteLand(text, range, target, let_);
+    N.note(said + "Pasted.", null);
+  }
+
+  async function runPasteRemove(id, real, v, text, range, target, allow) {
     const N = window.CUMPasteNotice;
     const label = keyName(keys[id]);
     const ok = await changeKey(id, (k) => P.unfakeKey(k, real));
@@ -2551,10 +2588,10 @@
     // for the page to re-read the library.
     const res = await storageGet([KEYS_KEY]);
     const now = (res[KEYS_KEY] || {})[id];
-    const left = now ? P.findReals(P.compileReals(now), text) : [];
+    const left = now ? runPasteLeft(P.compileReals(now), text, allow) : [];
     const said = "“" + real + "” is out of " + label + ": no longer faked, warned about or translated. ";
-    if (left.length) return showRunPasteHold({ hold: true, why: "reals", names: left }, text, range, target, said);
-    runPasteLand(text, range, target);
+    if (left.length) return showRunPasteHold({ hold: true, why: "reals", names: left }, text, range, target, said, allow);
+    runPasteLand(text, range, target, allow);
     N.note(said + "Pasted.", undo);
   }
 

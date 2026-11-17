@@ -64,3 +64,15 @@ test("copiedPasteNote names what it refused and why", () => {
   const many = P.copiedPasteNote([1, 2, 3, 4, 5, 6].map((i) => ({ real: "N" + i })));
   assert.match(many.body, /and 2 more/);
 });
+
+test("a value let through as pasted is not refused again by the last-copy check", () => {
+  const r = P.lastCopyRecord(HITS, 1);
+  const text = "Helen Rasho v. Cross River Bank";
+  const v = P.copiedPasteHold(r, text, ["cross river bank"]);
+  assert.deepStrictEqual(v.names.map((h) => h.real), ["Helen Rasho"]);
+  assert.strictEqual(P.copiedPasteHold(r, "Cross River Bank", ["Cross River Bank"]).hold, false);
+  assert.deepStrictEqual(P.copiedPasteClean(r, text, ["Cross River Bank"]), {
+    text: "Ingrid Strangeways v. Cross River Bank",
+    ok: true,
+  });
+});
