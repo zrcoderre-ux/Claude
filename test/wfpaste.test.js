@@ -123,3 +123,44 @@ test("a run's chat takes no paste without the run's key, and holds its real valu
   assert.match(P.runChatPasteNote({ why: "nokey" }).body, /Pseudonym key/);
   assert.match(P.runChatPasteNote({ why: "reals", names: H }).body, /faked at the send/);
 });
+
+test("a value let through as pasted is neither flagged nor faked, and the key is untouched", () => {
+  const scope = { mode: "run", keyId: "smith" };
+  const text = "HELEN RASHO v. Cross River Bank";
+  const v = P.workflowPasteHold(scope, LIB, { text: text, allow: ["Cross River Bank"] });
+  assert.strictEqual(v.why, "reals");
+  assert.deepStrictEqual(v.names.map((h) => h.real), ["Helen Rasho"]);
+  // The pseudonym version fakes the rest and leaves the let-through value as written.
+  assert.deepStrictEqual(v.clean, { text: "INGRID STRANGEWAYS v. Cross River Bank", ok: true });
+  // Every flagged value let through: in it goes.
+  assert.strictEqual(
+    P.workflowPasteHold(scope, LIB, { text: text, allow: ["helen rasho", "Cross River Bank"] }).hold,
+    false
+  );
+  // Only this paste: the library and the next paste still flag it.
+  assert.strictEqual(LIB.smith.warn.length, 2);
+  assert.strictEqual(LIB.smith.unfaked, undefined);
+  assert.strictEqual(P.workflowPasteHold(scope, LIB, { text: "Cross River Bank" }).hold, true);
+  // A let-through value still needs a key.
+  assert.strictEqual(P.workflowPasteHold({ mode: "run", keyId: "" }, LIB, { text: "x", allow: ["x"] }).why, "nokey");
+});
+
+test("keyLettingThrough takes values out in memory only", () => {
+  const k = P.keyLettingThrough(SMITH, ["Helen Rasho"]);
+  assert.notStrictEqual(k, SMITH);
+  assert.deepStrictEqual(k.warn.map((w) => w.real), ["Cross River Bank"]);
+  assert.strictEqual(SMITH.warn.length, 2);
+  assert.strictEqual(P.keyLettingThrough(SMITH, []), SMITH);
+});
+
+test("pastedSpots marks only the let-through values inside the pasted stretch", () => {
+  const c = P.compileReals(SMITH);
+  const before = "Helen Rasho says: ";
+  const after = "Helen Rasho says: see Helen Rasho v. Cross River Bank";
+  const spots = P.pastedSpots(before, after, c, ["Helen Rasho"]);
+  // The earlier, typed occurrence is not the paste's.
+  assert.deepStrictEqual(spots, [{ start: 22, end: 33, matched: "Helen Rasho" }]);
+  assert.strictEqual(after.slice(22, 33), "Helen Rasho");
+  assert.deepStrictEqual(P.pastedSpots(before, after, c, []), []);
+  assert.deepStrictEqual(P.pastedSpots(after, after, c, ["Helen Rasho"]), []);
+});
