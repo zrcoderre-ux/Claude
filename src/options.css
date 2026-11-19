@@ -1331,3 +1331,9 @@ td .wk-floor {
     color: #f0efea;
   }
 }
+
+/* A run set up from PDF+'s Home (src/pdfplus-run.js). */
+.pdfplus-banner { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 14px; padding: 10px 14px; border: 1px solid rgba(37, 99, 235, 0.35); border-radius: 10px; background: rgba(37, 99, 235, 0.08); font-size: 13px; line-height: 1.45; }
+.pdfplus-banner.warn { border-color: rgba(217, 119, 6, 0.5); background: rgba(234, 179, 8, 0.1); }
+.pdfplus-banner .pdfplus-text { flex: 1; }
+.pdfplus-banner .pdfplus-dismiss { flex: none; }

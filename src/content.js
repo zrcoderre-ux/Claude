@@ -10,6 +10,23 @@
 (function () {
   "use strict";
 
+  // PDF+'s Claude button opens claude.ai with only this marker (never the
+  // case, which this page's own scripts would see): the marker is taken off
+  // the address at once and the worker opens Options on the run PDF+ asked
+  // for (src/pdfplus-run.js).
+  if (location.hash === "#cum-pdfplus-run") {
+    try {
+      history.replaceState(null, "", location.pathname + location.search);
+    } catch (e) {
+      /* keep going */
+    }
+    try {
+      chrome.runtime.sendMessage({ type: "cum-pdfplus-run" }, () => void chrome.runtime.lastError);
+    } catch (e) {
+      /* orphaned */
+    }
+  }
+
   const CHANNEL = "CLAUDE_USAGE_METER";
   const STORAGE_KEY = "cum_state";
   const URL_KEY = "cum_usage_url"; // auto-learned URL that yielded usage data
