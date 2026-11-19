@@ -38,7 +38,9 @@ importScripts(
   "xlsxread.js",
   "keyfile.js",
   // The Links button beside Ruling: which of a ruling's hrefs may open a tab.
-  "tentative.js"
+  "tentative.js",
+  // The runs as PDF+'s Home shows them (see "PDF+'s Home: the runs").
+  "pdfplusstatus.js"
 );
 
 const CFG_KEY = "cum_autocontinue";
@@ -3459,8 +3461,62 @@ async function sweepChatKeys() {
   }
 }
 
+// ---- PDF+'s Home: the runs ------------------------------------------------
+//
+// The owner (November 2026): "I'd like to have the dashboard display include
+// the current status of any claude run going." PDF+ reads files, not this
+// extension, so the runs (src/pdfplusstatus.js: each run's matter, workflow,
+// progress, hold or failure, and last chat — nothing it sent or received) go
+// to the E-Court Suite's native host, which writes them into Downloads as
+// "Claude Run Status.json". Written when a run changes, and every
+// PDFS.REFRESH_MS while one is going (on its heartbeat), so Home can tell a run
+// gone quiet from one working. No host (not installed, or this extension not
+// let in by its install.ps1): nothing is written, the reason is kept under
+// PDFPLUS_STATUS_KEY, and it is not tried again for PDFPLUS_BACKOFF_MS.
+const PDFS = self.CUMPdfPlusStatus;
+const PDFPLUS_HOST = "com.lacourt.ecourt_host";
+const PDFPLUS_STATUS_KEY = "cum_pdfplus_status"; // { at, ok, error, sig, path }
+const PDFPLUS_BACKOFF_MS = 10 * 60 * 1000;
+let pdfplusTimer = 0;
+let pdfplusBackoffUntil = 0;
+let pdfplusBusy = false;
+function pdfplusStatusSoon(ms) {
+  clearTimeout(pdfplusTimer);
+  pdfplusTimer = setTimeout(writePdfPlusStatus, ms == null ? 3000 : ms);
+}
+async function writePdfPlusStatus() {
+  if (!PDFS || pdfplusBusy || Date.now() < pdfplusBackoffUntil) return;
+  pdfplusBusy = true;
+  try {
+    const now = Date.now();
+    const data = PDFS.summarize(await readRuns(), (await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], now);
+    const last = (await get(PDFPLUS_STATUS_KEY))[PDFPLUS_STATUS_KEY] || null;
+    if (!PDFS.shouldWrite(data, last && last.ok ? last : null, now)) return;
+    // Nothing to say and nothing ever said: no file at all.
+    if (!data.runs.length && !(last && last.ok)) return;
+    const resp = await new Promise((res) => {
+      try {
+        chrome.runtime.sendNativeMessage(PDFPLUS_HOST, { action: "writeClaudeRuns", data }, (r) => {
+          const err = chrome.runtime.lastError;
+          res(err ? { ok: false, error: err.message } : r || { ok: false, error: "the native host did not answer" });
+        });
+      } catch (e) {
+        res({ ok: false, error: String((e && e.message) || e) });
+      }
+    });
+    if (!resp.ok) pdfplusBackoffUntil = Date.now() + PDFPLUS_BACKOFF_MS;
+    await set({ [PDFPLUS_STATUS_KEY]: { at: Date.now(), ok: !!resp.ok, error: resp.ok ? "" : String(resp.error || ""), sig: resp.ok ? PDFS.signature(data) : "", path: resp.path || "" } });
+  } catch (e) {
+    /* the next change tries again */
+  } finally {
+    pdfplusBusy = false;
+  }
+}
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
+  // PDF+'s Home: a run changed, or one going beat (the refresh is decided there).
+  if (Object.keys(changes).some((k) => k === W.RUN_IDS_KEY || k.indexOf(W.RUN_PREFIX) === 0 || k.indexOf(W.BEAT_PREFIX) === 0)) pdfplusStatusSoon();
   if (changes[PSEUDO_KEYS_KEY]) {
     // A name removed from a key by hand (or put back) changes no savedAt, so
     // only a forced refresh carries it into the distilled cases.
@@ -3523,3 +3579,5 @@ migrateRuns().then(migrateSettings).then(reschedule);
 reschedule();
 ensureStatusAlarm(null);
 refreshStatusIfStale();
+// What PDF+'s Home shows of the runs, brought up to date on every start.
+pdfplusStatusSoon(5000);
