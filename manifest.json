@@ -15,7 +15,8 @@
     "tabs",
     "tabGroups",
     "notifications",
-    "downloads"
+    "downloads",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "https://claude.ai/*",

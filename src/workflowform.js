@@ -785,6 +785,15 @@
     }
 
     async function addFiles(list) {
+      // A stand-in for an original PDF+'s route did not read (src/pdfplusrun.js)
+      // never becomes a document: the route only ever takes a case folder,
+      // whose originals the split leaves behind, so one arriving here means the
+      // pick went the wrong way — and the whole pick is refused, loudly.
+      const PR = root.CUMPdfPlusRun;
+      if (PR && PR.standIns(Array.from(list || [])).length) {
+        flash(PR.failText("standin", null), true);
+        return;
+      }
       // Before the spreadsheet diversion below, which would otherwise read the
       // marker itself as a candidate pseudonym key.
       const gated = leaksHeld(Array.from(list || []));
@@ -1861,6 +1870,31 @@
     });
 
     return {
+      // The case folder PDF+ points at (src/pdfplus-run.js), handed to THE
+      // SAME DOOR a picked folder goes through (takePicked): the LEAKS gate,
+      // the case-folder split, the key's attachment, the PDF question, the
+      // caps. Only a run being edited takes it, and only a folder whose name
+      // carries a case number — so the split, never the ordinary walk, decides
+      // what goes. The hearing's date fills the run date where none is typed.
+      // Answers { ok, why }.
+      takeFromPdfPlus(files, info) {
+        const i = info || {};
+        if (!editingRun) return { ok: false, why: "norun" };
+        if (!isCaseFolderName(i.root || "")) {
+          const PR = root.CUMPdfPlusRun;
+          if (PR) flash(PR.failText("nocase", { folderName: i.root }), true);
+          return { ok: false, why: "nocase" };
+        }
+        if (i.runDate && ui.date && !ui.date.value.trim()) {
+          const label = W.runDateLabel(i.runDate);
+          if (label) {
+            ui.date.value = label;
+            if (ui.dateNative) ui.dateNative.value = i.runDate;
+          }
+        }
+        takePicked(files);
+        return { ok: true, why: "" };
+      },
       edit(workflow) {
         // Deep copy, so Cancel really cancels.
         open(W.newWorkflow(JSON.parse(JSON.stringify(workflow)), workflow.id, Date.now()));

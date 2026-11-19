@@ -1463,6 +1463,52 @@ knows about.
 and alarms in the browser they started in. Export the template; start the matter
 where you're working.
 
+### Setting a run up from PDF+
+
+PDF+'s Home lists your hearings; each one whose case folder PDF+ has found
+carries a **Claude** button (in the PDF+ desktop app). Press it and this
+extension's **Options opens on Workflows** with a banner naming the case, its
+hearing date and its motion. Then do what you always do: press **Create run** on
+the workflow you want. The run's editor opens as usual, with the **hearing date
+in its Run date** (where none is typed) and the **case folder's papers added
+for you** — exactly as if you had picked that folder with **Choose folder…**.
+
+**Every safeguard of Choose folder… applies, because it is the same door**
+(`takeFromPdfPlus` hands the folder to `takePicked`):
+
+- only a **case folder** — one whose name carries a case number — is taken, and
+  it is taken apart: **only its `Text Files` become documents**, the pseudonym
+  key is **attached, never uploaded**, and the originals stay where they are;
+  a folder whose name carries no case number is refused (use Choose folder…);
+- a folder **marked LEAKS never uploads**, whole;
+- a **PDF asks before it uploads**, spreadsheets never ride along, and the caps
+  and what was left out are said, as always;
+- a run whose name carries a case number still needs a key that covers it
+  before it will go anywhere.
+
+Only the files that door could take — what is under `Text Files`, and the
+spreadsheets (key candidates) — are read across; the rest of the folder comes
+as empty stand-ins carrying their paths, so the LEAKS gate and the split see the
+whole folder, and a stand-in that ever reached the documents refuses the whole
+pick (`src/pdfplusrun.js`). Nothing changes when you use Options without PDF+:
+no banner, no difference. **Dismiss** lets PDF+'s request go; an unused one
+ages out after two hours.
+
+**How it gets there.** Chrome will not let an extension open a folder by its
+path, but PDF+ knows where the folder is. It leaves `Claude Run Request.json`
+in your Downloads (the case, the date, the folder and its path) and opens
+claude.ai with a bare marker (`#cum-pdfplus-run`, never the case's name, which
+claude.ai's own page would see); this extension takes the marker off, closes
+that tab and opens Options. The papers come through the **E-Court Suite's native
+host**, which serves only the folder the current request names, read-only.
+
+**Setting it up, once:** reload this extension (it now asks for native
+messaging); copy its id from `chrome://extensions`; and in the E-Court Suite's
+`native-host` folder run
+`.\install.ps1 -ExtensionId <e-court-id> -ExtraExtensionIds <this-extension's-id>`,
+then restart Chrome. Without that the banner simply never shows, and the
+editor says so plainly if PDF+'s papers could not be brought over.
+
 ### Running one
 
 **Run now**, **When usage resets**, or **At a set time** — the same three triggers

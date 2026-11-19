@@ -430,6 +430,22 @@
     onSaved: renderWorkflows,
     onClosed: renderWorkflows,
   });
+
+  // A run set up from PDF+'s Home (src/pdfplus-run.js): a banner above the
+  // workflows while PDF+'s request waits, and the case folder handed to the
+  // new run's editor when Create run opens it. Without a request, nothing
+  // here changes.
+  const PB = window.CUMPdfPlusBridge || null;
+  if (PB) PB.init(document.querySelector('.panel[data-panel="workflows"] .toolbar'));
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (!msg || msg.type !== "cum-pdfplus-recheck" || !PB) return;
+      showTab("workflows", false);
+      PB.check();
+    });
+  } catch (e) {
+    /* orphaned page */
+  }
   let workflowsById = {};
 
   wfui.newBtn.addEventListener("click", () => wfForm.create());
@@ -617,7 +633,11 @@
         renderWorkflows();
         // Straight into the run's own editor — the papers are the first thing
         // you'd want to add, and the whole point is that they go on the run.
-        renderRuns().then(() => openRunEditor(res.runId));
+        // A case PDF+ asked for (PB) brings its papers in through that editor.
+        renderRuns().then(() => {
+          openRunEditor(res.runId);
+          if (PB && PB.hasPending()) PB.afterCreate(wfForm);
+        });
       }
     );
   }

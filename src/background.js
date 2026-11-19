@@ -2437,6 +2437,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
+  // PDF+'s Claude button (src/pdfplus-run.js): claude.ai was opened with the
+  // bare marker only to reach this extension, so its tab goes, and Options
+  // shows on Workflows — the open one told to look for PDF+'s request again,
+  // or a new one, which looks when it loads.
+  if (msg && msg.type === "cum-pdfplus-run") {
+    (async () => {
+      const base = chrome.runtime.getURL("src/options.html");
+      const tabs = await chrome.tabs.query({});
+      const open = tabs.find((t) => t && t.url && t.url.indexOf(base) === 0);
+      if (open) {
+        await chrome.tabs.update(open.id, { active: true });
+        try { await chrome.windows.update(open.windowId, { focused: true }); } catch (e) { /* gone */ }
+        try { chrome.runtime.sendMessage({ type: "cum-pdfplus-recheck" }, () => void chrome.runtime.lastError); } catch (e) { /* no page */ }
+      } else {
+        await chrome.tabs.create({ url: base + "#workflows", active: true });
+      }
+      const from = sender && sender.tab && sender.tab.id;
+      if (from != null) {
+        try { await chrome.tabs.remove(from); } catch (e) { /* closed already */ }
+      }
+    })();
+    return false;
+  }
   if (msg && msg.type === "cum-open-options") {
     try {
       chrome.runtime.openOptionsPage();
