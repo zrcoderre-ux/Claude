@@ -61,3 +61,14 @@ test("case numbers, as PDF+ reads them", () => {
   assert.strictEqual(S.caseNumberOf("BC654321 Smith"), "BC654321");
   assert.strictEqual(S.caseNumberOf("Doe v. Roe"), "");
 });
+
+test("each step, as the runs list's history draws it: done, here, still to do, with how long it took", () => {
+  const r = run({ transcript: [{ stepIndex: 0, chatId: "a", ms: 240000 }] });
+  const steps = S.summarize([r], [], NOW).runs[0].steps;
+  assert.deepStrictEqual(steps.map((x) => [x.label, x.chat, x.state]), [["1", "Chat A", "done"], ["2", "Chat B", "here"], ["3", "Chat A", "todo"]]);
+  assert.strictEqual(steps[0].ms, 240000);
+  assert.strictEqual(steps[1].ms, undefined);
+  assert.deepStrictEqual(S.summarize([run({ status: "error" })], [], NOW).runs[0].steps.map((x) => x.state), ["done", "failed", "todo"]);
+  assert.deepStrictEqual(S.summarize([run({ status: "done", stepIndex: 3, finishedAt: NOW })], [], NOW).runs[0].steps.map((x) => x.state), ["done", "done", "done"]);
+  assert.deepStrictEqual(S.summarize([run({ status: "waiting" })], [], NOW).runs[0].steps.map((x) => x.state), ["done", "next", "todo"]);
+});

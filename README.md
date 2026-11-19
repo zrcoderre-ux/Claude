@@ -1513,8 +1513,11 @@ editor says so plainly if PDF+'s papers could not be brought over.
 keeps `Claude Run Status.json` in Downloads up to date: every run going (queued,
 running, held, paused, failed) and those finished or canceled in the last 18
 hours, each with its matter, its workflow, where it stands in the runs list's
-own words ("Step 2 of 3 · Chat B — waiting for Claude"), why it is held or
-failed, and the address of the chat it last worked in. Nothing it sent or
+own words ("Step 2 of 3 · Chat B — waiting for Claude"), its steps (each one's
+label, chat, whether it is done, running, next, failed or to come, and how long
+it took), why it is held or failed, and the address of the chat it last worked
+in. Home draws the case's newest run beside its briefing as a bar of those
+steps. Nothing it sent or
 received goes in: no prompt, reply, paper or key (`src/pdfplusstatus.js`). It
 is written when a run changes and every five minutes while one is going, so
 Home can tell a run whose browser went quiet. Without the host, nothing is
