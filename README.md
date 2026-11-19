@@ -1509,6 +1509,18 @@ messaging); copy its id from `chrome://extensions`; and in the E-Court Suite's
 then restart Chrome. Without that the banner simply never shows, and the
 editor says so plainly if PDF+'s papers could not be brought over.
 
+**Your runs on PDF+'s Home.** Through the same native host, this extension
+keeps `Claude Run Status.json` in Downloads up to date: every run going (queued,
+running, held, paused, failed) and those finished or canceled in the last 18
+hours, each with its matter, its workflow, where it stands in the runs list's
+own words ("Step 2 of 3 · Chat B — waiting for Claude"), why it is held or
+failed, and the address of the chat it last worked in. Nothing it sent or
+received goes in: no prompt, reply, paper or key (`src/pdfplusstatus.js`). It
+is written when a run changes and every five minutes while one is going, so
+Home can tell a run whose browser went quiet. Without the host, nothing is
+written (the reason is kept under `cum_pdfplus_status`) and it is not tried
+again for ten minutes.
+
 ### Running one
 
 **Run now**, **When usage resets**, or **At a set time** — the same three triggers
