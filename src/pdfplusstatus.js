@@ -55,6 +55,29 @@
     return "";
   }
 
+  /**
+   * The run's steps as Home draws them, like the runs list's history: [{ label
+   * ("2A"), chat, pause, state: done | here | failed | todo, ms (how long it
+   * took, where known) }], at most MAX_STEPS.
+   */
+  const MAX_STEPS = 30;
+  function stepsOf(run, wf) {
+    let plan = [];
+    try { plan = W.planRun(W.runSource(run, wf)) || []; } catch (e) { plan = []; }
+    const took = {};
+    for (const t of run.transcript || []) if (t && typeof t.ms === "number") took[t.stepIndex] = t.ms;
+    const at = run.stepIndex || 0;
+    const here = (plan[at] && plan[at].wave) || [at];
+    return plan.slice(0, MAX_STEPS).map((s) => {
+      let state = "todo";
+      if (run.status === "done" || s.index < at) state = "done";
+      else if (here.indexOf(s.index) !== -1) state = run.status === "error" ? "failed" : run.status === "running" ? "here" : "next";
+      const out = { label: str(s.label), chat: str(s.chatName), pause: s.kind === "pause", state };
+      if (typeof took[s.index] === "number") out.ms = took[s.index];
+      return out;
+    });
+  }
+
   /** One run as Home is told it. */
   function runEntry(run, wf, now) {
     const label = W.runLabel(run);
@@ -76,6 +99,7 @@
       held: run.status === "waiting" ? str(run.holdReason).slice(0, 200) : "",
       error: run.status === "error" ? str(run.error).slice(0, 300) : "",
       url: lastChatUrl(run),
+      steps: stepsOf(run, wf),
     };
   }
 
@@ -100,7 +124,7 @@
 
   /** What the file says, without when it was written: the same signature, nothing new to write. */
   function signature(data) {
-    return JSON.stringify(((data && data.runs) || []).map((r) => [r.id, r.status, r.phase, r.progress, r.step, r.total, r.at, r.held, r.error, r.url, r.name]));
+    return JSON.stringify(((data && data.runs) || []).map((r) => [r.id, r.status, r.phase, r.progress, r.step, r.total, r.at, r.held, r.error, r.url, r.name, (r.steps || []).map((x) => x.state + (x.ms || "")).join(",")]));
   }
 
   /**
@@ -114,7 +138,7 @@
     return going && (now == null ? Date.now() : now) - (last.at || 0) >= REFRESH_MS;
   }
 
-  const api = { FILE, KEEP_ENDED_MS, REFRESH_MS, MAX_RUNS, caseNumberOf, isActive, lastChatUrl, runEntry, summarize, signature, shouldWrite };
+  const api = { FILE, KEEP_ENDED_MS, REFRESH_MS, MAX_RUNS, MAX_STEPS, caseNumberOf, isActive, lastChatUrl, stepsOf, runEntry, summarize, signature, shouldWrite };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMPdfPlusStatus = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
