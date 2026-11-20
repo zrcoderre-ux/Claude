@@ -2213,9 +2213,11 @@ stays — the conversations are the point — and **Close window** on the run's 
 disposes of it when you've read them.
 
 **Open chats** brings a run's conversations back: it raises that run's window if
-it still has one (adding back any tab you closed), and reopens all of them in a
-new window if you'd closed the lot. A run that adopts a new window this way keeps
-using it for later steps. This is the only place a run's window is given focus —
+it still has one (adding back any tab you closed). If that window is gone but
+one of its chats is open in another window (opened from PDF+'s Home, say), the
+others open beside it in that window, and none twice (`showChatsPlan`); only if
+none is open anywhere do they all open in a new window. A run that adopts a
+window this way keeps using it for later steps. This is the only place a run's window is given focus —
 everywhere else it stays behind what you're doing.
 
 ## Incognito recovery

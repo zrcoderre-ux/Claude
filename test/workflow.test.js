@@ -4061,3 +4061,14 @@ test("orphanTabAction: close only a tab still on the address it was opened at", 
 test("tabsKey stays out of the run prefix, so writing it does not reschedule", () => {
   assert.equal(W.tabsKey("abc").indexOf(W.RUN_PREFIX), -1);
 });
+
+// The owner (November 2026): "if one chat is already open, open chats should
+// just open the other in that same window, instead of a new window and both".
+test("Open chats: the window already holding one of the run's chats takes the rest", () => {
+  const W = require("../src/workflow.js");
+  const same = (a, b) => a.replace(/\/$/, "") === b.replace(/\/$/, "");
+  const urls = ["https://claude.ai/chat/aaa", "https://claude.ai/chat/bbb"];
+  assert.deepStrictEqual(W.showChatsPlan(urls, [{ url: "https://claude.ai/chat/bbb/", windowId: 7 }, { url: "https://example.com", windowId: 3 }], same), { windowId: 7, open: ["https://claude.ai/chat/aaa"] });
+  assert.deepStrictEqual(W.showChatsPlan(urls, [{ url: "https://claude.ai/chat/aaa", windowId: 4 }, { url: "https://claude.ai/chat/bbb", windowId: 9 }], same), { windowId: 4, open: [] });
+  assert.deepStrictEqual(W.showChatsPlan(urls, [{ url: "https://example.com", windowId: 3 }], same), { windowId: null, open: urls });
+});
