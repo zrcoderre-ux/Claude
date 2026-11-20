@@ -3104,6 +3104,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return { ok: true, focused: true, opened: urls.length, missing };
       }
 
+      // Its window gone, but one of its chats open in another (opened from
+      // PDF+'s Home, say): the rest join that window, and the run adopts it,
+      // rather than a fresh window with both (W.showChatsPlan).
+      let allTabs = [];
+      try { allTabs = await chrome.tabs.query({}); } catch (e) { allTabs = []; }
+      const plan = W.showChatsPlan(urls, allTabs, (a, b) => J.sameConversationUrl(a, b));
+      if (plan.windowId != null) {
+        for (const u of plan.open) {
+          try {
+            await chrome.tabs.create({ url: u, windowId: plan.windowId, active: false });
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        try {
+          await chrome.windows.update(plan.windowId, { focused: true });
+        } catch (e) {
+          /* ignore */
+        }
+        await saveRun(W.withWindow(await readRun(msg.runId), plan.windowId));
+        await groupRunChats(run, plan.windowId);
+        return { ok: true, focused: true, opened: urls.length, missing };
+      }
+
       // Gone entirely — open all of its conversations in a fresh window, and
       // let the run adopt it so later steps go there too.
       try {

@@ -3897,7 +3897,30 @@
     return true;
   }
 
+  /**
+   * Where Open chats puts a run's chats when the run's own window is gone
+   * (the owner, November 2026: "if one chat is already open, open chats
+   * should just open the other in that same window, instead of a new window
+   * and both"): { windowId, open } — the window already holding one of them
+   * (the first in the run's order that is open anywhere), and the chats open
+   * nowhere, to add there; windowId null where none is open (a fresh window
+   * for all, as before). `tabs` are every open tab ({ url, windowId });
+   * `same(a, b)` says two addresses are one conversation.
+   */
+  function showChatsPlan(urls, tabs, same) {
+    const list = (tabs || []).filter((t) => t && t.url && t.windowId != null);
+    const openIn = (u) => list.find((t) => same(t.url, u)) || null;
+    let windowId = null;
+    for (const u of urls || []) {
+      const t = openIn(u);
+      if (t) { windowId = t.windowId; break; }
+    }
+    if (windowId == null) return { windowId: null, open: (urls || []).slice() };
+    return { windowId, open: (urls || []).filter((u) => !openIn(u)) };
+  }
+
   const api = {
+    showChatsPlan,
     distinctPseudoKeys,
     rekeyPlan,
     groupLabel,
