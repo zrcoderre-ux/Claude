@@ -2451,7 +2451,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (open) {
         await chrome.tabs.update(open.id, { active: true });
         try { await chrome.windows.update(open.windowId, { focused: true }); } catch (e) { /* gone */ }
-        try { chrome.runtime.sendMessage({ type: "cum-pdfplus-recheck" }, () => void chrome.runtime.lastError); } catch (e) { /* no page */ }
+        // Every Options page hears this; only the tab named acts on it (sets
+        // the run up), or every open Options page would make the same run.
+        try { chrome.runtime.sendMessage({ type: "cum-pdfplus-recheck", tabId: open.id }, () => void chrome.runtime.lastError); } catch (e) { /* no page */ }
       } else {
         await chrome.tabs.create({ url: base + "#workflows", active: true });
       }

@@ -481,8 +481,18 @@
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (!msg || msg.type !== "cum-pdfplus-recheck" || !PB) return;
-      showTab("workflows", false);
-      PB.check();
+      // Only the tab the worker brought forward acts on PDF+'s request; any
+      // other Options page just looks (its banner), so one run is made.
+      try {
+        chrome.tabs.getCurrent((t) => {
+          void chrome.runtime.lastError;
+          const mine = !msg.tabId || (t && t.id === msg.tabId);
+          if (mine) showTab("workflows", false);
+          PB.check({ act: mine });
+        });
+      } catch (e) {
+        PB.check({ act: false });
+      }
     });
   } catch (e) {
     /* orphaned page */

@@ -82,8 +82,12 @@
     ui.box.hidden = !text;
   }
 
-  /** Read the request PDF+ left, and show it. */
-  async function check() {
+  /**
+   * Read the request PDF+ left, and show it. `opts.act` false: show it only,
+   * set nothing up (another Options page is the one acting on it).
+   */
+  async function check(opts) {
+    const act = !opts || opts.act !== false;
     if (!R) return;
     const s = hostSession();
     if (!s) return;
@@ -98,7 +102,33 @@
     pending = res.ok ? res.request : null;
     if (pending) say(R.bannerText(pending), false);
     else if (ui && !ui.box.classList.contains("warn")) say("", false);
-    if (pending && pending.workflowId) autoCreate(pending);
+    if (pending && pending.workflowId && act) autoCreate(pending);
+  }
+
+  // One Options page sets a request's run up, however many are open (a run's
+  // own window carries one): the first to claim its id in storage. A second
+  // page, or one loading while the papers come over, leaves it alone.
+  const CLAIM_KEY = "cum_pdfplus_claim";
+  const CLAIM_MS = 10 * 60 * 1000;
+  const myClaim = Math.random().toString(36).slice(2);
+  function claim(id) {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get(CLAIM_KEY, (r) => {
+          const c = (r || {})[CLAIM_KEY];
+          if (c && c.id === id && c.by !== myClaim && Date.now() - (c.at || 0) < CLAIM_MS) return resolve(false);
+          chrome.storage.local.set({ [CLAIM_KEY]: { id, by: myClaim, at: Date.now() } }, () => {
+            // Two pages at the same moment: whoever's write stands wins.
+            setTimeout(() => chrome.storage.local.get(CLAIM_KEY, (r2) => {
+              const c2 = (r2 || {})[CLAIM_KEY];
+              resolve(!!c2 && c2.id === id && c2.by === myClaim);
+            }), 150);
+          });
+        });
+      } catch (e) {
+        resolve(true);
+      }
+    });
   }
 
   // A workflow chosen from PDF+'s Claude menu (the owner, November 2026: "a
@@ -112,13 +142,17 @@
   async function autoCreate(req) {
     if (!hooks.createRun || autoDone.has(req.id)) return;
     autoDone.add(req.id);
+    if (!(await claim(req.id))) {
+      say(R.bannerText(req) + " (Another Options tab is setting it up.)", false);
+      return;
+    }
     // The list may still be drawing: a few looks before giving up.
     for (let i = 0; i < 20; i++) {
-      if (pending !== req) return; // dismissed, or another request came
+      if (!pending || pending.id !== req.id) return; // dismissed, or another request came
       if (hooks.createRun(req.workflowId)) return;
       await new Promise((r) => setTimeout(r, 250));
     }
-    if (pending === req) say(R.failText("noworkflow", req), true);
+    if (pending && pending.id === req.id) say(R.failText("noworkflow", req), true);
   }
 
   /**
@@ -137,7 +171,7 @@
       say("Bringing " + req.folderName + "'s papers over from PDF+…", false);
       const list = await s.ask({ action: "listRunFolder", id: req.id });
       if (!list || !list.ok) {
-        const why = list && list.error === "gone" ? "gone" : "host";
+        const why = list && list.error === "gone" ? "gone" : list && list.error === "no such request" ? "taken" : "host";
         say(R.failText(why, req) + (list && list.error && why === "host" ? " (" + list.error + ")" : ""), true);
         return { ok: false, why };
       }

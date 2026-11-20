@@ -1480,7 +1480,10 @@ for it; nothing of their prompts). Pick one and Options presses that workflow's
 the run is made as a draft, nothing starts, and its editor opens with the
 papers and the hearing date in. Look it over and press **Save and start this
 run**. "Choose in the Claude extension…" at the menu's foot is the old way; a
-workflow since deleted says so in the banner and leaves you to press Create run.
+workflow since deleted says so in the banner and leaves you to press Create run. Only one Options page sets a request up, however many are open (a run's window
+carries one): the tab the worker brings forward, and among pages loading at
+once the first to claim the request's id (`cum_pdfplus_claim`). A page that
+finds the request already taken says so rather than blaming the host.
 
 **Every safeguard of Choose folder… applies, because it is the same door**
 (`takeFromPdfPlus` hands the folder to `takePicked`):
