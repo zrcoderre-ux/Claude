@@ -81,3 +81,12 @@ test("the banner says the run is being set up, and a missing workflow says so", 
   assert.match(R.bannerText(R.checkRequest(good, NOW).request), /Press Create run/);
   assert.match(R.failText("noworkflow", req), /Tentative ruling\) is not here any more/);
 });
+
+// The owner (November 2026): "PDF+'s papers could not be brought over: the
+// native host did not answer … (no such request)" — the request had been taken
+// by another Options page; that is said as what it is.
+test("a request another Options page took is said so, not blamed on the host", () => {
+  const req = R.checkRequest(good, NOW).request;
+  assert.match(R.failText("taken", req), /another Options tab took it/);
+  assert.doesNotMatch(R.failText("taken", req), /native host/);
+});

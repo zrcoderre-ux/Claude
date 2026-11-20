@@ -148,6 +148,8 @@
         return "Nothing was added from " + where + ": one of its originals was about to go into the documents, which this route never allows. Use Choose folder….";
       case "norun":
         return "Open a run first: PDF+'s papers go into a run as it is created.";
+      case "taken":
+        return "PDF+'s request for " + where + " is no longer waiting: another Options tab took it, or PDF+ sent a newer one. Nothing was added to this run; look in the runs list for the one that has the papers, or press the Claude button in PDF+ again.";
       case "noworkflow":
         return "The workflow chosen in PDF+" + (req && req.workflowName ? " (" + req.workflowName + ")" : "") +
           " is not here any more. Press Create run on the workflow to use — " + where + "'s papers still come with it.";
