@@ -3484,14 +3484,14 @@ function pdfplusStatusSoon(ms) {
   clearTimeout(pdfplusTimer);
   pdfplusTimer = setTimeout(writePdfPlusStatus, ms == null ? 3000 : ms);
 }
-async function writePdfPlusStatus() {
-  if (!PDFS || pdfplusBusy || Date.now() < pdfplusBackoffUntil) return;
+async function writePdfPlusStatus(force) {
+  if (!PDFS || pdfplusBusy || (!force && Date.now() < pdfplusBackoffUntil)) return;
   pdfplusBusy = true;
   try {
     const now = Date.now();
     const data = PDFS.summarize(await readRuns(), (await get(WORKFLOWS_KEY))[WORKFLOWS_KEY] || [], now);
     const last = (await get(PDFPLUS_STATUS_KEY))[PDFPLUS_STATUS_KEY] || null;
-    if (!PDFS.shouldWrite(data, last && last.ok ? last : null, now)) return;
+    if (!force && !PDFS.shouldWrite(data, last && last.ok ? last : null, now)) return;
     // Nothing to say and nothing ever said: no file at all.
     if (!data.runs.length && !data.workflows.length && !(last && last.ok)) return;
     const resp = await new Promise((res) => {
@@ -3582,3 +3582,10 @@ ensureStatusAlarm(null);
 refreshStatusIfStale();
 // What PDF+'s Home shows of the runs, brought up to date on every start.
 pdfplusStatusSoon(5000);
+// Options' "Try again" (its PDF+'s Home line): write now, past the back-off.
+chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+  if (!msg || msg.type !== "cum-pdfplus-write-now") return;
+  pdfplusBackoffUntil = 0;
+  writePdfPlusStatus(true).then(() => reply({ ok: true }), () => reply({ ok: false }));
+  return true;
+});

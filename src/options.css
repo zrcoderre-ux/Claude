@@ -1337,3 +1337,8 @@ td .wk-floor {
 .pdfplus-banner.warn { border-color: rgba(217, 119, 6, 0.5); background: rgba(234, 179, 8, 0.1); }
 .pdfplus-banner .pdfplus-text { flex: 1; }
 .pdfplus-banner .pdfplus-dismiss { flex: none; }
+/* PDF+'s Home: whether it gets this extension's runs (options.js, pdfplusLink). */
+.pdfplus-link { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.45; color: inherit; opacity: 0.8; }
+.pdfplus-link .pdfplus-link-text { flex: 1; overflow-wrap: anywhere; }
+.pdfplus-link .pdfplus-link-retry { flex: none; }
+.pdfplus-link.tone-warn { opacity: 1; border: 1px solid rgba(217, 119, 6, 0.5); background: rgba(234, 179, 8, 0.1); }
