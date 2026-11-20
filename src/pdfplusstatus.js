@@ -13,7 +13,8 @@
  * extension's own words (W.progressText), when it last moved, why it is held
  * or failed, and the address of the chat it last worked in. No prompt, reply,
  * paper or key. Drafts (set up, never armed) are not "going" and stay out;
- * a finished or canceled run stays listed for KEEP_ENDED_MS.
+ * a finished or canceled run stays listed for KEEP_ENDED_MS, and a matter's
+ * most recent one for KEEP_CASE_MS, so Home can show every case's last run.
  */
 (function (root) {
   "use strict";
@@ -25,7 +26,7 @@
   // While a run is going, the file is written again at least this often, so
   // Home can tell a run whose browser has gone quiet from one still working.
   const REFRESH_MS = 5 * 60 * 1000;
-  const MAX_RUNS = 40;
+  const MAX_RUNS = 120;
   const ACTIVE = { pending: 1, waiting: 1, running: 1, paused: 1, error: 1 };
   const CASE_RE = /(?<![A-Za-z0-9])(?:(\d{2})[ -]?([A-Za-z]{4,6})[ -]?(\d{4,6})|([A-Za-z][CDFPQSTcdfpqst])[ -]?(\d{6}))(?![A-Za-z0-9])/;
 
@@ -104,20 +105,33 @@
   }
 
   /**
-   * The file's contents: { version: 1, written, runs: [runEntry] } — the runs
-   * going (newest move first), then those ended within KEEP_ENDED_MS.
+   * The file's contents: { version: 1, written, runs: [runEntry], workflows } —
+   * the runs going (newest move first), those ended within KEEP_ENDED_MS, and
+   * for every other matter its most recent run that ended within
+   * KEEP_CASE_MS (the owner, November 2026: "It should show in the home page
+   * the status of the current or most recent claude run for each case (but
+   * only if there was one)"). A matter is its case number, else its name.
    */
+  const KEEP_CASE_MS = 90 * 24 * 3600 * 1000;
   function summarize(runs, workflows, now) {
     const t = now == null ? Date.now() : now;
     const out = [];
+    const older = new Map(); // matter -> its newest run ended before KEEP_ENDED_MS
+    const ended = (r) => r.status === "done" || r.status === "canceled";
+    const endAt = (r) => (typeof r.finishedAt === "number" ? r.finishedAt : typeof r.lastProgressAt === "number" ? r.lastProgressAt : 0);
     for (const run of runs || []) {
       if (!run || !run.id) continue;
-      const ended = run.status === "done" || run.status === "canceled";
-      if (!isActive(run) && !ended) continue;
-      if (ended && !(typeof run.finishedAt === "number" && t - run.finishedAt <= KEEP_ENDED_MS)) continue;
+      if (!isActive(run) && !ended(run)) continue; // a draft, never armed
       const wf = W.getWorkflow ? W.getWorkflow(workflows || [], run.workflowId) : null;
-      out.push(runEntry(run, wf, t));
+      if (isActive(run) || (ended(run) && t - endAt(run) <= KEEP_ENDED_MS)) { out.push(runEntry(run, wf, t)); continue; }
+      if (t - endAt(run) > KEEP_CASE_MS) continue;
+      const e = runEntry(run, wf, t);
+      const key = e.caseNumber || e.name.toLowerCase();
+      const was = older.get(key);
+      if (!was || (e.finishedAt || e.at) > (was.finishedAt || was.at)) older.set(key, e);
     }
+    const matters = new Set(out.map((e) => e.caseNumber || e.name.toLowerCase()));
+    for (const [key, e] of older) if (!matters.has(key)) out.push(e);
     out.sort((a, b) => (isActive(b) - isActive(a)) || b.at - a.at);
     return { version: 1, written: t, runs: out.slice(0, MAX_RUNS), workflows: workflowList(workflows) };
   }
@@ -157,7 +171,35 @@
     return going && (now == null ? Date.now() : now) - (last.at || 0) >= REFRESH_MS;
   }
 
-  const api = { FILE, KEEP_ENDED_MS, REFRESH_MS, MAX_RUNS, MAX_STEPS, MAX_WORKFLOWS, caseNumberOf, isActive, lastChatUrl, stepsOf, runEntry, summarize, workflowList, signature, shouldWrite };
+  /**
+   * What Options says of the road to PDF+'s Home (the owner, November 2026,
+   * of Home's Claude column: "I have yet to see a single one"): the last
+   * write's outcome (`state`, the worker's PDFPLUS_STATUS_KEY: { at, ok,
+   * error, path }) as { tone: "ok" | "warn" | "idle", text }, with the fix for
+   * the usual failures. `extId` is this extension's id, which the E-Court
+   * host's install.ps1 must be given.
+   */
+  function linkAdvice(state, extId, now) {
+    const when = (at) => {
+      if (typeof at !== "number") return "";
+      const d = new Date(at), t = now == null ? Date.now() : now;
+      const clock = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      return new Date(t).toDateString() === d.toDateString() ? clock : d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + ", " + clock;
+    };
+    if (!state || typeof state !== "object") return { tone: "idle", text: "PDF+'s Home: not tried yet. It is tried a few seconds after Chrome starts, and whenever a run or workflow changes." };
+    if (state.ok) return { tone: "ok", text: "PDF+'s Home gets your runs and workflows: last written " + when(state.at) + (state.path ? " to " + state.path : "") + "." };
+    const err = str(state.error);
+    const install = "In the E-Court checkout's lacourt-ecourt-suite\\native-host folder, run .\\install.ps1 -ExtensionId <E-Court Suite's id> -ExtraExtensionIds " + (extId || "<this extension's id>") + " in PowerShell, then restart Chrome.";
+    if (/forbidden/i.test(err))
+      return { tone: "warn", text: "PDF+'s Home sees none of your runs: Chrome will not let this extension use the E-Court native host (it was not given this extension's id). " + install };
+    if (/not found/i.test(err))
+      return { tone: "warn", text: "PDF+'s Home sees none of your runs: the E-Court native host is not installed on this computer. " + install };
+    if (/unknown action/i.test(err))
+      return { tone: "warn", text: "PDF+'s Home sees none of your runs: the E-Court native host is older than this (it does not know writeClaudeRuns). Pull the E-Court checkout, which the host runs from, and restart Chrome." };
+    return { tone: "warn", text: "PDF+'s Home did not get your runs (" + when(state.at) + "): " + (err || "no reason given") + "." };
+  }
+
+  const api = { FILE, linkAdvice, KEEP_ENDED_MS, KEEP_CASE_MS, REFRESH_MS, MAX_RUNS, MAX_STEPS, MAX_WORKFLOWS, caseNumberOf, isActive, lastChatUrl, stepsOf, runEntry, summarize, workflowList, signature, shouldWrite };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMPdfPlusStatus = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

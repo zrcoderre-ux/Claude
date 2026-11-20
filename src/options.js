@@ -447,6 +447,37 @@
         return true;
       },
     });
+  // Whether PDF+'s Home gets this extension's runs (the owner, November 2026,
+  // of Home's Claude column: "I have yet to see a single one"): the worker's
+  // last write to the E-Court host, said under the Workflows toolbar with the
+  // fix for the usual failures, and Try again.
+  (function pdfplusLink() {
+    const S = window.CUMPdfPlusStatus;
+    const anchor = document.querySelector('.panel[data-panel="workflows"] .toolbar');
+    if (!S || !S.linkAdvice || !anchor || !anchor.parentNode) return;
+    const box = document.createElement("div");
+    box.className = "pdfplus-link";
+    box.innerHTML = '<span class="pdfplus-link-text"></span><button type="button" class="pdfplus-link-retry">Try again</button>';
+    anchor.parentNode.insertBefore(box, anchor);
+    const text = box.querySelector(".pdfplus-link-text"), retry = box.querySelector(".pdfplus-link-retry");
+    const show = (state) => {
+      const a = S.linkAdvice(state, chrome.runtime.id, Date.now());
+      text.textContent = a.text;
+      box.className = "pdfplus-link tone-" + a.tone;
+      retry.hidden = a.tone === "ok";
+    };
+    chrome.storage.local.get("cum_pdfplus_status", (r) => show((r || {}).cum_pdfplus_status || null));
+    chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && ch.cum_pdfplus_status) show(ch.cum_pdfplus_status.newValue || null); });
+    retry.addEventListener("click", () => {
+      retry.disabled = true;
+      retry.textContent = "Trying…";
+      chrome.runtime.sendMessage({ type: "cum-pdfplus-write-now" }, () => {
+        void chrome.runtime.lastError;
+        retry.disabled = false;
+        retry.textContent = "Try again";
+      });
+    });
+  })();
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (!msg || msg.type !== "cum-pdfplus-recheck" || !PB) return;

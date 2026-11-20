@@ -88,3 +88,39 @@ test("a workflow added or renamed is a change to write", () => {
   assert.strictEqual(S.shouldWrite(b, { sig: S.signature(a), at: NOW }, NOW + 1000), true);
   assert.strictEqual(S.shouldWrite(a, { sig: S.signature(a), at: NOW }, NOW + 1000), false);
 });
+
+// The owner (November 2026): "It should show in the home page the status of the
+// current or most recent claude run for each case (but only if there was one)".
+test("each matter's most recent run stays, however long ago it ended (within KEEP_CASE_MS)", () => {
+  const DAY = 24 * 3600 * 1000;
+  const d = S.summarize([
+    run({ id: "old1", name: "25STCV12345 ACME — 11/02/26", status: "done", finishedAt: NOW - 10 * DAY, lastProgressAt: NOW - 10 * DAY }),
+    run({ id: "old2", name: "25STCV12345 ACME — 11/09/26", status: "done", finishedAt: NOW - 5 * DAY, lastProgressAt: NOW - 5 * DAY }),
+    run({ id: "other", name: "24STCV00777 Doe — 11/01/26", status: "canceled", finishedAt: NOW - 3 * DAY, lastProgressAt: NOW - 3 * DAY }),
+    run({ id: "ancient", name: "23STCV04444 Roe — 06/01/26", status: "done", finishedAt: NOW - S.KEEP_CASE_MS - DAY, lastProgressAt: NOW - S.KEEP_CASE_MS - DAY }),
+    run({ id: "draft", name: "22STCV05555 Vance", status: "draft" }),
+  ], [], NOW);
+  assert.deepStrictEqual(d.runs.map((r) => r.id).sort(), ["old2", "other"]);
+});
+
+test("a matter with a run going or lately ended is not given an older one too", () => {
+  const DAY = 24 * 3600 * 1000;
+  const d = S.summarize([
+    run({ id: "now", name: "25STCV12345 ACME — 11/20/26" }),
+    run({ id: "old", name: "25STCV12345 ACME — 11/09/26", status: "done", finishedAt: NOW - 5 * DAY, lastProgressAt: NOW - 5 * DAY }),
+  ], [], NOW);
+  assert.deepStrictEqual(d.runs.map((r) => r.id), ["now"]);
+});
+
+// The owner (November 2026), of Home's Claude column: "I have yet to see a single one".
+test("Options says whether PDF+'s Home gets the runs, and the fix for the usual failures", () => {
+  assert.strictEqual(S.linkAdvice(null, "abc", NOW).tone, "idle");
+  const ok = S.linkAdvice({ at: NOW - 60000, ok: true, path: "C:\\Users\\Clerk\\Downloads\\Claude Run Status.json" }, "abc", NOW);
+  assert.strictEqual(ok.tone, "ok");
+  assert.match(ok.text, /Claude Run Status\.json/);
+  const forbidden = S.linkAdvice({ at: NOW, ok: false, error: "Access to the specified native messaging host is forbidden." }, "abcdefgh", NOW);
+  assert.strictEqual(forbidden.tone, "warn");
+  assert.match(forbidden.text, /-ExtraExtensionIds abcdefgh/);
+  assert.match(S.linkAdvice({ at: NOW, ok: false, error: "Specified native messaging host not found." }, "x", NOW).text, /not installed/);
+  assert.match(S.linkAdvice({ at: NOW, ok: false, error: "Unknown action: writeClaudeRuns" }, "x", NOW).text, /Pull the E-Court checkout/);
+});

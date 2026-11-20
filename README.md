@@ -1533,6 +1533,14 @@ Home can tell a run whose browser went quiet. Without the host, nothing is
 written (the reason is kept under `cum_pdfplus_status`) and it is not tried
 again for ten minutes.
 
+**Whether Home gets them.** A line under the Workflows toolbar says whether the
+last write reached PDF+'s Home (when, and where the file went) or why not, with
+the fix: most often Chrome refusing the E-Court native host to this extension,
+which `install.ps1 -ExtraExtensionIds <this extension's id>` (the line names
+the id) and a Chrome restart cure. **Try again** writes at once. Besides the
+runs going or ended in the last 18 hours, every other matter's most recent run
+of the last 90 days goes too, so Home can show each case's last run.
+
 ### Running one
 
 **Run now**, **When usage resets**, or **At a set time** — the same three triggers
