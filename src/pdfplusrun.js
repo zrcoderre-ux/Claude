@@ -67,6 +67,10 @@
       hearingDate: ISO_RE.test(str(r.hearingDate)) ? str(r.hearingDate) : "",
       folderName: str(r.folderName),
       folderPath: str(r.folderPath),
+      // The workflow chosen from PDF+'s Claude menu, if one was: Options
+      // presses its Create run itself (pdfplus-run.js, autoCreate).
+      workflowId: /^[A-Za-z0-9_-]{1,80}$/.test(str(r.workflowId)) ? str(r.workflowId) : "",
+      workflowName: str(r.workflowName).replace(/\s+/g, " ").trim().slice(0, 120),
     };
     return { ok: true, why: "", request: clean };
   }
@@ -123,6 +127,9 @@
     const num = req.caseNumber && who.indexOf(req.caseNumber) === -1 ? " (" + req.caseNumber + ")" : "";
     const when = req.hearingDate ? ", hearing " + dayText(req.hearingDate) : "";
     const what = req.motion ? " · " + req.motion : "";
+    if (req.workflowId)
+      return "From PDF+: " + who + num + when + what + ". Setting up a run of " + (req.workflowName || "the workflow chosen") +
+        " — its papers come from " + req.folderName + ", through the same checks as Choose folder….";
     return "From PDF+: " + who + num + when + what + ". Press Create run on the workflow to use — its papers come from " +
       req.folderName + ", through the same checks as Choose folder….";
   }
@@ -141,6 +148,9 @@
         return "Nothing was added from " + where + ": one of its originals was about to go into the documents, which this route never allows. Use Choose folder….";
       case "norun":
         return "Open a run first: PDF+'s papers go into a run as it is created.";
+      case "noworkflow":
+        return "The workflow chosen in PDF+" + (req && req.workflowName ? " (" + req.workflowName + ")" : "") +
+          " is not here any more. Press Create run on the workflow to use — " + where + "'s papers still come with it.";
       default:
         return "PDF+'s papers could not be brought over (" + str(why) + "). Nothing was added; Choose folder… still works.";
     }

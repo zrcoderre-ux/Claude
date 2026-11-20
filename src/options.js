@@ -436,7 +436,17 @@
   // new run's editor when Create run opens it. Without a request, nothing
   // here changes.
   const PB = window.CUMPdfPlusBridge || null;
-  if (PB) PB.init(document.querySelector('.panel[data-panel="workflows"] .toolbar'));
+  if (PB)
+    PB.init(document.querySelector('.panel[data-panel="workflows"] .toolbar'), {
+      // A workflow chosen from PDF+'s Claude menu: its own Create run, pressed.
+      createRun(id) {
+        const b = [...wfui.list.querySelectorAll(".wf-create")].find((x) => x.getAttribute("data-id") === id);
+        if (!b || b.disabled) return false;
+        showTab("workflows", false);
+        createRun(b, id);
+        return true;
+      },
+    });
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (!msg || msg.type !== "cum-pdfplus-recheck" || !PB) return;

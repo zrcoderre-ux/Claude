@@ -119,12 +119,31 @@
       out.push(runEntry(run, wf, t));
     }
     out.sort((a, b) => (isActive(b) - isActive(a)) || b.at - a.at);
-    return { version: 1, written: t, runs: out.slice(0, MAX_RUNS) };
+    return { version: 1, written: t, runs: out.slice(0, MAX_RUNS), workflows: workflowList(workflows) };
+  }
+
+  /**
+   * The workflows PDF+'s Claude button offers (the owner, November 2026:
+   * "change the claude run button to a drop down menu that lets me select the
+   * workflow to run"): each one's id and name, as Options lists them, sorted
+   * by name. Nothing of its prompts or papers.
+   */
+  const MAX_WORKFLOWS = 60;
+  function workflowList(workflows) {
+    const out = [];
+    for (const wf of workflows || []) {
+      if (!wf || !wf.id) continue;
+      const name = String(wf.name || wf.templateName || "").replace(/\s+/g, " ").trim() || "(untitled)";
+      out.push({ id: String(wf.id), name: name.slice(0, 120) });
+    }
+    out.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+    return out.slice(0, MAX_WORKFLOWS);
   }
 
   /** What the file says, without when it was written: the same signature, nothing new to write. */
   function signature(data) {
-    return JSON.stringify(((data && data.runs) || []).map((r) => [r.id, r.status, r.phase, r.progress, r.step, r.total, r.at, r.held, r.error, r.url, r.name, (r.steps || []).map((x) => x.state + (x.ms || "")).join(",")]));
+    return JSON.stringify([((data && data.runs) || []).map((r) => [r.id, r.status, r.phase, r.progress, r.step, r.total, r.at, r.held, r.error, r.url, r.name, (r.steps || []).map((x) => x.state + (x.ms || "")).join(",")]),
+      ((data && data.workflows) || []).map((w) => w.id + "=" + w.name)]);
   }
 
   /**
@@ -138,7 +157,7 @@
     return going && (now == null ? Date.now() : now) - (last.at || 0) >= REFRESH_MS;
   }
 
-  const api = { FILE, KEEP_ENDED_MS, REFRESH_MS, MAX_RUNS, MAX_STEPS, caseNumberOf, isActive, lastChatUrl, stepsOf, runEntry, summarize, signature, shouldWrite };
+  const api = { FILE, KEEP_ENDED_MS, REFRESH_MS, MAX_RUNS, MAX_STEPS, MAX_WORKFLOWS, caseNumberOf, isActive, lastChatUrl, stepsOf, runEntry, summarize, workflowList, signature, shouldWrite };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.CUMPdfPlusStatus = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
