@@ -21,6 +21,7 @@
   const HOST = "com.lacourt.ecourt_host";
   let pending = null; // the checked request, while one waits
   let ui = null;
+  let hooks = {}; // options.js: { createRun(workflowId) → whether that workflow's Create run was pressed }
 
   // One connection for a whole transfer: the host answers each message in
   // turn, so a queue of waiters is the whole protocol.
@@ -97,6 +98,27 @@
     pending = res.ok ? res.request : null;
     if (pending) say(R.bannerText(pending), false);
     else if (ui && !ui.box.classList.contains("warn")) say("", false);
+    if (pending && pending.workflowId) autoCreate(pending);
+  }
+
+  // A workflow chosen from PDF+'s Claude menu (the owner, November 2026: "a
+  // drop down menu that lets me select the workflow to run. That way it can
+  // initiate the full thing for me, upload the documents and fill in the date
+  // I can just hit the save and start this run button"): its Create run is
+  // pressed here, once a request, which makes the run as a draft (nothing
+  // starts) and brings the papers and the hearing date into its editor
+  // (afterCreate). Starting it is still the owner's press.
+  const autoDone = new Set();
+  async function autoCreate(req) {
+    if (!hooks.createRun || autoDone.has(req.id)) return;
+    autoDone.add(req.id);
+    // The list may still be drawing: a few looks before giving up.
+    for (let i = 0; i < 20; i++) {
+      if (pending !== req) return; // dismissed, or another request came
+      if (hooks.createRun(req.workflowId)) return;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    if (pending === req) say(R.failText("noworkflow", req), true);
   }
 
   /**
@@ -159,7 +181,8 @@
       pending = null;
       say(
         "PDF+'s papers for " + (req.caseName || req.folderName) + " went to the run through Choose folder…'s checks — " +
-          "see what was taken just above its documents. Choose its workflow steps and start it as usual.",
+          "see what was taken just above its documents. " +
+          (req.workflowId ? "Look it over and press Save and start this run." : "Choose its workflow steps and start it as usual."),
         false
       );
       return res;
@@ -187,8 +210,9 @@
   }
 
   /** Mount the banner above the Workflows toolbar (`anchor`), and look for a request. */
-  function init(anchor) {
+  function init(anchor, opts) {
     if (!anchor || !anchor.parentNode || !R) return;
+    hooks = opts || {};
     const box = document.createElement("div");
     box.className = "pdfplus-banner";
     box.hidden = true;

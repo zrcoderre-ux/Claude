@@ -64,3 +64,20 @@ test("the banner says the case, its hearing and where the papers come from", () 
   assert.match(R.failText("nocase", good), /carries no case number/);
   assert.match(R.failText("standin", good), /never allows/);
 });
+
+// The owner (November 2026): "change the claude run button to a drop down menu
+// that lets me select the workflow to run".
+test("a workflow chosen in PDF+ comes with the request; a malformed id does not", () => {
+  const r = R.checkRequest(Object.assign({}, good, { workflowId: "wf_123-abc", workflowName: "  Tentative   ruling " }), NOW);
+  assert.strictEqual(r.request.workflowId, "wf_123-abc");
+  assert.strictEqual(r.request.workflowName, "Tentative ruling");
+  assert.strictEqual(R.checkRequest(Object.assign({}, good, { workflowId: "a b/c" }), NOW).request.workflowId, "");
+  assert.strictEqual(R.checkRequest(good, NOW).request.workflowId, "");
+});
+
+test("the banner says the run is being set up, and a missing workflow says so", () => {
+  const req = R.checkRequest(Object.assign({}, good, { workflowId: "w1", workflowName: "Tentative ruling" }), NOW).request;
+  assert.match(R.bannerText(req), /Setting up a run of Tentative ruling/);
+  assert.match(R.bannerText(R.checkRequest(good, NOW).request), /Press Create run/);
+  assert.match(R.failText("noworkflow", req), /Tentative ruling\) is not here any more/);
+});

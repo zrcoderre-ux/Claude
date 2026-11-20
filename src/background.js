@@ -3493,7 +3493,7 @@ async function writePdfPlusStatus() {
     const last = (await get(PDFPLUS_STATUS_KEY))[PDFPLUS_STATUS_KEY] || null;
     if (!PDFS.shouldWrite(data, last && last.ok ? last : null, now)) return;
     // Nothing to say and nothing ever said: no file at all.
-    if (!data.runs.length && !(last && last.ok)) return;
+    if (!data.runs.length && !data.workflows.length && !(last && last.ok)) return;
     const resp = await new Promise((res) => {
       try {
         chrome.runtime.sendNativeMessage(PDFPLUS_HOST, { action: "writeClaudeRuns", data }, (r) => {
@@ -3516,7 +3516,8 @@ async function writePdfPlusStatus() {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   // PDF+'s Home: a run changed, or one going beat (the refresh is decided there).
-  if (Object.keys(changes).some((k) => k === W.RUN_IDS_KEY || k.indexOf(W.RUN_PREFIX) === 0 || k.indexOf(W.BEAT_PREFIX) === 0)) pdfplusStatusSoon();
+  // The workflows too: PDF+'s Claude button lists them.
+  if (Object.keys(changes).some((k) => k === W.RUN_IDS_KEY || k === WORKFLOWS_KEY || k.indexOf(W.RUN_PREFIX) === 0 || k.indexOf(W.BEAT_PREFIX) === 0)) pdfplusStatusSoon();
   if (changes[PSEUDO_KEYS_KEY]) {
     // A name removed from a key by hand (or put back) changes no savedAt, so
     // only a forced refresh carries it into the distilled cases.

@@ -72,3 +72,19 @@ test("each step, as the runs list's history draws it: done, here, still to do, w
   assert.deepStrictEqual(S.summarize([run({ status: "done", stepIndex: 3, finishedAt: NOW })], [], NOW).runs[0].steps.map((x) => x.state), ["done", "done", "done"]);
   assert.deepStrictEqual(S.summarize([run({ status: "waiting" })], [], NOW).runs[0].steps.map((x) => x.state), ["done", "next", "todo"]);
 });
+
+// The owner (November 2026): "change the claude run button to a drop down menu
+// that lets me select the workflow to run". PDF+ lists them from this file.
+test("the workflows go with the runs: id and name only, by name", () => {
+  const wfs = [{ id: "w2", name: "Tentative ruling", chats: [{ prompt: "secret" }] }, { id: "w1", name: " Bench   memo " }, { name: "no id" }, { id: "w3", templateName: "Digest" }];
+  const d = S.summarize([], wfs, NOW);
+  assert.deepStrictEqual(d.workflows, [{ id: "w1", name: "Bench memo" }, { id: "w3", name: "Digest" }, { id: "w2", name: "Tentative ruling" }]);
+  assert.ok(!JSON.stringify(d.workflows).includes("secret"));
+});
+
+test("a workflow added or renamed is a change to write", () => {
+  const a = S.summarize([], [{ id: "w1", name: "Bench memo" }], NOW);
+  const b = S.summarize([], [{ id: "w1", name: "Bench memo v2" }], NOW);
+  assert.strictEqual(S.shouldWrite(b, { sig: S.signature(a), at: NOW }, NOW + 1000), true);
+  assert.strictEqual(S.shouldWrite(a, { sig: S.signature(a), at: NOW }, NOW + 1000), false);
+});

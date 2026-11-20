@@ -1473,6 +1473,15 @@ the workflow you want. The run's editor opens as usual, with the **hearing date
 in its Run date** (where none is typed) and the **case folder's papers added
 for you** — exactly as if you had picked that folder with **Choose folder…**.
 
+**Or pick the workflow in PDF+.** The Claude button is a menu of your
+workflows (this extension lists their names and ids in `Claude Run Status.json`
+for it; nothing of their prompts). Pick one and Options presses that workflow's
+**Create run** for you (`autoCreate` in `src/pdfplus-run.js`, once a request):
+the run is made as a draft, nothing starts, and its editor opens with the
+papers and the hearing date in. Look it over and press **Save and start this
+run**. "Choose in the Claude extension…" at the menu's foot is the old way; a
+workflow since deleted says so in the banner and leaves you to press Create run.
+
 **Every safeguard of Choose folder… applies, because it is the same door**
 (`takeFromPdfPlus` hands the folder to `takePicked`):
 
