@@ -1870,6 +1870,24 @@
     const a = ecourtCaseId(tabUrl);
     return !!a && a === ecourtCaseId(caseUrl);
   }
+  // Whether a window (its tabs' addresses) is the CASE's window, one PDF+ and
+  // E-Court Suite opened for it, rather than any window that happens to show
+  // the case's eCourt page (the owner, 2026-11-25: runs "are still opening in
+  // existing windows" — a run joined the main eCourt window, which had the
+  // case open among everything else). Every tab must belong to the case: its
+  // own eCourt pages, the documents and reports eCourt serves (what the
+  // Documents button opens there), E-Court Suite's page-PDF tab, or Claude.
+  // Another case's page, the agenda, or any other site: not the case's window.
+  function isCaseWindow(urls, caseUrl) {
+    const list = (urls || []).map((u) => String(u || ""));
+    if (!list.some((u) => sameEcourtCase(u, caseUrl))) return false;
+    return list.every((u) =>
+      sameEcourtCase(u, caseUrl) ||
+      /^https:\/\/civil\.lacourt\.org\/ecourt\/ecms\/(?:doc\b|reports\/)/i.test(u) ||
+      /^chrome-extension:\/\/[a-p]{32}\/page-pdf\//i.test(u) ||
+      /^https:\/\/claude\.ai\//i.test(u)
+    );
+  }
 
   function applyRunEdit(run, patch, now) {
     if (!run) return run;
@@ -4120,6 +4138,7 @@
     applyRunEdit,
     caseWindowUrl,
     sameEcourtCase,
+    isCaseWindow,
     markHeld,
     markCanceled,
     progressText,

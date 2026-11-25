@@ -2193,10 +2193,16 @@ level:
   conversation **only inside that window**. A chat you happen to have open
   elsewhere is yours; driving a message into a tab you're reading would be a
   nasty surprise.
-  A run set up from PDF+'s Claude button always gets a window of its own (the
+  PDF+'s Claude button opens Options in a NEW window, never as a tab of the
+  window in front, and a run created there keeps that window as its own (set
+  when the run is made, `cum-wf-run`'s `pdfplus`), so the setup and the run's
+  chats are one window. A run set up from PDF+'s Claude button always gets a window of its own (the
   box is ticked for it; untick it in the run's editor), unless the case's eCourt
-  page is open, in which case its chats open as tabs in that window, beside
-  eCourt (`caseWindowUrl` on the run, `caseEcourtWindow`). There it is a guest:
+  page is open in the case's OWN window (one holding only that case's eCourt
+  pages and documents and Claude, `W.isCaseWindow`), in which case its chats
+  open as tabs there, beside eCourt (`caseWindowUrl` on the run,
+  `caseEcourtWindow`). A window that merely has the case open among other work,
+  such as the main eCourt window, is never borrowed. There it is a guest:
   Close window takes only its own chat tabs, and Stop only presses in them.
   The other way round works too: PDF+'s eCourt link for a case names that
   case's run chats, and E-Court Suite puts the eCourt page into the window one

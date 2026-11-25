@@ -4088,3 +4088,13 @@ test("a run from PDF+ keeps its case's eCourt page, for the case's window", () =
   assert.strictEqual(W.applyRunEdit(withCase, { name: "Doe" }, NOW + 2).caseWindowUrl, url, "a later edit keeps it");
   assert.strictEqual(W.applyRunEdit(run, { caseWindowUrl: "https://example.com/" }, NOW + 1).caseWindowUrl, null);
 });
+
+test("a run joins only the case's own window, never one with other work in it", () => {
+  const url = "https://civil.lacourt.org/ecourt/ecms/case?id=111";
+  const own = [url + "&formId=395", "https://civil.lacourt.org/ecourt/ecms/doc?docId=9", "chrome-extension://abcdefghijklmnopabcdefghijklmnop/page-pdf/view.html?x", "https://claude.ai/chat/aaa"];
+  assert.strictEqual(W.isCaseWindow(own, url), true);
+  assert.strictEqual(W.isCaseWindow([url, "https://civil.lacourt.org/ecourt/ecms/agenda?day=1"], url), false, "the main eCourt window");
+  assert.strictEqual(W.isCaseWindow([url, "https://civil.lacourt.org/ecourt/ecms/case?id=222"], url), false, "another case open there");
+  assert.strictEqual(W.isCaseWindow([url, "https://mail.example.com/"], url), false, "other browsing");
+  assert.strictEqual(W.isCaseWindow(["https://claude.ai/chat/aaa"], url), false, "no eCourt page of the case");
+});

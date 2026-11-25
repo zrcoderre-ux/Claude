@@ -257,5 +257,10 @@
     check();
   }
 
-  window.CUMPdfPlusBridge = { init, check, afterCreate, hasPending: () => !!pending };
+  window.CUMPdfPlusBridge = {
+    init, check, afterCreate,
+    hasPending: () => !!pending,
+    // The case's eCourt page, for the run's window (background.js cum-wf-run).
+    pendingEcourtUrl: () => (pending && pending.ecourtUrl) || "",
+  };
 })();

@@ -1324,7 +1324,11 @@ async function runTab(run, url, canReuse) {
 // own. The last focused normal window, or any normal window, or — if the
 // browser somehow has none — nothing, which the caller reports rather than
 // papering over.
-/** The normal window showing a case's eCourt page (W.sameEcourtCase), else null. */
+/**
+ * The case's own window (W.isCaseWindow: showing its eCourt page and nothing
+ * but that case and Claude), else null. A window that merely has the case's
+ * page open among other work is never borrowed.
+ */
 async function caseEcourtWindow(caseUrl) {
   try {
     const tabs = await chrome.tabs.query({ url: "https://civil.lacourt.org/ecourt/*" });
@@ -1332,7 +1336,9 @@ async function caseEcourtWindow(caseUrl) {
       if (!t || !W.sameEcourtCase(t.url || t.pendingUrl || "", caseUrl)) continue;
       try {
         const w = await chrome.windows.get(t.windowId);
-        if (w && w.type === "normal" && !w.incognito) return w.id;
+        if (!w || w.type !== "normal" || w.incognito) continue;
+        const all = (await tabsInWindow(w.id)).map((x) => (x && (x.url || x.pendingUrl)) || "");
+        if (W.isCaseWindow(all, caseUrl)) return w.id;
       } catch (e) {
         /* closed meanwhile */
       }
@@ -2483,17 +2489,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // or a new one, which looks when it loads.
   if (msg && msg.type === "cum-pdfplus-run") {
     (async () => {
+      // In a window of its own, never a tab of the window in front (the
+      // owner, 2026-11-25: runs from PDF+ opened in a window that "had a
+      // different case's ecourt page up"). The run made from it keeps this
+      // window as its own (cum-wf-run), so the setup and the run's chats are
+      // one window. An Options page already open elsewhere is left alone: it
+      // is not told to recheck, so only the new one sets the run up.
       const base = chrome.runtime.getURL("src/options.html");
-      const tabs = await chrome.tabs.query({});
-      const open = tabs.find((t) => t && t.url && t.url.indexOf(base) === 0);
-      if (open) {
-        await chrome.tabs.update(open.id, { active: true });
-        try { await chrome.windows.update(open.windowId, { focused: true }); } catch (e) { /* gone */ }
-        // Every Options page hears this; only the tab named acts on it (sets
-        // the run up), or every open Options page would make the same run.
-        try { chrome.runtime.sendMessage({ type: "cum-pdfplus-recheck", tabId: open.id }, () => void chrome.runtime.lastError); } catch (e) { /* no page */ }
-      } else {
-        await chrome.tabs.create({ url: base + "#workflows", active: true });
+      try {
+        await chrome.windows.create({ url: base + "#workflows", focused: true, state: "maximized" });
+      } catch (e) {
+        await chrome.windows.create({ url: base + "#workflows", focused: true });
       }
       const from = sender && sender.tab && sender.tab.id;
       if (from != null) {
@@ -2541,7 +2547,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // papers; the template goes straight back to its resting name with no
       // documents, ready to be armed for the next matter — even while this run
       // is still going, which is why the run owns the documents from here.
-      const run = W.newRun(wf, crypto.randomUUID(), now, msg.trigger, wf.docs);
+      let run = W.newRun(wf, crypto.randomUUID(), now, msg.trigger, wf.docs);
+      // A run for a case PDF+ asked for (the owner, 2026-11-25: runs from PDF+
+      // "are still oopening in existing windows" … the window "had a different
+      // case's ecourt page up"): never the window last used. Its window is
+      // settled here, as it is made: the case's own window if one is open
+      // (caseEcourtWindow), else the window this Options page was opened in
+      // for the request, a new one holding nothing but Options (cum-pdfplus-run),
+      // else a window of its own at its first step (newWindow).
+      if (msg.pdfplus && typeof msg.pdfplus === "object") {
+        const caseUrl = W.caseWindowUrl(msg.pdfplus.ecourtUrl || "") || null;
+        run = Object.assign({}, run, { newWindow: true, caseWindowUrl: caseUrl });
+        let home = caseUrl ? await caseEcourtWindow(caseUrl) : null;
+        if (home == null && sender && sender.tab && typeof sender.tab.windowId === "number") {
+          const base = chrome.runtime.getURL("src/options.html");
+          const inIt = await tabsInWindow(sender.tab.windowId);
+          if (inIt.length && inIt.every((t) => t && (t.url || t.pendingUrl || "").indexOf(base) === 0)) home = sender.tab.windowId;
+        }
+        if (home != null) run = W.withWindow(run, home);
+      }
       // Told at the door rather than an hour later, for a run going out NOW. A
       // run being QUEUED is left alone deliberately: its key is attached in the
       // run editor, which is a thing you do after making the run — and the
