@@ -675,7 +675,14 @@
     btn.disabled = true;
     btn.textContent = "Creating…";
     chrome.runtime.sendMessage(
-      { type: "cum-wf-run", workflowId: id, trigger: { type: "draft" } },
+      {
+        type: "cum-wf-run",
+        workflowId: id,
+        trigger: { type: "draft" },
+        // A run for a case PDF+ asked for: its window is settled as it is made
+        // (background.js), not left to the editor's box.
+        ...(PB && PB.hasPending() ? { pdfplus: { ecourtUrl: PB.pendingEcourtUrl() } } : {}),
+      },
       (res) => {
         btn.disabled = false;
         btn.textContent = "Create run";
