@@ -202,7 +202,7 @@
         Object.defineProperty(f, "webkitRelativePath", { value: e.rel });
         files.push(f);
       }
-      const res = form.takeFromPdfPlus(files, { root: req.folderName, runDate: req.hearingDate });
+      const res = form.takeFromPdfPlus(files, { root: req.folderName, runDate: req.hearingDate, caseWindowUrl: req.ecourtUrl || "" });
       if (!res.ok) {
         say(R.failText(res.why, req), true);
         return res;

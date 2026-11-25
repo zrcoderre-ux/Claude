@@ -71,6 +71,9 @@
       // presses its Create run itself (pdfplus-run.js, autoCreate).
       workflowId: /^[A-Za-z0-9_-]{1,80}$/.test(str(r.workflowId)) ? str(r.workflowId) : "",
       workflowName: str(r.workflowName).replace(/\s+/g, " ").trim().slice(0, 120),
+      // The case's eCourt page (PDF+ 2026-11-25 on): the run's chats open in
+      // the window it is open in, else a window of their own.
+      ecourtUrl: /^https:\/\/civil\.lacourt\.org\/ecourt\//i.test(str(r.ecourtUrl)) ? str(r.ecourtUrl).slice(0, 2000) : "",
     };
     return { ok: true, why: "", request: clean };
   }

@@ -1470,6 +1470,7 @@
           allowRerun: !!edited.allowRerun,
           ignoreOutage: !!edited.ignoreOutage,
           newWindow: !!edited.newWindow,
+          ...(edited.caseWindowUrl ? { caseWindowUrl: edited.caseWindowUrl } : {}),
           pseudoKeyId: edited.pseudoKeyId || null,
           runDate: edited.runDate || null,
         },
