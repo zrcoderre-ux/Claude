@@ -2198,6 +2198,10 @@ level:
   page is open, in which case its chats open as tabs in that window, beside
   eCourt (`caseWindowUrl` on the run, `caseEcourtWindow`). There it is a guest:
   Close window takes only its own chat tabs, and Stop only presses in them.
+  The other way round works too: PDF+'s eCourt link for a case names that
+  case's run chats, and E-Court Suite puts the eCourt page into the window one
+  of them is open in. A run window holding eCourt is shared from then on, so
+  Close window takes only the run's chat tabs there as well (`inCaseWindow`).
 - **Conversations.** A run addresses chats by URL, so even the same conversation
   open twice can't confuse it.
 - **Signals.** The response-stream and clipboard hooks are page-scoped — a turn
