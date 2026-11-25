@@ -2595,6 +2595,12 @@ Where the boundaries come from, and why each is where it is:
   a line break, so `CONCLUSION`, the disposition and `**Change report**` written
   on consecutive lines are one paragraph on the page, and the copy is cut at the
   line rather than at the paragraph.
+- **CITATIONS FOR PAGINATION is never copied.** The list of cites Claude puts
+  under the conclusion for checking page numbers ends the ruling wherever it
+  stands and however it is written — plain capitals, bold, a heading, with a
+  colon, or sharing a paragraph with the disposition above it or the first cite
+  below. It is named outright rather than left to the heading rule, which only
+  sees a line set in bold.
 - **CONCLUSION directly over its sentence is still CONCLUSION.** The page's
   plain text drops a line break, so a heading sitting on the line above a
   one-sentence disposition reads as `CONCLUSIONThe hearing is continued…`. The
