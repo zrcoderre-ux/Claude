@@ -706,3 +706,79 @@ test("linksGroupTitle: the chat's name and Links", () => {
   const long = T.linksGroupTitle("Motion for summary judgment on the second amended complaint of the plaintiffs - Claude");
   assert.ok(long.length <= 47 && /… Links$/.test(long), long);
 });
+
+// ---- CITATIONS FOR PAGINATION is never part of the ruling -----------------
+
+test("the pagination list under the conclusion is left out of the text", () => {
+  const ruling = "NATURE OF PROCEEDINGS\n\nDemurrer.\n\nCONCLUSION\n\nThe demurrer is SUSTAINED.";
+  for (const head of [
+    "CITATIONS FOR PAGINATION",
+    "CITATIONS FOR PAGINATION:",
+    "**CITATIONS FOR PAGINATION**",
+    "## Citations for Pagination",
+    "**CITATIONS FOR PAGINATION:** *Smith v. Jones* (2020) 50 Cal.App.5th 1, 5.",
+  ]) {
+    const r = T.extractRuling(ruling + "\n\n" + head + "\n\n- *Smith v. Jones* (2020) 50 Cal.App.5th 1, 5.");
+    assert.equal(r.ok, true, head);
+    assert.equal(r.text, ruling, head);
+    assert.equal(r.reason, null, head);
+  }
+  // On the line directly under the disposition, with no blank line between.
+  assert.equal(T.extractRuling(ruling + "\nCITATIONS FOR PAGINATION\nSmith, 50 Cal.App.5th 1.").text, ruling);
+  // And where the ruling has no conclusion to go by.
+  const bare = T.extractRuling("NATURE OF PROCEEDINGS\n\nDemurrer.\n\nCITATIONS FOR PAGINATION\n\nSmith.");
+  assert.equal(bare.text, "NATURE OF PROCEEDINGS\n\nDemurrer.");
+});
+
+test("a plain pagination block on the page ends the ruling", () => {
+  // Not bold, not a heading: the bold-heading rule does not see it.
+  const p = T.planBlocks([
+    { text: "NATURE OF PROCEEDINGS", heading: true },
+    { text: "Demurrer." },
+    { text: "CONCLUSION", heading: true },
+    { text: "The demurrer is SUSTAINED." },
+    { text: "CITATIONS FOR PAGINATION" },
+    { text: "Smith v. Jones (2020) 50 Cal.App.5th 1, 5." },
+  ]);
+  assert.equal(p.ok, true);
+  assert.equal(p.end, 3);
+  assert.equal(p.endLine, -1);
+  assert.equal(p.reason, null);
+  // Welded to the cite under it, as textContent reads a <br>.
+  assert.equal(T.opensPagination("CITATIONS FOR PAGINATIONSmith v. Jones"), true);
+  assert.equal(T.opensPagination("The citations for pagination follow."), false);
+});
+
+test("a pagination list inside the conclusion's own block is cut at its line", () => {
+  const p = T.planBlocks([
+    { text: "NATURE OF PROCEEDINGS", heading: true },
+    { text: "Demurrer." },
+    {
+      text: "CONCLUSION\nThe demurrer is SUSTAINED.\nCITATIONS FOR PAGINATION\nSmith v. Jones",
+      lines: [
+        { text: "CONCLUSION", bold: true },
+        { text: "The demurrer is SUSTAINED.", bold: false },
+        { text: "CITATIONS FOR PAGINATION", bold: false },
+        { text: "Smith v. Jones", bold: false },
+      ],
+    },
+  ]);
+  assert.equal(p.end, 2);
+  assert.equal(p.endLine, 2);
+  // In a ruling with no conclusion heading, and in a ruling that is one block.
+  const one = T.planBlocks([
+    { text: "NATURE OF PROCEEDINGS\nDemurrer.\nSUSTAINED.\nCITATIONS FOR PAGINATION\nSmith v. Jones" },
+  ]);
+  assert.equal(one.end, 0);
+  assert.equal(one.endLine, 3);
+  // It comes before a bold heading further down, and a bold heading before it
+  // still wins.
+  const both = T.planBlocks([
+    { text: "NATURE OF PROCEEDINGS", heading: true },
+    { text: "CONCLUSION", heading: true },
+    { text: "SUSTAINED." },
+    { text: "Citations for pagination: Smith v. Jones" },
+    { text: "Change report", bold: true },
+  ]);
+  assert.equal(both.end, 2);
+});

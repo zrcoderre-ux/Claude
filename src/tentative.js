@@ -21,6 +21,9 @@
  *   the last rule in the reply either, which would take the commentary with it.
  * - **CONCLUSION is looked for after the start**, so a "Conclusion" in Claude's
  *   own remarks underneath can't be mistaken for the ruling's.
+ * - **CITATIONS FOR PAGINATION ends it too**, wherever it stands after the
+ *   start and however it is written. The list of cites under it is for
+ *   checking page numbers and is never part of the ruling.
  * - **A rule directly under a line of text is left alone**, because in Markdown
  *   that is a setext heading rather than a break — `CONCLUSION` with `---` under
  *   it *is* the conclusion heading, and treating it as the end of the ruling
@@ -67,6 +70,17 @@
   function isConclusionLine(line) {
     const bare = bareLine(line);
     return END_LINE.test(bare) || END_GLUED.test(bare) || END_CAPS.test(str(line));
+  }
+
+  // CITATIONS FOR PAGINATION: the list of cites Claude puts under the
+  // conclusion for checking page numbers. It is never part of the ruling
+  // (owner, November 2026), and it ends the ruling however it is written —
+  // plain, bold, a heading, with a colon, or welded to the cite under it —
+  // which is why it is named here rather than left to the bold-heading rule: a
+  // list written in plain capitals went onto the clipboard with the ruling.
+  const PAGINATION_LINE = /^citations?\s+for\s+pagination/i;
+  function opensPagination(line) {
+    return PAGINATION_LINE.test(bareLine(line));
   }
 
   // A block that reads as a heading though the page didn't draw it as one: a
@@ -245,22 +259,34 @@
         break;
       }
     }
+    // ...or, sooner, the pagination list: with a conclusion or without one,
+    // whatever stands between it and the ruling.
+    for (let i = start + 1; i <= end; i++) {
+      if (opensPagination(firstLine((list[i] || {}).text))) {
+        end = i - 1;
+        break;
+      }
+    }
 
     // ...and the same heading INSIDE a block. claude.ai draws a single newline
     // as a <br>, so "CONCLUSION", the disposition and "**Change report**"
     // written on consecutive lines are one paragraph on the page — and cutting
     // only between blocks took the change report, and everything under it,
     // along with the ruling.
-    if (concl !== -1) {
-      const inner = headingInside(list, concl, end, start);
-      if (inner) {
-        end = inner.block;
-        endLine = inner.line;
-        const kept = linesOf(list[end]).slice(0, endLine);
-        if (!kept.some((l) => l.text.trim())) {
-          end--;
-          endLine = -1;
-        }
+    // The pagination list is looked for the same way, in every block of the
+    // ruling, and whichever comes first is the end.
+    let inner = concl !== -1 ? headingInside(list, concl, end, start) : null;
+    const pag = paginationInside(list, start, end);
+    if (pag && (!inner || pag.block < inner.block || (pag.block === inner.block && pag.line < inner.line))) {
+      inner = pag;
+    }
+    if (inner) {
+      end = inner.block;
+      endLine = inner.line;
+      const kept = linesOf(list[end]).slice(0, endLine);
+      if (!kept.some((l) => l.text.trim())) {
+        end--;
+        endLine = -1;
       }
     }
 
@@ -310,6 +336,20 @@
     return null;
   }
 
+  // The first line that opens the pagination list, in the blocks from the
+  // ruling's first through `last`. → { block, line } | null. A block's first
+  // line that says anything is planBlocks' own business (the block goes
+  // whole), except in the block the ruling starts in.
+  function paginationInside(list, start, last) {
+    for (let i = start; i <= last; i++) {
+      const lines = linesOf(list[i]);
+      for (let j = 0; j < lines.length; j++) {
+        if (opensPagination(lines[j].text)) return { block: i, line: j };
+      }
+    }
+    return null;
+  }
+
   /**
    * The ruling out of a reply.
    *
@@ -336,6 +376,13 @@
     let end = lines.length - 1;
     for (let i = (concl ? concl.line : start.line) + 1; i < lines.length; i++) {
       if (isBreak(lines, i) || (concl && headingLine(lines[i]))) {
+        end = i - 1;
+        break;
+      }
+    }
+    // The pagination list ends it sooner, with a conclusion or without one.
+    for (let i = start.line + 1; i <= end; i++) {
+      if (opensPagination(lines[i])) {
         end = i - 1;
         break;
       }
@@ -624,6 +671,7 @@
     textKey,
     rulingPage,
     opensConclusion,
+    opensPagination,
     rulingSpot,
     latestRulingCopy,
     BELOW_AFTER_MS,
