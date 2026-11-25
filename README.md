@@ -2196,7 +2196,10 @@ level:
   PDF+'s Claude button opens Options in a NEW window, never as a tab of the
   window in front, and a run created there keeps that window as its own (set
   when the run is made, `cum-wf-run`'s `pdfplus`), so the setup and the run's
-  chats are one window. A run set up from PDF+'s Claude button always gets a window of its own (the
+  chats are one window. Only that new copy of Options acts on the request
+  (`#workflows&pdfplus-run`); any other Options page that loads meanwhile, a
+  run window's pinned one or a tab Chrome reloads, only shows the banner, so
+  several cases launched one after another each get their own window. A run set up from PDF+'s Claude button always gets a window of its own (the
   box is ticked for it; untick it in the run's editor), unless the case's eCourt
   page is open in the case's OWN window (one holding only that case's eCourt
   pages and documents and Claude, `W.isCaseWindow`), in which case its chats

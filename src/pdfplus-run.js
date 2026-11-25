@@ -86,8 +86,24 @@
    * Read the request PDF+ left, and show it. `opts.act` false: show it only,
    * set nothing up (another Options page is the one acting on it).
    */
+  // Only the Options page the worker opened for a request acts on it (the
+  // owner, 2026-11-25: launching several runs from PDF+, "they are not all
+  // getting their own window. I think the open claude options tab might be
+  // interecepting them"): any Options page that loads reads the request, and
+  // one in another run's window (its pinned copy) or a reloaded one used to
+  // set the next case's run up in that window. Read once, then taken off, so
+  // a reload of this page does not act again.
+  let opener = /(?:^#|&)pdfplus-run(?:&|$)/.test(location.hash || "");
   async function check(opts) {
-    const act = !opts || opts.act !== false;
+    const act = (!opts || opts.act !== false) && opener;
+    if (opener) {
+      opener = false;
+      try {
+        history.replaceState(null, "", location.pathname + location.search + "#workflows");
+      } catch (e) {
+        /* the marker stays; autoDone and the claim still stop a second run */
+      }
+    }
     if (!R) return;
     const s = hostSession();
     if (!s) return;

@@ -51,7 +51,9 @@
   // not remembered itself: the run window's own copy of this page opens on
   // #workflows, and that shouldn't quietly decide where Options lands the next
   // time you open it from the toolbar.
-  const asked = (location.hash || "").replace(/^#/, "");
+  // (Only the section: "#workflows&pdfplus-run" is the copy the worker opened
+  // for one of PDF+'s requests, src/pdfplus-run.js.)
+  const asked = (location.hash || "").replace(/^#/, "").split("&")[0];
 
   // Show something immediately, then correct it once storage answers — the
   // alternative is a blank page for a frame.
