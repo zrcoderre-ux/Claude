@@ -2193,6 +2193,11 @@ level:
   conversation **only inside that window**. A chat you happen to have open
   elsewhere is yours; driving a message into a tab you're reading would be a
   nasty surprise.
+  A run set up from PDF+'s Claude button always gets a window of its own (the
+  box is ticked for it; untick it in the run's editor), unless the case's eCourt
+  page is open, in which case its chats open as tabs in that window, beside
+  eCourt (`caseWindowUrl` on the run, `caseEcourtWindow`). There it is a guest:
+  Close window takes only its own chat tabs, and Stop only presses in them.
 - **Conversations.** A run addresses chats by URL, so even the same conversation
   open twice can't confuse it.
 - **Signals.** The response-stream and clipboard hooks are page-scoped — a turn

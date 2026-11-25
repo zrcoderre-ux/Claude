@@ -1847,6 +1847,30 @@
   // renamed, documents added. Documents new to the run are marked with the step
   // it has reached, so they go up with the next step in their chats rather than
   // trying to ride an opening message that has already been sent.
+  // A run set up from PDF+ for a case shares that case's eCourt window (the
+  // owner, November 2026: a case's Claude run and its eCourt page in one
+  // window, and a run with none of its own given a window of its own, never a
+  // tab in whatever window was last used). PDF+'s request names the case's
+  // eCourt page; `caseWindowUrl` keeps it only when it is one, and
+  // `sameEcourtCase` says whether an open tab shows that case (same case id).
+  const ECOURT_CASE_RE = /^https:\/\/civil\.lacourt\.org\/ecourt\/ecms\/case\b/i;
+  function caseWindowUrl(u) {
+    const s = typeof u === "string" ? u.trim() : "";
+    return ECOURT_CASE_RE.test(s) && s.length <= 2000 ? s : "";
+  }
+  function ecourtCaseId(u) {
+    if (!caseWindowUrl(u)) return "";
+    try {
+      return new URL(u).searchParams.get("id") || "";
+    } catch (e) {
+      return "";
+    }
+  }
+  function sameEcourtCase(tabUrl, caseUrl) {
+    const a = ecourtCaseId(tabUrl);
+    return !!a && a === ecourtCaseId(caseUrl);
+  }
+
   function applyRunEdit(run, patch, now) {
     if (!run) return run;
     const p = patch || {};
@@ -1890,6 +1914,10 @@
       // switch on a run, and until it was carried here it showed it doing
       // nothing.
       newWindow: flag("newWindow"),
+      // The case's eCourt page, for its window (caseWindowUrl): given only by
+      // a run set up from PDF+, and kept by every later edit.
+      caseWindowUrl:
+        typeof p.caseWindowUrl === "string" ? caseWindowUrl(p.caseWindowUrl) || null : run.caseWindowUrl || null,
       pseudoKeyId:
         typeof p.pseudoKeyId !== "undefined" ? p.pseudoKeyId || null : run.pseudoKeyId || null,
       rerun: p.rerun ? rerunDefaults(p.rerun) : run.rerun,
@@ -4090,6 +4118,8 @@
     nextClockResume,
     holdPaused,
     applyRunEdit,
+    caseWindowUrl,
+    sameEcourtCase,
     markHeld,
     markCanceled,
     progressText,

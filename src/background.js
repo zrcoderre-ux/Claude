@@ -1095,7 +1095,9 @@ function stopGeneratingIn(run) {
   // in the middle of is exactly the kind of surprise a background run must
   // never spring. So there, only the conversations this run actually owns.
   const mine = new Set();
-  if (!run.newWindow) {
+  // A run from PDF+ may be a guest in its case's eCourt window: its own chats only there too.
+  const onlyMine = !run.newWindow || !!run.caseWindowUrl;
+  if (onlyMine) {
     for (const id in run.chats || {}) {
       const u = run.chats[id] && run.chats[id].url;
       if (u) mine.add(u);
@@ -1104,7 +1106,7 @@ function stopGeneratingIn(run) {
   tabsInWindow(run.windowId).then((tabs) => {
     for (const t of tabs) {
       if (t.id == null) continue;
-      if (!run.newWindow) {
+      if (onlyMine) {
         const known = t.url && Array.from(mine).some((u) => J.sameConversationUrl(t.url, u));
         if (!known) continue;
       }
@@ -1215,6 +1217,11 @@ async function groupRunChats(run, windowId) {
 async function runTab(run, url, canReuse) {
   let windowId = typeof run.windowId === "number" ? run.windowId : null;
   if (windowId != null && !(await windowExists(windowId))) windowId = null;
+  // A run set up from PDF+ for a case (run.caseWindowUrl): its chats go into
+  // the window the case's eCourt page is open in, if one is, as a tab of
+  // each, rather than a window of their own (the owner, November 2026: a
+  // case's Claude run and its eCourt page share one window).
+  if (windowId == null && run.newWindow && run.caseWindowUrl) windowId = await caseEcourtWindow(run.caseWindowUrl);
 
   // Sharing a window rather than opening one. Everything the isolated window
   // gave for free has to be given up deliberately here: nothing is resized (the
@@ -1317,6 +1324,31 @@ async function runTab(run, url, canReuse) {
 // own. The last focused normal window, or any normal window, or — if the
 // browser somehow has none — nothing, which the caller reports rather than
 // papering over.
+/** The normal window showing a case's eCourt page (W.sameEcourtCase), else null. */
+async function caseEcourtWindow(caseUrl) {
+  try {
+    const tabs = await chrome.tabs.query({ url: "https://civil.lacourt.org/ecourt/*" });
+    for (const t of tabs || []) {
+      if (!t || !W.sameEcourtCase(t.url || t.pendingUrl || "", caseUrl)) continue;
+      try {
+        const w = await chrome.windows.get(t.windowId);
+        if (w && w.type === "normal" && !w.incognito) return w.id;
+      } catch (e) {
+        /* closed meanwhile */
+      }
+    }
+  } catch (e) {
+    /* no tabs to look at */
+  }
+  return null;
+}
+
+/** Whether a run's window is its case's eCourt window (one it shares, not its own). */
+async function inCaseWindow(run) {
+  if (!run || !run.caseWindowUrl || typeof run.windowId !== "number") return false;
+  return (await tabsInWindow(run.windowId)).some((t) => t && W.sameEcourtCase(t.url || "", run.caseWindowUrl));
+}
+
 async function hostWindow() {
   const pick = (opts) =>
     new Promise((resolve) => {
@@ -3162,6 +3194,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // not this run's to tidy away.
       if (!run.newWindow)
         return { ok: false, error: "this run used your own window, so there is nothing of its own to close" };
+      // A run from PDF+ that went into its case's eCourt window (runTab) is a
+      // guest there: only its own chats' tabs go, and eCourt stays.
+      if (await inCaseWindow(run)) {
+        const mine = Object.keys(run.chats || {}).map((id) => run.chats[id] && run.chats[id].url).filter(Boolean);
+        for (const t of await tabsInWindow(run.windowId)) {
+          if (t && t.id != null && t.url && mine.some((u) => J.sameConversationUrl(t.url, u))) {
+            try {
+              await chrome.tabs.remove(t.id);
+            } catch (e) {
+              /* already gone */
+            }
+          }
+        }
+        await saveRun(W.withWindow(await readRun(msg.runId), null));
+        return { ok: true };
+      }
       try {
         await chrome.windows.remove(run.windowId);
       } catch (e) {

@@ -1558,6 +1558,9 @@
     // the template owns its name and what it does, the run owns the matter's
     // name and the matter's papers, and neither should be offered the other's.
     let editingRun = false;
+    // The case's eCourt page, from a run set up from PDF+ (takeFromPdfPlus):
+    // saved with the run, whose chats then open in that page's window.
+    let caseWindowUrl = "";
     // The key a run's related runs share, when it carries none of its own.
     let groupKeyId = "";
 
@@ -1652,6 +1655,7 @@
     function open(workflow) {
       wf = workflow;
       editingRun = false;
+      caseWindowUrl = "";
       if (!runSink) groupKeyId = "";
       originalDocIds = (wf.docs || []).map((d) => d.id);
       pendingFiles.clear();
@@ -1838,6 +1842,7 @@
           const trigger = readTrigger();
           if (trigger === false) return flash("Pick a time in the future.", true);
           flash("Saved.");
+          if (caseWindowUrl) candidate.caseWindowUrl = caseWindowUrl;
           close();
           sink(candidate, trigger);
           return;
@@ -1893,6 +1898,13 @@
           }
         }
         takePicked(files);
+        // A run from PDF+ never borrows whatever window was used last (the
+        // owner, 2026-11-25: "Claude runs opened from pdf+ open in an existing
+        // ( not the ecourt of that same case) window when they should get
+        // their own"): its own window, or the case's eCourt window if one is
+        // open (background.js runTab). The box stays the owner's to untick.
+        if (ui.newWindow) ui.newWindow.checked = true;
+        caseWindowUrl = W.caseWindowUrl(i.caseWindowUrl || "");
         return { ok: true, why: "" };
       },
       edit(workflow) {

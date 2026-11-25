@@ -4072,3 +4072,19 @@ test("Open chats: the window already holding one of the run's chats takes the re
   assert.deepStrictEqual(W.showChatsPlan(urls, [{ url: "https://claude.ai/chat/aaa", windowId: 4 }, { url: "https://claude.ai/chat/bbb", windowId: 9 }], same), { windowId: 4, open: [] });
   assert.deepStrictEqual(W.showChatsPlan(urls, [{ url: "https://example.com", windowId: 3 }], same), { windowId: null, open: urls });
 });
+
+test("a run from PDF+ keeps its case's eCourt page, for the case's window", () => {
+  const url = "https://civil.lacourt.org/ecourt/ecms/case?id=111";
+  assert.strictEqual(W.caseWindowUrl(url), url);
+  assert.strictEqual(W.caseWindowUrl("https://claude.ai/chat/x"), "");
+  assert.strictEqual(W.sameEcourtCase("https://civil.lacourt.org/ecourt/ecms/case?id=111#tab", url), true);
+  assert.strictEqual(W.sameEcourtCase("https://civil.lacourt.org/ecourt/ecms/case?id=222", url), false);
+  assert.strictEqual(W.sameEcourtCase("https://civil.lacourt.org/ecourt/ecms/agenda", url), false);
+  const wf = twoChatWorkflow();
+  const run = W.newRun(wf, "r1", NOW, { type: "draft" }, wf.docs);
+  const withCase = W.applyRunEdit(run, { caseWindowUrl: url, newWindow: true }, NOW + 1);
+  assert.strictEqual(withCase.caseWindowUrl, url);
+  assert.strictEqual(withCase.newWindow, true);
+  assert.strictEqual(W.applyRunEdit(withCase, { name: "Doe" }, NOW + 2).caseWindowUrl, url, "a later edit keeps it");
+  assert.strictEqual(W.applyRunEdit(run, { caseWindowUrl: "https://example.com/" }, NOW + 1).caseWindowUrl, null);
+});

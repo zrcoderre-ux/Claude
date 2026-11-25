@@ -90,3 +90,10 @@ test("a request another Options page took is said so, not blamed on the host", (
   assert.match(R.failText("taken", req), /another Options tab took it/);
   assert.doesNotMatch(R.failText("taken", req), /native host/);
 });
+
+test("the case's eCourt page rides the request, and only an eCourt link", () => {
+  const url = "https://civil.lacourt.org/ecourt/ecms/case?id=111";
+  assert.strictEqual(R.checkRequest(Object.assign({}, good, { ecourtUrl: url }), NOW).request.ecourtUrl, url);
+  assert.strictEqual(R.checkRequest(Object.assign({}, good, { ecourtUrl: "https://example.com/ecourt/x" }), NOW).request.ecourtUrl, "");
+  assert.strictEqual(R.checkRequest(good, NOW).request.ecourtUrl, "");
+});
