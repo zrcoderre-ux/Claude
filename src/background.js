@@ -1324,7 +1324,11 @@ async function runTab(run, url, canReuse) {
 // own. The last focused normal window, or any normal window, or — if the
 // browser somehow has none — nothing, which the caller reports rather than
 // papering over.
-/** The normal window showing a case's eCourt page (W.sameEcourtCase), else null. */
+/**
+ * The case's own window (W.isCaseWindow: showing its eCourt page and nothing
+ * but that case and Claude), else null. A window that merely has the case's
+ * page open among other work is never borrowed.
+ */
 async function caseEcourtWindow(caseUrl) {
   try {
     const tabs = await chrome.tabs.query({ url: "https://civil.lacourt.org/ecourt/*" });
@@ -1332,7 +1336,9 @@ async function caseEcourtWindow(caseUrl) {
       if (!t || !W.sameEcourtCase(t.url || t.pendingUrl || "", caseUrl)) continue;
       try {
         const w = await chrome.windows.get(t.windowId);
-        if (w && w.type === "normal" && !w.incognito) return w.id;
+        if (!w || w.type !== "normal" || w.incognito) continue;
+        const all = (await tabsInWindow(w.id)).map((x) => (x && (x.url || x.pendingUrl)) || "");
+        if (W.isCaseWindow(all, caseUrl)) return w.id;
       } catch (e) {
         /* closed meanwhile */
       }
