@@ -1343,10 +1343,16 @@ async function caseEcourtWindow(caseUrl) {
   return null;
 }
 
-/** Whether a run's window is its case's eCourt window (one it shares, not its own). */
+/**
+ * Whether a run's window holds eCourt too, so it is shared rather than the
+ * run's alone: the run went into its case's eCourt window, or E-Court Suite
+ * put the case's eCourt page into the run's window (the owner, 2026-11-25: "a
+ * later E-court click should open in that existant window if it is still
+ * open"). Either way Close window must not take eCourt with it.
+ */
 async function inCaseWindow(run) {
-  if (!run || !run.caseWindowUrl || typeof run.windowId !== "number") return false;
-  return (await tabsInWindow(run.windowId)).some((t) => t && W.sameEcourtCase(t.url || "", run.caseWindowUrl));
+  if (!run || typeof run.windowId !== "number") return false;
+  return (await tabsInWindow(run.windowId)).some((t) => t && /^https:\/\/civil\.lacourt\.org\//i.test(t.url || t.pendingUrl || ""));
 }
 
 async function hostWindow() {
