@@ -2495,11 +2495,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // window as its own (cum-wf-run), so the setup and the run's chats are
       // one window. An Options page already open elsewhere is left alone: it
       // is not told to recheck, so only the new one sets the run up.
+      // "&pdfplus-run": this copy, and no other Options page, sets the
+      // request's run up (src/pdfplus-run.js) — an Options page that happens
+      // to load meanwhile (a run window's pinned one, a reload) only shows it.
       const base = chrome.runtime.getURL("src/options.html");
       try {
-        await chrome.windows.create({ url: base + "#workflows", focused: true, state: "maximized" });
+        await chrome.windows.create({ url: base + "#workflows&pdfplus-run", focused: true, state: "maximized" });
       } catch (e) {
-        await chrome.windows.create({ url: base + "#workflows", focused: true });
+        await chrome.windows.create({ url: base + "#workflows&pdfplus-run", focused: true });
       }
       const from = sender && sender.tab && sender.tab.id;
       if (from != null) {
